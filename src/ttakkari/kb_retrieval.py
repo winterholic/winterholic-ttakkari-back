@@ -13,7 +13,7 @@ import math
 import uuid
 from typing import Any
 
-from sqlalchemy import func, not_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -30,6 +30,7 @@ from ttakkari.kb_access import (
     from_legacy_scope,
     passage_access_filter,
 )
+from ttakkari.kb_domains import entity_domains_for_topic
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_ontology.retrieval import (
     expand_1hop_relations,
@@ -59,6 +60,8 @@ WEIGHT_LEXICAL = 1.0
 WEIGHT_VECTOR = 1.0
 WEIGHT_ENTITY = 1.15
 WEIGHT_GRAPH_1HOP = 0.55
+# 후보(candidate) 관계에서 온 1-hop 패시지는 확정 관계보다 훨씬 낮게만 반영한다(요청 옵션 include_candidates).
+WEIGHT_GRAPH_1HOP_CANDIDATE = 0.15
 
 # 품질 신호 가산점
 BETA_CANONICAL = 0.008
@@ -89,8 +92,41 @@ def _metadata_filter_predicates(
         except ValueError as exc:
             raise ValueError("kb_filter_source_id_invalid") from exc
     domain = filters.get("domain")
+    domain_predicate = None
     if domain:
-        source_conditions.append(KbSource.source_meta["domain"].astext == str(domain))
+        # 사용자가 등록 때 고른 주제가 우선이고, 없으면 문서 엔터티의 domain 으로 자동 분류한 값과 맞춘다.
+        explicit = select(KbSource.id).where(
+            KbSource.id == KbRevision.source_id, KbSource.source_meta["domain"].astext == str(domain)
+        ).correlate(KbRevision).exists()
+        auto_ent = aliased(KbEntity)
+        auto_doc = aliased(KbDocumentEntity)
+        derived = (
+            select(auto_doc.entity_id)
+            .join(auto_ent, auto_ent.id == auto_doc.entity_id)
+            .where(
+                auto_doc.revision_id == KbRevision.id,
+                auto_ent.domain.in_(entity_domains_for_topic(str(domain))),
+                entity_access_filter(ctx, auto_ent),
+            )
+            .correlate(KbRevision)
+            .exists()
+        )
+        domain_predicate = or_(explicit, derived)
+    entity_id = filters.get("entity_id")
+    if entity_id:
+        try:
+            wanted_entity = uuid.UUID(str(entity_id))
+        except ValueError as exc:
+            raise ValueError("kb_filter_entity_id_invalid") from exc
+        link = aliased(KbDocumentEntity)
+        link_entity = aliased(KbEntity)
+        predicates.append(
+            select(link.entity_id)
+            .join(link_entity, link_entity.id == link.entity_id)
+            .where(link.revision_id == KbRevision.id, link.entity_id == wanted_entity, entity_access_filter(ctx, link_entity))
+            .correlate(KbRevision)
+            .exists()
+        )
 
     for key, is_lower_bound in (("collected_after", True), ("collected_before", False)):
         value = filters.get(key)
@@ -114,6 +150,8 @@ def _metadata_filter_predicates(
         predicates.append(
             select(KbSource.id).where(*source_conditions).correlate(KbRevision).exists()
         )
+    if domain_predicate is not None:
+        predicates.append(domain_predicate)
 
     concept = filters.get("concept")
     if concept:
@@ -299,6 +337,41 @@ async def status(
     }
 
 
+_MATCH_PATH_LABEL = {
+    "lexical": "lexical",
+    "vector": "vector",
+    "entity": "canonical",
+    "graph_1hop": "hop1",
+    "graph_1hop_candidate": "hop1",
+}
+_MATCH_PATH_ORDER = ("lexical", "vector", "canonical", "hop1")
+
+
+def match_paths_for(ranks: dict[str, int]) -> list[str]:
+    """내부 후보 경로 이름을 API 계약의 매칭 경로 라벨(lexical|vector|canonical|hop1)로 바꾼다."""
+    labels = {_MATCH_PATH_LABEL[name] for name in ranks if name in _MATCH_PATH_LABEL}
+    return [label for label in _MATCH_PATH_ORDER if label in labels]
+
+
+def canonical_facts_for_passage(
+    pid: str,
+    passage_entity_map: dict[str, set[str]],
+    canonical_cards: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """이 패시지에 나타난 질의 일치 엔터티의 정본 핵심 사실(설계 §2.6). 정본 카드에 있는 값만 옮긴다."""
+    facts: list[dict[str, Any]] = []
+    for card in canonical_cards:
+        if card["entity_id"] not in passage_entity_map.get(pid, set()):
+            continue
+        for fact in card.get("key_facts") or []:
+            if isinstance(fact, dict):
+                facts.append({"entity_id": card["entity_id"], "entity": card["canonical_name"], **fact})
+        if not card.get("key_facts") and card.get("canonical_definition"):
+            facts.append({"entity_id": card["entity_id"], "entity": card["canonical_name"],
+                          "predicate": "definition", "value": card["canonical_definition"]})
+    return facts[:5]
+
+
 def compute_coverage(
     ranked_passages: list[dict[str, Any]],
     matched_entities: list[dict[str, Any]],
@@ -346,6 +419,7 @@ def fuse_and_rerank(
         "vector": WEIGHT_VECTOR,
         "entity": WEIGHT_ENTITY,
         "graph_1hop": WEIGHT_GRAPH_1HOP,
+        "graph_1hop_candidate": WEIGHT_GRAPH_1HOP_CANDIDATE,
     }
 
     for pid, ranks in candidate_ranks.items():
@@ -434,6 +508,7 @@ async def search(
     access_context: KbAccessContext | None = None,
     filters: dict[str, Any] | None = None,
     mode: str = "hybrid",
+    include_candidates: bool = False,
 ) -> dict[str, Any]:
     """KB v3 5경로 그래프 통합 하이브리드 검색.
 
@@ -560,14 +635,19 @@ async def search(
             # 경로 4: 1-hop 온톨로지 그래프 확장 (graph_1hop)
             # -------------------------------------------------------------
             expanded_relations = await expand_1hop_relations(
-                db, matched_ent_ids, ctx, max_per_entity=5
+                db, matched_ent_ids, ctx, max_per_entity=5, include_candidates=include_candidates
             )
-            hop1_passages = await fetch_1hop_passages(
-                db, expanded_relations, ctx, limit=15
-            )
+            active_relations = [r for r in expanded_relations if not r.get("candidate")]
+            hop1_passages = await fetch_1hop_passages(db, active_relations, ctx, limit=15)
             for rank, p_uuid in enumerate(hop1_passages, 1):
                 pid = str(p_uuid)
                 candidate_ranks.setdefault(pid, {})["graph_1hop"] = rank
+            if include_candidates:
+                candidate_relations = [r for r in expanded_relations if r.get("candidate")]
+                for rank, p_uuid in enumerate(await fetch_1hop_passages(db, candidate_relations, ctx, limit=15), 1):
+                    pid = str(p_uuid)
+                    if "graph_1hop" not in candidate_ranks.get(pid, {}):
+                        candidate_ranks.setdefault(pid, {})["graph_1hop_candidate"] = rank
 
             # 매칭된 엔티티의 실제 정본 카드 로드 (가짜 데이터 없음)
             canonical_cards = await fetch_canonical_cards(
@@ -648,9 +728,11 @@ async def search(
                 KbAssertion.object_value,
                 KbAssertion.is_canonical,
                 KbAssertion.status,
+                KbEntity.canonical_name,
             )
             .join(KbAssertionEvidence, KbAssertionEvidence.evidence_id == KbEvidence.id)
             .join(KbAssertion, KbAssertion.id == KbAssertionEvidence.assertion_id)
+            .join(KbEntity, KbEntity.id == KbAssertion.subject_entity_id)
             .where(
                 KbEvidence.passage_id.in_(valid_pid_uuids),
                 KbAssertion.status == "active",
@@ -658,7 +740,7 @@ async def search(
             )
         )
         assert_rows = (await db.execute(assert_stmt)).all()
-        for p_id, a_id, pred, obj, is_can, status_val in assert_rows:
+        for p_id, a_id, pred, obj, is_can, status_val, subject_name in assert_rows:
             pid_str = str(p_id)
             if is_can:
                 canonical_evidence_pids.add(pid_str)
@@ -668,6 +750,10 @@ async def search(
                 "object": obj,
                 "is_canonical": is_can,
                 "status": status_val,
+                # v3 추가 필드: 화면이 바로 쓰는 id·문장(주어 — 술어: 값)
+                "id": str(a_id),
+                "subject": subject_name,
+                "text": f"{subject_name} — {pred}: {obj}",
             })
 
         # 열린 충돌(KbConflict) 연관 여부 조회
@@ -720,6 +806,17 @@ async def search(
     sliced_tuples = ranked_tuples[offset : offset + limit]
     has_more = len(ranked_tuples) > offset + limit
 
+    # 질의 일치 엔터티가 이 페이지의 어느 패시지에 나타나는가(항목별 정본 사실 연결용)
+    passage_entity_map: dict[str, set[str]] = {}
+    if canonical_cards and sliced_tuples:
+        for p_id, e_id in await db.execute(
+            select(KbDocumentEntity.passage_id, KbDocumentEntity.entity_id).where(
+                KbDocumentEntity.passage_id.in_([uuid.UUID(pid) for pid, _ in sliced_tuples]),
+                KbDocumentEntity.entity_id.in_([uuid.UUID(c["entity_id"]) for c in canonical_cards]),
+            )
+        ):
+            passage_entity_map.setdefault(str(p_id), set()).add(str(e_id))
+
     # 응답 항목 생성
     items = []
     for pid, score in sliced_tuples:
@@ -762,6 +859,10 @@ async def search(
             "source": lib._source_out(src) if src else None,
             "assertions": passage_assertions_map.get(pid, []),
             "has_conflict": passage_conflict_map.get(pid, False),
+            # 아래 필드는 v3 추가분이다(기존 필드는 그대로). 어느 경로가 이 패시지를 후보로 올렸는가.
+            "match_paths": match_paths_for(candidate_ranks.get(pid, {})),
+            "conflict_warning": passage_conflict_map.get(pid, False),
+            "canonical_facts": canonical_facts_for_passage(pid, passage_entity_map, canonical_cards),
         })
 
     coverage = compute_coverage(items, canonical_cards, candidate_ranks)
@@ -775,5 +876,6 @@ async def search(
         "limit": limit,
         "offset": offset,
         "has_more": has_more,
+        "include_candidates": include_candidates,
         "retrieval": await status(db, scope=scope, access_context=ctx),
     }

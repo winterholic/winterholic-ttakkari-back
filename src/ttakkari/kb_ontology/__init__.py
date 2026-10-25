@@ -27,6 +27,7 @@ from ttakkari.kb_ontology.conflicts import (
     detect_conflicts_for_entity,
     detect_conflicts_for_revision,
     list_conflicts,
+    list_conflicts_with_total,
     resolve_conflict,
 )
 from ttakkari.kb_ontology.graph_query import (
@@ -84,6 +85,7 @@ __all__ = [
     "is_seed_alias",
     "kb_embed_fn",
     "list_conflicts",
+    "list_conflicts_with_total",
     "query_1hop_subgraph",
     "rebuild_all_canonicals",
     "rebuild_canonical",

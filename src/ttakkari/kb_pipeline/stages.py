@@ -70,9 +70,18 @@ class DefaultParsingProcessor:
                 if source
                 else None
             )
+            source_meta = dict(getattr(source, "source_meta", None) or {}) if source else {}
 
         if not body.strip():
             return StageResult.failed("empty_revision_body")
+
+        # 접수 때 보류가 확정된 원본(OCR 필요·STT 없음·미지원 형식)의 본문은 접수 사실만 적은 스텁이다. 지식화하면 거짓 지식이 된다.
+        if parser_version.startswith("held-"):
+            reason = str(source_meta.get("hold_reason") or "parser_revision_required")
+            return StageResult.held(
+                reason,
+                detail={"missing_capability": reason, "intake_held": True, "parser_version": parser_version},
+            )
 
         # Older Collector revisions stored trafilatura plain text without heading levels. Parsing
         # that normalized text as though structure still existed would report a false success.

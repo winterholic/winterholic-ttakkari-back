@@ -16,6 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
 from ttakkari.context.search import lexical, terms
+from ttakkari.kb_access import (
+    KbAccessContext,
+    document_access_filter,
+    from_legacy_scope,
+)
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_store import (
     KbInputError,
@@ -35,19 +40,17 @@ class KbNotFound(LookupError):
     """요청한 문서·리비전·패시지가 없다."""
 
 
-def scope_filter(scope: str = "personal"):
-    matched = select(KbDocumentAccess.document_id).where(
-        KbDocumentAccess.document_id == KbDocument.id, KbDocumentAccess.tenant_id == "owner",
-        KbDocumentAccess.scope == scope,
-        KbDocumentAccess.hidden.is_(False),
-    ).exists()
-    any_access = select(KbDocumentAccess.document_id).where(KbDocumentAccess.document_id == KbDocument.id).exists()
-    # Existing unclassified rows stay visible only in personal scope, never also in work.
-    return or_(matched, ~any_access) if scope == "personal" else matched
+def scope_filter(scope: str = "personal", access: KbAccessContext | None = None):
+    """문서 접근 조건. 모든 조회는 kb_access 의 단일 규칙(document_access_filter)을 쓴다.
+
+    access 를 주면 그 컨텍스트를, 아니면 레거시 scope('personal'|'work')를 같은 규칙의 컨텍스트로 바꿔 쓴다.
+    접근 행이 없는 레거시 문서는 global 을 허용하는 컨텍스트(개인)에서만 보인다.
+    """
+    return document_access_filter(access or from_legacy_scope(scope), KbDocument)
 
 
-async def require_document_scope(db, document_id, scope="personal"):
-    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope))):
+async def require_document_scope(db, document_id, scope="personal", access: KbAccessContext | None = None):
+    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope, access))):
         raise KbNotFound("document")
 
 
@@ -93,6 +96,17 @@ def snippet_with_highlights(body: str, words: list[str]) -> tuple[str, list[list
     return prefix + text + suffix, marks
 
 
+def _locator_fields(passage: KbPassage) -> dict:
+    """v3 근거 위치 필드(추가 전용). 기존 응답 필드는 건드리지 않는다."""
+    return {
+        "section_path": list(passage.section_path or []),
+        "page_no": passage.page_no,
+        "slide_no": passage.slide_no,
+        "time_start_ms": passage.time_start_ms,
+        "time_end_ms": passage.time_end_ms,
+    }
+
+
 def _source_out(src: KbSource) -> dict:
     return {
         "id": str(src.id),
@@ -106,7 +120,7 @@ def _source_out(src: KbSource) -> dict:
     }
 
 
-async def summary(db: AsyncSession, *, scope: str = "personal") -> dict:
+async def summary(db: AsyncSession, *, scope: str = "personal", access: KbAccessContext | None = None) -> dict:
     counts = {}
     for name, model in (("documents", KbDocument), ("revisions", KbRevision), ("passages", KbPassage), ("evidence", KbEvidence)):
         stmt = select(func.count()).select_from(model)
@@ -116,16 +130,19 @@ async def summary(db: AsyncSession, *, scope: str = "personal") -> dict:
             stmt = stmt.join(KbRevision, KbPassage.revision_id == KbRevision.id)
         if model is not KbDocument:
             stmt = stmt.join(KbDocument, KbRevision.document_id == KbDocument.id)
-        counts[name] = await db.scalar(stmt.where(scope_filter(scope))) or 0
+        counts[name] = await db.scalar(stmt.where(scope_filter(scope, access))) or 0
     src = select(KbSource.id, KbSource.collected_at).join(KbRevision, KbSource.id == KbRevision.source_id).join(
-        KbDocument, KbRevision.document_id == KbDocument.id).where(scope_filter(scope)).distinct().subquery()
+        KbDocument, KbRevision.document_id == KbDocument.id).where(scope_filter(scope, access)).distinct().subquery()
     counts["sources"] = await db.scalar(select(func.count()).select_from(src)) or 0
     last = await db.scalar(select(func.max(src.c.collected_at)))
     return {"counts": counts, "last_collected_at": last.isoformat() if last else None}
 
 
-async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset: int, scope: str = "personal") -> dict:
-    stmt = select(KbDocument).where(scope_filter(scope))
+async def list_documents(
+    db: AsyncSession, *, q: str | None, limit: int, offset: int, scope: str = "personal",
+    access: KbAccessContext | None = None,
+) -> dict:
+    stmt = select(KbDocument).where(scope_filter(scope, access))
     if q and q.strip():
         pattern = q.strip()
         stmt = stmt.where(
@@ -177,9 +194,9 @@ async def _document_row(db: AsyncSession, doc: KbDocument) -> dict:
 
 async def get_document(
     db: AsyncSession, document_id: uuid.UUID, *, revision_id: uuid.UUID | None,
-    passage_limit: int, passage_offset: int, scope: str = "personal",
+    passage_limit: int, passage_offset: int, scope: str = "personal", access: KbAccessContext | None = None,
 ) -> dict:
-    await require_document_scope(db, document_id, scope)
+    await require_document_scope(db, document_id, scope, access)
     doc = await db.get(KbDocument, document_id)
     if doc is None:
         raise KbNotFound("document")
@@ -238,7 +255,8 @@ async def get_document(
         "passages": {
             "items": [
                 {"id": str(p.id), "ord": p.ord, "heading": p.heading, "body": p.body,
-                 "char_start": p.char_start, "char_end": p.char_end, "sha256": p.sha256}
+                 "char_start": p.char_start, "char_end": p.char_end, "sha256": p.sha256,
+                 **_locator_fields(p), "chunk_kind": p.chunk_kind, "token_estimate": p.token_estimate}
                 for p in passages
             ],
             "total": counts.get(selected.id, 0),
@@ -251,6 +269,7 @@ async def get_document(
 async def search_passages(
     db: AsyncSession, *, query: str, limit: int, offset: int,
     document_id: uuid.UUID | None, current_only: bool, scope: str = "personal",
+    access: KbAccessContext | None = None,
 ) -> dict:
     words = terms(query)
     if not words:
@@ -261,7 +280,7 @@ async def search_passages(
         select(KbPassage, KbRevision, KbDocument, score)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
         .join(KbDocument, KbDocument.id == KbRevision.document_id)
-        .where(predicate, scope_filter(scope))
+        .where(predicate, scope_filter(scope, access))
     )
     if current_only:
         stmt = stmt.where(_current_revision_filter())
@@ -291,6 +310,7 @@ async def search_passages(
             "score": round(float(raw_score), 4),
             "char_start": passage.char_start,
             "char_end": passage.char_end,
+            **_locator_fields(passage),
             "document": {"id": str(doc.id), "title": doc.title, "lang": doc.lang},
             "revision": {
                 "id": str(rev.id), "rev_no": rev.rev_no, "current": rev.id == latest.get(doc.id),
@@ -307,12 +327,13 @@ def _line_number(body: str, offset: int) -> int:
 
 async def get_evidence(
     db: AsyncSession, passage_id: uuid.UUID, *, start: int | None, end: int | None, scope: str = "personal",
+    access: KbAccessContext | None = None,
 ) -> dict:
     passage = await db.get(KbPassage, passage_id)
     if passage is None:
         raise KbNotFound("passage")
     rev = await db.get(KbRevision, passage.revision_id)
-    await require_document_scope(db, rev.document_id, scope)
+    await require_document_scope(db, rev.document_id, scope, access)
     doc = await db.get(KbDocument, rev.document_id)
     src = await db.get(KbSource, rev.source_id)
     span_start = 0 if start is None else start
@@ -361,7 +382,8 @@ class RegisterResult:
 
 async def register_text(
     db: AsyncSession, *, title: str, text: str, source_key: str | None, lang: str | None,
-    locator: str | None, scope: str = "personal",
+    locator: str | None, scope: str = "personal", source_kind: str | None = None,
+    source_meta: dict | None = None, origin_extra: dict | None = None,
 ) -> RegisterResult:
     """사용자가 붙여넣거나 올린 텍스트를 기존 수집 경로(ingest_source)로 등록하고 패시지로 나눈다.
 
@@ -379,8 +401,9 @@ async def register_text(
     if existing is not None:
         await require_document_scope(db, existing.id, scope)
     result = await ingest_source(
-        db, source_key=key, data=data, kind="upload", locator=locator, media_type="text/plain",
-        title=title, lang=lang, origin_meta={"via": "kb_library_api"},
+        db, source_key=key, data=data, kind=source_kind or "upload", locator=locator, media_type="text/plain",
+        title=title, lang=lang, origin_meta={"via": "kb_library_api", **(origin_extra or {})},
+        source_meta=source_meta,
     )
     access = await db.get(KbDocumentAccess, result.document_id)
     origin_scope = "work" if scope == "work" else "personal"

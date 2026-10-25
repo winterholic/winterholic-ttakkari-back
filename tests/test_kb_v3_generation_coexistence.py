@@ -14,7 +14,11 @@ import uuid
 from pathlib import Path
 
 import pytest
-from test_kb_v3_schema_realdb import HEAD, Db, db  # noqa: F401 - db 는 모듈 범위 Docker 픽스처
+from test_kb_v3_schema_realdb import (  # noqa: F401 - db 는 모듈 범위 Docker 픽스처
+    HEAD,
+    Db,
+    db,
+)
 
 pytestmark = pytest.mark.pg
 

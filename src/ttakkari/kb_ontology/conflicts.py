@@ -50,6 +50,7 @@ __all__ = [
     "detect_conflicts_for_entity",
     "detect_conflicts_for_revision",
     "list_conflicts",
+    "list_conflicts_with_total",
     "resolve_conflict",
 ]
 
@@ -407,6 +408,44 @@ async def resolve_conflict(
     return conflict
 
 
+async def list_conflicts_with_total(
+    db: AsyncSession,
+    *,
+    entity_id: uuid.UUID | None = None,
+    status: str | None = "open",
+    kind: str | None = None,
+    caller_visibility: str = "global",
+    tenant_id: str = "personal",
+    access: KbAccessContext | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[KbConflict], int]:
+    """접근 가능한 충돌 목록과 (페이지 전) 전체 건수. status 가 None 또는 'all' 이면 상태로 거르지 않는다."""
+    _validate_query(caller_visibility, offset, limit)
+    ctx = access or from_caller_visibility(caller_visibility, ontology_tenant_id=tenant_id)
+    stmt = (
+        select(KbConflict)
+        .join(KbEntity, KbEntity.id == KbConflict.entity_id)
+        .where(
+            KbEntity.tenant_id == ctx.ontology_tenant_id,
+            KbConflict.visibility.in_(ctx.allowed_visibilities),
+        )
+    )
+    if status not in (None, "all"):
+        stmt = stmt.where(KbConflict.status == status)
+    if kind is not None:
+        stmt = stmt.where(KbConflict.conflict_kind == kind)
+    if entity_id is not None:
+        stmt = stmt.where(KbConflict.entity_id == entity_id)
+
+    candidates = list(await db.scalars(stmt.order_by(KbConflict.created_at.desc(), KbConflict.id)))
+    accessible: list[KbConflict] = []
+    for conflict in candidates:
+        if await _conflict_is_accessible(db, conflict, ctx=ctx):
+            accessible.append(conflict)
+    return accessible[offset : offset + limit], len(accessible)
+
+
 async def list_conflicts(
     db: AsyncSession,
     *,
@@ -419,27 +458,11 @@ async def list_conflicts(
     limit: int = 50,
 ) -> list[KbConflict]:
     """충돌 목록을 조회한다 (가시성 격리 준수)."""
-    _validate_query(caller_visibility, offset, limit)
-    ctx = access or from_caller_visibility(caller_visibility, ontology_tenant_id=tenant_id)
-    stmt = (
-        select(KbConflict)
-        .join(KbEntity, KbEntity.id == KbConflict.entity_id)
-        .where(
-            KbConflict.status == status,
-            KbEntity.tenant_id == ctx.ontology_tenant_id,
-            KbConflict.visibility.in_(ctx.allowed_visibilities),
-        )
+    items, _ = await list_conflicts_with_total(
+        db, entity_id=entity_id, status=status, caller_visibility=caller_visibility, tenant_id=tenant_id,
+        access=access, offset=offset, limit=limit,
     )
-
-    if entity_id is not None:
-        stmt = stmt.where(KbConflict.entity_id == entity_id)
-
-    candidates = list(await db.scalars(stmt.order_by(KbConflict.created_at.desc())))
-    accessible: list[KbConflict] = []
-    for conflict in candidates:
-        if await _conflict_is_accessible(db, conflict, ctx=ctx):
-            accessible.append(conflict)
-    return accessible[offset : offset + limit]
+    return items
 
 
 async def _conflict_is_accessible(

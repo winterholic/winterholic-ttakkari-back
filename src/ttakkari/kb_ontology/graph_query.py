@@ -40,6 +40,8 @@ from ttakkari.kb_ontology_models import (
 
 log = logging.getLogger(__name__)
 MAX_GRAPH_PAGE_SIZE = 100
+# 후보 관계 가중치 감쇠(검색 1-hop 과 같은 값). kb_ontology.retrieval.CANDIDATE_WEIGHT_FACTOR 와 일치해야 한다.
+CANDIDATE_WEIGHT_FACTOR = 0.3
 
 
 def _validate_query(caller_visibility: str, offset: int, limit: int) -> None:
@@ -146,6 +148,8 @@ class GraphEdge:
     status: str
     visibility: str
     evidence: list[GraphEvidenceRef] = field(default_factory=list)
+    # 후보(candidate) 관계는 요청 옵션으로만 포함되고 '후보' 표시와 낮은 가중치를 갖는다.
+    candidate: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -252,7 +256,7 @@ async def get_ontology_hubs(
     caller_visibility: str = "global",
     access: KbAccessContext | None = None,
     entity_kind: str | None = None,
-    domain: str | None = None,
+    domain: str | tuple[str, ...] | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> GraphHubsResult:
@@ -285,7 +289,9 @@ async def get_ontology_hubs(
     if entity_kind:
         stmt = stmt.where(KbEntity.entity_kind == entity_kind)
     if domain:
-        stmt = stmt.where(KbEntity.domain == domain)
+        stmt = stmt.where(
+            KbEntity.domain.in_(domain) if isinstance(domain, tuple) else KbEntity.domain == domain
+        )
     entities = list(await db.scalars(stmt))
     entities.sort(
         key=lambda entity: (
@@ -360,6 +366,7 @@ async def query_1hop_subgraph(
     access: KbAccessContext | None = None,
     offset: int = 0,
     limit: int = 50,
+    include_candidates: bool = False,
 ) -> GraphQueryResult:
     """중심 노드(center)를 기준으로 1-hop 서브그래프를 조회한다.
 
@@ -408,13 +415,13 @@ async def query_1hop_subgraph(
             KbRelation.source_entity_id == center_ent.id,
             KbRelation.target_entity_id == center_ent.id,
         ),
-        KbRelation.status == "active",
+        KbRelation.status.in_(("active", "candidate") if include_candidates else ("active",)),
         KbRelation.evidence_count >= 1,
         KbRelation.visibility.in_(ctx.allowed_visibilities),
     )
 
     all_relations = list(
-        await db.scalars(edge_stmt.order_by(KbRelation.weight.desc()))
+        await db.scalars(edge_stmt.order_by((KbRelation.status != "active"), KbRelation.weight.desc(), KbRelation.id))
     )
 
     # 권한 있는 최신 원문 근거가 없는 관계는 이웃 계산 전부터 제외한다.
@@ -572,13 +579,16 @@ async def query_1hop_subgraph(
         # 근거가 비어있으면 노출하지 않는다
         if not ev_list:
             continue
+        is_candidate = r.status != "active"
+        mean_confidence = sum(ref.confidence for ref in ev_list) / len(ev_list)
         edges.append(
             GraphEdge(
                 id=str(r.id),
                 source_entity_id=str(r.source_entity_id),
                 target_entity_id=str(r.target_entity_id),
                 relation_type=r.relation_type,
-                weight=sum(ref.confidence for ref in ev_list) / len(ev_list),
+                candidate=is_candidate,
+                weight=mean_confidence * CANDIDATE_WEIGHT_FACTOR if is_candidate else mean_confidence,
                 evidence_count=len(ev_list),
                 representative_evidence_id=ev_list[0].evidence_id,
                 status=r.status,

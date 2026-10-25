@@ -125,6 +125,39 @@ def create_personal_agent_context(
     )
 
 
+def create_web_context(
+    tenant_id: str = "owner",
+    *,
+    include_hidden: bool = False,
+) -> KbAccessContext:
+    """사용자 웹 세션(owner JWT)의 통합 도서관 컨텍스트.
+
+    웹 세션은 개인(personal) 세션 기준이다: tenant 내 global(자기 소유 personal 출처 포함)만 하나의 공간으로 본다.
+    work_only 는 개인 세션과 같이 보이지 않는다(회사 자료 노출 확대 금지). 회사 자료는 명시적인 레거시 scope=work 선택으로만 본다.
+    """
+    return KbAccessContext(
+        tenant_id=tenant_id,
+        caller_role="owner",
+        allowed_visibilities=GLOBAL_ONLY_VISIBILITY,
+        include_hidden=include_hidden,
+        strict_provenance=True,
+        origin_scope_filter=None,
+    )
+
+
+def from_web_request(scope: str | None, tenant_id: str = "owner") -> KbAccessContext:
+    """웹 API 의 (선택적·deprecated) scope 쿼리를 단일 규칙의 컨텍스트로 바꾼다.
+
+    생략하면 통합 도서관(create_web_context). 'work' 만 기존 회사 범위 조회를 명시적으로 고르는 레거시 경로로 남긴다.
+    'personal' 은 통합 도서관과 같다. 그 밖의 값은 거부한다(fail-closed, 'all' 위조로 경계를 넓힐 수 없다).
+    """
+    if scope in (None, "", SCOPE_PERSONAL):
+        return create_web_context(tenant_id=tenant_id)
+    if scope == SCOPE_WORK:
+        return from_legacy_scope(SCOPE_WORK, tenant_id=tenant_id)
+    raise ValueError("scope must be 'personal' or 'work' when given")
+
+
 def from_agent_pool(pool: str | None, tenant_id: str = "owner") -> KbAccessContext:
     """에이전트 풀 이름('work', 'personal' 등)에 따라 적절한 에이전트 컨텍스트 생성."""
     if pool == "work":
@@ -401,8 +434,18 @@ def assertion_access_filter(ctx: KbAccessContext, assertion_model: Any = None):
     return and_(base_cond, has_valid_evidence)
 
 
-def relation_access_filter(ctx: KbAccessContext, relation_model: Any = None):
-    """KbRelation 대상 접근 제어 필터 절 생성."""
+RELATION_STATUS_ACTIVE: tuple[str, ...] = ("active",)
+RELATION_STATUS_WITH_CANDIDATES: tuple[str, ...] = ("active", "candidate")
+
+
+def relation_access_filter(
+    ctx: KbAccessContext, relation_model: Any = None, *, include_candidates: bool = False
+):
+    """KbRelation 대상 접근 제어 필터 절 생성.
+
+    기본은 active 관계만이다. include_candidates 는 근거 행이 있는 candidate 도 포함하는 요청 옵션이며,
+    호출자가 '후보' 표시와 낮은 가중치를 직접 적용해야 한다(검색 1-hop·그래프).
+    """
     from ttakkari.collector.control_models import KbDocumentAccess
     from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
     from ttakkari.kb_ontology_models import KbRelation, KbRelationEvidence
@@ -411,7 +454,7 @@ def relation_access_filter(ctx: KbAccessContext, relation_model: Any = None):
 
     base_cond = and_(
         r.visibility.in_(ctx.allowed_visibilities),
-        r.status == "active",
+        r.status.in_(RELATION_STATUS_WITH_CANDIDATES if include_candidates else RELATION_STATUS_ACTIVE),
         r.evidence_count >= 1,
     )
     if ctx.origin_scope_filter:

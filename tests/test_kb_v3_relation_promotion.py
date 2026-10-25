@@ -11,13 +11,21 @@ import uuid
 
 import pytest
 from sqlalchemy import func, select
-from test_kb_v3_integration_flow import _drain, _env, _register, _worker  # noqa: F401 - _env 는 autouse 픽스처
+from test_kb_v3_integration_flow import (  # noqa: F401 - _env 는 autouse 픽스처
+    _drain,
+    _env,
+    _register,
+    _worker,
+)
 
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbPassage
 from ttakkari.kb_ontology_models import KbEntity, KbRelation, KbRelationEvidence
-from ttakkari.kb_pipeline.extract_relations import build_label_index, extract_explicit_relations
 from ttakkari.kb_pipeline.alias_dictionary import load_seed_dictionary
+from ttakkari.kb_pipeline.extract_relations import (
+    build_label_index,
+    extract_explicit_relations,
+)
 
 EXPLICIT_DOC = """# 쿠버네티스(Kubernetes)
 
@@ -81,7 +89,7 @@ class TestExplicitRelationPatterns:
 
 
 async def test_pipeline_promotes_verified_explicit_relations_and_keeps_structure_candidate(_env):  # noqa: F811
-    res, job_id = await _register(EXPLICIT_DOC)
+    _res, job_id = await _register(EXPLICIT_DOC)
     await _drain(_worker())
     async with sessionmaker()() as db:
         names = {e.id: e.canonical_name for e in await db.scalars(select(KbEntity))}

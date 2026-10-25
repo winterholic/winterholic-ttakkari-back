@@ -44,6 +44,10 @@ from ttakkari.kb_ontology_models import (
 )
 
 
+# 후보(candidate) 관계는 확정(active) 관계보다 낮은 가중치로만 반영한다.
+CANDIDATE_WEIGHT_FACTOR = 0.3
+
+
 def _extract_candidate_names(query: str, query_terms: list[str]) -> list[str]:
     """질의 문자열과 토큰들로부터 정규화된 후보 엔터티 명칭들을 추출한다."""
     candidates: set[str] = set()
@@ -179,11 +183,13 @@ async def expand_1hop_relations(
     ctx: KbAccessContext,
     *,
     max_per_entity: int = 5,
+    include_candidates: bool = False,
 ) -> list[dict[str, Any]]:
     """매칭된 엔터티들의 1-hop 활성 관계를 확장 조회한다 (경로 4).
 
-    근거가 1개 이상인 active 관계만 조회하며,
+    근거가 1개 이상인 active 관계만 조회하며(기본),
     relation_access_filter 를 통해 원본 증거 문서 접근 권한을 확인한다.
+    include_candidates=True 면 근거가 있는 candidate 도 '후보'(status='candidate', candidate=True)로 낮은 가중치로 포함한다.
     """
     if not entity_ids:
         return []
@@ -195,9 +201,10 @@ async def expand_1hop_relations(
                 KbRelation.source_entity_id.in_(entity_ids),
                 KbRelation.target_entity_id.in_(entity_ids),
             ),
-            relation_access_filter(ctx, KbRelation),
+            relation_access_filter(ctx, KbRelation, include_candidates=include_candidates),
         )
-        .order_by(KbRelation.weight.desc(), KbRelation.id)
+        # active 가 먼저, 같은 상태 안에서는 가중치 순(후보가 활성 관계의 자리를 밀어내지 않는다)
+        .order_by((KbRelation.status != "active"), KbRelation.weight.desc(), KbRelation.id)
         .limit(len(entity_ids) * max_per_entity)
     )
     relations = list((await db.execute(stmt)).scalars().all())
@@ -224,10 +231,13 @@ async def expand_1hop_relations(
         tgt = entities_map.get(rel.target_entity_id)
         # 양쪽 엔터티 모두 접근 권한이 있을 때만 포함
         if src is not None and tgt is not None:
+            is_candidate = rel.status != "active"
             result.append({
                 "relation_id": str(rel.id),
                 "relation_type": rel.relation_type,
-                "weight": rel.weight,
+                "status": rel.status,
+                "candidate": is_candidate,
+                "weight": rel.weight * CANDIDATE_WEIGHT_FACTOR if is_candidate else rel.weight,
                 "evidence_count": rel.evidence_count,
                 "representative_evidence_id": (
                     str(rel.representative_evidence_id) if rel.representative_evidence_id else None

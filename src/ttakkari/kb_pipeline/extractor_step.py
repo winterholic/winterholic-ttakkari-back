@@ -36,7 +36,10 @@ from ttakkari.kb_ontology_models import (
 from ttakkari.kb_pipeline.extract_l0 import extract_l0_from_passages
 from ttakkari.kb_pipeline.extract_l1 import extract_l1_screen
 from ttakkari.kb_pipeline.extract_l2 import extract_l2_from_passages
-from ttakkari.kb_pipeline.extract_relations import build_label_index, extract_explicit_relations
+from ttakkari.kb_pipeline.extract_relations import (
+    build_label_index,
+    extract_explicit_relations,
+)
 from ttakkari.kb_pipeline.quote_verifier import (
     CandidateAssertion,
     CandidateEntity,
@@ -46,7 +49,10 @@ from ttakkari.kb_pipeline.quote_verifier import (
     VerificationReport,
     verify_extraction_candidates,
 )
-from ttakkari.kb_pipeline.relation_promotion import normalize_relation_type, promote_with_evidence
+from ttakkari.kb_pipeline.relation_promotion import (
+    normalize_relation_type,
+    promote_with_evidence,
+)
 from ttakkari.kb_visibility import (
     FAIL_CLOSED,
     derive_derived_policy,

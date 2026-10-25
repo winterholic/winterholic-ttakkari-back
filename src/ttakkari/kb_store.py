@@ -109,9 +109,14 @@ def _has_nul(value: object) -> bool:
     return False
 
 
-def _validate_ingest_input(data: bytes, fields: dict[str, str | None], origin_meta: dict | None) -> None:
-    """DB INSERT 가 실패할 입력을 파일 쓰기 전에 거른다(NUL 은 text·jsonb 모두 저장 불가)."""
-    if b"\x00" in data:
+def _validate_ingest_input(
+    data: bytes, fields: dict[str, str | None], origin_meta: dict | None, *, allow_binary: bool = False
+) -> None:
+    """DB INSERT 가 실패할 입력을 파일 쓰기 전에 거른다(NUL 은 text·jsonb 모두 저장 불가).
+
+    원본 바이트의 NUL 은 파서가 본문을 따로 만드는 바이너리 업로드(allow_binary)에서만 허용한다. 필드·메타의 NUL 은 항상 거부한다.
+    """
+    if not allow_binary and b"\x00" in data:
         raise KbInputError("원본에 NUL(0x00) 바이트가 있어 저장할 수 없다")
     for name, value in fields.items():
         if value is None:
@@ -155,6 +160,10 @@ async def ingest_source(
     collected_at: datetime | None = None,
     origin_meta: dict | None = None,
     normalized_body: str | None = None,
+    allow_binary: bool = False,
+    original_filename: str | None = None,
+    parser_name: str | None = None,
+    source_meta: dict | None = None,
 ) -> IngestResult:
     """원본 바이트를 수집한다. 같은 (source_key, sha256) 재수집은 기존 행을 돌려준다(멱등).
 
@@ -168,7 +177,10 @@ async def ingest_source(
         {"source_key": source_key, "kind": kind, "locator": locator, "media_type": media_type,
          "title": title, "lang": lang, "parser_version": parser_version},
         origin_meta,
+        allow_binary=allow_binary,
     )
+    if source_meta is not None and _has_nul(source_meta):
+        raise KbInputError("source_meta 에 NUL 문자가 있어 저장할 수 없다")
     # 파일을 쓰기 전에 공유 락을 잡고 커밋/롤백까지 쥔다. 고아 정리기(배타 락)가 이 트랜잭션의
     # 미커밋 파일을 고아로 오인해 지우지 못한다.
     await db.execute(sa_text("SELECT pg_advisory_xact_lock_shared(:k)"), {"k": KB_ADVISORY_LOCK_ID})
@@ -207,11 +219,20 @@ async def ingest_source(
     _ensure_blob(root / relpath, data, digest)
     source_id = existing.id if existing is not None else uuid.uuid4()
     if existing is None:
+        extra: dict = {}
+        # v3 컬럼(0072)은 값이 있을 때만 쓴다: 값이 없으면 서버 기본값이 채운다. kb_sources 는 불변이라 나중에 고칠 수 없다.
+        if original_filename is not None:
+            extra["original_filename"] = original_filename[:500]
+        if parser_name is not None:
+            extra["parser_name"] = parser_name[:60]
+            extra["parser_version"] = parser_version[:60]
+        if source_meta:
+            extra["source_meta"] = source_meta
         await db.execute(
         insert(KbSource).values(
             id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
             byte_size=len(data), media_type=media_type, store_path=str(relpath),
-            collected_at=collected, origin_meta=origin_meta or {}, created_at=now,
+            collected_at=collected, origin_meta=origin_meta or {}, created_at=now, **extra,
         )
     )
     doc = (await db.execute(select(KbDocument).where(KbDocument.doc_key == source_key))).scalar_one_or_none()
@@ -278,16 +299,19 @@ def split_paragraphs(text: str) -> list[tuple[str | None, str, int, int]]:
     return out
 
 
-async def segment_revision(db: AsyncSession, revision_id: uuid.UUID) -> list[KbPassage]:
+async def segment_revision(
+    db: AsyncSession, revision_id: uuid.UUID, *, locator_spans: list | None = None
+) -> list[KbPassage]:
     """리비전 본문을 구조 보존 청킹(common.chunking)으로 패시지로 나눠 저장한다. 재실행해도 같은 행이 남는다(멱등).
 
     section_path·chunk_kind·heading 을 채워 추출기(L0 헤딩 계층)와 검색이 문서 구조를 쓸 수 있게 한다.
+    locator_spans 는 파서가 준 페이지·슬라이드·시간 구간이다(없으면 마크다운 구조에서 유도한다).
     """
     rev = await db.get(KbRevision, revision_id)
     if rev is None:
         raise KeyError(f"kb revision not found: {revision_id}")
     now = utcnow()
-    for chunk in chunk_structured_document(rev.body, min_chars=0):
+    for chunk in chunk_structured_document(rev.body, locator_spans, min_chars=0):
         stmt = insert(KbPassage).values(
             id=uuid.uuid4(), revision_id=revision_id, ord=chunk.ord,
             heading=(chunk.section_path[-1] if chunk.section_path else None), body=chunk.body,

@@ -21,7 +21,7 @@ from sqlalchemy.exc import DBAPIError
 from ttakkari import kb_library as lib
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
 from ttakkari.db import sessionmaker
-from ttakkari.kb_models import KbDocument, KbPassage, KbRevision
+from ttakkari.kb_models import KbDocument, KbPassage
 from ttakkari.kb_store import ingest_source, segment_revision
 
 results: list[tuple[str, bool, str]] = []
@@ -153,7 +153,7 @@ async def main() -> int:
         async with sessionmaker()() as db:
             passage = await db.scalar(select(KbPassage).where(text("length(body) > 20")).order_by(KbPassage.created_at.desc()).limit(1))
             # 재실행해도 겹치지 않도록 아직 없는 구간을 고른다.
-            for start in range(0, min(10, len(passage.body) - 10)):
+            for start in range(min(10, len(passage.body) - 10)):
                 taken = await db.scalar(select(KbEvidence.id).where(
                     KbEvidence.passage_id == passage.id, KbEvidence.span_start == start, KbEvidence.span_end == start + 10))
                 if taken is None:

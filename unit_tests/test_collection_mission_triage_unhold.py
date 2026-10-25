@@ -144,6 +144,9 @@ async def test_unhold_item_uses_row_lock_with_for_update():
 
 @pytest.mark.asyncio
 async def test_concurrent_unhold_and_precise_apply_preserves_envelope_hash_and_single_outbox(monkeypatch):
+    """Mock DB 기반 단위 검사: unhold_item 호출과 precise_apply 처리 시뮬레이션에서
+    envelope 및 payload hash 보존과 단일 outbox 생성 상태를 단위 수준에서 검증한다.
+    (실제 2 DB 세션 경합 검증은 tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race 참조)"""
     from ttakkari.collector import precise_eval, store
 
     item_id = uuid.uuid4()

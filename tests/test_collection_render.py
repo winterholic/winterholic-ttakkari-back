@@ -250,6 +250,47 @@ async def test_unrenderable_shell_is_reported_with_its_reason_not_as_an_empty_pa
     assert signals["render"] == {"used": False, "error": "chromium_missing", "static_chars": 0, "reason": "spa_render_unavailable"}
 
 
+async def test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_subsequent_pages():
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock, MagicMock
+
+    from ttakkari.collector.policy import SourcePolicySpec
+
+    mock_polite = MagicMock()
+    mock_polite.fetcher = MagicMock()
+    mock_polite.fetcher.aclose = AsyncMock()
+    mock_polite.fetch = AsyncMock()
+
+    res_mock = MagicMock()
+    res_mock.result.status = 200
+    res_mock.result.headers = {"content-type": "application/javascript"}
+    res_mock.result.body = b"console.log('page1');"
+    mock_polite.fetch.return_value = res_mock
+
+    policy = SourcePolicySpec(
+        allowed_hosts=("cdn.test",),
+        schemes=("https",),
+        ports=(443,),
+        permissions={"store": "allowed"},
+        basis="contract",
+        checked_at=datetime.now(UTC),
+    )
+
+    browser = FakeBrowser([{"url": "https://cdn.test/app.js", "type": "script"}])
+    result = await render.render_html("https://docs.test/", b"<html></html>", policy=policy, polite=mock_polite, channel=browser)
+    assert result.requests == 1
+
+    # borrowed polite 의 fetcher.aclose 는 렌더러 완료 시점에 호출되지 않아야 함 (소유권은 호출자에 있음)
+    assert mock_polite.fetcher.aclose.await_count == 0
+
+    # 순차 페이지 등 후속 fetch 도 같은 polite 로 여전히 정상 동작함
+    fetch, closer = render.default_fetch(policy=policy, polite=mock_polite)
+    status, _headers, body = await fetch("https://cdn.test/app.js")
+    assert status == 200 and body == b"console.log('page1');"
+    await closer()
+    assert mock_polite.fetcher.aclose.await_count == 0
+
+
 def _runtime():
     candidates = [os.environ.get("TTAKKARI_TEST_RENDER_RUNTIME"), str(Path(__file__).parents[2] / "back" / ".browser-runtime"),
                   str(Path(__file__).parents[1] / ".browser-runtime")]

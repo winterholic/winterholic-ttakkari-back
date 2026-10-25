@@ -265,6 +265,119 @@ async def test_unhold_requires_auth_and_rejects_cross_tenant_item(client, auth, 
         assert await db.scalar(select(CollectorReview).where(CollectorReview.item_id == item_id)) is None
 
 
+async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, auth, env, monkeypatch):  # noqa: F811
+    """실 2개 DB 세션 동시 경합 시 row lock(with_for_update)과 멱등 outbox 등록을 통해
+    중복 없는 knowledge outbox -> receipt/search 전달 및 원본 hash/rights/retention 불변을 검증한다."""
+    import copy
+
+    from ttakkari.collector import precise_eval
+
+    _, mission, item = await _make_held_mission(client, auth, env)
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    item_id = uuid.UUID(item["id"])
+    mission_id = uuid.UUID(mission["id"])
+
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        orig_env = copy.deepcopy(row.envelope)
+        orig_payload_hash = row.payload_hash
+        orig_raw_sha256 = row.raw_sha256
+        orig_text_sha256 = row.text_sha256
+        orig_rights = copy.deepcopy(row.envelope.get("rights"))
+        envelope_id = row.envelope_id
+
+    # 세션 1: missions.unhold_item 실행
+    async def session1_worker():
+        async with sessionmaker()() as db1:
+            res = await missions.unhold_item(db1, mission_id, item_id)
+            await db1.commit()
+            return res
+
+    # 세션 2: 동시 precise apply 실행 및 outbox 멱등 생성 로직 수행
+    async def session2_worker():
+        async with sessionmaker()() as db2:
+            item_row = await db2.scalar(
+                select(CollectorItem).where(CollectorItem.id == item_id).with_for_update(of=CollectorItem)
+            )
+            if item_row.status == "held":
+                precise_eval.apply_precise_result(
+                    item_row,
+                    {
+                        "recommendation": "accept",
+                        "topic_relevance": 0.88,
+                        "information_depth": 0.90,
+                        "low_quality_signals": [],
+                    },
+                )
+            existing_outbox = await db2.scalar(
+                select(CollectorOutbox).where(
+                    CollectorOutbox.tenant_id == item_row.tenant_id,
+                    CollectorOutbox.sink == "knowledge",
+                    CollectorOutbox.scope == item_row.scope,
+                    CollectorOutbox.envelope_id == item_row.envelope_id,
+                )
+            )
+            if not existing_outbox and item_row.envelope_id:
+                outbox = CollectorOutbox(
+                    job_id=item_row.job_id,
+                    tenant_id=item_row.tenant_id,
+                    scope=item_row.scope,
+                    sink="knowledge",
+                    envelope_id=item_row.envelope_id,
+                    payload_hash=item_row.payload_hash,
+                    status="pending",
+                )
+                db2.add(outbox)
+                db2.add(CollectorReview(
+                    item_id=item_row.id,
+                    decision="accept",
+                    reason="Precise utility review only; factuality unverified.",
+                    actor="owner",
+                    text_sha256=item_row.text_sha256,
+                ))
+            await db2.commit()
+            return True
+
+    # 2개 독립 세션을 비동기로 동시 경합 실행
+    res1, res2 = await asyncio.gather(session1_worker(), session2_worker())
+    assert res1.get("status") == "accepted" or res1.get("delivery_queued") is True
+    assert res2 is True
+
+    # 1. 중복 없는 knowledge outbox 확인
+    async with sessionmaker()() as db:
+        outboxes = (await db.scalars(select(CollectorOutbox).where(
+            CollectorOutbox.envelope_id == envelope_id,
+            CollectorOutbox.sink == "knowledge"
+        ))).all()
+        assert len(outboxes) == 1
+
+        # 2. CollectorItem 원본 해시, rights, retention 불변 검증
+        final_item = await db.get(CollectorItem, item_id)
+        assert final_item.status == "accepted"
+        assert final_item.envelope == orig_env
+        assert final_item.payload_hash == orig_payload_hash
+        assert final_item.raw_sha256 == orig_raw_sha256
+        assert final_item.text_sha256 == orig_text_sha256
+        assert final_item.envelope.get("rights") == orig_rights
+        assert final_item.envelope.get("rights", {}).get("retain_until") is None
+
+    # 3. KB delivery 실행 및 단 1건 imported receipt 확인
+    delivered = await kb_delivery.deliver_once()
+    assert delivered == 1
+    # 추가 배달 시도 시 0건 (중복 배달 없음)
+    assert await kb_delivery.deliver_once() == 0
+
+    async with sessionmaker()() as db:
+        receipt = await db.get(CollectorDelivery, outboxes[0].id)
+        assert receipt is not None
+        assert receipt.outcome == "imported"
+
+    # 4. KB 검색을 통해 중복 없이 1건 정상 색인/검색 확인
+    hits = (await client.get("/api/assistant/kb/search?q=직렬화", headers=auth)).json()["items"]
+    assert len(hits) == 1
+
+
+
 async def test_empty_research_result_never_reports_success(client, auth, env, monkeypatch):  # noqa: F811
     from ttakkari.collector import adapters
 

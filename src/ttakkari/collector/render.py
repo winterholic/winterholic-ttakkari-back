@@ -164,7 +164,11 @@ def default_fetch(
             headers = {"content-type": res.result.headers.get("content-type", "application/octet-stream")}
             return res.result.status, headers, body
 
-        return fetch, polite.fetcher.aclose
+        # borrowed polite 는 수명 소유권이 호출자에게 있으므로 렌더러가 닫지 않는다.
+        async def noop_closer() -> None:
+            pass
+
+        return fetch, noop_closer
 
     fetcher = SafeFetcher(
         guard or NetGuard(),

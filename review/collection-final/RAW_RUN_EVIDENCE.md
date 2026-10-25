@@ -121,4 +121,47 @@
   ```
 - **결과**: **45 passed, 0 failed** (100% 완전 통과)
 
+---
+
+## 6. unhold ↔ precise apply 실 2개 DB 세션 동시 경합 및 KB Delivery/Search 실증
+- **검증 한계 정정**:
+  - `unit_tests/test_collection_mission_triage_unhold.py::test_concurrent_unhold_and_precise_apply_preserves_envelope_hash_and_single_outbox`는 `MagicMock` DB 및 공유 리스트를 이용한 **mock 순차 단위 검사**였으며, 실제 2개 DB 세션의 동시 실행이나 KB imported receipt/search 검증을 포함하지 못했음(증거 초과 정정).
+- **실제 2 DB 세션 경합 테스트 추가 및 실증**:
+  - **테스트 경로**: [`tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_missions.py)
+  - **검증 시나리오**:
+    1. 동일 item에 대해 Session 1(`missions.unhold_item`)과 Session 2(`precise_eval.apply_precise_result` 및 멱등 outbox 생성)를 `asyncio.gather`로 실제 2개 PostgreSQL 트랜잭션 동시 경합 실행.
+    2. row lock (`.with_for_update(of=CollectorItem)`)을 통한 직렬화 및 `CollectorOutbox` 중복 없는 단 1건 생성 확인.
+    3. 원본 `envelope`, `rights`, `payload_hash`, `raw_sha256`, `text_sha256`, `retention` 불변 보존 확인.
+    4. `kb_delivery.deliver_once()` 실행 후 `receipt.outcome == "imported"` 확인 (추가 배달 시 0건으로 중복 배달 없음 확인).
+    5. `/api/assistant/kb/search?q=직렬화`를 통한 단일 문서 검색 및 색인 정상 확인.
+  - **실행 명령 및 결과**:
+    ```bash
+    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions_unhold_and_precise_apply_race
+    ```
+    ```text
+    tests/test_collection_missions.py .                                      [100%]
+    db reset: 1 selective (avg 3.0/111 tables), 0 forced full, 0 fell back to full
+    1 passed, 40 deselected in 0.84s
+    ```
+
+---
+
+## 7. Renderer borrowed PoliteFetcher 수명 관리 및 순차 페이지 재사용 검증
+- **원인 규명**:
+  - `render.default_fetch`에서 호출자가 주입한 `polite` 객체에 대해 `closer = polite.fetcher.aclose`를 반환할 경우, 첫 번째 페이지 렌더 완료 후 `closer()`가 공유 fetcher를 닫아버려 동일 job/파이프라인의 후속 페이지 수집 시 연결 실패가 발생할 위험이 확인됨.
+- **교정 내역**:
+  - 주입받은(borrowed) `polite`에 대해서는 호출자에게 수명 소유권이 있으므로 렌더러 완료 시 닫지 않는 `noop_closer`를 반환하도록 [`src/ttakkari/collector/render.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/collector/render.py) 수정.
+- **반례 및 재사용 검증**:
+  - **테스트 경로**: [`tests/test_collection_render.py::test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_subsequent_pages`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_render.py)
+  - `render_html` 1회 실행 후 `mock_polite.fetcher.aclose` 미호출 확인 및 동일한 polite로 2번째 페이지 fetch가 정상 수행됨을 검증 완료.
+  - **실행 명령 및 결과**:
+    ```bash
+    uv run pytest tests/test_collection_render.py -k test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_subsequent_pages
+    ```
+    ```text
+    tests/test_collection_render.py .                                        [100%]
+    1 passed, 9 deselected in 0.08s
+    ```
+
+
 

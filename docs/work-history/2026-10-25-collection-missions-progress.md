@@ -1,5 +1,13 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
+## C4 정밀평가 교정본 통합 (precise-verify 33b9591) — 2026-10-25
+- `back-collection-precise-verify@33b9591`(77c8709→774d93d→33b9591)만 통합했다. 원본 `back-collection-precise`는 가져오지 않았다. 충돌은 `missions.py` import 한 곳이었고 C2의 `CollectorContractError`/`JobStateError`/library import를 유지한 채 `precise_eval`만 추가했다.
+- 의미 대조: 정밀 rescue는 unhold와 같은 KB 전달 계약(`CollectorReview` + knowledge `CollectorOutbox`, envelope_id 중복 방지, 권리·retain_until·active_policy 재확인)을 쓴다. request_key가 `precise:{item}:{job}`이라 회차별 job마다 별도 예산 영수증이다. 같은 tick에서 e5 전용 락(`collector-e5-embed.lock`)은 page 처리 중 잡았다 놓고, 정밀평가의 qwen slot은 그 뒤 try-lock 한 번이라 서로를 기다리지 않아 교착이 없다. 정밀평가 코드는 triage_ml/e5를 부르지 않는다.
+- 교정 2건: (1) a12dcee의 e5 락이 `ttakkari.runs`를 import해 `test_collector_package_has_no_llm_or_knowledge_dependency`가 실패했다. flock 보조를 triage_ml에 인라인했다. (2) `engine_status()`가 문자열에서 dict로 바뀌어 임무 view의 `precise_eval.engine`이 객체가 됐다. 프론트 계약에 맞게 `engine`은 상태 문자열, `engine_detail`은 별도 필드로 낸다. 프론트는 아직 `ready`/`busy` 문구를 매핑하지 않는다(현재는 "상태 확인 필요"로 표시).
+- 알려진 한계: 정밀평가는 desk_qwen 서버를 쓰며 qwen-local 슬롯을 쥔다. Qwen 작업 세션이 도는 동안 busy→pending으로 계속 미뤄진다. `engine_status()`는 슬롯 상태를 보려고 락을 잠깐 잡았다 놓으므로 page 처리와 임무 조회마다 호출되며, 그 순간 시작하는 Qwen Run은 대기열로 돌아갈 수 있다. 이번에는 재설계하지 않았다.
+- **배포 후 smoke 항목 (미실행)**: (a) 정밀평가 호출이 도는 동안 프론트 데스크 응답 지연을 관측한다. 30초대 호출이 같은 desk_qwen 서버에서 경쟁할 수 있다. (b) precise 대기열(`precise_eval.pending`, `unresolved`, `budget_denied`)이 줄어드는지, Qwen 작업 세션 중 계속 쌓이지 않는지 관측한다. (c) 임무 조회 빈도 대비 Qwen Run 시작 지연(slot 조회로 인한 busy)을 확인한다.
+- 미검증: 실제 desk_qwen 서버와 실제 Qwen 모델 호출, 운영 DB, 전체 suite.
+
 ## C2 backend 통합 및 migration 결합 검증 — 2026-10-25
 - 통합 대상은 `integ/collection-platform-20261025`의 시작 HEAD `071e9d04cfea1a4772244bdaebbbbe0a03cd1a3f`와 C2 source tip `f038438bc316ba77dce01811790fc3c23eb65e81`이다. 이번 단계는 backend C2만 포함하며 main push/merge/deploy 및 운영 DB 변경은 하지 않았다.
 - 동일 `0073` 번호의 실제 충돌을 선형화했다: C1 `0073_collection_mission_runs`는 `0072_collection_missions` 다음, C2 `0074_collection_single_library`는 C1 다음이다. `deploy/generation-contract.json`의 head를 0074로, online 출발점에 C1 0073을 추가했다. 기존 owner·generation compatibility·drain 검사 코드는 바꾸지 않았다.

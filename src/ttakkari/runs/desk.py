@@ -405,7 +405,7 @@ def _parse(text: str) -> Decision | None:
 async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
                cfg_override: dict[str, str] | None = None, timeout_seconds: float | None = None,
                use_warm: bool = True, output_schema: Path | None = None,
-               cwd: Path | None = None) -> Attempt:
+               cwd: Path | None = None, subscription_only: bool = False) -> Attempt:
     s = get_settings()
     from ttakkari import generation
     from ttakkari.runs.manager import attempt_handle
@@ -423,12 +423,12 @@ async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
         cwd = s.home / "desk"
         cwd.mkdir(parents=True, exist_ok=True, mode=0o700)
     cmd = (_codex_cmd(prof, cfg, system, prompt, cwd, output_schema=output_schema)
-           if prof.engine == "codex" else _claude_cmd(cfg, system, prompt))
+           if prof.engine == "codex" else _claude_cmd(cfg, system, prompt, output_schema=output_schema))
     start = time.monotonic()
     ms = lambda: int((time.monotonic() - start) * 1000)
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=str(cwd), env=_env(prof), stdin=asyncio.subprocess.DEVNULL,
+            *cmd, cwd=str(cwd), env=_env(prof, subscription_only=subscription_only), stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
     except FileNotFoundError:
         return Attempt(None, f"{prof.engine} 실행 파일을 찾을 수 없습니다.", ms())
@@ -457,10 +457,19 @@ def _kill(proc: asyncio.subprocess.Process) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
 
 
-def _env(prof: profiles_mod.Profile) -> dict[str, str]:
+# 이 변수가 있으면 CLI 가 구독 대신 종량제 API 로 호출할 수 있다. 구독 전용 호출은 물려주지 않는다.
+_PAID_API_ENV_KEYS = frozenset({
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY",
+})
+
+
+def _env(prof: profiles_mod.Profile, *, subscription_only: bool = False) -> dict[str, str]:
     from ttakkari.runs.manager import STRIP_ENV_KEYS, STRIP_ENV_PREFIXES
 
     env = {k: v for k, v in os.environ.items() if not k.startswith(STRIP_ENV_PREFIXES) and k not in STRIP_ENV_KEYS}
+    if subscription_only:
+        env = {k: v for k, v in env.items() if k not in _PAID_API_ENV_KEYS}
     return env | prof.env()
 
 
@@ -500,8 +509,11 @@ def _codex_mcp_servers(prof: profiles_mod.Profile) -> list[str]:
     return [n for n in servers if _SAFE_NAME.match(n)] if isinstance(servers, dict) else []
 
 
-def _claude_cmd(cfg: dict[str, str], system: str, prompt: str) -> list[str]:
-    return [get_settings().claude_bin, "-p", prompt, "--output-format", "json", *_claude_flags(cfg, system)]
+def _claude_cmd(cfg: dict[str, str], system: str, prompt: str, *, output_schema: Path | None = None) -> list[str]:
+    cmd = [get_settings().claude_bin, "-p", prompt, "--output-format", "json", *_claude_flags(cfg, system)]
+    if output_schema is not None:
+        cmd += ["--json-schema", output_schema.read_text(encoding="utf-8")]
+    return cmd
 
 
 def _claude_flags(cfg: dict[str, str], system: str) -> list[str]:

@@ -48,7 +48,8 @@ async def _expire_leases(db: AsyncSession, day: date, now: datetime) -> None:
         await db.scalars(
             select(KbL2BudgetReservation)
             .where(
-                KbL2BudgetReservation.budget_date == day,
+                # Leases are clamped to their UTC day, so earlier days' leftovers are always due.
+                KbL2BudgetReservation.budget_date <= day,
                 KbL2BudgetReservation.status == "active",
                 KbL2BudgetReservation.lease_expires_at <= now,
             )

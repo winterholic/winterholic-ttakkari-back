@@ -1,0 +1,93 @@
+{
+  "engine": "claude",
+  "results": [
+    {
+      "heading": "PostgreSQL pgvector",
+      "body_chars": 169,
+      "ok": true,
+      "entities": [
+        "pgvector",
+        "PostgreSQL",
+        "HNSW",
+        "IVFFlat",
+        "nearest neighbor search",
+        "vectors",
+        "index"
+      ],
+      "assertions": 7,
+      "relations": 4,
+      "quotes_total": 11,
+      "quotes_exact_substring": 11,
+      "sample": {
+        "subject": "pgvector",
+        "predicate": "is",
+        "object_entity": "extension",
+        "object_value": "open-source extension",
+        "modality": "fact",
+        "polarity": "positive",
+        "applies_version": null,
+        "evidence_quote": "pgvector is an open-source extension for PostgreSQL"
+      },
+      "elapsed_s": 15.3
+    },
+    {
+      "heading": "Redis 개요",
+      "body_chars": 81,
+      "ok": true,
+      "entities": [
+        "Redis",
+        "키-값 저장소",
+        "캐시",
+        "메시지 브로커",
+        "세션 저장소",
+        "RDB 스냅샷",
+        "AOF 로그",
+        "디스크 영속성"
+      ],
+      "assertions": 6,
+      "relations": 6,
+      "quotes_total": 12,
+      "quotes_exact_substring": 12,
+      "sample": {
+        "subject": "Redis",
+        "predicate": "는",
+        "object_entity": "키-값 저장소",
+        "object_value": "메모리 기반",
+        "modality": "fact",
+        "polarity": "positive",
+        "applies_version": null,
+        "evidence_quote": "Redis는 메모리 기반 키-값 저장소이며"
+      },
+      "elapsed_s": 45.6
+    },
+    {
+      "heading": "Kubernetes",
+      "body_chars": 138,
+      "ok": true,
+      "entities": [
+        "Kubernetes",
+        "container",
+        "node",
+        "Deployment",
+        "ReplicaSet",
+        "Pod"
+      ],
+      "assertions": 3,
+      "relations": 4,
+      "quotes_total": 7,
+      "quotes_exact_substring": 7,
+      "sample": {
+        "subject": "Kubernetes",
+        "predicate": "schedules",
+        "object_entity": "container",
+        "object_value": "onto nodes",
+        "modality": "fact",
+        "polarity": "positive",
+        "applies_version": null,
+        "evidence_quote": "Kubernetes schedules containers onto nodes"
+      },
+      "elapsed_s": 65.0
+    }
+  ]
+}
+exit=0

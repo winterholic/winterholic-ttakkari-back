@@ -1,0 +1,33 @@
+{
+  "engine": "claude",
+  "results": [
+    {
+      "heading": "PostgreSQL pgvector",
+      "body_chars": 169,
+      "ok": false,
+      "diagnosis": "invalid_json",
+      "consumed": true,
+      "retry_after": null,
+      "elapsed_s": 16.2
+    },
+    {
+      "heading": "Redis 개요",
+      "body_chars": 81,
+      "ok": false,
+      "diagnosis": "invalid_json",
+      "consumed": true,
+      "retry_after": null,
+      "elapsed_s": 41.4
+    },
+    {
+      "heading": "Kubernetes",
+      "body_chars": 138,
+      "ok": false,
+      "diagnosis": "invalid_json",
+      "consumed": true,
+      "retry_after": null,
+      "elapsed_s": 39.7
+    }
+  ]
+}
+exit=1

@@ -32,10 +32,11 @@ ENGINES = {"claude", "codex", "antigravity", "muse", "opencode", "copilot"}
 # Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
 # Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
 USAGE_LIMIT_RE = re.compile(
-    r"usage limit|hit your ([\w\-]+ )*limit|reached your ([\w\-]+ )*limit|limit reached|rate.?limit|quota|too many requests|"
+    r"usage limit|hit your ([\w\-]+ )*limit|reached your ([\w\-]+ )*limit|limit reached|rate.?limit|"
+    r"quota[_ ]?(?:exceeded|exhausted)|(?:exceeded|exhausted) (?:your )?quota|insufficient[_ ]quota|quota (?:reached|depleted)|too many requests|"
     r"\b429\b|credit balance|out of (extra )?(credits|usage)|overloaded|"
     r"premium (model )?request(s)? (allowance )?exceeded|premium request(s)? limit|"
-    r"monthly limit of premium requests|exhausted your ([\w\-]+ )*(quota|allowance|limit)|"
+    r"exceeded (?:your )?premium (?:model )?requests? allowance|monthly limit of premium requests|exhausted your ([\w\-]+ )*(quota|allowance|limit)|"
     r"resource.*exhausted",
     re.IGNORECASE,
 )

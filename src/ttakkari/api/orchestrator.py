@@ -65,7 +65,7 @@ class QwenFitIn(BaseModel):
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1, max_length=100_000)
-    engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local"] = "auto"
+    engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
@@ -90,6 +90,9 @@ class WorkerIn(BaseModel):
         elif self.engine == "muse" and self.model is not None:
             if self.model not in get_settings().engine_models.get("muse", []):
                 raise ValueError("Choose a documented Muse Code coding model; model access requires separate verification.")
+        elif self.engine in {"opencode", "copilot"} and self.model is not None:
+            if self.model not in get_settings().engine_models.get(self.engine, []):
+                raise ValueError("Choose a configured model for the selected Copilot engine.")
         elif self.engine == "auto" and self.model is not None:
             if self.model not in {m for models in get_settings().engine_models.values() for m in models}:
                 raise ValueError("Choose an available worker model from account_usage.")
@@ -321,12 +324,13 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     model = body.model or (worker_routing.ROUTES[task_type][0][0][1] if body.engine == "auto" else default.get("model"))
     engine = body.engine
     model_engine = profiles_mod.model_engine(model)
-    effective_engine = model_engine or engine
+    effective_engine = engine if engine in {"opencode", "copilot"} else (model_engine or engine)
     effort = worker_routing.effort(
         profiles_mod.Profile(uuid.uuid4(), "routing", effective_engine, model=model),
         body.effort or default.get("effort"),
     )
-    if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
+    matches_copilot_catalog = engine in {"opencode", "copilot"} and model in s.engine_models.get(engine, [])
+    if engine != "auto" and model and not matches_copilot_catalog and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
     if engine == "qwen-local" and model != "Qwen3.8-Flash-Next-Q2_K":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "qwen-local은 로컬 Qwen3.8 Q2_K 모델만 지원합니다.")

@@ -1,4 +1,5 @@
 """Tests for GitHub Copilot CLI managed accounts and authentication isolation."""
+import json
 import tempfile
 import time
 import unittest
@@ -47,7 +48,7 @@ class CopilotAccountsTests(unittest.TestCase):
     def test_system_account_readiness(self):
         # When home is None, status checks system default credentials
         st = status(None, is_system=True)
-        self.assertIn(st["auth_state"], {"authenticated", "setup_required"})
+        self.assertIn(st["auth_state"], {"authenticated", "setup_required", "unknown", "auth_expired"})
         self.assertTrue(st["is_system"])
 
     def test_execution_env_injects_copilot_home_and_tmpdir(self):
@@ -55,13 +56,13 @@ class CopilotAccountsTests(unittest.TestCase):
         env = execution_env(profile.home, {"EXISTING": "val"})
         self.assertEqual(env["EXISTING"], "val")
         self.assertEqual(env["COPILOT_HOME"], str(profile.home))
-        self.assertEqual(env["COPILOT_ALLOW_ALL"], "true")
+        self.assertNotIn("COPILOT_ALLOW_ALL", env)
         self.assertTrue(env["TMPDIR"].startswith("/Users/winterholic/development/.tmp"))
 
     def test_system_execution_env_uses_home_copilot(self):
         env = execution_env(None, is_system=True)
         self.assertTrue(env["COPILOT_HOME"].endswith(".copilot"))
-        self.assertEqual(env["COPILOT_ALLOW_ALL"], "true")
+        self.assertNotIn("COPILOT_ALLOW_ALL", env)
 
     def test_login_command_for_isolated_and_system(self):
         profile = allocate(self.base, self.account_id)
@@ -81,7 +82,7 @@ class CopilotAccountsTests(unittest.TestCase):
         (profile.home / "config.json").write_text('{"theme": "dark"}')
 
         ver_res = MagicMock(returncode=0, stdout="GitHub Copilot CLI 1.0.103.\n", stderr="")
-        conf_res = MagicMock(returncode=0, stdout="theme=dark\n", stderr="")
+        conf_res = MagicMock(returncode=0, stdout="\n".join([json.dumps({"type": "assistant.message", "data": {"content": "TTAKKARI_AUTH_OK"}}), json.dumps({"type": "result"})]), stderr="")
         mock_run.side_effect = [ver_res, conf_res]
 
         st = check_auth(profile.home, cli_bin="copilot")
@@ -94,11 +95,11 @@ class CopilotAccountsTests(unittest.TestCase):
         profile = allocate(self.base, self.account_id)
 
         ver_res = MagicMock(returncode=0, stdout="GitHub Copilot CLI 1.0.103.\n", stderr="")
-        conf_res = MagicMock(returncode=1, stdout="", stderr="error: no credentials")
+        conf_res = MagicMock(returncode=1, stdout="", stderr="error: not authenticated")
         mock_run.side_effect = [ver_res, conf_res]
 
         st = check_auth(profile.home, cli_bin="copilot")
-        self.assertEqual(st["auth_state"], "setup_required")
+        self.assertEqual(st["auth_state"], "auth_expired")
         self.assertFalse(is_ready(profile.home))
 
     def test_record_run_success_updates_success_timestamp(self):

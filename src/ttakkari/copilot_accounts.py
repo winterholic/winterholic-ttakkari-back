@@ -5,7 +5,7 @@ Supports both:
 2. Isolated accounts (using COPILOT_HOME=<account_dir>/copilot)
 
 Never parses or exposes secret auth tokens; status is verified via official CLI
-invocation (`copilot config --global --list`) and safe file existence checks.
+invocation with a bounded, read-only model probe. File presence is never authentication proof.
 """
 from __future__ import annotations
 
@@ -131,41 +131,33 @@ def load(home: Path | str) -> ManagedCopilotProfile:
     return ManagedCopilotProfile(home, aid, is_system=is_system)
 
 
+def _profile(home: Path | str | None, *, is_system: bool = False, create: bool = False) -> ManagedCopilotProfile:
+    if home is not None and not is_system:
+        return load(home)
+    # Metadata only; the host credential store is never read or rewritten here.
+    base = get_settings().home / "accounts"
+    if create:
+        return allocate(base, UUID(int=0), is_system=True)
+    return ManagedCopilotProfile(base / str(UUID(int=0)) / "copilot", UUID(int=0), is_system=True)
+
+
 def status(home: Path | str | None, *, is_system: bool = False) -> dict:
-    """Return operational status from manifest without exposing credentials."""
-    if home is None or is_system:
-        # Check system default credentials in ~/.copilot
-        cfg = Path.home() / ".copilot" / "config.json"
-        has_auth = cfg.exists() and cfg.stat().st_size > 5
-        return {
-            "auth_state": "authenticated" if has_auth else "setup_required",
-            "last_error": None,
-            "last_success_at": None,
-            "checked_at": time.time(),
-            "principal": None,
-            "cli_version": None,
-            "has_auth_file": has_auth,
-            "is_system": True,
-        }
-
-    p = load(home)
-    try:
-        data = json.loads(p.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise CopilotProfileError("invalid_profile") from exc
-
-    keys = {
-        "auth_state",
-        "last_error",
-        "last_success_at",
-        "checked_at",
-        "principal",
-        "cli_version",
-        "is_system",
-    }
-    res = {k: data.get(k) for k in keys}
-    res["has_auth_file"] = p.config_json_path.exists()
-    return res
+    """Read nonsecret observations for both managed and host-default accounts."""
+    p = _profile(home, is_system=is_system)
+    has_file = p.config_json_path.is_file()
+    if p.manifest_path.exists():
+        _safe(p.home)
+        _safe(p.manifest_path)
+        try:
+            data = json.loads(p.manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CopilotProfileError("invalid_profile") from exc
+    else:
+        data = {"auth_state": "unknown" if has_file else "setup_required"}
+    if data.get("auth_state") == "authenticated" and data.get("auth_evidence") not in {"model_probe", "successful_run"}:
+        data["auth_state"] = "unknown"
+    keys = {"auth_state", "last_error", "last_success_at", "checked_at", "principal", "cli_version"}
+    return {**{key: data.get(key) for key in keys}, "has_auth_file": has_file, "is_system": p.is_system}
 
 
 def is_ready(home: Path | str | None, *, is_system: bool = False) -> bool:
@@ -184,7 +176,11 @@ def execution_env(home: Path | str | None, base_env: dict[str, str] | None = Non
     else:
         env["COPILOT_HOME"] = str(Path.home() / ".copilot")
 
-    env["COPILOT_ALLOW_ALL"] = "true"
+    # Token/BYOK overrides would silently defeat the selected account. Do not inspect values.
+    for key in list(env):
+        if key in {"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "COPILOT_ALLOW_ALL"} or key.startswith("COPILOT_PROVIDER_"):
+            env.pop(key, None)
+    env["COPILOT_AUTO_UPDATE"] = "false"
     tmp = Path("/Users/winterholic/development/.tmp")
     tmp.mkdir(mode=0o700, exist_ok=True)
     env["TMPDIR"] = str(tmp)
@@ -202,99 +198,79 @@ def login_command(home: Path | str | None, *, is_system: bool = False) -> str:
 
 
 def check_auth(home: Path | str | None, *, cli_bin: str | None = None, is_system: bool = False) -> dict:
-    """Verify GitHub Copilot CLI authentication via `copilot config --global --list` and config.json presence.
+    """Bounded model probe; may consume one request. No config/credential contents are inspected.
 
-    Never prints or stores tokens. Updates manifest with current status and timestamp.
+    Config listing succeeds even without credentials. Only a real successful response with
+    the expected marker establishes authentication. Probe tools are limited to read-only view.
     """
+    import tempfile
+
     binary = cli_bin or get_settings().copilot_bin
     env = execution_env(home, os.environ.copy(), is_system=is_system)
-
-    auth_state = "setup_required"
-    cli_version = None
-    last_error = None
-
-    # Check CLI version
+    profile = _profile(home, is_system=is_system, create=True)
+    data = json.loads(profile.manifest_path.read_text(encoding="utf-8"))
+    previous = status(home, is_system=is_system).get("auth_state", "setup_required")
+    auth_state, last_error, cli_version = "unknown", None, None
     try:
-        ver_proc = subprocess.run(
-            [binary, "--version"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-        if ver_proc.returncode == 0:
-            cli_version = ver_proc.stdout.strip().splitlines()[-1][:32]
-    except FileNotFoundError:
-        auth_state = "unknown"
-        last_error = "cli_unavailable"
-        if home and not is_system:
-            p = load(home)
-            data = json.loads(p.manifest_path.read_text(encoding="utf-8"))
-            data.update({"auth_state": auth_state, "last_error": last_error, "checked_at": time.time()})
-            _write_manifest(p, data)
-        return {"auth_state": auth_state, "last_error": last_error, "cli_version": None}
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        log.warning("Copilot version check failed: %s", exc)
-
-    # Check authentication status
-    cfg_file = (Path.home() / ".copilot" / "config.json") if is_system or not home else (load(home).home / "config.json")
-    has_cfg = cfg_file.exists() and cfg_file.stat().st_size > 5
-
-    try:
-        conf_proc = subprocess.run(
-            [binary, "config", "--global", "--list"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-        if conf_proc.returncode == 0 and has_cfg:
+        version = subprocess.run([binary, "--version"], env=env, capture_output=True, text=True,
+                                 timeout=10, check=False, stdin=subprocess.DEVNULL)
+        if version.returncode == 0 and version.stdout.strip():
+            cli_version = version.stdout.strip().splitlines()[-1][:64]
+        with tempfile.TemporaryDirectory(prefix="ttk-copilot-auth-", dir=env["TMPDIR"]) as cwd:
+            result = subprocess.run(
+                [binary, "-p", "Reply exactly TTAKKARI_AUTH_OK. Do not use tools.",
+                 "--output-format", "json", "--stream", "on", "--model", "auto",
+                 "--allow-all-tools", "--available-tools=view", "--disable-builtin-mcps",
+                 "--no-ask-user", "--no-auto-update", "--no-custom-instructions", "-C", cwd],
+                env=env, capture_output=True, text=True, timeout=40, check=False, stdin=subprocess.DEVNULL)
+        from ttakkari.agents.base import ParseState
+        from ttakkari.agents.copilot import CopilotAdapter
+        adapter, parsed = CopilotAdapter(), ParseState()
+        for line in result.stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict):
+                adapter.parse_line(event, parsed, Path(cwd))
+        adapter.finalize_process(parsed, return_code=result.returncode, stderr=result.stderr)
+        if not parsed.is_error and "TTAKKARI_AUTH_OK" in (parsed.result_text or ""):
             auth_state = "authenticated"
+            data["last_success_at"] = time.time()
+            data["auth_evidence"] = "model_probe"
         else:
-            auth_state = "setup_required"
+            # Keep diagnostic codes only; CLI output can contain account information.
+            from ttakkari.runs.profiles import is_auth_error, is_usage_limit
+            combined = result.stderr + "\n" + result.stdout
+            if is_auth_error(combined):
+                auth_state, last_error = "auth_expired", "auth_expired"
+            elif is_usage_limit(combined):
+                auth_state, last_error = previous, "usage_limited"
+            else:
+                auth_state = previous if previous == "auth_expired" else "unknown"
+                last_error = "probe_failed" if result.returncode else "probe_incomplete"
+    except FileNotFoundError:
+        last_error = "cli_unavailable"
     except subprocess.TimeoutExpired:
-        auth_state = "unknown"
         last_error = "cli_timeout"
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.warning("Copilot auth check failed: %s", exc)
-        auth_state = "unknown"
+    except (OSError, subprocess.SubprocessError):
         last_error = "check_error"
-
-    if home and not is_system:
-        p = load(home)
-        data = json.loads(p.manifest_path.read_text(encoding="utf-8"))
-        data.update({
-            "auth_state": auth_state,
-            "checked_at": time.time(),
-            "cli_version": cli_version or data.get("cli_version"),
-            "last_error": last_error,
-        })
-        _write_manifest(p, data)
-        return status(p.home)
-
-    return {
-        "auth_state": auth_state,
-        "checked_at": time.time(),
-        "cli_version": cli_version,
-        "last_error": last_error,
-        "has_auth_file": has_cfg,
-        "is_system": True,
-    }
+    data.update(auth_state=auth_state, checked_at=time.time(), last_error=last_error,
+                cli_version=cli_version or data.get("cli_version"))
+    _write_manifest(profile, data)
+    return status(home, is_system=is_system)
 
 
 def record_run(home: Path | str | None, *, success: bool, error: str | None = None, is_system: bool = False) -> None:
     """Record runtime outcome. If authentication expired or failed, mark auth_state as auth_expired."""
-    if not home or is_system:
-        return
-    p = load(home)
+    p = _profile(home, is_system=is_system, create=True)
     data = json.loads(p.manifest_path.read_text(encoding="utf-8"))
     now = time.time()
     if success:
         data.update({
+            "auth_state": "authenticated",
+            "auth_evidence": "successful_run",
+            "checked_at": now,
             "last_success_at": now,
             "last_error": None,
         })

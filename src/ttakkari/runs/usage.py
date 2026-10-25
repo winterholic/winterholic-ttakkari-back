@@ -814,7 +814,13 @@ async def _fetch_live_bounded(account_id: uuid.UUID, engine: str, config_dir: st
 
 async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:
     observed_now = True
-    if engine == "muse":
+    if engine in {"opencode", "copilot"}:
+        from ttakkari.runs.profiles import identity
+        login, _ = identity(engine, config_dir)
+        # No provider quota observation: never query or borrow another engine's subscription.
+        u = Usage(source=f"{engine}_cli", login=login,
+                  error="Copilot 잔여 사용량 미확인 · 한도 오류 발생 시 계정 대기")
+    elif engine == "muse":
         u = await _fetch_muse(config_dir)
         if MUSE_PING and not u.windows and u.login == "ok":
             # 공급자는 Muse 를 쓴 뒤에야 사용량을 준다. 안 쓰면 조회만으로는 값이 없고 그 계정이 계속 배제된다.

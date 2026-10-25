@@ -53,6 +53,8 @@ class CopilotAdapter:
             "--output-format", "json",
             "--allow-all-tools",
             "--no-ask-user",
+            "--no-auto-update",
+            "--stream", "on",
             "--model", model,
         ]
 
@@ -67,7 +69,7 @@ class CopilotAdapter:
 
         if spec.session_id and spec.mcp_servers:
             mcp_file = self._prepare_mcp(spec.session_id, spec.mcp_servers)
-            cmd.extend(["--additional-mcp-config", str(mcp_file)])
+            cmd.extend(["--additional-mcp-config", f"@{mcp_file}"])
 
         return cmd
 
@@ -117,7 +119,7 @@ class CopilotAdapter:
         if return_code != 0 and not state.is_error:
             state.is_error = True
             state.error = stderr.strip()[-4000:] or f"Copilot exited with return code {return_code}"
-        elif return_code == 0 and not state.is_error and state.result_text is None:
+        elif return_code == 0 and not state.is_error and (not state.protocol_final_seen or not (state.result_text or "").strip()):
             state.is_error = True
             state.error = stderr.strip()[-4000:] or "Copilot exited without a final response"
 
@@ -208,6 +210,7 @@ class CopilotAdapter:
 
         # 6. Final result
         if event_type == "result":
+            state.protocol_final_seen = True
             session_id = obj.get("sessionId")
             exit_code = obj.get("exitCode", 0)
             usage = obj.get("usage") or {}

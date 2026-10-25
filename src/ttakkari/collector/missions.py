@@ -16,7 +16,15 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, jobs, precise_eval, research_rounds, store, triage, triage_ml
+from ttakkari.collector import (
+    control,
+    jobs,
+    precise_eval,
+    research_rounds,
+    store,
+    triage,
+    triage_ml,
+)
 from ttakkari.collector import research as research_logic
 from ttakkari.collector.contracts import (
     AuthContext,

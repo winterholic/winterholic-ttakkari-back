@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from ttakkari.collector import paper, research
+from ttakkari.collector.library import in_library
 from ttakkari.collector_models import (
     CollectionMission,
     CollectionMissionJob,
@@ -380,7 +381,7 @@ async def maybe_queue_round(db, mission: CollectionMission, run_seq: int, linked
         return  # no job has run yet, so there is nothing to relate the context to
     round_no = st["round"] + 1
     key = f"prepare:{mission.id}:{run_seq}:r{round_no}"
-    if await db.scalar(select(CollectorJob.id).where(CollectorJob.tenant_id == mission.tenant_id, CollectorJob.scope == "personal",
+    if await db.scalar(select(CollectorJob.id).where(CollectorJob.tenant_id == mission.tenant_id, in_library(CollectorJob.scope),
                                                     CollectorJob.source_key == f"mission-prepare:{mission.id}", CollectorJob.request_key == key)):
         current = {**plan, "research": {**st, "stop": "round_job_failed"}}
         mission.plan = current  # a round job that ended without committing must not be re-queued forever

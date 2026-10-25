@@ -320,3 +320,35 @@ async def test_user_paper_link_and_context_in_one_mission_resolve_through_a_retr
     assert related and related[0]["target"]["kind"] == "paper" and related[0]["target"]["identifier"] == "2005.11401v4"
     assert second["id"] in links["unlinked"]
     assert detail["research"]["stop"] == "no_novel_queries" and detail["counts"]["imported"] == 0
+
+
+async def test_rerun_starts_a_fresh_research_round_state_and_the_view_carries_research_and_precise_blocks(client, auth, env, monkeypatch):  # noqa: F811
+    await open_source(client, auth, env)
+    urls = site(env)
+    calls = []
+    monkeypatch.setattr(adapters, "search_web", fake_search(urls, calls))
+    monkeypatch.setattr(paper, "resolve", fake_papers(urls))
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": GOAL, "context": CONTEXT})).json()
+    await drain(monkeypatch, env)
+    first = await mission(client, auth, made["id"])
+    assert first["run_seq"] == 1 and first["research"]["round"] >= 1
+    first_prepares = [j for j in first["jobs"] if j["stage"] == "mission_prepare"]
+    assert len(first_prepares) == first["research"]["round"] + 1 and {j["run_seq"] for j in first_prepares} == {1}
+
+    assert (await client.post(BASE + "/missions/" + made["id"] + "/rerun", headers=auth)).status_code == 200
+    await drain(monkeypatch, env)
+    second = await mission(client, auth, made["id"])
+    assert second["run_seq"] == 2
+    research = second["research"]
+    prepares = [j for j in second["jobs"] if j["stage"] == "mission_prepare" and j["run_seq"] == 2]
+    # round state belongs to the new run: one preparation job plus one per round of this run, not carried over from run 1
+    assert len(prepares) == research["round"] + 1
+    assert len([j for j in second["jobs"] if j["stage"] == "mission_prepare" and j["run_seq"] == 1]) == len(first_prepares)
+    assert research["searches_used"] <= second["plan"]["budget"]["searches"]
+    assert research["stop"] is not None
+    # the same view also carries the precise block and the waiting counts next to the research block
+    precise = second["triage"]["precise_eval"]
+    assert {"pending", "processing", "unresolved", "engine"} <= set(precise)
+    assert {"precise_waiting", "precise_unresolved"} <= set(second["counts"])
+    runs = {r["run_seq"] for r in second["runs"]}
+    assert runs == {1, 2}

@@ -8,6 +8,17 @@ from pathlib import Path
 import pytest
 from collector_support import FixtureServer, fake_resolver
 
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema_and_app():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clean():
+    yield
+
+
 from ttakkari.collector import render
 from ttakkari.collector.fetcher import FetchLimits, SafeFetcher
 from ttakkari.collector.netguard import NetGuard, UrlRejected, normalize_url
@@ -90,15 +101,111 @@ async def test_broker_allows_only_get_script_style_xhr_fetch_and_counts_what_it_
 
 
 async def test_broker_caps_request_count_and_total_bytes():
-    many = FakeBrowser([{"url": f"https://cdn.test/{i}.js", "type": "script"} for i in range(render.MAX_REQUESTS + 5)])
+    many = FakeBrowser([{"url": f"https://cdn.test/{i}.js", "type": "script"} for i in range(55)])
     result = await render.render_html("https://docs.test/", b"x", fetch=fake_fetch, channel=many)
-    assert result.requests == render.MAX_REQUESTS and result.blocked == {"request_cap": 5}
+    assert result.requests == 50 and result.blocked == {"request_cap": 5}
 
     async def big(url):
         return 200, {"content-type": "text/javascript"}, b"x" * (render.MAX_TOTAL_BYTES // 2 + 1)
     heavy = FakeBrowser([{"url": f"https://cdn.test/{i}.js", "type": "script"} for i in range(2)])
     result = await render.render_html("https://docs.test/", b"x", fetch=big, channel=heavy)
     assert result.blocked == {"byte_cap": 1}
+
+
+async def test_broker_caps_at_exact_50_requests_and_blocks_51st():
+    exact_50 = FakeBrowser([{"url": f"https://cdn.test/{i}.js", "type": "script"} for i in range(50)])
+    res_50 = await render.render_html("https://docs.test/", b"x", fetch=fake_fetch, channel=exact_50)
+    assert res_50.requests == 50
+    assert "request_cap" not in res_50.blocked
+
+    over_51 = FakeBrowser([{"url": f"https://cdn.test/{i}.js", "type": "script"} for i in range(51)])
+    res_51 = await render.render_html("https://docs.test/", b"x", fetch=fake_fetch, channel=over_51)
+    assert res_51.requests == 50
+    assert res_51.blocked == {"request_cap": 1}
+
+
+async def test_renderer_child_requests_enforce_policy_host_port_path_and_robots(monkeypatch):
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock, MagicMock
+
+    from ttakkari.collector.fetcher import FetchResult, SafeFetcher
+    from ttakkari.collector.policy import SourcePolicySpec
+    from ttakkari.collector.polite import PolicyBlocked
+
+    spec = SourcePolicySpec(
+        allowed_hosts=("docs.test",),
+        allowed_path_prefixes=("/assets",),
+        schemes=("https",),
+        ports=(443,),
+        permissions={"store": "allowed", "knowledge": "allowed"},
+        basis="contract",
+        checked_at=datetime.now(UTC),
+    )
+
+    async def mock_fetch(self, url, **kwargs):
+        return FetchResult(
+            requested_url=str(url),
+            final_url=str(url),
+            status=200,
+            body=b"console.log('asset')",
+            media_type="application/javascript",
+            charset="utf-8",
+            etag=None,
+            last_modified=None,
+            not_modified=False,
+            redirects=(),
+            headers={"content-type": "application/javascript"},
+        )
+
+    monkeypatch.setattr(SafeFetcher, "fetch", mock_fetch)
+
+    fetch, closer = render.default_fetch(policy=spec)
+
+    browser = FakeBrowser([
+        {"url": "https://docs.test/assets/app.js", "type": "script"},
+        {"url": "https://other-public.test/assets/ext.js", "type": "script"},
+        {"url": "https://docs.test/forbidden/secret.js", "type": "script"},
+        {"url": "https://docs.test:8443/assets/app.js", "type": "script"},
+        {"url": "http://docs.test/assets/app.js", "type": "script"},
+    ])
+
+    result = await render.render_html("https://docs.test/", b"<html></html>", fetch=fetch, channel=browser)
+    assert [browser.replies[i]["action"] for i in sorted(browser.replies)] == [
+        "fulfill", "abort", "abort", "abort", "abort"
+    ]
+    assert browser.replies[1]["action"] == "fulfill"
+    assert browser.replies[2]["reason"] == "policy_blocked:host_not_allowed"
+    assert browser.replies[3]["reason"] == "policy_blocked:path_outside_policy"
+    assert browser.replies[4]["reason"] in ("policy_blocked:port_not_allowed", "network_policy")
+    assert browser.replies[5]["reason"] in ("policy_blocked:scheme_not_allowed", "network_policy")
+    assert result.requests == 5
+    assert result.blocked["policy_blocked:host_not_allowed"] == 1
+    assert result.blocked["policy_blocked:path_outside_policy"] == 1
+    await closer()
+
+    # PoliteFetcher with robots policy test
+    class FakePolite:
+        def __init__(self):
+            self.fetcher = MagicMock()
+            self.fetcher.aclose = AsyncMock()
+
+        async def fetch(self, parsed, policy, **kwargs):
+            if "robots_blocked" in parsed.target:
+                raise PolicyBlocked("robots_disallowed", parsed.target)
+            res = MagicMock()
+            res.result.status = 200
+            res.result.headers = {"content-type": "application/javascript"}
+            res.result.body = b"console.log('ok')"
+            return res
+
+    polite_fetch, _ = render.default_fetch(policy=spec, polite=FakePolite())
+    browser_robots = FakeBrowser([
+        {"url": "https://docs.test/assets/robots_blocked.js", "type": "script"},
+    ])
+    result_robots = await render.render_html("https://docs.test/", b"<html></html>", fetch=polite_fetch, channel=browser_robots)
+    assert browser_robots.replies[1]["action"] == "abort"
+    assert browser_robots.replies[1]["reason"] == "policy_blocked:robots_disallowed"
+    assert result_robots.blocked["policy_blocked:robots_disallowed"] == 1
 
 
 async def test_renderer_that_dies_or_hangs_is_a_failure_not_empty_content():

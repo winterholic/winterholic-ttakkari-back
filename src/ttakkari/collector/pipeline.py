@@ -286,7 +286,9 @@ async def _prepare(
                 return p
         elif detected.kind == "html":
             # A script shell with no static text is rendered in an isolated browser; `body`/`link_charset` then follow the rendered DOM.
-            extracted, body, link_charset = await render.extract_with_fallback(body, base, res.charset, p.signals)
+            extracted, body, link_charset = await render.extract_with_fallback(
+                body, base, res.charset, p.signals, policy=spec, polite=deps.polite
+            )
         else:
             extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
     except ValueError as e:

@@ -664,6 +664,7 @@ async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
         .join(CollectionMission, CollectionMission.id == CollectionMissionJob.mission_id)
         .where(CollectionMissionJob.mission_id == mission_id, CollectionMission.tenant_id == "owner",
                CollectorItem.tenant_id == CollectionMission.tenant_id, CollectorItem.id == item_id)
+        .with_for_update(of=CollectorItem)
     )
     if item is None:
         raise ValueError("item_not_found")

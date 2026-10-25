@@ -27,11 +27,13 @@ from lxml import html as lxml_html
 from ttakkari.collector import parse
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.netguard import NetGuard, UrlRejected, normalize_url
+from ttakkari.collector.policy import SourcePolicySpec
+from ttakkari.collector.polite import PolicyBlocked, PoliteFetcher
 from ttakkari.config import get_settings
 
 MIN_STATIC_CHARS = 200
 ALLOWED_TYPES = frozenset({"script", "stylesheet", "xhr", "fetch"})
-MAX_REQUESTS = 60
+MAX_REQUESTS = 50
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_RESOURCE_BYTES = 2 * 1024 * 1024
 WALL_SECONDS = 30
@@ -146,25 +148,62 @@ async def spawn_node(info: dict[str, str]) -> Channel:
 Fetch = Callable[[str], Awaitable[tuple[int, dict[str, str], bytes]]]
 
 
-def default_fetch(guard: NetGuard | None = None) -> tuple[Fetch, Callable[[], Awaitable[None]]]:
-    fetcher = SafeFetcher(guard or NetGuard(), user_agent="TtakkariCollector/1.0 (render)",
-                          limits=FetchLimits(total_timeout=10.0, max_bytes=MAX_RESOURCE_BYTES))
+def default_fetch(
+    guard: NetGuard | None = None,
+    *,
+    policy: SourcePolicySpec | None = None,
+    polite: PoliteFetcher | None = None,
+) -> tuple[Fetch, Callable[[], Awaitable[None]]]:
+    if polite is not None and policy is not None:
+        async def fetch(url: str) -> tuple[int, dict[str, str], bytes]:
+            parsed = normalize_url(url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, strip_tracking=False)
+            if (reason := policy.check_url(parsed)) is not None:
+                raise PolicyBlocked(reason, url)
+            res = await polite.fetch(parsed, policy, accept="*/*")
+            body = res.result.body
+            headers = {"content-type": res.result.headers.get("content-type", "application/octet-stream")}
+            return res.result.status, headers, body
+
+        return fetch, polite.fetcher.aclose
+
+    fetcher = SafeFetcher(
+        guard or NetGuard(),
+        user_agent="TtakkariCollector/1.0 (render)",
+        limits=FetchLimits(total_timeout=10.0, max_bytes=MAX_RESOURCE_BYTES),
+    )
 
     async def fetch(url: str) -> tuple[int, dict[str, str], bytes]:
-        response = await fetcher.fetch(normalize_url(url, allowed_schemes=("http", "https"), strip_tracking=False),
-                                       allowed_schemes=("http", "https"), accept="*/*")
+        schemes = policy.schemes if policy else ("http", "https")
+        ports = policy.ports if policy else None
+        host_check = policy.check_url if policy else None
+        parsed = normalize_url(url, allowed_schemes=schemes, allowed_ports=ports, strip_tracking=False)
+        if policy and (reason := policy.check_url(parsed)) is not None:
+            raise PolicyBlocked(reason, url)
+        response = await fetcher.fetch(
+            parsed, allowed_schemes=schemes, allowed_ports=ports, host_check=host_check, accept="*/*"
+        )
         return response.status, {"content-type": response.headers.get("content-type", "application/octet-stream")}, response.body
 
     return fetch, fetcher.aclose
 
 
-async def render_html(url: str, body: bytes, *, content_type: str = "text/html; charset=utf-8", fetch: Fetch | None = None,
-                      channel: Channel | None = None, info: dict[str, str] | None = None, wall_seconds: float = WALL_SECONDS) -> RenderResult:
+async def render_html(
+    url: str,
+    body: bytes,
+    *,
+    content_type: str = "text/html; charset=utf-8",
+    fetch: Fetch | None = None,
+    channel: Channel | None = None,
+    info: dict[str, str] | None = None,
+    wall_seconds: float = WALL_SECONDS,
+    policy: SourcePolicySpec | None = None,
+    polite: PoliteFetcher | None = None,
+) -> RenderResult:
     """Render `body` (the already fetched, policy-checked document at `url`) and return the resulting DOM."""
     started = time.monotonic()
     closer: Callable[[], Awaitable[None]] | None = None
     if fetch is None:
-        fetch, closer = default_fetch()
+        fetch, closer = default_fetch(policy=policy, polite=polite)
     if channel is None:
         info = info or runtime()
         channel = await spawn_node(info)
@@ -192,6 +231,8 @@ async def render_html(url: str, body: bytes, *, content_type: str = "text/html; 
                 status, headers, data = await fetch(message["url"])
         except UrlRejected:
             return block("network_policy")
+        except PolicyBlocked as e:
+            return block(f"policy_blocked:{e.code}")
         except (FetchError, TimeoutError, OSError):
             return block("fetch_failed")
         counters["bytes"] += len(data)
@@ -233,8 +274,16 @@ async def render_html(url: str, body: bytes, *, content_type: str = "text/html; 
             await closer()
 
 
-async def extract_with_fallback(body: bytes, url: str, charset: str | None, signals: dict[str, Any], *,
-                                render: Callable[..., Awaitable[RenderResult]] = render_html) -> tuple[parse.ExtractedDocument, bytes, str | None]:
+async def extract_with_fallback(
+    body: bytes,
+    url: str,
+    charset: str | None,
+    signals: dict[str, Any],
+    *,
+    render: Callable[..., Awaitable[RenderResult]] | None = None,
+    policy: SourcePolicySpec | None = None,
+    polite: PoliteFetcher | None = None,
+) -> tuple[parse.ExtractedDocument, bytes, str | None]:
     """Static extraction first; render only when it yields no usable text from a script shell.
 
     Returns the document plus the bytes/charset whose links should be followed. Records what happened in
@@ -253,7 +302,10 @@ async def extract_with_fallback(body: bytes, url: str, charset: str | None, sign
         return static, body, charset
     static_chars = len(static.text.strip()) if static is not None else 0
     try:
-        rendered = await render(url, body)
+        if render is not None:
+            rendered = await render(url, body)
+        else:
+            rendered = await render_html(url, body, policy=policy, polite=polite)
     except (RendererUnavailable, RenderFailed) as exc:
         signals["render"] = {"used": False, "error": exc.code, "static_chars": static_chars,
                              "reason": "spa_render_unavailable" if isinstance(exc, RendererUnavailable) else "spa_render_failed"}

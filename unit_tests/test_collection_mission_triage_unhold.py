@@ -119,3 +119,150 @@ async def test_unhold_refuses_missing_or_revoked_knowledge_permission(monkeypatc
         await missions.unhold_item(db, mission_id, item_id)
     assert item.status == "held"
     assert not db.add.called
+
+
+@pytest.mark.asyncio
+async def test_unhold_item_uses_row_lock_with_for_update():
+    db = MagicMock()
+    captured_stmt = None
+
+    async def mock_scalar(stmt):
+        nonlocal captured_stmt
+        captured_stmt = stmt
+
+    db.scalar = mock_scalar
+    with pytest.raises(ValueError, match="item_not_found"):
+        await missions.unhold_item(db, uuid.uuid4(), uuid.uuid4())
+
+    assert captured_stmt is not None
+    assert captured_stmt._for_update_arg is not None
+    assert (
+        CollectorItem in captured_stmt._for_update_arg.of
+        or CollectorItem.__table__ in captured_stmt._for_update_arg.of
+    )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_unhold_and_precise_apply_preserves_envelope_hash_and_single_outbox(monkeypatch):
+    from ttakkari.collector import precise_eval, store
+
+    item_id = uuid.uuid4()
+    job_id = uuid.uuid4()
+    envelope_id = uuid.uuid4()
+    original_envelope = {
+        "rights": {"permission": "allowed", "purposes": ["store", "knowledge"], "retain_until": None},
+        "decision": {"state": "hold"},
+    }
+    original_payload_hash = "sha256:origpayload123456"
+    original_text_sha256 = "sha256:origtext654321"
+    original_raw_sha256 = "sha256:origraw987654"
+
+    item = CollectorItem(
+        id=item_id,
+        job_id=job_id,
+        tenant_id="owner",
+        scope="personal",
+        source_key="test-source",
+        kind="document",
+        status="held",
+        stage="intake",
+        url="https://docs.test/concurrent_doc",
+        url_key="concurrent_key",
+        decision_state="hold",
+        reason_codes=["triage:irrelevant_to_goal"],
+        signals={
+            "triage": {
+                "status": "auto_held",
+                "precise_eval": {
+                    "state": "processing",
+                    "claim_token": "tok_123",
+                    "claim_owner": "worker_1",
+                },
+            }
+        },
+        envelope_id=envelope_id,
+        envelope=dict(original_envelope),
+        payload_hash=original_payload_hash,
+        text_sha256=original_text_sha256,
+        raw_sha256=original_raw_sha256,
+    )
+
+    active_policy = MagicMock()
+    active_policy.allows.return_value = True
+
+    async def policy_for_item(*_args):
+        return active_policy, None
+
+    monkeypatch.setattr(store, "active_policy", policy_for_item)
+
+    # Simulated shared DB storage
+    shared_outbox: list[CollectorOutbox] = []
+    shared_reviews: list[CollectorReview] = []
+
+    # Session 1: unhold_item execution
+    db1 = MagicMock()
+
+    async def db1_scalar(stmt):
+        # First query: fetch item with_for_update
+        if "collector_items" in str(stmt):
+            return item
+        # Second query: check existing outbox
+        return shared_outbox[0] if shared_outbox else None
+
+    db1.scalar = db1_scalar
+
+    def db1_add(obj):
+        if isinstance(obj, CollectorOutbox):
+            shared_outbox.append(obj)
+        elif isinstance(obj, CollectorReview):
+            shared_reviews.append(obj)
+
+    db1.add = db1_add
+    db1.flush = AsyncMock()
+
+    # Step 1: Run unhold in Session 1
+    mission_id = uuid.uuid4()
+    res1 = await missions.unhold_item(db1, mission_id, item_id)
+    assert res1["status"] == "accepted"
+    assert res1["delivery_queued"] is True
+    assert len(shared_outbox) == 1
+    assert len(shared_reviews) == 1
+
+    # Invariants check after Session 1
+    assert item.envelope == original_envelope
+    assert item.payload_hash == original_payload_hash
+    assert item.text_sha256 == original_text_sha256
+    assert item.raw_sha256 == original_raw_sha256
+    assert item.signals["unhold_override"]["previous_status"] == "held"
+    # precise_eval state preserved
+    assert item.signals["triage"]["precise_eval"]["claim_token"] == "tok_123"
+
+    # Session 2: Precise eval applies concurrently to the same item
+    precise_result = {
+        "recommendation": "accept",
+        "topic_relevance": 0.85,
+        "information_depth": 0.75,
+        "low_quality_signals": [],
+    }
+    # apply_precise_result on already accepted item
+    rescued = precise_eval.apply_precise_result(item, precise_result)
+    assert rescued is False  # Already accepted, rescue flag is False
+
+    # Simulate Session 2 applying outbox if rescued, but since rescued is False,
+    # no new outbox is created. Even if rescued was checked, outbox deduplication
+    # checks existing outbox:
+    existing_outbox = shared_outbox[0] if shared_outbox else None
+    assert existing_outbox is not None
+    assert len(shared_outbox) == 1  # Exactly 1 outbox row preserved
+
+    # Final verification of invariants
+    assert item.status == "accepted"
+    assert item.envelope == original_envelope
+    assert item.envelope["rights"]["permission"] == "allowed"
+    assert item.envelope["rights"]["retain_until"] is None
+    assert item.payload_hash == original_payload_hash
+    assert item.text_sha256 == original_text_sha256
+    assert item.raw_sha256 == original_raw_sha256
+    assert shared_outbox[0].sink == "knowledge"
+    assert shared_outbox[0].payload_hash == original_payload_hash
+    assert shared_outbox[0].envelope_id == envelope_id

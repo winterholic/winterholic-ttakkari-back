@@ -649,15 +649,25 @@ async def test_access_scope_unification_and_work_boundary():
     assert access_work.visibility == "work_only"
     assert derive_scope_and_visibility(access_work) == ("work", "work_only")
 
-    # 만약 불법적으로 visibility='global'로 설정되어 있어도 derive 헬퍼는 work_only 강제
-    access_work_tampered = KbDocumentAccess(
-        document_id=uuid.uuid4(),
-        tenant_id="owner",
+    # 만약 불법적으로 visibility='global'로 설정하려 하면 모델 계층에서 fail-closed 차단 (ValueError)
+    with pytest.raises(ValueError, match="Work scope document access cannot have global visibility"):
+        KbDocumentAccess(
+            document_id=uuid.uuid4(),
+            tenant_id="owner",
+            scope="work",
+            origin_scope="work",
+            visibility="global",
+        )
+
+    # 또한 임의의 우회 객체가 전달되더라도 derive_scope_and_visibility 헬퍼는 work_only 강제
+    from types import SimpleNamespace
+
+    tampered_access = SimpleNamespace(
         scope="work",
         origin_scope="work",
         visibility="global",
     )
-    assert derive_scope_and_visibility(access_work_tampered) == ("work", "work_only")
+    assert derive_scope_and_visibility(tampered_access) == ("work", "work_only")
 
     # 3. personal 스코프이면서 명시적으로 global 설정된 경우 -> ('personal', 'global')
     doc_personal = uuid.uuid4()

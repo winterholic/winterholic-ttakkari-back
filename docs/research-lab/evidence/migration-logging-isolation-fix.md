@@ -48,3 +48,11 @@ git diff --check
 ```
 
 기존 Research174/contract84/frontend75/build/lint 및 실UI/runner 증거는 해당 코드가 그대로여서 범위 내 재사용한다. 새 전체 회귀는 필수 controller gate가 담당한다. 이 32/2건은 전체 배포 성공·Metal·운영 MCP의 증거가 아니다. 다음은 clean commit/normal main push/full SHA 예약이며 `skip_tests=false`를 유지한다. 알려진 Codex hostops sysctl/preexec 거부를 재시도하거나 다른 엔진으로 우회하지 않는다.
+
+## 동시 main 교정 재사용
+
+로컬 교정을 a05f23c로 커밋한 뒤 fetch했더니 main에 동일 원인을 교정한 `a7e95cbf9fe5512fa887cfa6e61cca4751cd7db3`가 도착했다. 기존 `docs/work-history/2026-10-26-p0-migration-log-isolation.md`와 diff를 직접 대조했다. Config()/절대 script_location 구현은 같으며 main 회귀는 logger enabled·root handler identity·probe 수집까지 검사한다. 중복 회귀를 쌓지 않고 main의 더 강한 회귀를 정본으로 택했다. 충돌은 helper 주석 두 줄에만 있었고 merge `01171744e1eb35529efcd303bc67670793ed942a`에서 해당 파일을 main과 완전히 같게 해결했다. 위 임시 이름의 회귀가 최종 정본에도 남아 있다고 해석하지 않는다.
+
+최종 소스에서 `test_embedded_migration_preserves_application_logging` → 실제 업로드 진단 검사를 같은 pytest 호출로 실행해 `2 passed in 0.75s`, ruff `All checks passed!`를 받았다. `git diff --quiet origin/main -- tests/test_research_v2_migration.py`와 `git diff --quiet a7e95cbf -- src alembic deploy`는 exit0이었다. 위 32건은 로컬 동일 helper 교정의 실행 근거이고 최종 main 회귀는 이 2건 및 별도 controller로 구분한다.
+
+지원 목록 및 예약 조회로 이미 존재하는 누적 배포 `c6bedeba-f8d0-4816-9e6a-ab15b593ce51` / a7e95cbf / generations / testing / skip_tests=false / error=null을 확인했다. 따라서 앞 문단의 신규 예약 계획은 이 기존 실행을 추적하는 것으로 대체했다. 중복 예약·대기 폴링은 하지 않았다. 해당 후보는 Research 변경을 포함한 e9e3260의 자손이고 제품 runtime 코드가 같아 기존 연구 인수 증거를 그대로 재사용한다. backend 활성, frontend 배포, actual Metal 및 운영 MCP는 여전히 별도 미완료다.

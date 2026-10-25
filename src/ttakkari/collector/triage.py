@@ -1,6 +1,9 @@
 """Collector Platform: Lightweight multi-axis quality scoring and conservative auto-triage (C4).
 
-Local CPU only; sub-millisecond per document. No external or paid model calls.
+Stage 1 (this module's rules) is local CPU, sub-millisecond per document, no model calls. Stage 2
+(`triage_ml`, optional `ml` argument) adds independent embedding-based axes; they can only add review/precise-evaluation
+flags or rescue a lexical hold, and only when their own validation status is `validated`. Stage 3 is a persisted
+precise-evaluation queue state (no engine is attached yet). Stage 4 is ingest-with-flag / recoverable hold.
 Evaluates:
   1. Content Quality: length, structure, boilerplate ratio, truncation.
   2. Novelty / Near-duplicate: exact match and MinHash Jaccard similarity.
@@ -25,8 +28,9 @@ from typing import Any
 from ttakkari.collector.contracts import (
     QUALITY_AXES,
 )
+from ttakkari.collector.triage_ml import VERSION as ML_VERSION
 
-TRIAGE_VERSION = "lightweight-triage-v1"
+TRIAGE_VERSION = "multiaxis-triage-v2"
 MODEL_ID = "ttakkari/lightweight-multiaxis-v1"
 MODEL_REVISION = "2026.10.25"
 PREPROCESS_VERSION = "triage-tokens-v1"
@@ -427,6 +431,7 @@ def evaluate_triage(
     truncated: bool = False,
     thresholds: TriageThresholds | None = None,
     shadow_mode: bool = False,
+    ml: dict[str, Any] | None = None,
 ) -> TriageOutcome:
     """Conservative multi-axis evaluation and triage.
 
@@ -541,6 +546,9 @@ def evaluate_triage(
         if rel_score >= 0.50:
             reasons.append("triage:high_relevance")
 
+    action, status, reasons, precise, effects = _apply_stage2(
+        ml, action=action, status=status, reasons=reasons
+    )
     return _make_outcome(
         action=action,
         status=status,
@@ -554,7 +562,105 @@ def evaluate_triage(
         qual_evidence=qual_evidence,
         nov_evidence=nov_evidence,
         shadow_mode=shadow_mode,
+        ml=ml,
+        precise=precise,
+        ml_effects=effects,
     )
+
+
+def _to_review(reasons: list[str], *extra: str) -> list[str]:
+    kept = [r for r in reasons if r not in ("triage:accepted", "triage:high_relevance", "review_needed")]
+    return ["review_needed", *kept, *[e for e in extra if e not in kept]]
+
+
+def _apply_stage2(
+    ml: dict[str, Any] | None, *, action: str, status: str, reasons: list[str]
+) -> tuple[str, str, list[str], list[str], list[str]]:
+    """Fold validated stage-2 axes into the rule decision. Never produces a hold; never trusts an unvalidated axis."""
+    reasons = list(reasons)
+    precise: list[str] = []
+    effects: list[str] = []
+    axes = (ml or {}).get("axes") or {}
+    sem = axes.get("topic_relevance_semantic")
+    prob = axes.get("low_quality_likelihood")
+    sem_ok = bool(sem) and sem["validation"] == "validated"
+    prob_ok = bool(prob) and prob["validation"] == "validated"
+    if sem_ok:
+        value, low, high = sem["value"], sem["bands"]["low"], sem["bands"]["high"]
+        if action == "hold" and "triage:irrelevant_to_goal" in reasons:
+            if value > low:
+                action, status = "accept", "review_needed"
+                reasons = ["review_needed", "review:semantic_overrides_lexical_hold"]
+                precise.append("lexical_semantic_disagreement")
+                effects.append("rescued_from_lexical_hold")
+        elif action == "accept":
+            if "review:low_relevance" in reasons:
+                if value >= high:
+                    reasons.remove("review:low_relevance")
+                    effects.append("lexical_low_relevance_cleared_by_semantic")
+                    if any(r.startswith("review:") for r in reasons):
+                        reasons = _to_review(reasons, "relevance_confirmed_by_semantic")
+                    else:
+                        status, reasons = "auto_accepted", ["triage:accepted", "relevance_confirmed_by_semantic"]
+                elif value >= low:
+                    precise.append("semantic_boundary_band")
+            elif value < low:
+                status, reasons = "review_needed", _to_review(reasons, "review:semantic_low_relevance")
+                precise.append("lexical_semantic_disagreement")
+                effects.append("semantic_flags_low_relevance")
+    if prob_ok and action == "accept" and prob["value"] >= prob["review_at"]:
+        status, reasons = "review_needed", _to_review(reasons, "review:ml_low_quality_likelihood")
+        precise.append("ml_flags_low_quality_but_rules_pass")
+        effects.append("ml_low_quality_review")
+    if not (sem_ok or prob_ok) and action == "accept" and status == "review_needed" and any(
+        r in reasons for r in ("review:low_relevance", "review:low_quality")
+    ):
+        precise.append("stage2_unavailable_or_unvalidated")
+    if action != "accept":
+        precise = []
+    return action, status, reasons, sorted(set(precise)), effects
+
+
+_RULE_VALIDATION = {
+    "validation": "unvalidated",
+    "reason": "hand-written heuristic; no external human-labelled evaluation exists for this axis",
+}
+
+
+def _axes_block(
+    scores: dict[str, float], rel_evidence: list[str] | None, qual_evidence: list[str] | None,
+    nov_evidence: list[str] | None, ml: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """Per-axis score with its model, version and validation state. Axes are listed side by side, never merged."""
+    rule = {"model_id": MODEL_ID, "model_revision": MODEL_REVISION, "kind": "rule", **_RULE_VALIDATION}
+    axes: dict[str, dict[str, Any]] = {
+        "relevance_lexical": {**rule, "value": scores["relevance"], "scale": "similarity", "evidence": rel_evidence or []},
+        "content_rules": {**rule, "value": scores["quality"], "scale": "rule", "evidence": qual_evidence or []},
+        "novelty": {**rule, "value": scores["novelty"], "scale": "rule", "evidence": nov_evidence or []},
+    }
+    for name, axis in ((ml or {}).get("axes") or {}).items():
+        digest = str((ml or {}).get("artifact_digest", ""))[:12]
+        snapshot = str(((ml or {}).get("embedding") or {}).get("snapshot") or "")[:12]
+        axes[name] = {**axis, "kind": "ml", "model_id": f"ttakkari/{ML_VERSION}+intfloat/multilingual-e5-large",
+                      "model_revision": f"{digest}/{snapshot}"}
+    return axes
+
+
+def _stage2_block(ml: dict[str, Any] | None, effects: list[str]) -> dict[str, Any]:
+    ml = ml or {"status": "not_run", "reason": "no stage-2 result for this document"}
+    return {
+        "status": ml.get("status", "not_run"), "reason": ml.get("reason", ""), "effects": effects,
+        "embedding": ml.get("embedding"), "cost": ml.get("cost"), "artifact_digest": ml.get("artifact_digest"),
+    }
+
+
+def _validation_block(axes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    states = {name: axis.get("validation", "unvalidated") for name, axis in axes.items()}
+    validated = sorted(name for name, v in states.items() if v == "validated")
+    return {
+        "overall": "partial" if validated else "unvalidated", "validated_axes": validated,
+        "axes": states, "note": "unvalidated axes are recorded but never decide; deletion is never automatic",
+    }
 
 
 def _make_outcome(
@@ -571,6 +677,9 @@ def _make_outcome(
     qual_evidence: list[str] | None = None,
     nov_evidence: list[str] | None = None,
     shadow_mode: bool = False,
+    ml: dict[str, Any] | None = None,
+    precise: list[str] | None = None,
+    ml_effects: list[str] | None = None,
 ) -> TriageOutcome:
     threshold_dict = {
         "min_accept_relevance": t.min_accept_relevance,
@@ -588,7 +697,13 @@ def _make_outcome(
         "thresholds": threshold_dict,
         "mode": "shadow" if shadow_mode else "active",
         "verified": False,  # Transparently expose unverified status
+        "axes": _axes_block(scores, rel_evidence, qual_evidence, nov_evidence, ml),
+        "stage2": _stage2_block(ml, ml_effects or []),
+        "precise_eval": {
+            "needed": bool(precise), "state": "pending" if precise else "not_needed", "reasons": precise or [],
+        },
     }
+    signals["validation"] = _validation_block(signals["axes"])
 
     # Build contracts-compliant quality envelope
     query_id = (

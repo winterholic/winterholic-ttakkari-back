@@ -26,9 +26,9 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from ttakkari.collector import parse, quality, store, textproc, triage
+from ttakkari.collector import parse, quality, store, textproc, triage, triage_ml
 from ttakkari.collector import profiles as profiles_module
 from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
@@ -379,7 +379,7 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
     triage_outcome = triage.evaluate_triage(
         goal=goal, title=analysis.extracted.title or "", text=analysis.text,
         l0_signals=analysis.l0.signals, exact_duplicate=exact is not None,
-        near_duplicates=near, truncated=analysis.truncated,
+        near_duplicates=near, truncated=analysis.truncated, ml=p.signals.get("ml"),
     )
     p.signals["triage"] = triage_outcome.signals
     if triage_outcome.action == "hold":
@@ -393,6 +393,41 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
         if r not in notes:
             notes.append(r)
     return "accept", notes, errors
+
+
+def _job_goal(job: ClaimedJob) -> str:
+    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+    return (mission or {}).get("goal", "").strip() if mission else ""
+
+
+async def _ml_page(job: ClaimedJob, prepared: list[Prepared]) -> None:
+    """Stage-2 ML for one page with a single embedding child process, outside any DB transaction.
+    Failures become an `unavailable` record on each document; the rule stage then decides alone."""
+    targets = [p for p in prepared if p.analysis is not None and p.analysis.text]
+    if not targets:
+        return
+    docs = [{"title": p.analysis.extracted.title or "", "text": p.analysis.text,
+             "language": p.analysis.language.language} for p in targets]
+    for p, result in zip(targets, await triage_ml.evaluate_documents(_job_goal(job), docs), strict=True):
+        p.signals["ml"] = result
+
+
+def _admit_precise(p: Prepared, pending_now: int) -> None:
+    """Stage 3 state. The queue is capped per job; no precise-evaluation engine is attached, so entries stay `pending`."""
+    precise = p.signals.get("triage", {}).get("precise_eval")
+    if not precise or not precise["needed"]:
+        return
+    settings = get_settings()
+    cap = settings.collector_triage_precise_queue_cap
+    precise["cap"] = cap
+    precise["engine"] = {
+        "status": "unavailable",
+        "detail": "no bounded precise-evaluation engine is registered "
+                  f"(collector_teacher_enabled={settings.collector_teacher_enabled}); entries stay pending",
+    }
+    if pending_now >= cap:
+        precise["state"] = "skipped_cap"
+        precise["reasons"] = [*precise["reasons"], "precise_queue_cap_reached"]
 
 
 async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | None, list[dict[str, Any]]]:
@@ -413,6 +448,42 @@ async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | Non
                          "cluster_id": cand.cluster_id, "jaccard": round(jac, 3), "url": cand.final_url or cand.url})
     near.sort(key=lambda n: -n["jaccard"])
     return None, near[:5]
+
+
+def _measured_axis(value: float, scale: str, axis: dict[str, Any], *, query_id: str | None = None,
+                   extra: list[str] = ()) -> dict[str, Any]:
+    """Contract axis record. The validation state has no contract field, so it is stated in the evidence list."""
+    return {
+        "status": "measured", "value": value, "scale": scale, "model_id": axis["model_id"],
+        "model_revision": axis["model_revision"], "preprocess_version": triage.PREPROCESS_VERSION,
+        "calibration_id": None, "calibration_gold_hash": None, "calibrated_probability": None,
+        "query_id": query_id, "evidence": [f"validation={axis['validation']}", axis["reason"][:200], *extra],
+    }
+
+
+def _fill_triage_axes(quality_axes: dict[str, dict[str, Any]], tri: dict[str, Any], goal: str) -> None:
+    """Relevance: semantic cosine when the stage-2 model ran, else the lexical rule score. Education / spam come only
+    from stage-2 heads. Axes an L1 scorer already measured are left alone."""
+    axes = tri.get("axes", {})
+    if goal and quality_axes.get("relevance", {}).get("status") == "unmeasured":
+        query_id = hashlib.sha256(goal.encode("utf-8")).hexdigest()[:16]
+        lexical = axes.get("relevance_lexical") or {
+            "model_id": triage.MODEL_ID, "model_revision": triage.MODEL_REVISION, "validation": "unvalidated",
+            "reason": "lexical rule heuristic",
+        }
+        sem = axes.get("topic_relevance_semantic")
+        if sem and sem.get("status") == "measured":
+            quality_axes["relevance"] = _measured_axis(
+                float(sem["value"]), "similarity", sem, query_id=query_id,
+                extra=[f"lexical_relevance={tri['scores']['relevance']:.3f}"])
+        else:
+            quality_axes["relevance"] = _measured_axis(
+                float(tri["scores"]["relevance"]), "similarity", lexical, query_id=query_id,
+                extra=[f"relevance={tri['scores']['relevance']:.3f}"])
+    for name, key, scale in (("education", "information_value", "ordinal"), ("spam", "low_quality_likelihood", "raw_logit")):
+        axis = axes.get(key)
+        if axis and axis.get("status") == "measured" and quality_axes.get(name, {}).get("status") == "unmeasured":
+            quality_axes[name] = _measured_axis(float(axis["value"]), scale, axis, extra=[f"axis={key}"])
 
 
 def _build_envelope(
@@ -462,17 +533,7 @@ def _build_envelope(
         quality_axes = dict(a.l1.quality)
         if p.signals.get("triage"):
             ext["collector:triage"] = p.signals["triage"]
-            goal = (mission or {}).get("goal", "").strip()
-            if goal and quality_axes.get("relevance", {}).get("status") == "unmeasured":
-                rel_score = float(p.signals["triage"]["scores"]["relevance"])
-                query_id = hashlib.sha256(goal.encode("utf-8")).hexdigest()[:16]
-                quality_axes["relevance"] = {
-                    "status": "measured", "value": rel_score, "scale": "similarity",
-                    "model_id": triage.MODEL_ID, "model_revision": triage.MODEL_REVISION,
-                    "preprocess_version": triage.PREPROCESS_VERSION, "calibration_id": None,
-                    "calibration_gold_hash": None, "calibrated_probability": None,
-                    "query_id": query_id, "evidence": [f"relevance={rel_score:.3f}"],
-                }
+            _fill_triage_axes(quality_axes, p.signals["triage"], (mission or {}).get("goal", "").strip())
         if a.extracted.meta.get("adapter") == "pypdf":
             ext["collector:pdf"] = {"pages": json.loads(a.extracted.meta["pdf_pages"]),
                                     "total_pages": int(a.extracted.meta["pdf_total_pages"]),
@@ -541,6 +602,11 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
         mission = (job.envelope.get("extensions") or {}).get("collector:mission")
         goal = mission.get("goal", "") if mission else ""
         state, reasons, extra_errors = _decide(p, exact, near, req, goal=goal)
+        if p.signals.get("triage", {}).get("precise_eval", {}).get("needed"):
+            pending_now = await db.scalar(select(func.count(CollectorItem.id)).where(
+                CollectorItem.job_id == job.id,
+                CollectorItem.signals["triage"]["precise_eval"]["state"].astext == "pending")) or 0
+            _admit_precise(p, pending_now)
         status = {"accept": "accepted", "hold": "held", "error": "failed"}[state]
         try:
             envelope = validate_envelope(
@@ -760,6 +826,7 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 )
                 if prepared:
                     # Commit only the fully prepared prefix, leaving the rejected entry and tail in the frontier.
+                    await _ml_page(job, prepared)
                     quota_page = page[:len(prepared)]
                     quota_result: dict[str, Any] = {}
                     now = deps.clock()
@@ -787,6 +854,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 p.status, p.stage, p.reasons, p.retry = "failed", "fetch", ["retries_exhausted", p.retry[1]], None
             prepared.append(p)
             await ctx.heartbeat()
+        await _ml_page(job, prepared)
+        await ctx.heartbeat()
         now = deps.clock()
         result: dict[str, Any] = {}
 

@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, jobs, store, triage
+from ttakkari.collector import control, jobs, store, triage, triage_ml
 from ttakkari.collector.contracts import AuthContext, CollectorConflictError, jcs
 from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
 from ttakkari.collector.netguard import normalize_url
@@ -24,6 +24,7 @@ from ttakkari.collector_models import (
     CollectorJob,
     CollectorOutbox,
 )
+from ttakkari.config import get_settings
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\[\]{}\"']+")
 TERMINAL = {"succeeded", "partial", "failed", "cancelled", "policy_blocked", "quarantined"}
@@ -288,6 +289,20 @@ async def register_document_license(db, mission, doc):
     await db.flush()
 
 
+def _ml_summary(stage2_status: dict[str, int]) -> dict:
+    """Which stage-2 model ran, its recorded validation per axis and how many documents it actually covered."""
+    artifact = triage_ml.load_artifact()
+    heads = {}
+    if artifact is not None:
+        heads = {name: {"status": block["validation"]["status"], "reason": block["validation"]["reason"],
+                        "metrics": block["validation"]["metrics"], "label_source": block["validation"]["label_source"]}
+                 for name, block in {**artifact["heads"], "topic_relevance_semantic": artifact["relevance"]}.items()}
+    return {"version": triage_ml.VERSION, "artifact_digest": (artifact or {}).get("digest"),
+            "embedding": (artifact or {}).get("embedding", {}).get("model"), "documents_by_status": stage2_status,
+            "axes_validation": heads, "validated_languages": sorted(triage_ml.VALIDATED_LANGUAGES),
+            "unvalidated_effect": "recorded only; unvalidated axes never change a decision"}
+
+
 async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict:
     jobs = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id)
                                  .where(CollectionMissionJob.mission_id == mission.id, CollectorJob.tenant_id == mission.tenant_id)))
@@ -296,6 +311,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         counts["discovered"] += (job.cursor or {}).get("discovered", 0)
     results = []
     triage_reasons: dict[str, int] = {}
+    precise_counts = {"pending": 0, "skipped_cap": 0}
+    stage2_status: dict[str, int] = {}
     if jobs:
         filters = (CollectorItem.job_id.in_([job.id for job in jobs]), CollectorItem.tenant_id == mission.tenant_id)
         measures = {name: CollectorItem.status == name for name in ("accepted", "held", "failed", "blocked")}
@@ -312,6 +329,14 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
             CollectorOutbox, CollectorOutbox.envelope_id == CollectorItem.envelope_id).where(*filters,
                 CollectorOutbox.status == "pending", CollectorOutbox.tenant_id == mission.tenant_id)) or 0
         counts["not_imported"] = max(0, counts["accepted"] - counts["imported"] - counts["pending_delivery"])
+        precise_state = CollectorItem.signals["triage"]["precise_eval"]["state"].astext
+        precise_counts.update({state: n for state, n in (await db.execute(
+            select(precise_state, func.count(CollectorItem.id)).where(*filters, precise_state.in_(tuple(precise_counts)))
+            .group_by(precise_state))).all()})
+        stage2_col = CollectorItem.signals["triage"]["stage2"]["status"].astext
+        stage2_status = {k or "not_run": n for k, n in (await db.execute(
+            select(stage2_col, func.count(CollectorItem.id)).where(*filters, CollectorItem.kind == "document")
+            .group_by(stage2_col))).all()}
         if detailed:
             # Select bounded metadata in SQL: polling a large mission must never load all normalized bodies.
             rows = (await db.execute(select(
@@ -337,6 +362,12 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
                         "reasons": triage_sig.get("reasons", item_reasons),
                         "mode": triage_sig.get("mode", "active"),
                         "verified": triage_sig.get("verified", False),
+                        "axes": {name: {k: axis.get(k) for k in ("value", "scale", "model_id", "model_revision",
+                                                                "validation", "reason", "status") if k in axis}
+                                 for name, axis in (triage_sig.get("axes") or {}).items()},
+                        "validation": triage_sig.get("validation"),
+                        "stage2": triage_sig.get("stage2"),
+                        "precise_eval": triage_sig.get("precise_eval"),
                     },
                     "delivery": row.outcome,
                     "document_id": row.document_id, "revision_id": str(row.revision_id) if row.revision_id else None
@@ -358,6 +389,12 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
             "revision": triage.MODEL_REVISION,
             "status": "active",
             "verified": False,
+        },
+        "ml": _ml_summary(stage2_status),
+        "precise_eval": {
+            **precise_counts, "cap_per_job": get_settings().collector_triage_precise_queue_cap,
+            "engine": "unavailable" if not get_settings().collector_teacher_enabled else "enabled_without_registered_engine",
+            "note": "pending entries are persisted, not evaluated: no bounded precise-evaluation engine is attached",
         },
     }
 

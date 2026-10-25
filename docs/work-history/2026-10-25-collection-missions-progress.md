@@ -81,8 +81,9 @@
   - `src/ttakkari/collector/missions.py`: `view` 응답에 `triage` 집계 블록 (`accepted`, `review_needed`, `held`, `reasons`, `policy`) 및 각 결과 항목의 `triage` 상세 노출. `unhold_item` 함수로 보류된 문서를 수동 복구(accepted 전환 및 CollectorOutbox export 큐 등록).
   - `src/ttakkari/api/collection_missions.py`: `POST /api/assistant/collect/missions/{mission_id}/items/{item_id}/unhold` 엔드포인트 추가.
 - **독립 평가 및 재현 검증 (`scripts/eval_collection_triage.py`, `unit_tests/fixtures/triage_eval_dataset.json`, `unit_tests/test_collection_triage_eval.py`)**:
-  - 35건의 실제 공개 기술 문서, 스팸, 404, 보일러플레이트, 중복, 무관 토픽 fixture 데이터셋 구축.
-  - 측정 결과:
+  - **정정(독립검증 반영)**: 아래 35건은 규칙을 만든 같은 작업에서 쓴 fixture이고 라벨 출처·인간 검수 기록이 없다(`triage_eval_dataset.PROVENANCE.md`). 같은 규칙을 이 데이터로 평가한 수치는 순환이라 성능 근거가 아니며 규칙 회귀 기대값으로만 쓴다. 외부 라벨 평가는 아래 "C4 후속"에 있다.
+  - 35건의 fixture 데이터셋(스팸, 404, 보일러플레이트, 중복, 무관 토픽 포함).
+  - 측정 결과(규칙 회귀 기준, 순환):
     - 총 샘플 수: 35건 (좋음 13, 애매 8, 나쁨 14)
     - 좋은 문서 오판 보류율 (False Negative Rate): **0.00%** (0/13 - 좋은 문서를 잘못 버리지 않는 보수적 선별 목표 100% 충족)
     - 좋은 문서 적재 재현율 (Good Recall): **100.00%** (13/13)
@@ -93,3 +94,88 @@
 - **테스트 및 코드 품질**:
   - `PYTHONPATH=src:unit_tests ../back/.venv/bin/python -m pytest -q unit_tests/test_collection_triage.py unit_tests/test_collection_triage_eval.py unit_tests/test_collection_mission_triage_unhold.py unit_tests/test_pipeline_triage_integration.py ...` -> **100 passed, 4953 subtests passed in 2.33s**.
   - `ruff check`, `ruff format` clean.
+
+### C4 후속: 실제 경량 ML 단계(2단계)와 정밀평가 대기(3단계) (2026-10-25)
+
+독립검증(GPT Luna)이 지적한 "규칙만 있고 ML이 아님", "shadow ML이 판정에 안 쓰임", "정밀평가 단계 없음", "평가가 순환" 네 가지를 이 절에서 다룬다.
+
+#### 후보 사전 평가 (공식 model card / API 확인, 2026-10-25)
+| 후보 | 라이선스 | 크기 | 한국어 | 학습 라벨 | 판단 |
+|---|---|---|---|---|---|
+| [FineWeb-Edu classifier](https://huggingface.co/HuggingFaceFW/fineweb-edu-classifier) | Apache-2.0 | 0.1B (arctic-embed-m + 회귀 헤드) | 영어 전용 | LLM(Llama-3-70B) 주석, 자체 F1 0.71 | 탈락. 한국어 미지원, PyTorch 신규 의존성 |
+| [JQL Edu Heads](https://huggingface.co/JQL-AI/JQL-Edu-Heads) | Apache-2.0 | arctic-embed-m-v2.0 + 헤드(.ckpt) | 명시된 35개 언어에 한국어 없음 | LLM 3종 주석 | 보류. 한국어 미명시, PyTorch 필요. 구조(동결 임베딩 + 경량 헤드)는 차용 |
+| [FineWeb-HQ classifiers](https://huggingface.co/epfml/FineWeb-HQ-Classifiers) (FineWeb2-HQ) | Apache-2.0 | 언어별 .pt | 20개 언어(태그 기준)에 한국어 없음 | 고품질 기준 문서 대비 분류(논문 arXiv 2502.10361, 세부 확인 필요) | 탈락. 한국어 없음 |
+| [DCLM fastText OH-ELI5](https://huggingface.co/mlfoundations/fasttext-oh-eli5) | MIT | 약 2.39GB(.bin, HF 헤더 x-linked-size) | 영어 학습, 한국어 미검증 | OpenHermes+ELI5 대 웹 대리 라벨 | 탈락. 품질 라벨이 아니라 출처 대리, fasttext 신규 의존성 |
+| 웹스팸 분류기 | - | - | - | - | 미평가. HF에서 공식 근거를 찾지 못함(검색 'webspam' 0건). 확인 필요 |
+| [multilingual-e5-large](https://huggingface.co/intfloat/multilingual-e5-large) (fastembed ONNX) | MIT | 2.24GB | 아래 실측 | 임베딩 모델(라벨 아님) | **채택.** 저장소가 이미 회의록/KB 벡터에 쓰는 모델과 같은 snapshot(ac6781cd), 격리된 자식 프로세스 경로 존재, 신규 의존성 0 |
+| paraphrase-multilingual-MiniLM-L12-v2 | Apache-2.0 | 0.22GB | 아래 실측 | 임베딩 모델 | 실측 열세로 탈락 |
+| 기존 따까리 TF-IDF/logistic (`learning.py`) | 저장소 | 1024차원 해시 | 언어 무관 | 소유자 리뷰(운영 데이터 필요) | **폐기하지 않음.** 같은 분할에서 기준선으로 측정, 역할은 소유자 리뷰 기반 shadow 유지 |
+
+#### 구현
+- `triage_ml.py`: e5-large 임베딩 1회로 축을 따로 계산한다. 하나의 점수로 합치지 않는다.
+  - `topic_relevance_semantic`: cosine(목표 `query:`, 제목+도입부 `passage:` 1500자). 임계 band는 보정용 질의 50개에서만 정했다.
+  - `information_value`: ridge 헤드(0~4). FineWeb-C 한국어 사람 주석으로 학습. **정보 축일 뿐 판정을 막지 않는다.**
+  - `low_quality_likelihood`: logistic 헤드. FineWeb-C의 사람 'Problematic Content' 표시로 학습. 확률은 보정되지 않아 `probability_uncalibrated`로만 표기.
+  - `explanation_quality`: 라벨 데이터가 없어 `unmeasured`. 규칙 기반 구조 신호만 존재(`content_rules`).
+  - `precise_eval`(정밀평가 필요성): 점수가 아니라 불확실성 사유 목록(`lexical_semantic_disagreement`, `semantic_boundary_band`, `ml_flags_low_quality_but_rules_pass`, `stage2_unavailable_or_unvalidated`).
+- 헤드 artifact(`triage_ml_artifact.json`)에는 모델 버전, 임베딩 snapshot, 검증 상태, 라벨 출처, 지표가 함께 들어 있고 digest가 맞지 않으면 쓰지 않는다. 검증 상태는 코드가 사전에 정한 기준(held-out AUC 0.75, 부트스트랩 하한 0.60, 양성 15건 이상. 관련성은 0.80/0.70)으로 결정한다. 사람이 손으로 `validated`를 쓰지 않는다.
+- 판정 반영(`triage._apply_stage2`): `validated`이고 한국어이고 snapshot이 일치할 때만 결정에 영향을 준다. 영향도 한 방향이다.
+  - 어휘 규칙의 '무관 보류'를 의미 유사도가 반박하면 보류에서 검토 필요로 구제한다.
+  - 어휘 관련성이 낮아도 의미 유사도가 high band 이상이면 `review:low_relevance`를 걷어낸다.
+  - 의미 유사도가 low 미만이거나 문제 콘텐츠 가능성이 높으면 적재하되 검토 필요로 표시한다.
+  - **ML 단독으로 보류하지 않는다.** 오래됨, 짧음, AI 작성, 관심사 다름, 중복을 품질 실패로 쓰는 축이 없다(중복은 기존 novelty 규칙 그대로).
+  - 영어 등 미검증 언어, snapshot 불일치, 미검증 artifact는 기록만 하고 규칙이 단독으로 결정한다.
+- 실행 위치: 기존 `embedder_worker` 자식 프로세스(오프라인, 부모 감시). 임무 job의 페이지마다 목표+문서를 한 번에 임베딩하고 DB 트랜잭션 밖에서 돈다. API 프로세스에는 모델이 올라가지 않는다. 실패는 문서별 `unavailable`로 기록하고 규칙이 보수적으로 결정한다(수집 계속). `collector_triage_ml_enabled`와 `context_embedder=e5`가 모두 맞아야 켜진다.
+- 노출: envelope `extensions["collector:triage"]`에 축별 값, 모델 id/revision, `validation`, 사유, `stage2`(상태, 효과, 비용), `precise_eval`. 계약 축은 `relevance`(의미 유사도, 없으면 어휘), `education`(ordinal), `spam`(raw_logit). 계약에 검증 상태 필드가 없어 `evidence`에 `validation=...`를 적었다. 임무 view는 항목별 같은 필드와 집계(`triage.ml.documents_by_status`, `triage.ml.axes_validation`, `triage.precise_eval`)를 준다.
+
+#### 외부 라벨 평가 (순환 아님, 실제 실행 결과)
+명령: `PYTHONPATH=src ../back/.venv/bin/python scripts/eval_triage_ml.py --cache-dir /tmp/c4/cache --models-dir /tmp/c4/models --write-artifact --measure-cost` (원본: `unit_tests/fixtures/triage_ml/eval_report.json`)
+
+라벨 출처
+- 교육적 가치/문제 콘텐츠: FineWeb-C `kor_Hang` 639건. **커뮤니티 사람 주석자**(12명, 문서당 1명), ODC-By 1.0. LLM 라벨이 아님. 주석자 간 일치도 알 수 없음. 분포 None 254, Minimal 216, Basic 83, Good 20, Excellent 5, Problematic 61.
+- 관련성: Mr. TyDi 한국어 train(질의 150개, 질의당 정답 1 + BM25 음성 2). TyDi QA 사람 판정. 음성에 미주석 정답 가능. **질문-위키 문단 대리 평가**이며 임무 목표-웹 문서와 분포가 다르다.
+- 분할: seed 20261025, 70/30 층화. 시험 분할은 lambda, 임계값, 학습에 쓰지 않음. 관련성은 질의 50개로 band를 정하고 나머지 100개로만 측정.
+
+| 대상 | 방법 | held-out AUC (95% 부트스트랩) | 비고 |
+|---|---|---|---|
+| 정보 가치(Basic 이상, n=173, 양성 32) | **e5-large 헤드** | **0.777** (0.694~0.851) | Spearman 0.506. 임계(train p25)에서 정밀도 0.42, 재현율 0.50 |
+| | MiniLM 헤드 | 0.670 (0.565~0.769) | |
+| | 기존 해시 char TF-IDF/logistic | 0.748 (0.663~0.834) | e5와 신뢰구간 겹침. 유의한 차이 아님 |
+| | 길이만 | 0.704 | 규칙 `content_rules`는 0.581 |
+| 문제 콘텐츠(n=191, 양성 18) | **e5-large 헤드** | **0.848** (0.731~0.945) | 임계에서 정밀도 0.62, 재현율 0.44 |
+| | MiniLM 헤드 | 0.713 (0.585~0.831) | |
+| | 기존 TF-IDF/logistic | 0.724 (0.567~0.857) | |
+| | 규칙 품질 축(역) | 0.524 | |
+| 관련성(100 질의, 300쌍) | **e5-large 코사인** | **0.949** (0.922~0.970) | 정답이 음성 둘을 모두 이김 96% |
+| | 현재 어휘 규칙 | 0.743 (0.681~0.802) | 같은 조건 65% |
+| | MiniLM 코사인 | 0.788 (0.728~0.840) | 79% |
+
+사전 기준으로 e5 관련성, 정보 가치, 문제 콘텐츠 헤드 모두 `validated`(한국어). 다만 아래 한계가 따른다.
+
+비용(Mac Studio CPU, ONNX 2스레드, 자식 프로세스 실측)
+- 5문서 페이지: wall 2.9~3.1초(로드 0.6초 + 추론 2.0초), 자식 peak RSS 약 2.1GB, 종료 후 해제. warm 문서당 약 0.34초.
+- 실제 `evaluate_documents` 4문서 경로: 2.47초, 문서당 618ms(로드 1.08초 포함).
+- 규칙 단계는 여전히 문서당 약 0.05ms.
+
+#### 3단계: 정밀평가 대기 (구현 상태)
+- 저장소에는 호출 예산 장부(`budget.py`)만 있고 상한을 강제하는 LLM engine이 없다(`collector_teacher_enabled=False`, 호출처 없음). **그래서 고성능 모델 호출은 구현하지 않았고, 가짜 호출도 없다.**
+- 구현한 것: 2단계 불확실/불일치 문서만 `signals.triage.precise_eval.state="pending"`으로 영속하고 사유를 남긴다. job당 대기열 상한(`collector_triage_precise_queue_cap`, 기본 25)을 넘으면 `skipped_cap`으로 두되 문서는 검토 필요로 적재한다. engine 상태는 항상 `unavailable`로 기록한다. 임무 view가 pending/skipped_cap 개수와 상한, engine 상태를 보여 준다.
+- 남은 일: 상한을 강제하는 engine을 연결해 pending을 소비하고 결과를 기록하는 단계.
+
+#### 4단계: 적재/보류/복구
+- 자동 적재, 검토 필요 적재(좋은 문서 누락 방지), 자동 보류(영구 삭제 아님, `unhold_item` 복구)는 그대로다. 보류는 규칙에서만 나온다.
+
+#### 검증 (실행 결과)
+- `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py tests/test_collector_product_flow.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_collection_triage*.py unit_tests/test_pipeline_triage_integration.py unit_tests/test_collection_mission_triage_unhold.py tests/test_collection_mission_stage2.py` -> `240 passed, 66 subtests passed`.
+- 새 테스트: `unit_tests/test_collection_triage_ml.py` 20건(축 분리, 언어/snapshot/artifact 미검증 처리, 구제/검토/보류 불가, 실패 격리, artifact 무결성), `tests/test_collection_mission_stage2.py` 3건(DB 임무 E2E: 구제, 대기열 상한, ML 비활성 시 규칙 단독).
+- `ruff check`: 변경 파일 clean. 저장소 전체에는 이 작업과 무관한 기존 지적이 남아 있다(19건, 변경 파일 아님).
+
+#### 한계 (정직하게)
+1. 정보 가치 헤드 AUC 0.78은 약하다. 문서 수 639, 문서당 주석자 1명, 시험 양성 32건이라 신뢰구간이 넓다. 판정 근거가 아닌 정보 축으로만 쓴다. 해시 TF-IDF와 통계적으로 구분되지 않는다.
+2. 문제 콘텐츠 헤드는 임계에서 정밀도 0.62/재현율 0.44이며 시험 양성이 18건이다. '검토 필요' 표시용이다. FineWeb-C의 문제 콘텐츠 정의가 따까리의 저품질 정의와 같다고 보증하지 않는다. 실제 임무 문서의 기저율은 다르다.
+3. 관련성 band(low 0.820, high 0.857)는 질문-위키 문단 쌍에서 정했다. 임무 목표-웹 문서 분포에서는 이동할 수 있다. 실측 예: 주제가 가까운 '데이터베이스 락' 글이 cos 0.8196으로 low 바로 아래여서 구제되지 않고 어휘 규칙대로 보류됐다(복구 가능). 운영 리뷰 라벨이 쌓이면 재보정해야 한다.
+4. `validated`는 한국어에만 붙는다. 영어 등은 기록만 하고 규칙이 단독 결정한다. e5 자체는 다국어지만 외부 라벨 검증을 하지 않았다.
+5. 설명 품질 축은 라벨이 없어 미측정이다. 사실성(factuality)도 미측정이다.
+6. 규칙 축(어휘 관련성, 내용 규칙, 새로움)은 여전히 외부 라벨 평가가 없는 휴리스틱이며 `validation=unvalidated`로 표기한다. 따라서 전체 상태는 `partial` 이상이 되지 않는다.
+7. 운영 환경의 실제 모델 파일 존재와 지연은 이 Run에서 별도로 확인하지 않았다(보호 영역). 평가와 비용은 `/tmp`에 받은 같은 snapshot(ac6781cd)으로 측정했다. 임무 job에서 모델이 없으면 `unavailable`로 기록되고 규칙으로 계속 수집한다. 운영 배포 뒤 임무 view의 `triage.ml.documents_by_status`로 실동작을 확인해야 한다.
+8. 해시 임베더 환경(테스트)에서는 2단계가 자동으로 꺼진다(`disabled`).

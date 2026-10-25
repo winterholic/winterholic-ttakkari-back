@@ -108,7 +108,7 @@ def test_triage_mode_reports_active_when_legacy_l1_scorer_is_shadowed():
     assert prepared.signals["triage"]["mode"] == "active"
 
 
-def test_build_envelope_includes_triage_extension_and_measured_relevance():
+def _validated_envelope(triage_sig):
     import uuid
     from datetime import datetime
 
@@ -144,23 +144,6 @@ def test_build_envelope_includes_triage_extension_and_measured_relevance():
         extracted=extracted,
         l1=l1,
     )
-
-    triage_sig = {
-        "version": "lightweight-triage-v1",
-        "action": "accept",
-        "triage_status": "auto_accepted",
-        "scores": {
-            "relevance": 0.65,
-            "quality": 0.85,
-            "novelty": 1.0,
-            "trust": 1.0,
-            "composite": 0.82,
-        },
-        "reasons": ["triage:accepted", "triage:high_relevance"],
-        "thresholds": {"min_accept_relevance": 0.25},
-        "mode": "active",
-        "verified": False,
-    }
 
     p = SimpleNamespace(
         analysis=analysis,
@@ -240,8 +223,28 @@ def test_build_envelope_includes_triage_extension_and_measured_relevance():
         now,
     )
 
-    # Validate against strict contracts
-    validated = validate_envelope(env)
+    return validate_envelope(env)
+
+
+def test_build_envelope_includes_triage_extension_and_measured_relevance():
+    triage_sig = {
+        "version": "lightweight-triage-v1",
+        "action": "accept",
+        "triage_status": "auto_accepted",
+        "scores": {
+            "relevance": 0.65,
+            "quality": 0.85,
+            "novelty": 1.0,
+            "trust": 1.0,
+            "composite": 0.82,
+        },
+        "reasons": ["triage:accepted", "triage:high_relevance"],
+        "thresholds": {"min_accept_relevance": 0.25},
+        "mode": "active",
+        "verified": False,
+    }
+
+    validated = _validated_envelope(triage_sig)
     assert (
         validated["extensions"]["collector:triage"]["triage_status"] == "auto_accepted"
     )
@@ -249,3 +252,39 @@ def test_build_envelope_includes_triage_extension_and_measured_relevance():
     assert validated["quality"]["relevance"]["value"] == 0.65
     assert validated["quality"]["relevance"]["scale"] == "similarity"
     assert validated["quality"]["relevance"]["query_id"] is not None
+
+
+def test_envelope_exposes_stage2_axes_with_validation_state_and_stays_contract_valid():
+    import numpy as np
+
+    from ttakkari.collector import triage_ml
+    from ttakkari.collector.triage import evaluate_triage
+
+    artifact = triage_ml.load_artifact()
+    dim = len(artifact["embedding"]["mean"])
+    rng = np.random.default_rng(1)
+    goal_vec = rng.normal(size=dim)
+    doc_vec = goal_vec + 0.1 * rng.normal(size=dim)
+    ml = {
+        "version": triage_ml.VERSION, "status": "evaluated", "reason": "", "artifact_digest": artifact["digest"],
+        "embedding": {"model": artifact["embedding"]["model"], "snapshot": artifact["embedding"]["snapshot"],
+                      "snapshot_ok": True},
+        "axes": triage_ml.score_document(artifact, goal_vec.tolist(), doc_vec.tolist(), language="ko", snapshot_ok=True),
+        "cost": {"batch_docs": 1},
+    }
+    out = evaluate_triage(
+        goal="PostgreSQL MVCC 트랜잭션 동시성 제어", title="PostgreSQL MVCC 가이드",
+        text="PostgreSQL MVCC 다중 버전 동시성 제어 트랜잭션 격리 스냅샷 가이드입니다. " * 6, ml=ml)
+    env = _validated_envelope(out.signals)
+    q = env["quality"]
+    assert q["relevance"]["status"] == "measured" and q["relevance"]["scale"] == "similarity"
+    assert q["relevance"]["model_id"].startswith("ttakkari/e5-heads-v1")
+    assert "validation=validated" in q["relevance"]["evidence"]
+    assert q["education"]["scale"] == "ordinal" and q["education"]["status"] == "measured"
+    assert q["spam"]["scale"] == "raw_logit" and "validation=validated" in q["spam"]["evidence"]
+    assert q["factuality"]["status"] == "unmeasured"
+    ext = env["extensions"]["collector:triage"]
+    assert ext["validation"]["overall"] == "partial"
+    assert ext["stage2"]["status"] == "evaluated" and ext["precise_eval"]["state"] in ("pending", "not_needed")
+    assert set(ext["axes"]) >= {"relevance_lexical", "content_rules", "novelty", "topic_relevance_semantic",
+                                "information_value", "low_quality_likelihood", "explanation_quality"}

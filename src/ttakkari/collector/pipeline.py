@@ -28,7 +28,15 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from ttakkari.collector import parse, quality, store, textproc, triage, triage_ml
+from ttakkari.collector import (
+    parse,
+    quality,
+    render,
+    store,
+    textproc,
+    triage,
+    triage_ml,
+)
 from ttakkari.collector import profiles as profiles_module
 from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
@@ -227,6 +235,7 @@ async def _prepare(
         return p
     p.etag, p.last_modified = res.etag, res.last_modified
     body = res.body
+    link_charset = res.charset
     p.raw_sha256, p.raw_size = hashlib.sha256(body).hexdigest(), len(body)
     p.media_type = res.media_type or "application/octet-stream"
     if cache is not None and cache.last_raw_sha256 == p.raw_sha256:
@@ -270,11 +279,16 @@ async def _prepare(
                 p.reasons = [str(exc) if isinstance(exc, ValueError) else "pdf_parse_timeout"]
                 p.errors = [_err("extract", p.reasons[0], "PDF 본문을 안전하게 추출하지 못했습니다.")]
                 return p
+        elif detected.kind == "html":
+            # A script shell with no static text is rendered in an isolated browser; `body`/`link_charset` then follow the rendered DOM.
+            extracted, body, link_charset = await render.extract_with_fallback(body, base, res.charset, p.signals)
         else:
             extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
     except ValueError as e:
         p.stage, p.status = "extracted", "failed"
         p.errors, p.reasons = [_err("extract", str(e), "no main text could be extracted from the page")], [str(e)]
+        if (p.signals.get("render") or {}).get("reason"):  # a script shell that could not be rendered says why
+            p.reasons.append(p.signals["render"]["reason"])
         p.signals["decision_hint"] = "error"
         return p
     except Exception as e:  # noqa: BLE001  a parser crash on hostile markup is an item failure, not a job failure
@@ -284,7 +298,7 @@ async def _prepare(
         p.signals["decision_hint"] = "error"
         return p
     if detected.kind == "html" and entry["d"] < req.max_depth:
-        links = await asyncio.to_thread(parse.extract_links, body, base, res.charset)
+        links = await asyncio.to_thread(parse.extract_links, body, base, link_charset)
         p.discovered = [(u, entry["d"] + 1, 0) for u in links]
     p.analysis = await _analyze(extracted, base, res.last_modified, req, deps)
     p.stage = "scored"
@@ -538,6 +552,8 @@ def _build_envelope(
             ext["collector:pdf"] = {"pages": json.loads(a.extracted.meta["pdf_pages"]),
                                     "total_pages": int(a.extracted.meta["pdf_total_pages"]),
                                     "page_offsets": "extracted_text_before_normalization"}
+        if p.signals.get("render"):
+            ext["collector:render"] = p.signals["render"]
         if a.extracted.title:
             ext["collector:page"] = {"title": a.extracted.title.strip()[:300]}
         ext["collector:l0"] = {"version": a.l0.version, "signals": a.l0.signals, "flags": list(a.l0.flags)}

@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
 from lxml import html as lxml_html
 
+from ttakkari.collector import research
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.netguard import NetGuard, normalize_url
 from ttakkari.collector.parse import ExtractedDocument
@@ -76,7 +77,9 @@ async def search_web(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes
             continue
         seen.add(parsed.url)
         parts = urlsplit(parsed.url)
-        kind = "github" if parts.hostname == "github.com" and len(parts.path.strip("/").split("/")) >= 2 else "paper_pdf" if parts.path.lower().endswith(".pdf") or parts.hostname in {"arxiv.org", "doi.org"} else "website"
+        kind = ("github" if parts.hostname == "github.com" and len(parts.path.strip("/").split("/")) >= 2
+                else "paper" if research.paper_reference_of_url(parsed.url) and not parts.path.lower().endswith(".pdf") and not parts.path.startswith("/pdf/")
+                else "paper_pdf" if parts.path.lower().endswith(".pdf") or parts.hostname in {"arxiv.org", "doi.org"} else "website")
         result.append({"url": parsed.url, "adapter": kind, "provenance": "web_search", "query": query,
                        "provider": "duckduckgo_html", "title": link.text_content().strip()[:500], "rank": len(result) + 1})
         if len(result) >= limit:

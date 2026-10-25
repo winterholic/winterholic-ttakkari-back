@@ -257,6 +257,10 @@ class Settings(BaseSettings):
     collector_contact: str = ""
     # 원본 보존소 총량 상한(제안 20GiB, architecture 7). 도달하면 새 fetch 를 멈춘다.
     collector_blob_cap_bytes: int = Field(default=20 * 1024**3, ge=0)
+    # 정적 본문이 비어 있는 스크립트 셸 페이지만 격리된 브라우저로 렌더링한다(collector/render.py). 런타임이 없으면 사유를 남기고 건너뛴다.
+    collector_render_enabled: bool = True
+    collector_render_runtime_dir: str = ""
+    collector_render_browsers_path: str = ""
     collector_batch_size: int = Field(default=5, ge=1, le=50)
     collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더

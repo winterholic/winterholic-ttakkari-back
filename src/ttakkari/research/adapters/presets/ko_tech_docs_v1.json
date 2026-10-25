@@ -174,26 +174,26 @@
     {
       "id": "q-02",
       "query": "KV 캐시 양자화(q8_0, q4_0)의 메모리 절감 효과는?",
-      "relevant_ids": ["doc-03", "doc-01"],
-      "relevance_grades": { "doc-03": 3, "doc-01": 1 }
+      "relevant_ids": ["doc-03"],
+      "relevance_grades": { "doc-03": 3 }
     },
     {
       "id": "q-03",
       "query": "Flash Attention의 긴 컨텍스트 가속 원리와 HBM 타일링",
-      "relevant_ids": ["doc-04", "doc-03"],
-      "relevance_grades": { "doc-04": 3, "doc-03": 1 }
+      "relevant_ids": ["doc-04"],
+      "relevance_grades": { "doc-04": 3 }
     },
     {
       "id": "q-04",
       "query": "따까리 로컬 TTS가 Kokoro 대신 Supertonic 3를 선택한 이유는?",
-      "relevant_ids": ["doc-06", "doc-07"],
-      "relevance_grades": { "doc-06": 3, "doc-07": 1 }
+      "relevant_ids": ["doc-06"],
+      "relevance_grades": { "doc-06": 3 }
     },
     {
       "id": "q-05",
       "query": "TTS 텍스트 정규화에서 숫자와 영문 약어 변환 절차",
-      "relevant_ids": ["doc-07", "doc-08"],
-      "relevance_grades": { "doc-07": 3, "doc-08": 2 }
+      "relevant_ids": ["doc-07"],
+      "relevance_grades": { "doc-07": 3 }
     },
     {
       "id": "q-06",

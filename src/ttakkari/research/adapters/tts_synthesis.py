@@ -102,8 +102,6 @@ class TtsSynthesisAdapter:
         "tts_korean_text_normalization",
         "tts_pronunciation_dictionary",
         "tts_sentence_segmentation",
-        "tts_duration_prediction",
-        "tts_speaker_embedding_voice_consistency",
     ]
 
     # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
@@ -168,16 +166,18 @@ class TtsSynthesisAdapter:
 
             return AdapterEnvironmentStatus(
                 adapter_id=self.id,
-                ready=True,  # normalize_only is always ready; synth depends on model files
+                ready=bool(synth_ready),
                 execution_mode="subprocess_worker" if synth_ready else "in_process",
-                reason=f"전처리 정규화 상시 지원; 합성 엔진: {avail.reason}",
+                reason=f"전처리 정규화 상시 지원; 음성 합성 엔진: {avail.reason}"
+                if synth_ready
+                else f"합성 엔진 준비 안 됨({avail.reason}); 텍스트 정규화(normalize_only)만 가능",
                 available_models=voices if synth_ready else [],
                 details=details,
             )
         except Exception as exc:
             return AdapterEnvironmentStatus(
                 adapter_id=self.id,
-                ready=True,
+                ready=False,
                 execution_mode="in_process",
                 reason=f"기본 정규화 전처리 지원 (엔진 확인 오류: {exc})",
                 available_models=[],
@@ -200,6 +200,27 @@ class TtsSynthesisAdapter:
             errors.append(
                 "피치/에너지 운율 제어(tts_prosody_control)는 Supertonic 3 ONNX 모델 구조상 미지원됩니다."
             )
+        if "split_on_comma" in config:
+            errors.append(
+                "split_on_comma는 미지원됩니다 (현재 청킹 파이프라인은 문장/절 단위 정규식 분할만 지원)."
+            )
+        if "total_steps" in config:
+            errors.append(
+                "total_steps(확산 스텝 제어)는 Supertonic 3 ONNX 고정 파이프라인에서 미지원됩니다."
+            )
+
+        # Audit english_acronym_mode
+        acronym_mode = config.get("english_acronym_mode")
+        if acronym_mode is not None:
+            if acronym_mode in ("as_word", "spelled_out"):
+                errors.append(
+                    f"english_acronym_mode='{acronym_mode}'은 현재 정규화 엔진에서 미지원됩니다 "
+                    "(한국어 약어 사전 기반 'korean_alphabet' 및 비변환 'raw'만 지원)."
+                )
+            elif acronym_mode not in ("korean_alphabet", "raw"):
+                errors.append(
+                    f"지원되지 않는 english_acronym_mode: '{acronym_mode}'. 허용 값: korean_alphabet, raw"
+                )
 
         mode = config.get("mode", "normalize_only")
         if mode not in VALID_MODES:
@@ -332,6 +353,7 @@ class TtsSynthesisAdapter:
 
         sentence_reports: list[dict[str, Any]] = []
         all_chunks: list[str] = []
+        chunk_sentence_map: list[int] = []
         raw_char_count = 0
         normalized_char_count = 0
 
@@ -348,6 +370,7 @@ class TtsSynthesisAdapter:
             normalized_char_count += len(norm_s)
             chunks = chunk_text(norm_s, max_chars=max_chunk_chars)
             all_chunks.extend(chunks)
+            chunk_sentence_map.extend([s_idx] * len(chunks))
 
             sentence_reports.append({
                 "index": s_idx + 1,
@@ -385,6 +408,7 @@ class TtsSynthesisAdapter:
 
         # 2. Synthesis Mode (Supertonic 3)
         from ttakkari.config import get_settings
+        from ttakkari.tts.service import _execution_lock
         from ttakkari.tts.supertonic import SupertonicProvider
 
         s = get_settings()
@@ -417,13 +441,14 @@ class TtsSynthesisAdapter:
         artifacts_to_register: list[dict[str, Any]] = []
 
         try:
-            tts_res = await provider.synthesize(
-                all_chunks,
-                voice=voice,
-                speed=speed,
-                lang="ko",
-                out_dir=temp_dir,
-            )
+            async with _execution_lock:
+                tts_res = await provider.synthesize(
+                    all_chunks,
+                    voice=voice,
+                    speed=speed,
+                    lang="ko",
+                    out_dir=temp_dir,
+                )
 
             metrics = tts_res.metrics or {}
             synth_seconds = float(metrics.get("synth_seconds", 0.0))
@@ -458,41 +483,86 @@ class TtsSynthesisAdapter:
 
             # 3. Optional STT Recognition and CER/WER Evaluation
             if mode == "synthesize_and_stt":
-                try:
-                    from ttakkari.meetings.local_stt import core as stt_core
-                    from ttakkari.meetings.local_stt import runner as stt_runner
+                from ttakkari.meetings.local_stt import core as stt_core
+                from ttakkari.meetings.local_stt import runner as stt_runner
 
-                    stt_py = getattr(s, "local_stt_python", "") or ""
-                    if Path(stt_py).is_file():
-                        for idx, chunk_info in enumerate(audio_chunks_info):
-                            wav_path = chunk_info["path"]
-                            stt_req = {
-                                "file_path": wav_path,
-                                "profile": "baseline",
-                                "language": "ko",
-                            }
-                            stt_out = await stt_runner.run_worker(
-                                module="ttakkari.meetings.local_stt.worker",
-                                request=stt_req,
-                                settings=s,
-                            )
-                            transcript = str(stt_out.get("transcript", "")).strip()
-                            norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
+                stt_py = getattr(s, "local_stt_python", "") or ""
+                if not Path(stt_py).is_file():
+                    total_wall = time.monotonic() - started_wall
+                    return AdapterRunResult(
+                        status="failed",
+                        raw_output={
+                            "error": f"STT 런타임 환경(local_stt_python={stt_py}) 부재로 음성 재인식 평가 불가",
+                            "audio_chunks": audio_chunks_info,
+                        },
+                        environment_snapshot={"scope": scope, "engine": "supertonic"},
+                        error_code="stt_runtime_missing",
+                        error_message="STT 파이썬 실행기가 존재하지 않아 발음 검증을 수행할 수 없습니다.",
+                        wall_seconds=round(total_wall, 3),
+                        artifacts=artifacts_to_register,
+                    )
 
-                            rates_norm = stt_core.error_rates(norm_ref, transcript)
-                            stt_eval_results.append({
-                                "chunk_index": idx,
-                                "recognized_text": transcript,
-                                "normalized_reference": norm_ref,
-                                "cer_vs_normalized": rates_norm.get("cer"),
-                                "wer_vs_normalized": rates_norm.get("wer"),
-                            })
-                    else:
+                stt_failures = 0
+                for idx, chunk_info in enumerate(audio_chunks_info):
+                    if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
+                        total_wall = time.monotonic() - started_wall
+                        return AdapterRunResult(
+                            status="cancelled",
+                            raw_output={"reason": "cancelled_during_stt_eval"},
+                            environment_snapshot={"scope": scope},
+                            wall_seconds=round(total_wall, 3),
+                            artifacts=artifacts_to_register,
+                        )
+
+                    wav_path = Path(chunk_info["path"])
+                    stt_params = {"language": "ko"}
+                    try:
+                        stt_out = await stt_runner.run_worker(
+                            wav_path,
+                            stt_params,
+                            s,
+                            production=True,
+                        )
+                        transcript = str(stt_out.get("text") or stt_out.get("transcript") or "").strip()
+                        norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
+                        sent_idx = chunk_sentence_map[idx] if idx < len(chunk_sentence_map) else 0
+                        raw_ref = raw_texts[sent_idx] if sent_idx < len(raw_texts) else norm_ref
+
+                        rates_norm = stt_core.error_rates(norm_ref, transcript)
+                        rates_raw = stt_core.error_rates(raw_ref, transcript)
+
                         stt_eval_results.append({
-                            "warning": "STT 런타임 환경 부재로 음성 재인식 단계 건너뜀"
+                            "chunk_index": idx,
+                            "recognized_text": transcript,
+                            "normalized_reference": norm_ref,
+                            "raw_reference": raw_ref,
+                            "cer_vs_normalized": rates_norm.get("cer"),
+                            "wer_vs_normalized": rates_norm.get("wer"),
+                            "cer_vs_raw": rates_raw.get("cer"),
+                            "wer_vs_raw": rates_raw.get("wer"),
                         })
-                except Exception as stt_exc:
-                    stt_eval_results.append({"stt_error": str(stt_exc)})
+                    except Exception as stt_exc:
+                        stt_failures += 1
+                        stt_eval_results.append({
+                            "chunk_index": idx,
+                            "stt_error": f"{type(stt_exc).__name__}: {stt_exc}",
+                        })
+
+                if stt_failures == len(audio_chunks_info) and len(audio_chunks_info) > 0:
+                    total_wall = time.monotonic() - started_wall
+                    return AdapterRunResult(
+                        status="failed",
+                        raw_output={
+                            "error": "STT 재인식 워커 실행 실패",
+                            "stt_eval": stt_eval_results,
+                            "audio_chunks": audio_chunks_info,
+                        },
+                        environment_snapshot={"scope": scope, "engine": "supertonic"},
+                        error_code="stt_worker_failed",
+                        error_message="모든 청크에 대한 STT 재인식 워커 실행이 실패했습니다.",
+                        wall_seconds=round(total_wall, 3),
+                        artifacts=artifacts_to_register,
+                    )
 
             total_wall = time.monotonic() - started_wall
 
@@ -644,13 +714,15 @@ class TtsSynthesisAdapter:
         stt_eval = raw.get("stt_eval") or []
         cer_values = [item["cer_vs_normalized"] for item in stt_eval if item.get("cer_vs_normalized") is not None]
         wer_values = [item["wer_vs_normalized"] for item in stt_eval if item.get("wer_vs_normalized") is not None]
+        cer_raw_values = [item["cer_vs_raw"] for item in stt_eval if item.get("cer_vs_raw") is not None]
+        wer_raw_values = [item["wer_vs_raw"] for item in stt_eval if item.get("wer_vs_raw") is not None]
 
         if cer_values:
             mean_cer = sum(cer_values) / len(cer_values)
             records.append(
                 MeasurementRecord(
                     metric_key="stt_cer_vs_normalized",
-                    metric_label="STT 재인식 음절 오류율 (대리 지표)",
+                    metric_label="STT 재인식 음절 오류율 (정규화문 대리 지표)",
                     value=round(mean_cer, 4),
                     unit="ratio",
                     direction="lower_is_better",
@@ -660,18 +732,48 @@ class TtsSynthesisAdapter:
                 )
             )
 
+        if cer_raw_values:
+            mean_cer_raw = sum(cer_raw_values) / len(cer_raw_values)
+            records.append(
+                MeasurementRecord(
+                    metric_key="stt_cer_vs_raw",
+                    metric_label="STT 재인식 음절 오류율 (원문 대리 지표)",
+                    value=round(mean_cer_raw, 4),
+                    unit="ratio",
+                    direction="lower_is_better",
+                    is_proxy=True,
+                    aggregator="mean",
+                    meta={"explanation": "원문 기준 Whisper 재인식 음절 오류율(CER) 대리 지표"},
+                )
+            )
+
         if wer_values:
             mean_wer = sum(wer_values) / len(wer_values)
             records.append(
                 MeasurementRecord(
                     metric_key="stt_wer_vs_normalized",
-                    metric_label="STT 재인식 어절 오류율 (대리 지표)",
+                    metric_label="STT 재인식 어절 오류율 (정규화문 대리 지표)",
                     value=round(mean_wer, 4),
                     unit="ratio",
                     direction="lower_is_better",
                     is_proxy=True,
                     aggregator="mean",
                     meta={"explanation": "Whisper 재인식을 통한 발음 명료도 간접 대리 지표이며 사람 청취 품질(MOS)이 아님"},
+                )
+            )
+
+        if wer_raw_values:
+            mean_wer_raw = sum(wer_raw_values) / len(wer_raw_values)
+            records.append(
+                MeasurementRecord(
+                    metric_key="stt_wer_vs_raw",
+                    metric_label="STT 재인식 어절 오류율 (원문 대리 지표)",
+                    value=round(mean_wer_raw, 4),
+                    unit="ratio",
+                    direction="lower_is_better",
+                    is_proxy=True,
+                    aggregator="mean",
+                    meta={"explanation": "원문 기준 Whisper 재인식 어절 오류율(WER) 대리 지표"},
                 )
             )
 

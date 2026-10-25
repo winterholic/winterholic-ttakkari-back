@@ -55,6 +55,14 @@ def _tokenize(text: str, remove_stopwords: bool = True) -> list[str]:
     return tokens
 
 
+def _l2_normalize(vec: list[float]) -> list[float]:
+    """Normalize a vector to unit length (L2 norm = 1.0)."""
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm < 1e-9:
+        return vec
+    return [x / norm for x in vec]
+
+
 def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
     dot = sum(a * b for a, b in zip(v1, v2, strict=False))
     return float(dot)
@@ -176,7 +184,7 @@ class RetrievalEvalAdapter:
             adapter_id=self.id,
             ready=True,
             execution_mode="in_process",
-            reason="내장 BM25 및 해시 임베더 검색 평가 상시 지원",
+            reason=f"기본 인프로세스(BM25, hash_embedder) 상시 지원; 신경망 E5 모델: {'사용 가능' if e5_ready else '미설치(hash 대체)'}",
             available_models=available_models,
             details=details,
         )
@@ -195,6 +203,38 @@ class RetrievalEvalAdapter:
             errors.append("ColBERT 후기 상호작용(colbert_late_interaction) 모델은 로컬 미지원입니다.")
         if "hnsw_m" in config or "ef_search" in config:
             errors.append("HNSW 인덱스 구조 튜닝(vector_index_structure_tuning)은 인메모리 평가기에서 미지원됩니다.")
+
+        if "dense_weight" in config:
+            try:
+                dw = float(config["dense_weight"])
+                if dw < 0.0 or dw > 1.0:
+                    errors.append("dense_weight는 0.0 이상 1.0 이하의 숫자여야 합니다.")
+            except (ValueError, TypeError):
+                errors.append("dense_weight는 숫자여야 합니다.")
+
+        if "normalize_embeddings" in config and not isinstance(config["normalize_embeddings"], bool):
+            errors.append("normalize_embeddings는 boolean 값이어야 합니다.")
+
+        if "rrf_k" in config:
+            rrf_k_val = config["rrf_k"]
+            if not isinstance(rrf_k_val, int) or rrf_k_val < 1 or rrf_k_val > 1000:
+                errors.append("rrf_k는 1 이상 1000 이하의 정수여야 합니다.")
+
+        if "bm25_k1" in config:
+            try:
+                k1 = float(config["bm25_k1"])
+                if k1 < 0.1 or k1 > 5.0:
+                    errors.append("bm25_k1은 0.1 이상 5.0 이하의 숫자여야 합니다.")
+            except (ValueError, TypeError):
+                errors.append("bm25_k1은 숫자여야 합니다.")
+
+        if "bm25_b" in config:
+            try:
+                b = float(config["bm25_b"])
+                if b < 0.0 or b > 1.0:
+                    errors.append("bm25_b는 0.0 이상 1.0 이하의 숫자여야 합니다.")
+            except (ValueError, TypeError):
+                errors.append("bm25_b는 숫자여야 합니다.")
 
         preset_id = config.get("preset_id")
         corpus = config.get("corpus")
@@ -310,11 +350,15 @@ class RetrievalEvalAdapter:
         chunk_overlap = int(config.get("chunk_overlap", 50))
 
         # 2. Retriever mode and weights
+        dense_weight_param: float | None = None
         if "dense_weight" in config:
-            # hybrid_retrieval method
-            retriever_mode = "hybrid_rrf"
-            dense_weight = float(config["dense_weight"])
-            hybrid_alpha = 1.0 - dense_weight
+            # hybrid_retrieval method (선형 결합 시 1 - dense_weight는 BM25, dense_weight는 Dense)
+            dense_weight_param = float(config["dense_weight"])
+            hybrid_alpha = round(1.0 - dense_weight_param, 4)
+            if config.get("retriever_mode") == "hybrid_rrf":
+                retriever_mode = "hybrid_rrf"
+            else:
+                retriever_mode = "hybrid_linear"
         elif "embedding_model_id" in config:
             emb_id = str(config["embedding_model_id"])
             retriever_mode = "dense_e5" if "e5" in emb_id.lower() else "dense_hash"
@@ -326,6 +370,7 @@ class RetrievalEvalAdapter:
             retriever_mode = config.get("retriever_mode", "bm25")
             hybrid_alpha = float(config.get("hybrid_alpha", 0.5))
 
+        normalize_embeddings = bool(config.get("normalize_embeddings", True))
         rrf_k = int(config.get("rrf_k", 60))
         k = int(config.get("top_k") if "top_k" in config else config.get("k", 5))
         remove_stopwords = bool(config.get("normalize_korean_stopwords", True))
@@ -389,6 +434,9 @@ class RetrievalEvalAdapter:
                 texts = [cu["text"] for cu in chunk_units]
                 dense_chunk_vectors = await embedder.embed(texts, query=False)
 
+            if normalize_embeddings:
+                dense_chunk_vectors = [_l2_normalize(v) for v in dense_chunk_vectors]
+
         # Precompute BM25 / Lexical statistics
         docs_tokens = [_tokenize(cu["text"], remove_stopwords) for cu in chunk_units]
         docs_counts = [Counter(dt) for dt in docs_tokens]
@@ -449,6 +497,8 @@ class RetrievalEvalAdapter:
             if needs_dense:
                 q_vec_list = await embedder.embed([query_str], query=True)
                 q_vec = q_vec_list[0]
+                if normalize_embeddings:
+                    q_vec = _l2_normalize(q_vec)
                 dense_scores = [_cosine_similarity(q_vec, d_vec) for d_vec in dense_chunk_vectors]
 
             # Aggregate chunk scores to doc_id
@@ -475,8 +525,11 @@ class RetrievalEvalAdapter:
                 bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(ranked_bm25)}
                 dense_ranks = {idx: rank + 1 for rank, idx in enumerate(ranked_dense)}
 
+                bm25_w = hybrid_alpha if (dense_weight_param is not None or "hybrid_alpha" in config) else 0.5
+                dense_w = (1.0 - hybrid_alpha) if (dense_weight_param is not None or "hybrid_alpha" in config) else 0.5
+
                 chunk_rrf: list[float] = [
-                    (1.0 / (rrf_k + bm25_ranks[i])) + (1.0 / (rrf_k + dense_ranks[i]))
+                    (bm25_w * 2.0 / (rrf_k + bm25_ranks[i])) + (dense_w * 2.0 / (rrf_k + dense_ranks[i]))
                     for i in range(num_docs)
                 ]
                 for idx, cu in enumerate(chunk_units):
@@ -492,10 +545,13 @@ class RetrievalEvalAdapter:
                 min_d = min(dense_scores) if dense_scores else 0.0
                 range_d = (max_d - min_d) or 1.0
 
+                bm25_w = hybrid_alpha
+                dense_w = 1.0 - hybrid_alpha
+
                 for idx, cu in enumerate(chunk_units):
                     nb = (bm25_scores[idx] - min_b) / range_b
                     nd = (dense_scores[idx] - min_d) / range_d
-                    combined = hybrid_alpha * nb + (1.0 - hybrid_alpha) * nd
+                    combined = bm25_w * nb + dense_w * nd
                     did = cu["doc_id"]
                     doc_scores[did] = max(doc_scores.get(did, 0.0), combined)
 
@@ -570,6 +626,9 @@ class RetrievalEvalAdapter:
             "query_count": len(queries),
             "k": k,
             "retriever_mode": retriever_mode,
+            "dense_weight": dense_weight_param,
+            "hybrid_alpha": hybrid_alpha,
+            "normalize_embeddings": normalize_embeddings,
             "chunking_strategy": chunking_strategy,
             "rerank_mode": rerank_mode,
             "summary": {

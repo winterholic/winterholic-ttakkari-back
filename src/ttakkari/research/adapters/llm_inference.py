@@ -32,8 +32,6 @@ class LlmInferenceAdapter:
         "prompt_context_length_tuning",
         "cpu_gpu_offloading",
         "flash_attention",
-        "weight_quantization",
-        "system_cpu_thread_binding",
         "system_batch_size_throughput_tuning",
     ]
 
@@ -168,18 +166,37 @@ class LlmInferenceAdapter:
             errors.append("접두사 캐시 TTL 제어(prefix_caching)는 llama-server에서 미지원됩니다.")
         if "fused_layernorm" in config or "fused_rotary_emb" in config:
             errors.append("커널 퓨전(kernel_fusion)은 컴파일 타임 최적화로 런타임 제어가 미지원됩니다.")
+        if "main_gpu" in config:
+            errors.append("main_gpu(다중 GPU 지정)는 HostGpu 실행기에서 미지원됩니다 (device='default' 또는 'none'만 지원).")
+        if "quant_method" in config:
+            errors.append("quant_method(런타임 양자화 조절)는 미지원됩니다. 사전 양자화 모델(GGUF)을 model 또는 지원되는 quant_type('Q4_K_M', 'Q2_K')으로 지정하십시오.")
+        if "temperature" in config and config["temperature"] is not None:
+            try:
+                temp_val = float(config["temperature"])
+                if temp_val != 0.0:
+                    errors.append("HostGpu.bench는 재현성 보장을 위해 temperature=0으로 고정되어 있으며 다른 값은 미지원됩니다.")
+            except (ValueError, TypeError):
+                errors.append("temperature는 숫자여야 합니다.")
 
         # Resolve model
         model = config.get("model")
+        quant_type = config.get("quant_type")
         if not model:
-            # Map quant_type to available models if provided
-            quant_type = config.get("quant_type")
-            if quant_type == "Q4_K_M":
-                model = "qwen3.5-4b-q4_k_m"
-            elif quant_type in ("Q2_K", "Q2K"):
-                model = "qwen3.8-flash-next-q2k"
+            if quant_type:
+                if quant_type == "Q4_K_M":
+                    model = "qwen3.5-4b-q4_k_m"
+                elif quant_type in ("Q2_K", "Q2K"):
+                    model = "qwen3.8-flash-next-q2k"
+                else:
+                    errors.append(
+                        f"지원되지 않는 quant_type: '{quant_type}'. 사전 양자화 모델은 Q4_K_M, Q2_K만 지원됩니다."
+                    )
             else:
-                model = "qwen3.5-4b-q4_k_m"
+                errors.append("model 또는 지원되는 quant_type('Q4_K_M', 'Q2_K') 설정이 필수입니다.")
+        elif quant_type:
+            # model과 quant_type이 둘 다 주어진 경우에도 quant_type 유효성 확인
+            if quant_type not in ("Q4_K_M", "Q2_K", "Q2K"):
+                errors.append(f"지원되지 않는 quant_type: '{quant_type}'. 허용 값: Q4_K_M, Q2_K")
 
         try:
             from ttakkari.config import get_settings
@@ -317,15 +334,18 @@ class LlmInferenceAdapter:
 
         started_wall = time.monotonic()
         server_started = False
+        cleanup_info: dict[str, Any] = {"attempted": False, "success": False}
+        run_result: AdapterRunResult | None = None
 
         try:
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
-                return AdapterRunResult(
+                run_result = AdapterRunResult(
                     status="cancelled",
                     raw_output={"reason": "cancelled_before_server_start"},
                     environment_snapshot={"scope": scope},
                     wall_seconds=time.monotonic() - started_wall,
                 )
+                return run_result
 
             await asyncio.to_thread(host_gpu.start, start_req)
             server_started = True
@@ -334,12 +354,13 @@ class LlmInferenceAdapter:
             ready = False
             while time.monotonic() < deadline:
                 if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
-                    return AdapterRunResult(
+                    run_result = AdapterRunResult(
                         status="cancelled",
                         raw_output={"reason": "cancelled_while_waiting_readiness"},
                         environment_snapshot={"scope": scope},
                         wall_seconds=time.monotonic() - started_wall,
                     )
+                    return run_result
                 st = await asyncio.to_thread(host_gpu.status)
                 if st.get("ready"):
                     ready = True
@@ -347,7 +368,7 @@ class LlmInferenceAdapter:
                 await asyncio.sleep(0.5)
 
             if not ready:
-                return AdapterRunResult(
+                run_result = AdapterRunResult(
                     status="failed",
                     raw_output={"status": host_gpu.status()},
                     environment_snapshot={"scope": scope},
@@ -355,14 +376,16 @@ class LlmInferenceAdapter:
                     error_message="llama-server가 45초 내에 준비 상태(ready)가 되지 못했습니다.",
                     wall_seconds=time.monotonic() - started_wall,
                 )
+                return run_result
 
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
-                return AdapterRunResult(
+                run_result = AdapterRunResult(
                     status="cancelled",
                     raw_output={"reason": "cancelled_before_bench"},
                     environment_snapshot={"scope": scope},
                     wall_seconds=time.monotonic() - started_wall,
                 )
+                return run_result
 
             bench_result = await asyncio.to_thread(
                 host_gpu.bench,
@@ -372,7 +395,7 @@ class LlmInferenceAdapter:
             )
 
             total_wall = time.monotonic() - started_wall
-            return AdapterRunResult(
+            run_result = AdapterRunResult(
                 status="succeeded",
                 raw_output=bench_result,
                 environment_snapshot={
@@ -383,10 +406,11 @@ class LlmInferenceAdapter:
                 },
                 wall_seconds=round(total_wall, 3),
             )
+            return run_result
 
         except Exception as exc:
             total_wall = time.monotonic() - started_wall
-            return AdapterRunResult(
+            run_result = AdapterRunResult(
                 status="failed",
                 raw_output={"error": str(exc), "config": config},
                 environment_snapshot={"scope": scope},
@@ -394,15 +418,19 @@ class LlmInferenceAdapter:
                 error_message=str(exc),
                 wall_seconds=round(total_wall, 3),
             )
+            return run_result
 
         finally:
             if server_started:
+                cleanup_info["attempted"] = True
                 try:
-                    await asyncio.to_thread(
-                        host_gpu.stop, reason=f"research_run_{run_id}_complete"
-                    )
-                except Exception:
-                    pass
+                    stop_res = await asyncio.to_thread(host_gpu.stop)
+                    cleanup_info["success"] = True
+                    cleanup_info["result"] = stop_res
+                except Exception as cleanup_exc:
+                    cleanup_info["error"] = f"{type(cleanup_exc).__name__}: {cleanup_exc}"
+            if run_result is not None and isinstance(run_result.raw_output, dict):
+                run_result.raw_output["cleanup"] = cleanup_info
 
     def to_measurements(
         self, result: AdapterRunResult, config: dict[str, Any]
@@ -472,8 +500,9 @@ class LlmInferenceAdapter:
             )
         )
 
+        # HostGpu bench() returns 'swap' at top-level. Read top-level swap first, fallback to status.swap
         status = raw.get("status") or {}
-        swap = status.get("swap") or {}
+        swap = raw.get("swap") or status.get("swap") or {}
         peak_bytes = swap.get("peak_growth_bytes")
         if peak_bytes is not None:
             records.append(

@@ -16,7 +16,8 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, jobs, precise_eval, store, triage, triage_ml
+from ttakkari.collector import control, jobs, precise_eval, research_rounds, store, triage, triage_ml
+from ttakkari.collector import research as research_logic
 from ttakkari.collector.contracts import (
     AuthContext,
     CollectorConflictError,
@@ -68,6 +69,11 @@ async def begin_run(db, mission: CollectionMission, trigger: str) -> CollectionM
     return await get_run(db, mission, seq, trigger=trigger)
 
 
+def needs_preparation(strategy: dict) -> bool:
+    """Search, repository inventory and paper resolution run in a durable preparation job, not in the API request."""
+    return strategy["mode"] == "research" or any(entry["adapter"] in ("github", "paper") for entry in strategy["sources"])
+
+
 def input_url(raw: str):
     # Parsing may retain a nonstandard public port. Only the server source policy and
     # DNS-pinned fetcher decide whether it can actually be contacted.
@@ -95,25 +101,27 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
         parsed = urlsplit(url)
         host = parsed.hostname or ""
         adapter = ("github" if host == "github.com" and len(parsed.path.strip("/").split("/")) >= 2
+                   else "paper" if research_logic.paper_reference_of_url(url) and not parsed.path.startswith("/pdf/") and not parsed.path.lower().endswith(".pdf")
                    else "paper_pdf" if parsed.path.lower().endswith(".pdf") or host in {"arxiv.org", "doi.org"}
                    else "website")
         sources.append({"url": url, "adapter": adapter, "provenance": "user_reference"})
     if len(sources) > 100:
         raise ValueError("한 임무에는 참고 주소를 100개까지 넣을 수 있습니다.")
-    topic = URL_PATTERN.sub("", goal).strip()[:300]
     research = not sources
-    dimensions = ["핵심 이론·용어", "논문·원전", "구현·실무 사례", "설계 패턴·한계"]
+    parts = research_logic.initial_plan_parts(goal, context) if research else {}
     return {
         "version": 1, "title": goal.strip().splitlines()[0][:100],
         "mode": "research" if research else "mixed" if context else "sources", "goal": goal.strip(),
         "sources": sources,
         "context": {"text": context, "provenance": "user_provided", "fact_check_status": "unverified"},
-        "queries": [f"{topic} {suffix}" for suffix in ("이론 논문", "research paper", "open source implementation", "patterns case study")] if research else [],
-        "coverage": [{"topic": name, "state": "unexplored"} for name in dimensions] if research else [],
-        "steps": (["하위 주제와 검색어 구성", "독립 출처 탐색"] if research else ["문서 구조와 참고 자료 확인"])
+        "queries": parts.get("queries", []), "coverage": parts.get("coverage", []),
+        **({k: parts[k] for k in ("topics", "query_topics", "deferred_queries")} if research else {}),
+        "steps": (["하위 주제와 한·영 검색어 구성", "독립 출처 탐색", "수집 자료의 참고문헌·새 키워드로 추가 탐색"] if research
+                  else ["문서 구조와 참고 자료 확인"] + (["수집 자료와 사용자 맥락의 관계 확인"] if context else []))
                  + ["적절한 수집기로 자료 확보", "관련성·품질·중복 평가", "지식 도서관 적재와 결과 확인"],
-        "budget": {"pages": max_pages, "depth": max_depth, "searches": 16, "seconds": 1800},
-        "stop_conditions": ["임무 예산 소진", "허용 범위 탐색 종료", "연속 탐색에서 유의미한 신규 자료 없음"],
+        "budget": {"pages": max_pages, "depth": max_depth, "searches": 16, "seconds": 1800, "rounds": research_logic.MAX_ROUNDS,
+                   "papers": research_logic.MAX_PAPERS, "model_calls": 0},
+        "stop_conditions": ["임무 예산 소진", "허용 범위 탐색 종료", "연속 탐색에서 유의미한 신규 자료 없음", "모든 영역 확보"],
     }
 
 
@@ -134,12 +142,12 @@ async def create(db, *, goal: str, context: str = "", urls: list[str] | None = N
     await db.flush()
     await get_run(db, mission, 1)
     await launch(db, mission)
-    if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
+    if needs_preparation(mission.plan):
         await queue_preparation(db, mission)
     return mission
 
 
-async def queue_preparation(db, mission: CollectionMission, run_seq: int | None = None) -> None:
+async def queue_preparation(db, mission: CollectionMission, run_seq: int | None = None, *, round_no: int = 0) -> None:
     """Internal orchestration job. No document rights or delivery outbox are manufactured.
 
     Only the server can create its stage and mission relation. It uses the same claim,
@@ -147,10 +155,11 @@ async def queue_preparation(db, mission: CollectionMission, run_seq: int | None 
     """
     ident = uuid.uuid4()
     run_seq = run_seq or mission.current_run_seq or 1
-    envelope = {"mission_id": str(mission.id)}
+    envelope = {"mission_id": str(mission.id), **({"round": round_no} if round_no else {})}
     job = CollectorJob(id=ident, tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE,
                        source_key=f"mission-prepare:{mission.id}",
-                       request_key=f"prepare:{mission.id}" if run_seq == 1 else f"prepare:{mission.id}:{run_seq}",
+                       request_key=(f"prepare:{mission.id}:{run_seq}:r{round_no}" if round_no else
+                                    f"prepare:{mission.id}" if run_seq == 1 else f"prepare:{mission.id}:{run_seq}"),
                        payload_hash=hashlib.sha256(jcs(envelope).encode()).hexdigest(), envelope_id=uuid.uuid4(),
                        envelope=envelope, stage="mission_prepare", status="queued")
     db.add(job)
@@ -252,7 +261,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
 
     need_work: list[dict[str, Any]] = []
     for entry in entries:
-        if entry["adapter"] == "github":
+        if entry["adapter"] in ("github", "paper"):
             continue  # Expanded by the durable preparation job, never fetched as HTML.
         key = source_key_for(mission.id, entry["url"])
         if key in active_sources:
@@ -373,6 +382,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     elif linked and not active_sources and not queued:
         has_failure = gaps or any(j.status in ("partial", "failed", "cancelled") for j in linked)
         mission.status = "partial" if has_failure else "succeeded"
+    await research_rounds.maybe_queue_round(db, mission, run_seq, linked, queued=queued, active=active_sources)
 
 
 async def launch(db, mission: CollectionMission) -> None:
@@ -412,41 +422,16 @@ async def prepare(job, ctx):
             return HandlerResult("quarantined", {"code": "unbound_mission_preparation"})
         strategy = mission.plan
     done = list((job.cursor or {}).get("prepared", []))
-    search_cursor = int((job.cursor or {}).get("search_cursor", 0))
-    no_new = int((job.cursor or {}).get("no_new", 0))
-    queries = strategy["queries"][:strategy["budget"]["searches"]]
-    for query_index, query in enumerate(queries[search_cursor:] if no_new < 2 else [], start=search_cursor):
-        try:
-            candidates = await adapters.search_web(query)
-        except Exception:  # noqa: BLE001
-            candidates = []
-        await ctx.heartbeat()
-        progress = {}
-
-        async def record_search(db, _candidates=candidates, _query=query, _index=query_index, _progress=progress, _no_new=no_new):
-            owned = await jobs._fenced_job(db, job.id, job.attempt_token)
-            if owned.cancel_requested:
-                return owned.cursor, []
-            current = await db.get(CollectionMission, mission.id, with_for_update=True)
-            known = {source["url"] for source in current.plan["sources"]}
-            additions = [candidate for candidate in _candidates if candidate["url"] not in known]
-            _progress["no_new"] = _no_new + 1 if not additions else 0
-            history = [*(current.plan.get("search_history") or []),
-                       {"query": _query, "candidates": len(_candidates), "new_sources": len(additions), "provider": "duckduckgo_html"}]
-            current.plan = {**current.plan, "sources": current.plan["sources"] + additions, "search_history": history,
-                            "search_stop": "diminishing_returns" if _progress["no_new"] >= 2 else "query_budget" if _index + 1 == len(queries) else None}
-            await launch(db, current)
-            if not current.plan["sources"]:
-                current.gaps = [{"reason": "no_search_candidates", "message": "검색에서 수집할 출처를 찾지 못했습니다."}]
-            _progress["strategy"] = current.plan
-            return {"prepared": list(done), "search_cursor": _index + 1, "no_new": _progress["no_new"]}, []
-
-        if await ctx.commit_work(record_search, stage="mission_prepare") == "cancelled":
-            return HandlerResult("failed", {"code": "cancelled"})
-        strategy, no_new = progress["strategy"], progress["no_new"]
-        search_cursor = query_index + 1
-        if no_new >= 2:
-            break
+    round_no = int(job.envelope.get("round", 0))
+    if round_no and (early := await research_rounds.expansion_step(job, ctx, mission.id, round_no, done)):
+        return early
+    if early := await research_rounds.search_phase(job, ctx, mission.id, done):
+        return early
+    async with sessionmaker()() as db:  # the search phase committed new sources, so repository inventory sees the current plan
+        fresh = await db.get(CollectionMission, mission.id)
+        strategy = fresh.plan
+        progress_state = research_rounds.state(strategy, fresh.current_run_seq or 1, job.cursor)
+    search_cursor, no_new = progress_state["search_cursor"], progress_state["no_new"]
     for entry in strategy["sources"]:
         if entry["adapter"] != "github" or entry["url"] in done:
             continue
@@ -490,6 +475,16 @@ async def prepare(job, ctx):
 
         if await ctx.commit_work(persist, stage="mission_prepare") == "cancelled":
             return HandlerResult("failed", {"code": "cancelled"})
+    if early := await research_rounds.paper_phase(job, ctx, mission.id, done):
+        return early
+    async with sessionmaker()() as db:
+        fresh = await db.get(CollectionMission, mission.id)
+        pending = research_rounds.outstanding_failures(fresh.plan, fresh.current_run_seq or 1)
+    if pending["search"] or pending["papers_retryable"]:
+        # A failed provider call is not an empty result: retry through the job's own backoff, and report partial if it never recovers.
+        if (pending["search_retryable"] or pending["papers_retryable"]) and job.attempts < job.max_attempts:
+            return HandlerResult("retry_wait", {"code": "search_provider_failed", **pending}, retry_after=120)
+        return HandlerResult("partial", {"code": "search_provider_failed", **pending})
     return HandlerResult("succeeded")
 
 
@@ -505,9 +500,10 @@ async def register_document_license(db, mission, doc):
     if exists:
         return
     policy = {"allowed_hosts": [parsed.host], "allowed_path_prefixes": [urlsplit(doc["url"]).path],
+              "schemes": [parsed.scheme], "ports": [parsed.port],
               "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
               "license_id": license_info["id"], "policy_url": license_info["url"],
-              "basis": f"GitHub commit-pinned license metadata: {license_info.get('metadata_sha')}; preserve source and license attribution.",
+              "basis": license_info.get("basis") or f"GitHub commit-pinned license metadata: {license_info.get('metadata_sha')}; preserve source and license attribution.",
               "checked_at": datetime.now(UTC).isoformat(), "max_pages_per_job": 1, "max_depth": 0}
     await control.register_source(db, AuthContext(tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner"),
         source_key=key, title=doc.get("path", doc["url"]), seeds=[doc["url"]], policy=policy,
@@ -642,6 +638,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         "jobs": [{"job_id": str(job.id), "status": job.status, "stage": job.stage, "run_seq": run_of[job.id],
                   "error": job.last_error} for job in jobs],
         "knowledge_processing": {"storage": "verified" if counts["imported"] else "pending", "semantic": "unverified"},
+        "research": await research_rounds.view_block(db, mission) if detailed else None,
         "created_at": mission.created_at.isoformat(), "updated_at": mission.updated_at.isoformat(),
     }
 
@@ -905,7 +902,7 @@ async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Colle
             s.last_job_id = None
     run = await begin_run(db, mission, "rerun")
     await reconcile_mission(db, mission)
-    if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
+    if needs_preparation(mission.plan):
         await queue_preparation(db, mission, run.run_seq)
     mission.status = "running"
     await db.flush()
@@ -981,7 +978,7 @@ async def start_scheduled_run(db, mission_id: uuid.UUID, *, now: datetime, tenan
     run = await begin_run(db, mission, "scheduled")
     mission.gaps = []
     await reconcile_mission(db, mission)
-    if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
+    if needs_preparation(mission.plan):
         await queue_preparation(db, mission, run.run_seq)
     advance()
     await db.flush()

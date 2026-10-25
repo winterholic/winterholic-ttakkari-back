@@ -215,6 +215,23 @@ def _no_muse_ping():
     usage.MUSE_PING = before
 
 
+@pytest.fixture(autouse=True)
+def _no_live_paper_providers():
+    # 논문 공급자(arXiv/Crossref)는 실제 공개 망을 부른다. 시험은 기본으로 막고, 필요한 시험만 직접 대체한다. (값을 직접 저장·복원하는 이유는 위와 같다.)
+    from ttakkari.collector import paper
+    before = paper.search_arxiv, paper.resolve
+
+    async def no_candidates(*args, **kwargs):
+        return []
+
+    async def offline(*args, **kwargs):
+        raise paper.PaperError("offline_test")
+
+    paper.search_arxiv, paper.resolve = no_candidates, offline
+    yield
+    paper.search_arxiv, paper.resolve = before
+
+
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean(_schema_and_app):
     await profiles.flush_persist()

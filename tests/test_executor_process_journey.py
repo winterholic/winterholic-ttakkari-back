@@ -329,7 +329,8 @@ async def test_failed_executor_start_is_isolated_and_rollback_resumes_work(tmp_p
                     assert "pinned immutable release revision" in text
                 else:
                     # 접속 불가 DB 여야 한다. import 오류 등 다른 기동 실패가 green 이 되지 않게 원인을 고정한다.
-                    assert "ConnectionRefusedError" in text and "Connect call failed" in text
+                    # host 가 localhost 면 asyncpg 가 ::1 과 127.0.0.1 을 모두 시도해 "Multiple exceptions" 로 묶어 낸다(배포 게이트).
+                    assert "Connect call failed" in text and ("ConnectionRefusedError" in text or "Multiple exceptions" in text)
                     # 이 소스 트리의 제품 register 경로가 DB 접속을 시도하다 실패했다(다른 체크아웃 import 도 거른다).
                     assert str(SRC / "ttakkari" / "executor.py") in text
                     assert not re.search(r"ImportError|ModuleNotFoundError|SyntaxError", text)

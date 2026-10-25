@@ -21,6 +21,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.kb_access import (
+    create_owner_context,
+    create_personal_agent_context,
+    document_access_conditions,
+)
 from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
 from ttakkari.kb_ontology_models import (
     KbAssertion,
@@ -161,21 +166,15 @@ async def get_active_assertions_for_entity(
             KbAssertionEvidence.relation == "supports",
             KbRevision.id == KbAssertion.revision_id,
             KbRevision.document_id == KbAssertion.document_id,
-            KbDocumentAccess.tenant_id == "owner",
-            KbDocumentAccess.hidden.is_(False),
         )
     )
 
-    if entity.visibility == "global":
-        stmt = stmt.where(
-            KbAssertion.visibility == "global",
-            KbDocumentAccess.visibility == "global",
-            KbDocumentAccess.origin_scope != "work",
-        )
-    else:
-        stmt = stmt.where(
-            KbAssertion.visibility.in_(("global", "work_only")),
-        )
+    # global 엔터티의 정본은 global 문서·주장만, work_only 엔터티는 global + work_only 를 kb_access 의 같은 규칙으로 고른다.
+    ctx = create_personal_agent_context() if entity.visibility == "global" else create_owner_context()
+    stmt = stmt.where(
+        *document_access_conditions(ctx, KbDocumentAccess),
+        KbAssertion.visibility.in_(ctx.allowed_visibilities),
+    )
 
     stmt = stmt.order_by(KbAssertion.id, KbEvidence.id)
     rows = list((await db.execute(stmt)).all())

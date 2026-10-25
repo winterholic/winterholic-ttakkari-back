@@ -87,13 +87,14 @@ async def test_entity_alias_graph_and_canonical_paths_use_source_evidence(client
         passage = await db.scalar(
             select(KbPassage).where(KbPassage.revision_id == revision.id)
         )
+        # 실제 파이프라인(해소기·추출기)이 쓰는 온톨로지 tenant 는 "personal" 이다. 문서 접근 tenant("owner")와 다른 축이다.
         aurora = KbEntity(
-            tenant_id="owner", origin_scope="personal", visibility="global",
+            tenant_id="personal", origin_scope="personal", visibility="global",
             canonical_name="Aurora", norm_name=norm_name("Aurora"),
             entity_kind="concept", domain="ai", summary="Aurora service",
         )
         nimbus = KbEntity(
-            tenant_id="owner", origin_scope="personal", visibility="global",
+            tenant_id="personal", origin_scope="personal", visibility="global",
             canonical_name="Nimbus", norm_name=norm_name("Nimbus"),
             entity_kind="concept", domain="ai", summary="Nimbus service",
         )

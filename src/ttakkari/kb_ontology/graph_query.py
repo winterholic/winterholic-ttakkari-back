@@ -24,6 +24,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.kb_access import (
+    KbAccessContext,
+    document_access_conditions,
+    from_caller_visibility,
+)
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision
 from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
@@ -190,11 +195,19 @@ class GraphHubsResult:
         }
 
 
+def _resolve_access(
+    access: KbAccessContext | None, caller_visibility: str, tenant_id: str
+) -> KbAccessContext:
+    """모든 접근 판단은 kb_access 의 단일 규칙을 쓴다. access 를 주지 않으면 caller_visibility 를 같은 규칙의 컨텍스트로 바꾼다."""
+    if access is not None:
+        return access
+    return from_caller_visibility(caller_visibility, ontology_tenant_id=tenant_id)
+
+
 async def _visible_entity_stats(
     db: AsyncSession,
     *,
-    tenant_id: str,
-    caller_visibility: str,
+    ctx: KbAccessContext,
 ) -> dict[uuid.UUID, tuple[int, int]]:
     """Return authorized current document/mention counts backed by actual evidence."""
     stmt = (
@@ -211,22 +224,12 @@ async def _visible_entity_stats(
         .join(KbPassage, KbPassage.id == KbEvidence.passage_id)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
         .where(
-            KbDocumentAccess.tenant_id == "owner",
-            KbDocumentAccess.hidden.is_(False),
+            *document_access_conditions(ctx, KbDocumentAccess),
             KbDocumentEntity.evidence_id.is_not(None),
             KbRevision.id == KbDocumentEntity.revision_id,
             KbRevision.document_id == KbDocumentEntity.document_id,
         )
     )
-    if caller_visibility == "global":
-        stmt = stmt.where(
-            KbDocumentAccess.visibility == "global",
-            KbDocumentAccess.origin_scope != "work",
-        )
-    else:
-        stmt = stmt.where(
-            KbDocumentAccess.visibility.in_(("global", "work_only"))
-        )
     rows = list((await db.execute(stmt)).all())
     current = await _current_revision_map(db, {row.document_id for row in rows})
     documents: dict[uuid.UUID, set[uuid.UUID]] = {}
@@ -247,6 +250,7 @@ async def get_ontology_hubs(
     *,
     tenant_id: str = "personal",
     caller_visibility: str = "global",
+    access: KbAccessContext | None = None,
     entity_kind: str | None = None,
     domain: str | None = None,
     offset: int = 0,
@@ -260,11 +264,9 @@ async def get_ontology_hubs(
     - 개인 세션(global)의 경우 인가된 문서 언급이 최소 1개 이상 있는 엔터티만 노출
     """
     _validate_query(caller_visibility, offset, limit)
-    visible_stats = await _visible_entity_stats(
-        db,
-        tenant_id=tenant_id,
-        caller_visibility=caller_visibility,
-    )
+    ctx = _resolve_access(access, caller_visibility, tenant_id)
+    tenant_id = ctx.ontology_tenant_id
+    visible_stats = await _visible_entity_stats(db, ctx=ctx)
     documents_by_entity = {
         entity_id: count for entity_id, (count, _) in visible_stats.items()
     }
@@ -279,10 +281,7 @@ async def get_ontology_hubs(
         KbEntity.tenant_id == tenant_id,
         KbEntity.status == "active",
     )
-    if caller_visibility == "global":
-        stmt = stmt.where(KbEntity.visibility == "global")
-    else:
-        stmt = stmt.where(KbEntity.visibility.in_(("global", "work_only")))
+    stmt = stmt.where(KbEntity.visibility.in_(ctx.allowed_visibilities))
     if entity_kind:
         stmt = stmt.where(KbEntity.entity_kind == entity_kind)
     if domain:
@@ -317,9 +316,7 @@ async def get_ontology_hubs(
         for c in await db.scalars(
             select(KbEntityCanonical).where(
                 KbEntityCanonical.entity_id.in_(entity_ids),
-                KbEntityCanonical.visibility.in_(
-                    ("global",) if caller_visibility == "global" else ("global", "work_only")
-                ),
+                KbEntityCanonical.visibility.in_(ctx.allowed_visibilities),
             )
         )
     }
@@ -360,6 +357,7 @@ async def query_1hop_subgraph(
     *,
     tenant_id: str = "personal",
     caller_visibility: str = "global",
+    access: KbAccessContext | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> GraphQueryResult:
@@ -372,12 +370,10 @@ async def query_1hop_subgraph(
     - total_neighbors, offset, limit, truncated
     """
     _validate_query(caller_visibility, offset, limit)
+    ctx = _resolve_access(access, caller_visibility, tenant_id)
+    tenant_id = ctx.ontology_tenant_id
     center_ent = await db.get(KbEntity, center_entity_id)
-    visible_stats = await _visible_entity_stats(
-        db,
-        tenant_id=tenant_id,
-        caller_visibility=caller_visibility,
-    )
+    visible_stats = await _visible_entity_stats(db, ctx=ctx)
     if (
         center_ent is None
         or center_ent.status != "active"
@@ -394,8 +390,8 @@ async def query_1hop_subgraph(
             truncated=False,
         )
 
-    # 가시성 검사: global 호출자가 work_only 노드를 중심점으로 요구하면 거부(존재 비노출)
-    if caller_visibility == "global" and center_ent.visibility == "work_only":
+    # 가시성 검사: 허용되지 않은 visibility 의 노드를 중심점으로 요구하면 거부(존재 비노출)
+    if center_ent.visibility not in ctx.allowed_visibilities:
         return GraphQueryResult(
             center=None,
             nodes=[],
@@ -414,14 +410,8 @@ async def query_1hop_subgraph(
         ),
         KbRelation.status == "active",
         KbRelation.evidence_count >= 1,
+        KbRelation.visibility.in_(ctx.allowed_visibilities),
     )
-
-    if caller_visibility == "global":
-        edge_stmt = edge_stmt.where(KbRelation.visibility == "global")
-    else:
-        edge_stmt = edge_stmt.where(
-            KbRelation.visibility.in_(("global", "work_only"))
-        )
 
     all_relations = list(
         await db.scalars(edge_stmt.order_by(KbRelation.weight.desc()))
@@ -449,21 +439,11 @@ async def query_1hop_subgraph(
             .where(
                 KbRelationEvidence.relation_id.in_([r.id for r in all_relations]),
                 KbRelationEvidence.relation == "supports",
-                KbDocumentAccess.tenant_id == "owner",
-                KbDocumentAccess.hidden.is_(False),
+                *document_access_conditions(ctx, KbDocumentAccess),
             )
         )
         # 원문 리비전은 evidence→passage→revision 경로로 검증한다.
         ev_stmt = ev_stmt.where(KbRevision.document_id == KbDocument.id)
-        if caller_visibility == "global":
-            ev_stmt = ev_stmt.where(
-                KbDocumentAccess.visibility == "global",
-                KbDocumentAccess.origin_scope != "work",
-            )
-        else:
-            ev_stmt = ev_stmt.where(
-                KbDocumentAccess.visibility.in_(("global", "work_only"))
-            )
         ev_rows = list((await db.execute(ev_stmt)).all())
         current_by_document = await _current_revision_map(
             db, {doc.id for _, _, _, _, doc in ev_rows}
@@ -511,13 +491,8 @@ async def query_1hop_subgraph(
             KbEntity.id.in_(neighbor_ids_set),
             KbEntity.tenant_id == tenant_id,
             KbEntity.status == "active",
+            KbEntity.visibility.in_(ctx.allowed_visibilities),
         )
-        if caller_visibility == "global":
-            n_stmt = n_stmt.where(KbEntity.visibility == "global")
-        else:
-            n_stmt = n_stmt.where(
-                KbEntity.visibility.in_(("global", "work_only"))
-            )
         for ent in await db.scalars(n_stmt):
             neighbor_entities[ent.id] = ent
     visible_neighbor_ids = sorted(neighbor_entities)
@@ -544,9 +519,7 @@ async def query_1hop_subgraph(
         for c in await db.scalars(
             select(KbEntityCanonical).where(
                 KbEntityCanonical.entity_id.in_(all_visible_ids),
-                KbEntityCanonical.visibility.in_(
-                    ("global",) if caller_visibility == "global" else ("global", "work_only")
-                ),
+                KbEntityCanonical.visibility.in_(ctx.allowed_visibilities),
             )
         )
     }

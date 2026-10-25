@@ -20,8 +20,10 @@ from ttakkari.kb_models import KbEvidence, KbPassage
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
+    KbConflict,
     KbDocumentEntity,
     KbEntity,
+    KbEntityCanonical,
     KbRelation,
     KbRelationEvidence,
 )
@@ -176,13 +178,13 @@ async def test_register_then_worker_runs_all_six_stages_with_real_processors():
         STAGE_EXTRACTING: "degraded",  # L2 기본 꺼짐: 사유를 남기고 L0/L1 결과는 저장
         STAGE_LINKING: "succeeded",
         STAGE_INDEXING: "succeeded",
-        STAGE_CANONICALIZING: "held",  # 구현 없음: 성공으로 위장하지 않는다
+        STAGE_CANONICALIZING: "succeeded",  # canonicals 합류: 실제 처리기가 정본·충돌을 만든다
     }
     assert st[STAGE_EXTRACTING].detail["l2"] == {
         "adapter": "disabled", "available": False, "reason": "l2_disabled", "calls_made": 0,
         "daily_budget_remaining_before": get_settings().kb_l2_daily_budget,
     }
-    assert st[STAGE_CANONICALIZING].detail["missing_capability"] == STAGE_CANONICALIZING
+    assert st[STAGE_CANONICALIZING].detail["entities_processed"] > 0
     assert job.status == "degraded" and job.status != "ready"
     assert job.metrics["stage_statuses"][STAGE_INDEXING] == "succeeded"
 
@@ -447,3 +449,105 @@ async def test_binary_source_with_only_a_raw_decoded_revision_holds_at_parsing_n
     assert st[STAGE_CHUNKING].status == "skipped" and st[STAGE_INDEXING].status == "skipped"
     job = await _job(job_id)
     assert job.status == "held" and job.hold_reason == "parser_revision_required"
+
+
+# ---------------------------------------------------------------------------
+# 합류 후 실제 파이프라인 행 위에서의 검색·충돌·1-hop (kb_access 단일 규칙)
+# ---------------------------------------------------------------------------
+EN_DEF_OPEN = "# Kubernetes Glossary\n\nKubernetes refers to an open-source container orchestration system for automating deployment and scaling.\n"
+EN_DEF_VENDOR = "# Kubernetes Glossary (vendor sheet)\n\nKubernetes refers to a proprietary virtualization appliance sold as a single hardware bundle.\n"
+EN_HEADINGS = (
+    "# Cluster Networking\n\nCluster networking connects every pod to a flat network so workloads talk without translation.\n\n"
+    "## Service Types\n\nA ClusterIP service exposes pods inside the cluster and uses kube-proxy to program routing rules.\n\n"
+    "### Ingress Policy\n\nAn ingress controller routes external HTTP traffic to a service and enforces access restrictions.\n"
+)
+
+
+async def test_korean_alias_finds_english_only_document_through_real_pipeline_rows():
+    """실제 추출된 엔터티(tenant 'personal')와 seed 별칭(한국어 쿠버네티스)으로 영어만 있는 문서를 찾는다. 별칭이 문서 본문에 없어도 된다."""
+    from ttakkari.kb_access import create_owner_context, create_personal_agent_context
+    from ttakkari.kb_retrieval import search
+
+    res, _job = await _register(EN_DEF_OPEN)
+    assert await _drain(_worker()) == 1
+    async with sessionmaker()() as db:
+        ent = await db.scalar(select(KbEntity).where(KbEntity.canonical_name == "Kubernetes"))
+        assert ent is not None and ent.tenant_id == "personal"  # 온톨로지 네임스페이스는 문서 접근 tenant(owner)와 다른 축이다
+        for ctx in (create_owner_context(), create_personal_agent_context()):
+            out = await search(db, query="쿠버네티스", access_context=ctx, mode="graph", limit=5)
+            assert [c["canonical_name"] for c in out["matched_entities"]] == ["Kubernetes"]
+            assert {i["document"]["id"] for i in out["items"]} == {str(res.document_id)}
+        # 한국어 본문이 없으므로 어휘 경로만으로는 못 찾는다: 위 결과는 별칭 경로가 만든 것이다
+        lexical = await search(db, query="쿠버네티스", access_context=create_owner_context(), mode="lexical", limit=5)
+        assert lexical["items"] == []
+
+
+async def test_work_only_document_is_invisible_to_personal_search_but_visible_to_work_agent():
+    from ttakkari.kb_access import (
+        create_personal_agent_context,
+        create_work_agent_context,
+    )
+    from ttakkari.kb_retrieval import search
+
+    res, _job = await _register(EN_DEF_VENDOR, scope="work")
+    assert await _drain(_worker()) == 1
+    async with sessionmaker()() as db:
+        work = await search(db, query="쿠버네티스", access_context=create_work_agent_context(), mode="graph", limit=5)
+        assert {i["document"]["id"] for i in work["items"]} == {str(res.document_id)}
+        personal = await search(db, query="쿠버네티스", access_context=create_personal_agent_context(), mode="graph", limit=5)
+        assert personal["items"] == [] and personal["matched_entities"] == []
+
+
+async def test_conflicting_definitions_create_a_conflict_that_search_and_list_expose_with_one_access_rule():
+    from ttakkari.kb_access import create_owner_context, create_personal_agent_context
+    from ttakkari.kb_ontology.conflicts import list_conflicts
+    from ttakkari.kb_retrieval import search
+
+    await _register(EN_DEF_OPEN)
+    await _register(EN_DEF_VENDOR)
+    assert await _drain(_worker()) == 2
+    assert await _count(KbConflict) == 1
+    async with sessionmaker()() as db:
+        conflict = await db.scalar(select(KbConflict))
+        assert (conflict.conflict_kind, conflict.status, conflict.visibility) == ("value_contradiction", "open", "global")
+        canonical = await db.scalar(select(KbEntityCanonical))
+        assert canonical is not None
+        for ctx in (create_owner_context(), create_personal_agent_context()):
+            assert len(await list_conflicts(db, access=ctx)) == 1
+            out = await search(db, query="Kubernetes refers to", access_context=ctx, mode="graph", limit=5)
+            assert out["items"] and all(i["has_conflict"] for i in out["items"])
+    # caller_visibility 호환 경로도 같은 단일 규칙으로 같은 결과를 낸다
+    async with sessionmaker()() as db:
+        assert len(await list_conflicts(db, caller_visibility="global")) == 1
+
+
+async def test_one_hop_expansion_ignores_candidate_relations_and_follows_active_ones():
+    """추출 파이프라인은 관계를 candidate 로만 저장한다. 검증되지 않은 관계는 1-hop 확장에 쓰지 않고, active 가 되면 쓴다."""
+    from sqlalchemy import update
+
+    from ttakkari.kb_access import create_owner_context, create_personal_agent_context
+    from ttakkari.kb_ontology.graph_query import query_1hop_subgraph
+    from ttakkari.kb_ontology.retrieval import (
+        expand_1hop_relations,
+        find_matched_entities,
+    )
+
+    await _register(EN_HEADINGS)
+    assert await _drain(_worker()) == 1
+    owner = create_owner_context()
+    async with sessionmaker()() as db:
+        matched = await find_matched_entities(db, "Service Types", ["service", "types"], owner)
+        assert [m["canonical_name"] for m in matched] == ["Service Types"]
+        ids = [m["entity_id"] for m in matched]
+        assert await expand_1hop_relations(db, ids, owner) == []
+        assert (await query_1hop_subgraph(db, ids[0], access=owner)).edges == []
+        await db.execute(update(KbRelation).values(status="active"))  # 검토 승인 모사(파이프라인 동작이 아니다)
+        await db.commit()
+    async with sessionmaker()() as db:
+        for ctx in (owner, create_personal_agent_context()):
+            rels = await expand_1hop_relations(db, ids, ctx)
+            assert rels and all(r["evidence_count"] >= 1 for r in rels)
+            sub = await query_1hop_subgraph(db, ids[0], access=ctx)
+            assert sub.edges and all(e.evidence for e in sub.edges)
+        # caller_visibility 호환 경로와 같은 결과
+        assert (await query_1hop_subgraph(db, ids[0], caller_visibility="global")).total_neighbors == sub.total_neighbors

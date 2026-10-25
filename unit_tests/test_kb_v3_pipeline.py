@@ -23,7 +23,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import MetaData, select
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
@@ -45,17 +45,8 @@ def _compile_array_sqlite(type_, compiler, **kw):
     return "TEXT"
 
 
-for _m in [
-    KbDocument,
-    KbRevision,
-    KbSource,
-    KbPassage,
-    KbDocumentAccess,
-    CollectorSource,
-    CollectorReview,
-    KbObservation,
-]:
-    _m.__table__.dispatch._clear()
+# 원장 불변 트리거 등 PostgreSQL 전용 after_create DDL 은 공유 Table 객체에 붙어 있다. 여기서 그 이벤트를 지우면 같은 프로세스의
+# PostgreSQL 시험 스키마(create_all)에서도 트리거가 사라진다(원장 불변 시험이 조용히 실패). 그래서 SQLite 표는 이벤트 없는 사본으로 만든다.
 from ttakkari.kb_pipeline import (
     JOB_STATUS_DEGRADED,
     JOB_STATUS_FAILED,
@@ -106,8 +97,10 @@ async def pipeline_db():
             "hashtextextended", 2, lambda val, seed: 1
         )
 
-    async with engine.begin() as conn:
-        for _m in [
+    sqlite_meta = MetaData()
+    pending = [
+        _m.__table__
+        for _m in (
             KbDocument,
             KbRevision,
             KbSource,
@@ -118,8 +111,16 @@ async def pipeline_db():
             CollectorSource,
             CollectorReview,
             KbObservation,
-        ]:
-            await conn.run_sync(_m.__table__.create)
+        )
+    ]
+    while pending:  # FK 대상 표까지 사본으로 만든다(to_metadata 사본에는 PG 전용 DDL 이벤트가 따라오지 않는다)
+        _tbl = pending.pop()
+        if _tbl.name in sqlite_meta.tables:
+            continue
+        _tbl.to_metadata(sqlite_meta)
+        pending.extend(_fk.column.table for _fk in _tbl.foreign_keys)
+    async with engine.begin() as conn:
+        await conn.run_sync(sqlite_meta.create_all)
 
     sm = async_sessionmaker(engine, expire_on_commit=False)
     yield sm
@@ -916,7 +917,7 @@ async def test_collector_delivery_queues_pipeline_job(pipeline_db, monkeypatch):
             "access": {"tenant_id": "owner", "scope": "work", "principal_ids": ["owner"]},
             "rights": {"permission": "allowed", "retain_until": None, "purposes": ["knowledge"]},
             "decision": {"state": "accept"},
-            "normalized": {"truncated": False, "language": "en", "text": "body", "parser_version": "v1", "normalizer_version": "v1", "raw_alignment_handle": "align"},
+            "normalized": {"truncated": False, "language": "en", "text": "body", "parser_version": "v1", "normalizer_version": "v1", "chunker_version": "chunk-v1", "sha256": "norm_sha", "raw_alignment_handle": "align"},
             "raw": {"blob_handle": "handle", "byte_size": len(b"blob content"), "sha256": "dummy_sha", "media_type": "text/html"},
             "source": {"url": "https://example.com/spec", "collected_at": "2026-10-25T00:00:00Z"},
         },
@@ -1159,13 +1160,14 @@ async def test_stale_processor_cannot_commit_even_if_it_finishes_late(pipeline_d
 
 def test_default_registry_registers_real_processors():
     from ttakkari.kb_pipeline import ExtractingProcessor, LinkingProcessor
+    from ttakkari.kb_pipeline.canonicalizing_processor import CanonicalizingProcessor
 
     reg = StageProcessorRegistry()
     assert isinstance(reg.get(STAGE_EXTRACTING), ExtractingProcessor)
     assert isinstance(reg.get(STAGE_LINKING), LinkingProcessor)
     assert not isinstance(reg.get(STAGE_INDEXING), MissingStageProcessor)
-    # 구현이 없는 정본 통합만 정직하게 held 로 남는다
-    assert isinstance(reg.get(STAGE_CANONICALIZING), MissingStageProcessor)
+    # canonicals 합류 후 정본 통합도 실제 처리기다(held 위장 아님)
+    assert isinstance(reg.get(STAGE_CANONICALIZING), CanonicalizingProcessor)
     from ttakkari.kb_pipeline.types import STAGE_REQUIRES
 
     assert STAGE_LINKING not in STAGE_REQUIRES[STAGE_INDEXING]

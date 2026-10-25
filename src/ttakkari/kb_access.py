@@ -34,6 +34,12 @@ VISIBILITY_WORK_ONLY = "work_only"
 ALL_VISIBILITIES: tuple[str, ...] = (VISIBILITY_GLOBAL, VISIBILITY_WORK_ONLY)
 GLOBAL_ONLY_VISIBILITY: tuple[str, ...] = (VISIBILITY_GLOBAL,)
 
+# 온톨로지(엔터티·별칭) 네임스페이스. 문서 접근 tenant 와 별개다.
+ONTOLOGY_TENANT_ID = "personal"
+
+# 문서 출현 근거 없이도 신뢰하는 별칭 출처
+CURATED_ALIAS_SOURCES: tuple[str, ...] = ("seed", "user_verified")
+
 # 스코프 상수
 SCOPE_PERSONAL = "personal"
 SCOPE_WORK = "work"
@@ -55,6 +61,9 @@ class KbAccessContext:
     include_hidden: bool = False
     strict_provenance: bool = True
     origin_scope_filter: str | None = None
+    # kb_entities.tenant_id 는 온톨로지 네임스페이스(해소기·추출기 기본값 "personal")이고, 문서 접근 행의 tenant_id("owner")와
+    # 다른 축이다. 두 값을 같은 문자열로 비교하면 실제 추출된 엔터티가 전부 걸러진다(실 PG 흐름에서 확인).
+    ontology_tenant_id: str = ONTOLOGY_TENANT_ID
 
     def can_access_visibility(self, visibility: str | None) -> bool:
         """주어진 visibility 에 접근 가능한지 검사."""
@@ -151,9 +160,51 @@ def from_legacy_scope(scope: str | None = "personal", tenant_id: str = "owner") 
     )
 
 
+def from_caller_visibility(
+    caller_visibility: str, *, ontology_tenant_id: str = ONTOLOGY_TENANT_ID, tenant_id: str = "owner"
+) -> KbAccessContext:
+    """ontology 조회 API 의 caller_visibility('global'|'work_only')를 같은 단일 접근 규칙의 컨텍스트로 바꾼다.
+
+    'global' 은 개인 세션(global 만), 'work_only' 는 회사 세션(global + work_only)이다. 그 밖의 값은 거부한다(fail-closed).
+    """
+    if caller_visibility == VISIBILITY_GLOBAL:
+        ctx = create_personal_agent_context(tenant_id=tenant_id)
+    elif caller_visibility == VISIBILITY_WORK_ONLY:
+        ctx = create_work_agent_context(tenant_id=tenant_id)
+    else:
+        raise ValueError("caller_visibility must be 'global' or 'work_only'")
+    return KbAccessContext(
+        tenant_id=ctx.tenant_id,
+        caller_role=ctx.caller_role,
+        allowed_visibilities=ctx.allowed_visibilities,
+        include_hidden=ctx.include_hidden,
+        strict_provenance=ctx.strict_provenance,
+        origin_scope_filter=ctx.origin_scope_filter,
+        ontology_tenant_id=ontology_tenant_id,
+    )
+
+
 # =========================================================================
 # SQLAlchemy Query Filter Helpers
 # =========================================================================
+
+def document_access_conditions(ctx: KbAccessContext, access_model: Any = None) -> list:
+    """KbDocumentAccess 행 하나가 ctx 에 허용되는 조건(tenant·visibility·hidden·origin_scope)의 단일 정의.
+
+    문서·패시지·엔터티·주장·관계 필터와 ontology 그래프/충돌/정본 조회가 모두 이 조건을 쓴다. 호출자가 access 행을 조인해 둔 쿼리용이다.
+    """
+    from ttakkari.collector.control_models import KbDocumentAccess
+
+    access = access_model if access_model is not None else KbDocumentAccess
+    conditions = [
+        access.tenant_id == ctx.tenant_id,
+        access.visibility.in_(ctx.allowed_visibilities),
+    ]
+    if not ctx.include_hidden:
+        conditions.append(access.hidden.is_(False))
+    if ctx.origin_scope_filter:
+        conditions.append(access.origin_scope == ctx.origin_scope_filter)
+    return conditions
 
 def document_access_filter(ctx: KbAccessContext, doc_model: Any = None):
     """KbDocument 테이블 대상 접근 제어 필터 절 생성.
@@ -241,7 +292,7 @@ def entity_access_filter(ctx: KbAccessContext, entity_model: Any = None):
 
     # 1. 엔티티 자체 visibility 및 tenant 확인
     base_cond = and_(
-        e.tenant_id == ctx.tenant_id,
+        e.tenant_id == ctx.ontology_tenant_id,
         e.visibility.in_(ctx.allowed_visibilities),
     )
     if ctx.origin_scope_filter:
@@ -294,21 +345,19 @@ def entity_alias_access_filter(
         KbPassage.id == KbDocumentEntity.passage_id,
         KbRevision.id == KbPassage.revision_id,
         KbDocumentAccess.document_id == KbRevision.document_id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
         func.strpos(func.lower(KbPassage.body), func.lower(a.alias)) > 0,
     ]
-    if not ctx.include_hidden:
-        conditions.append(KbDocumentAccess.hidden.is_(False))
-    if ctx.origin_scope_filter:
-        conditions.append(KbDocumentAccess.origin_scope == ctx.origin_scope_filter)
-    return select(KbDocumentEntity.entity_id).select_from(KbDocumentEntity).join(
+    occurs_in_authorized_passage = select(KbDocumentEntity.entity_id).select_from(KbDocumentEntity).join(
         KbPassage, KbPassage.id == KbDocumentEntity.passage_id
     ).join(
         KbRevision, KbRevision.id == KbPassage.revision_id
     ).join(
         KbDocumentAccess, KbDocumentAccess.document_id == KbRevision.document_id
     ).where(and_(a.entity_id == e.id, *conditions)).exists()
+    # seed/user_verified 별칭은 코드·사용자가 정한 사전이다. 문서에서 배운 값이 아니므로 어떤 문서 본문에도 나타나지 않아도 된다
+    # (영어 문서만 있는 엔터티를 한국어 별칭으로 찾는 경로). 추출 출처(extracted) 별칭만 출현 근거를 요구한다.
+    return or_(a.source.in_(CURATED_ALIAS_SOURCES), occurs_in_authorized_passage)
 
 
 def assertion_access_filter(ctx: KbAccessContext, assertion_model: Any = None):

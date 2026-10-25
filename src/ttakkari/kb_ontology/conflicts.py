@@ -28,6 +28,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.kb_access import (
+    KbAccessContext,
+    create_owner_context,
+    document_access_conditions,
+    from_caller_visibility,
+)
 from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
 from ttakkari.kb_ontology.canonicals import synthesize_canonical_for_entity
 from ttakkari.kb_ontology_models import (
@@ -154,8 +160,8 @@ async def detect_conflicts_for_entity(
             KbAssertionEvidence.relation == "supports",
             KbRevision.id == KbAssertion.revision_id,
             KbRevision.document_id == KbAssertion.document_id,
-            KbDocumentAccess.tenant_id == "owner",
-            KbDocumentAccess.hidden.is_(False),
+            # 상충 탐지는 쓰기 쪽이라 owner tenant 의 숨기지 않은 모든 문서를 본다(조회 가시성은 list/resolve 가 kb_access 로 건다).
+            *document_access_conditions(create_owner_context(), KbDocumentAccess),
         )
         .distinct()
     )
@@ -314,6 +320,7 @@ async def resolve_conflict(
     resolved_by: str | None = None,
     tenant_id: str = "personal",
     caller_visibility: str = "global",
+    access: KbAccessContext | None = None,
 ) -> KbConflict:
     """충돌 해결 서비스 API 단일 진입점.
 
@@ -330,13 +337,9 @@ async def resolve_conflict(
             f"Invalid resolution '{resolution}'. Must be one of {sorted(VALID_RESOLUTIONS)}"
         )
 
+    ctx = access or from_caller_visibility(caller_visibility, ontology_tenant_id=tenant_id)
     conflict = await db.get(KbConflict, conflict_id)
-    if conflict is None or not await _conflict_is_accessible(
-        db,
-        conflict,
-        tenant_id=tenant_id,
-        caller_visibility=caller_visibility,
-    ):
+    if conflict is None or not await _conflict_is_accessible(db, conflict, ctx=ctx):
         raise ValueError(f"Conflict {conflict_id} not found")
 
     assertion_a: KbAssertion | None = None
@@ -411,34 +414,30 @@ async def list_conflicts(
     status: str = "open",
     caller_visibility: str = "global",
     tenant_id: str = "personal",
+    access: KbAccessContext | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> list[KbConflict]:
     """충돌 목록을 조회한다 (가시성 격리 준수)."""
     _validate_query(caller_visibility, offset, limit)
+    ctx = access or from_caller_visibility(caller_visibility, ontology_tenant_id=tenant_id)
     stmt = (
         select(KbConflict)
         .join(KbEntity, KbEntity.id == KbConflict.entity_id)
-        .where(KbConflict.status == status, KbEntity.tenant_id == tenant_id)
+        .where(
+            KbConflict.status == status,
+            KbEntity.tenant_id == ctx.ontology_tenant_id,
+            KbConflict.visibility.in_(ctx.allowed_visibilities),
+        )
     )
 
     if entity_id is not None:
         stmt = stmt.where(KbConflict.entity_id == entity_id)
 
-    if caller_visibility == "global":
-        stmt = stmt.where(KbConflict.visibility == "global")
-    else:
-        stmt = stmt.where(KbConflict.visibility.in_(("global", "work_only")))
-
     candidates = list(await db.scalars(stmt.order_by(KbConflict.created_at.desc())))
     accessible: list[KbConflict] = []
     for conflict in candidates:
-        if await _conflict_is_accessible(
-            db,
-            conflict,
-            tenant_id=tenant_id,
-            caller_visibility=caller_visibility,
-        ):
+        if await _conflict_is_accessible(db, conflict, ctx=ctx):
             accessible.append(conflict)
     return accessible[offset : offset + limit]
 
@@ -447,13 +446,12 @@ async def _conflict_is_accessible(
     db: AsyncSession,
     conflict: KbConflict,
     *,
-    tenant_id: str,
-    caller_visibility: str,
+    ctx: KbAccessContext,
 ) -> bool:
     entity = await db.get(KbEntity, conflict.entity_id)
-    if entity is None or entity.tenant_id != tenant_id:
+    if entity is None or entity.tenant_id != ctx.ontology_tenant_id:
         return False
-    allowed = {"global"} if caller_visibility == "global" else {"global", "work_only"}
+    allowed = set(ctx.allowed_visibilities)
     if entity.visibility not in allowed or conflict.visibility not in allowed:
         return False
 
@@ -463,12 +461,12 @@ async def _conflict_is_accessible(
         assertion = await db.get(KbAssertion, assertion_id)
         if assertion is None or assertion.visibility not in allowed:
             return False
-        access = await db.get(KbDocumentAccess, assertion.document_id)
-        if (
-            access is None
-            or access.tenant_id != "owner"
-            or access.hidden
-            or access.visibility not in allowed
+        doc_access = await db.get(KbDocumentAccess, assertion.document_id)
+        if doc_access is None or not await db.scalar(
+            select(KbDocumentAccess.document_id).where(
+                KbDocumentAccess.document_id == doc_access.document_id,
+                *document_access_conditions(ctx, KbDocumentAccess),
+            )
         ):
             return False
         current_revision_id = await _current_revision_id(db, assertion.document_id)
@@ -493,7 +491,7 @@ async def _conflict_is_accessible(
         candidate = await db.get(KbEntity, conflict.candidate_entity_id)
         if (
             candidate is None
-            or candidate.tenant_id != tenant_id
+            or candidate.tenant_id != ctx.ontology_tenant_id
             or candidate.visibility not in allowed
         ):
             return False

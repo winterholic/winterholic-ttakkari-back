@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ttakkari.kb_access import (
     ALL_VISIBILITIES,
     VISIBILITY_GLOBAL,
@@ -121,7 +123,9 @@ def test_entity_access_filter_strict_provenance():
     clause_loose = entity_access_filter(loose_ctx, KbEntity)
     compiled_loose = str(clause_loose.compile(compile_kwargs={"literal_binds": True}))
     assert "kb_document_entities" not in compiled_loose
-    assert "tenant_id = 'owner'" in compiled_loose
+    # 엔터티 행의 tenant 는 온톨로지 네임스페이스("personal")이지 문서 접근 tenant("owner")가 아니다.
+    assert "kb_entities.tenant_id = 'personal'" in compiled_loose
+    assert "kb_entities.tenant_id = 'owner'" not in compiled_loose
 
 
 def test_alias_access_filter_requires_match_in_an_authorized_source_passage():
@@ -132,6 +136,8 @@ def test_alias_access_filter_requires_match_in_an_authorized_source_passage():
     assert "kb_passages.body" in compiled
     assert "strpos" in compiled
     assert "tenant_id = 'team_a'" in compiled
+    # seed/user_verified 별칭은 문서 출현 근거를 요구하지 않고, extracted 별칭만 요구한다
+    assert "kb_entity_aliases.source in ('seed', 'user_verified')" in compiled
 
 
 def test_relation_and_assertion_access_filters():
@@ -149,3 +155,23 @@ def test_relation_and_assertion_access_filters():
     compiled_assert = str(assert_clause.compile(compile_kwargs={"literal_binds": True}))
     assert "kb_assertion_evidence" in compiled_assert
     assert "kb_passages" in compiled_assert
+
+
+def test_from_caller_visibility_maps_ontology_callers_onto_the_single_access_rule():
+    from ttakkari.kb_access import document_access_conditions, from_caller_visibility
+
+    personal = from_caller_visibility("global")
+    work = from_caller_visibility("work_only", ontology_tenant_id="personal")
+    assert personal.allowed_visibilities == (VISIBILITY_GLOBAL,) and personal.caller_role == "personal_agent"
+    assert work.allowed_visibilities == ALL_VISIBILITIES and work.caller_role == "work_agent"
+    assert personal.tenant_id == "owner" and personal.ontology_tenant_id == "personal"
+    for forged in ("all", "", "work", None):
+        with pytest.raises(ValueError):
+            from_caller_visibility(forged)  # type: ignore[arg-type]
+
+    from ttakkari.collector.control_models import KbDocumentAccess
+
+    compiled = " AND ".join(
+        str(c.compile(compile_kwargs={"literal_binds": True})) for c in document_access_conditions(personal, KbDocumentAccess)
+    ).lower()
+    assert "tenant_id = 'owner'" in compiled and "visibility in ('global')" in compiled and "hidden is false" in compiled

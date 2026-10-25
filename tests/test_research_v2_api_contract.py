@@ -56,6 +56,9 @@ async def report(client, auth, exp_id, cfg_id, metrics, provenance="external_ben
         json={
             "configuration_id": cfg_id,
             "provenance": provenance,
+            # Synthetic fixture identifiers exercise provenance transport, not a paper claim.
+            "source_title": "Synthetic API contract fixture",
+            "source_url": "https://example.invalid/research-contract-fixture",
             "metrics": [
                 {"metric_key": k, "metric_label": k, "value": v, "unit": u, "direction": d}
                 for k, v, u, d in metrics
@@ -64,6 +67,46 @@ async def report(client, auth, exp_id, cfg_id, metrics, provenance="external_ben
     )
     assert r.status_code == 201, r.text
     return r.json()
+
+
+async def test_external_benchmark_requires_source_and_persists_it_across_requests(client, auth):
+    """Exercise the real ASGI endpoint and PostgreSQL, beyond the StubDb regression."""
+    from sqlalchemy import func, select
+    from ttakkari.research.models import Measurement
+
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(client, auth, study_id, adapter_id="external_report", strategy="single")
+    body = {
+        "configuration_id": exp["configurations"][0]["id"],
+        "provenance": "external_benchmark",
+        "metrics": [{"metric_key": "decode_tps", "value": 12.0}],
+    }
+    for fields in ({}, {"source_title": "  ", "source_url": "https://example.invalid/fixture"}):
+        rejected = await client.post(f"{API}/experiments/{exp['id']}/external-report", headers=auth, json={**body, **fields})
+        assert rejected.status_code == 422, rejected.text
+    async with sessionmaker()() as db:
+        assert await db.scalar(select(func.count()).select_from(Run).where(Run.experiment_id == uuid.UUID(exp["id"]))) == 0
+
+    fields = {"source_title": "Synthetic roundtrip fixture", "source_url": "https://example.invalid/roundtrip"}
+    saved = await client.post(f"{API}/experiments/{exp['id']}/external-report", headers=auth, json={**body, **fields})
+    assert saved.status_code == 201, saved.text
+    run_id = uuid.UUID(saved.json()["id"])
+    async with sessionmaker()() as db:
+        stored = await db.get(Run, run_id)
+        assert stored is not None and stored.execution_origin == "external_report"
+        assert stored.raw_output["source_title"] == fields["source_title"]
+        assert stored.environment_snapshot["source_url"] == fields["source_url"]
+        measurements = (await db.scalars(select(Measurement).where(Measurement.run_id == run_id))).all()
+        assert len(measurements) == 1
+        assert measurements[0].meta["provenance"] == "external_benchmark"
+        assert measurements[0].meta["source_title"] == fields["source_title"]
+
+    reloaded = await client.get(f"{API}/experiments/{exp['id']}", headers=auth)
+    assert reloaded.status_code == 200, reloaded.text
+    stored_run = next(r for r in reloaded.json()["runs"] if r["id"] == str(run_id))
+    assert stored_run["source_title"] == fields["source_title"]
+    assert stored_run["source_url"] == fields["source_url"]
+    assert stored_run["provenance"] == "external_benchmark"
 
 
 SPEED = ("decode_tps", "tok/s", "higher_is_better")
@@ -477,6 +520,7 @@ async def test_compare_series_ignores_failed_runs_and_non_overall_slices(client,
         headers=auth,
         json={
             "configuration_id": cfg["id"],
+            "provenance": "manual_evaluation",
             "metrics": [
                 {"metric_key": "decode_tps", "value": 999.0, "slice_key": "query:7", "direction": "higher_is_better"},
                 {"metric_key": "decode_tps", "value": 50.0, "direction": "higher_is_better"},

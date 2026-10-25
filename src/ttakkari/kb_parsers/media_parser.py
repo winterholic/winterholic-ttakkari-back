@@ -59,6 +59,7 @@ class SubtitleParser(BaseParser):
                 text = data.decode("utf-8", errors="replace")
 
         text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+        text = unicodedata.normalize("NFC", text)
 
         # Regex for SRT/VTT timecode block:
         block_pattern = re.compile(
@@ -75,6 +76,7 @@ class SubtitleParser(BaseParser):
             cue_text = m.group(3).strip()
             # Remove VTT tags like <v Speaker> or <i>
             cue_text = re.sub(r"<[^>]+>", "", cue_text).strip()
+            cue_text = unicodedata.normalize("NFC", cue_text)
             if not cue_text:
                 continue
 
@@ -98,12 +100,13 @@ class SubtitleParser(BaseParser):
                     chunk_kind="transcript",
                     time_start_ms=t_start_ms,
                     time_end_ms=t_end_ms,
+                    extra={"exact_text": cue_text},
                 )
             )
 
         full_body = "".join(body_parts)
         return ParsedDocument(
-            normalized_body=unicodedata.normalize("NFC", full_body),
+            normalized_body=full_body,
             metadata={
                 "parser": self.name,
                 "cue_count": len(locator_spans),

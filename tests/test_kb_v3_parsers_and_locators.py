@@ -10,6 +10,8 @@ import pytest
 from ttakkari.common.chunking import chunk_structured_document
 from ttakkari.kb_parsers import (
     BlobStore,
+    ParserRegistry,
+    ParserResourceLimits,
     ParseStatus,
     create_default_registry,
 )
@@ -59,6 +61,29 @@ class TestBlobStore:
         store = BlobStore(root_dir=tmp_path / "blobs", max_bytes=10)
         with pytest.raises(ValueError, match="Blob size 15 exceeds maximum 10"):
             store.put(b"123456789012345")
+
+    def test_symlink_traversal_rejection_and_isolation(self, tmp_path: Path):
+        root = tmp_path / "store"
+        sibling = tmp_path / "store-evil"
+        root.mkdir()
+        sibling.mkdir()
+
+        # Adversarial symlink inside store pointing outside
+        (root / "sha256").symlink_to(sibling, target_is_directory=True)
+
+        store = BlobStore(root)
+        escaped = store.path_for("a" * 64)
+
+        # Enforces target stays strictly within resolved root
+        assert escaped.is_relative_to(root.resolve())
+
+        # Puts remain idempotent and never escape into sibling
+        a = store.put(b"repeat")
+        b = store.put(b"repeat")
+        assert a[:2] == b[:2]
+        assert a[2] == b[2]
+        assert store.verify(a[0])
+        assert list(sibling.iterdir()) == []
 
 
 class TestPdfParser:
@@ -307,3 +332,88 @@ class TestRegistryAndChunkingIntegration:
             assert c.time_start_ms is not None
             assert c.time_end_ms is not None
             assert parsed.normalized_body[c.char_start : c.char_end] == c.body
+
+
+class TestLocatorsAndResourceSecurity:
+    def test_decomposed_subtitle_nfc_locator_integrity(self):
+        registry = create_default_registry()
+        # Decomposed combining character (e + U+0301) and Hangul Jamo with blank line separator
+        raw_srt = (
+            "1\n00:00:01,000 --> 00:00:02,000\ne\u0301 text\n\n"
+            "2\n00:00:03,000 --> 00:00:04,000\n\u1100\u1161\u11a8\n"
+        ).encode("utf-8")
+        parsed = registry.parse(raw_srt, filename="decomposed.srt")
+
+        assert parsed.status == ParseStatus.SUCCEEDED.value
+        b_len = len(parsed.normalized_body)
+        assert len(parsed.locator_spans) == 2
+
+        # Invariant: 0 <= start <= end <= len(body) and exact slice matches
+        for span in parsed.locator_spans:
+            assert 0 <= span.start_offset <= span.end_offset <= b_len
+            slice_text = parsed.normalized_body[span.start_offset : span.end_offset]
+            assert slice_text == span.extra.get("exact_text")
+
+    def test_zip_bomb_prevention_on_office_parsers(self):
+        import io
+        import zipfile
+
+        # Synthesize a zip bomb with > 10MB uncompressed content
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("word/document.xml", b"A" * (15 * 1024 * 1024))
+        bomb_bytes = buf.getvalue()
+
+        registry = create_default_registry()
+        # Custom limits to trigger limit check
+        custom_limits = ParserResourceLimits(max_zip_uncompressed_bytes=5 * 1024 * 1024)
+        reg_limited = ParserRegistry(limits=custom_limits)
+        for p in registry._parsers:
+            reg_limited.register(p)
+
+        parsed_docx = reg_limited.parse(bomb_bytes, filename="bomb.docx")
+        assert parsed_docx.status == ParseStatus.FAILED.value
+        assert parsed_docx.error_code == "limits_exceeded"
+
+        parsed_pptx = reg_limited.parse(bomb_bytes, filename="bomb.pptx")
+        assert parsed_pptx.status == ParseStatus.FAILED.value
+        assert parsed_pptx.error_code == "limits_exceeded"
+
+        parsed_xlsx = reg_limited.parse(bomb_bytes, filename="bomb.xlsx")
+        assert parsed_xlsx.status == ParseStatus.FAILED.value
+        assert parsed_xlsx.error_code == "limits_exceeded"
+
+    def test_pdf_page_limit_enforcement(self):
+        registry = create_default_registry()
+        pdf_bytes = (FIXTURES_DIR / "sample_spec.pdf").read_bytes()  # 3 pages
+
+        # Limit to max 2 pages
+        reg_limited = ParserRegistry(limits=ParserResourceLimits(max_pdf_pages=2))
+        for p in registry._parsers:
+            reg_limited.register(p)
+
+        parsed = reg_limited.parse(pdf_bytes, filename="spec.pdf")
+        assert parsed.status == ParseStatus.FAILED.value
+        assert parsed.error_code == "limits_exceeded"
+
+    def test_xxe_external_entity_not_expanded(self):
+        # XML with XXE external entity injection
+        xxe_xml = (
+            b'<?xml version="1.0"?>'
+            b'<!DOCTYPE root [ <!ENTITY test SYSTEM "file:///etc/passwd"> ]>'
+            b"<root>&test;</root>"
+        )
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("word/document.xml", xxe_xml)
+            zf.writestr("[Content_Types].xml", b'<?xml version="1.0"?><Types/>')
+        doc_bytes = buf.getvalue()
+
+        registry = create_default_registry()
+        parsed = registry.parse(doc_bytes, filename="xxe.docx")
+        # Either safely rejected or entity not expanded into system files
+        assert "/etc/passwd" not in parsed.normalized_body
+        assert "root:x:" not in parsed.normalized_body

@@ -7,6 +7,7 @@ from ttakkari.kb_parsers.base import (
     ParsedDocument,
     ParserRegistry,
     ParseStatus,
+    validate_parsed_document,
 )
 from ttakkari.kb_parsers.blob_store import BlobStore
 from ttakkari.kb_parsers.code_parser import CodeParser
@@ -24,6 +25,11 @@ from ttakkari.kb_parsers.office_parser import (
     XlsxParser,
 )
 from ttakkari.kb_parsers.pdf_parser import PdfParser
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+    validate_zip_safety,
+)
 
 
 def create_default_registry() -> ParserRegistry:
@@ -44,6 +50,7 @@ def create_default_registry() -> ParserRegistry:
 
 
 __all__ = [
+    "DEFAULT_LIMITS",
     "BaseParser",
     "BlobStore",
     "CodeParser",
@@ -56,9 +63,12 @@ __all__ = [
     "ParseStatus",
     "ParsedDocument",
     "ParserRegistry",
+    "ParserResourceLimits",
     "PdfParser",
     "PptxParser",
     "SubtitleParser",
     "XlsxParser",
     "create_default_registry",
+    "validate_parsed_document",
+    "validate_zip_safety",
 ]

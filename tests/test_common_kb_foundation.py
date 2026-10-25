@@ -219,6 +219,53 @@ class TestEntityNorm:
         assert canonical3 == "PostgreSQL"
         assert "Postgres" in aliases3
 
+    def test_multi_alias_and_bracket_split(self):
+        canonical1, aliases1 = split_bilingual_label("Foo (Bar) (Baz)")
+        assert canonical1 == "Foo"
+        assert aliases1 == ["Foo", "Bar", "Baz"]
+
+        canonical2, aliases2 = split_bilingual_label("쿠버네티스(Kubernetes, k8s)")
+        assert canonical2 == "Kubernetes"
+        assert "쿠버네티스" in aliases2
+        assert "Kubernetes" in aliases2
+        assert "k8s" in aliases2
+
+    def test_adversarial_chunking_contracts(self):
+        fence = chr(96) * 3
+        cases = [
+            ("markdown headings", "# Title\n\npara one\n\n## Sub\n\npara two"),
+            ("CRLF", "# T\r\n\r\nfirst\r\n\r\nsecond"),
+            ("oversize code line", fence + "py\n" + "x" * 80 + "\n" + fence),
+            ("oversize table row", "| a | b |\n|---|---|\n|" + "x" * 80 + "|z|"),
+        ]
+        for name, body in cases:
+            max_c = 20
+            chunks = chunk_structured_document(
+                body, target_chars=12, max_chars=max_c, min_chars=1
+            )
+            gaps, pos = [], 0
+            for c in chunks:
+                # Contract 1: exact slice invariant
+                assert body[c.char_start : c.char_end] == c.body
+                # Contract 2: strictly <= max_chars
+                assert len(c.body) <= max_c
+                # Contract 3: no overlapping and ordered
+                assert c.char_start >= pos
+                if c.char_start > pos:
+                    gaps.append(body[pos : c.char_start])
+                pos = c.char_end
+            if pos < len(body):
+                gaps.append(body[pos:])
+
+            # Contract 4: coverage - no non-whitespace characters in gaps
+            for g in gaps:
+                assert g.strip() == "", f"Non-whitespace gap in {name}: {g!r}"
+
+        # Contract 5: lone surrogate tolerance without UnicodeEncodeError
+        chunks_surr = chunk_structured_document("ok" + chr(0xD800) + "end")
+        assert len(chunks_surr) >= 1
+        assert len(chunks_surr[0].sha256) == 64
+
     def test_extract_explicit_definitions_no_hallucinations(self):
         text = (
             "디플로이먼트(Deployment)는 파드와 레플리카셋에 대한 선언적 업데이트를 제공하는 쿠버네티스 워크로드 리소스이다.\n\n"

@@ -8,6 +8,10 @@ from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+)
 
 
 class PdfParser(BaseParser):
@@ -22,6 +26,7 @@ class PdfParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         import pypdf
@@ -35,6 +40,14 @@ class PdfParser(BaseParser):
                 status=ParseStatus.FAILED.value,
                 error_code="corrupt_pdf",
                 error_detail=f"Failed to read PDF structure: {exc}",
+            )
+
+        if num_pages > limits.max_pdf_pages:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=f"PDF page count {num_pages} exceeds maximum limit {limits.max_pdf_pages}",
             )
 
         if num_pages == 0:
@@ -80,11 +93,20 @@ class PdfParser(BaseParser):
                         section_path=[f"Page {page_no}"],
                         page_no=page_no,
                         chunk_kind="prose",
+                        extra={"exact_text": norm_text},
                     )
                 )
 
         full_body = "".join(page_texts)
         total_chars = len(full_body)
+
+        if total_chars > limits.max_text_chars:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=f"Extracted PDF text length {total_chars} exceeds limit {limits.max_text_chars}",
+            )
 
         # Scanned PDF check: average characters per page < 20 or total_chars == 0
         avg_chars_per_page = total_chars / max(1, num_pages)

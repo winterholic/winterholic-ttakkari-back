@@ -8,6 +8,10 @@ from typing import Any, ClassVar
 
 from ttakkari.common.chunking import parse_markdown_spans
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+)
 
 
 def normalize_text_body(raw_bytes: bytes) -> str:
@@ -57,9 +61,18 @@ class MarkdownParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         normalized = normalize_text_body(data)
+
+        if len(normalized) > limits.max_text_chars:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=f"Text body length {len(normalized)} exceeds limit {limits.max_text_chars}",
+            )
 
         # Basic HTML tag stripping if it's html
         is_html = (filename and filename.lower().endswith((".html", ".htm"))) or (

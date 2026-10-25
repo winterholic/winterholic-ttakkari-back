@@ -9,6 +9,10 @@ from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+)
 
 
 class CodeParser(BaseParser):
@@ -141,6 +145,7 @@ class CodeParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         try:
@@ -150,6 +155,14 @@ class CodeParser(BaseParser):
 
         text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
         text = unicodedata.normalize("NFC", text)
+
+        if len(text) > limits.max_text_chars:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=f"Code length {len(text)} exceeds limit {limits.max_text_chars}",
+            )
 
         is_python = filename and filename.lower().endswith(".py")
         if is_python:

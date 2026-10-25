@@ -339,8 +339,11 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
     async def session2_precise_worker():
         return await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
 
-    # 2개 독립 세션을 비동기로 동시 경합 실행
-    res1, res2 = await asyncio.gather(session1_unhold_worker(), session2_precise_worker())
+    # 2개 독립 세션을 비동기로 동시 경합 실행 (전체 유한 기한 15초 안전망)
+    res1, res2 = await asyncio.wait_for(
+        asyncio.gather(session1_unhold_worker(), session2_precise_worker()),
+        timeout=15.0,
+    )
     assert res1.get("status") == "accepted" or res1.get("delivery_queued") is True
     assert res2 == 1  # 1개 item 정상 소비 완결
 
@@ -448,6 +451,9 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
     allow_precise_commit = asyncio.Event()
     precise_committed = asyncio.Event()
     lock_wait_observed = False
+    holder_waiter_relation_observed = False
+    holder_pid: int | None = None
+    waiter_pid: int | None = None
 
     class PreciseSessionProbe:
         """실제 AsyncSession을 래핑하여 apply 트랜잭션의 with_for_update 락 획득 시점을 관측하고 동기화한다."""
@@ -459,11 +465,13 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
             return getattr(self._session, name)
 
         async def scalar(self, statement, *args, **kwargs):
+            nonlocal holder_pid
             res = await self._session.scalar(statement, *args, **kwargs)
             # apply 단계에서 CollectorItem row lock(FOR UPDATE)을 획득한 직후 감지
             is_for_update = getattr(statement, "_for_update_arg", None) is not None
             if is_for_update and getattr(res, "id", None) == item_id:
-                # 1. Session 2가 PostgreSQL에서 item_id의 row lock을 획득했음을 신호
+                # 1. Session 2 (holder)의 backend PID 확인 및 row lock 획득 신호
+                holder_pid = (await self._session.execute(text("SELECT pg_backend_pid()"))).scalar()
                 precise_row_locked.set()
                 # 2. Session 1이 unhold_item 호출에 진입할 때까지 유한 timeout 대기
                 await asyncio.wait_for(unhold_query_invoked.wait(), timeout=TIMEOUT)
@@ -506,10 +514,12 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
 
     # 세션 1 워커: Session 2가 row lock을 획득한 상태에서 unhold_item을 호출하여 DB lock wait에 진입
     async def session1_unhold_worker():
+        nonlocal waiter_pid
         # Session 2가 apply 트랜잭션에서 with_for_update row lock을 획득할 때까지 결정적 대기 (sleep 전혀 없음)
         await asyncio.wait_for(precise_row_locked.wait(), timeout=TIMEOUT)
-        unhold_query_invoked.set()
         async with sessionmaker()() as db1:
+            waiter_pid = (await db1.execute(text("SELECT pg_backend_pid()"))).scalar()
+            unhold_query_invoked.set()
             # unhold_item 내부의 with_for_update(of=CollectorItem) 쿼리는 Session 2가 commit할 때까지 DB에서 대기함
             res = await missions.unhold_item(db1, mission_id, item_id)
             await db1.commit()
@@ -519,35 +529,53 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
     async def session2_precise_worker():
         return await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
 
-    # 락 대기 상태 관측 태스크 (Probe Task)
+    # 락 대기 상태 및 holder/waiter 관계 관측 태스크 (Probe Task)
     async def lock_wait_observer():
-        nonlocal lock_wait_observed
+        nonlocal lock_wait_observed, holder_waiter_relation_observed
         try:
             # Session 1이 unhold 쿼리에 진입할 때까지 대기
             await asyncio.wait_for(unhold_query_invoked.wait(), timeout=TIMEOUT)
-            # unhold_item 쿼리가 PostgreSQL 서버에 도달하여 row lock 대기 상태(granted=false)가 되는지 관측
+            # unhold_item 쿼리가 PostgreSQL 서버에 도달하여 row lock 대기 상태(granted=false 및 pg_blocking_pids)가 되는지 관측
             async with sessionmaker()() as db_probe:
-                for _ in range(100):  # 0.01초 간격으로 최대 1초간 관측
+                for _ in range(100):  # 0.01초 간격으로 최대 1초간 bounded 관측
                     waiting_locks = (await db_probe.execute(
                         text("SELECT count(*) FROM pg_locks WHERE NOT granted")
                     )).scalar()
+                    blocking = (await db_probe.execute(
+                        text("SELECT pg_blocking_pids(:pid)"),
+                        {"pid": waiter_pid},
+                    )).scalar()
+                    activity = (await db_probe.execute(
+                        text("SELECT wait_event_type FROM pg_stat_activity WHERE pid = :pid"),
+                        {"pid": waiter_pid},
+                    )).scalar()
+
                     if waiting_locks and waiting_locks > 0:
                         lock_wait_observed = True
+                    if blocking and holder_pid in blocking:
+                        holder_waiter_relation_observed = True
+                    if activity == "Lock":
+                        lock_wait_observed = True
+                    if lock_wait_observed and holder_waiter_relation_observed:
                         break
                     await asyncio.sleep(0.01)
         finally:
             # 관측 후 Session 2에게 commit을 허용하여 lock을 해제하도록 신호
             allow_precise_commit.set()
 
-    # 3개 태스크를 비동기로 동시 실행
-    res1, res2, _ = await asyncio.gather(
-        session1_unhold_worker(), session2_precise_worker(), lock_wait_observer()
+    # 3개 태스크를 비동기로 동시 실행 (전체 유한 기한 15초 안전망)
+    res1, res2, _ = await asyncio.wait_for(
+        asyncio.gather(
+            session1_unhold_worker(), session2_precise_worker(), lock_wait_observer()
+        ),
+        timeout=15.0,
     )
     # 경합 완료 후 원래 sessionmaker 복원
     monkeypatch.setattr(precise_eval, "sessionmaker", real_precise_sessionmaker)
 
-    # 실제 PostgreSQL pg_locks에서 granted=false 인 row lock 대기가 관측되었음을 입증
+    # 실제 PostgreSQL pg_locks에서 granted=false 및 pg_blocking_pids holder/waiter 인과 관계가 관측되었음을 입증
     assert lock_wait_observed is True
+    assert holder_waiter_relation_observed is True
     assert res2 == 1  # Session 2가 1개 item 정상 소비 완결
     # Session 1은 이미 accepted 상태로 변경되었음을 확인하여 안전하게 item_not_held 응답 반환
     assert res1.get("status") == "accepted"

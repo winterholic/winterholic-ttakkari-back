@@ -6,10 +6,10 @@
 
 | 저장소 | rebase 전 | origin/main | rebase 후 (테스트 대상) |
 |---|---|---|---|
-| 백엔드 back-research-v2 | `198e7297290969c3fdc8b17ee63ca351b0e9f6bb` (ahead 40 / behind 11) | `4501e34` (2차 rebase 시점) | `7567912e6fe30a88127c1907a5db046d64e1c4ca` (ahead 42 / behind 0) |
+| 백엔드 back-research-v2 | `198e7297290969c3fdc8b17ee63ca351b0e9f6bb` (ahead 40 / behind 11) | `600eb84` (3차 rebase 시점) | 전체 회귀 대상 `7567912e6fe30a88127c1907a5db046d64e1c4ca`(ahead 42 / behind 0), 최종은 보고서 커밋을 포함한 브랜치 HEAD(ahead 43 / behind 0) |
 | 프론트 front-research-v2 | `6930e52fe60850928d326211e5099c7310d0120d` (ahead 8 / behind 6) | `ad6149d` | `2c6fa10d11e5754e741c4d0827dd0b98d8e6e92f` (ahead 8 / behind 0) |
 
-백엔드는 두 번 rebase했다. 1차는 `bc37116`, 2차는 main이 `98f4165`, `4501e34`(runs 풀 예산 수정)로 2커밋 전진한 뒤다. 롤백용 로컬 태그 `pre-integration-stage1-back`(198e729), `pre-integration-stage1-front`(6930e52)를 남겼다.
+백엔드는 세 번 rebase했다. 1차는 `bc37116`, 2차는 main이 `98f4165`, `4501e34`(runs 풀 예산 수정)로 2커밋 전진한 뒤, 3차는 문서 커밋 직후 main이 `25839fb`, `600eb84`(runs/desk 연결 반납)로 2커밋 더 전진한 뒤다. 3차 새 main 커밋은 `runs/desk.py`, `runs/manager.py`, `tests/test_run_db_pool_budget.py`만 바꾸며 research, alembic, deploy와 겹치지 않는다. 3차 후에는 전체 재실행 대신 새 테스트와 (a) 묶음만 다시 돌렸다: `tests/test_run_db_pool_budget.py unit_tests/test_schema_head_admission.py` → `22 passed in 3.56s`, (a) → `293 passed, 2966 deselected in 60.55s (0:01:00)`, `alembic heads` → `0072_research_lab_v2 (head)`. 5절의 (b)(c) 전체 결과는 2차 rebase 후 `7567912` 기준이고, 3차에서 늘어난 main 변경분 전체 회귀는 미실행이다(`미실행: 변경이 runs 풀 코드에 한정돼 research 영향이 없다고 판단, 시간 비용`). 롤백용 로컬 태그 `pre-integration-stage1-back`(198e729), `pre-integration-stage1-front`(6930e52)를 남겼다.
 
 ### rebase 대신 merge를 쓰지 않은 근거
 - 이 브랜치는 로컬 전용이고 사용자가 히스토리 재작성을 허용했다.

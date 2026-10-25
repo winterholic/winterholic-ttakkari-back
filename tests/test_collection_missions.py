@@ -386,7 +386,8 @@ async def test_mission_extend_reuses_preserved_frontier_with_additional_pages(cl
     # Extend mission: add 5 pages
     extended = (await client.post(BASE + f"/missions/{mid}/extend", headers=auth, json={"add_pages": 5})).json()
     assert extended["status"] == "running"
-    assert extended["plan"]["budget"]["pages"] == 6
+    assert extended["plan"]["budget"]["pages"] == 1  # the configured per-run budget is unchanged
+    assert extended["runs"][0]["page_budget"] == 6 and extended["run_seq"] == 1
 
     # Runner consumes child job generated from preserved frontier
     assert await runner.consume_once(limit=1, managed_only=True) == 1
@@ -602,3 +603,158 @@ async def test_mission_schedule_and_rerun_controls(client, auth, env):  # noqa: 
     # Rerun mission
     rerun = (await client.post(BASE + f"/missions/{mid}/rerun", headers=auth)).json()
     assert rerun["status"] == "running"
+
+
+# ---- per-run budget for periodic refresh -------------------------------------------------------------------
+
+NAV = "<nav><a href='/'>home</a> <a href='/about'>about</a></nav>"
+
+
+async def _site(client, auth, env, name, *, pages=2, max_pages_per_job=None):  # noqa: F811
+    """A chain page1 -> page2 -> ... on the local fixture server, registered with a store-allowed policy."""
+    urls = [env.server.url(f"/{name}/page{i}") for i in range(1, pages + 1)]
+    for i, url in enumerate(urls):
+        link = f'<a href="{urls[i + 1]}">next</a>' if i + 1 < len(urls) else ""
+        env.server.page(f"/{name}/page{i + 1}", article_html(f"{name} {i}", [prose("en", 80 + i, 15)]).replace(NAV, "") + link)
+    body = source_body(seeds=[urls[0]], max_pages=max_pages_per_job or 10, source_key=f"{name}-source")
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0,
+                          max_depth=min(pages + 1, 3), **({"max_pages_per_job": max_pages_per_job} if max_pages_per_job else {}))
+    body["max_depth"] = min(pages + 1, 3)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    return urls
+
+
+async def _view(client, auth, mid):
+    return (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+
+
+async def _tick(minutes):
+    from datetime import UTC, datetime, timedelta
+
+    from ttakkari.collector import control
+    return await control.schedule_once(now=datetime.now(UTC) + timedelta(minutes=minutes))
+
+
+async def test_scheduled_runs_get_a_fresh_per_run_budget_and_never_exceed_it(client, auth, env, monkeypatch):  # noqa: F811
+    urls = await _site(client, auth, env, "runs", pages=2)
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "회차 예산", "urls": [urls[0]], "max_pages": 1})).json()
+    mid = made["id"]
+    assert (await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})).status_code == 200
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    first = await _view(client, auth, mid)
+    assert first["run_seq"] == 1 and first["runs"][0]["pages_used"] == 1 and first["counts"]["acquired"] == 1
+
+    # The old defect: the 15-minute schedule enqueued the source again without any budget check.
+    assert await _tick(20) == 1
+    second = await _view(client, auth, mid)
+    assert second["run_seq"] == 2 and second["runs"][0]["trigger"] == "scheduled"
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    second = await _view(client, auth, mid)
+    run1, run2 = second["runs"][1], second["runs"][0]
+    assert (run1["pages_used"], run2["pages_used"]) == (1, 1)  # each run capped at its own 1-page budget
+    assert run2["page_budget"] == 1 and run2["collected"] == 1  # the run continued with what run 1 left unfetched
+    assert await runner.consume_once(limit=1, managed_only=True) == 0  # nothing beyond the budget was queued
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 2
+    assert (await _view(client, auth, mid))["runs"][0]["imported"] == 1
+
+
+async def test_refresh_run_does_not_reload_unchanged_documents_but_imports_changed_ones(client, auth, env, monkeypatch):  # noqa: F811
+    urls = await _site(client, auth, env, "incr", pages=2)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={"goal": "증분 갱신", "urls": [urls[0]], "max_pages": 2})).json()["id"]
+    await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 2
+
+    assert await _tick(20) == 1
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    unchanged = (await _view(client, auth, mid))["runs"][0]
+    assert (unchanged["collected"], unchanged["unchanged"], unchanged["pages_used"]) == (0, 2, 2)
+    assert await kb_delivery.deliver_once() == 0  # nothing was handed to the knowledge base again
+
+    env.server.page("/incr/page2", article_html("incr changed", [prose("en", 140, 15)]).replace(NAV, ""))
+    assert await _tick(40) == 1
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    changed = (await _view(client, auth, mid))["runs"][0]
+    assert (changed["collected"], changed["unchanged"]) == (1, 1)
+    assert await kb_delivery.deliver_once() == 1
+    assert (await _view(client, auth, mid))["runs"][0]["imported"] == 1
+
+
+async def test_scheduled_run_is_skipped_and_recorded_while_previous_run_is_in_progress(client, auth, env):  # noqa: F811
+    urls = await _site(client, auth, env, "overlap", pages=1)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={"goal": "중첩 금지", "urls": urls, "max_pages": 5})).json()["id"]
+    await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})
+    assert await _tick(20) == 0  # run 1's job is still queued
+    detail = await _view(client, auth, mid)
+    assert detail["run_seq"] == 1 and len(detail["jobs"]) == 1
+    assert detail["plan"]["schedule"]["skipped_runs"] == 1
+    assert detail["plan"]["schedule"]["last_skip"]["reason"] == "previous_run_in_progress"
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert await _tick(40) == 1  # a skip never starves later runs
+    assert (await _view(client, auth, mid))["run_seq"] == 2
+
+
+async def test_paused_mission_is_not_refreshed_by_schedule(client, auth, env):  # noqa: F811
+    urls = await _site(client, auth, env, "paused", pages=1)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={"goal": "일시정지", "urls": urls, "max_pages": 5})).json()["id"]
+    await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})
+    assert (await client.post(BASE + f"/missions/{mid}/pause", headers=auth)).status_code == 200
+    assert await _tick(20) == 0
+    assert (await _view(client, auth, mid))["run_seq"] == 1
+
+
+async def test_concurrent_reconcile_extend_and_split_cannot_exceed_the_run_budget(client, auth, env):  # noqa: F811
+    urls = await _site(client, auth, env, "race-run", pages=3, max_pages_per_job=2)
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "회차 내 동시성", "urls": [urls[0]], "max_pages": 3})).json()
+    mid = uuid.UUID(made["id"])
+    async with sessionmaker()() as db:
+        job = await db.scalar(select(CollectorJob).join(CollectionMissionJob).where(CollectionMissionJob.mission_id == mid))
+        job.status = "partial"
+        job.cursor = {"v": 1, "processed": 2, "frontier": [{"u": urls[2], "url": urls[2], "d": 2}], "seen": [], "counts": {}}
+        await db.commit()
+
+    async def reconcile():
+        async with sessionmaker()() as db:
+            await missions.reconcile_mission(db, await db.get(CollectionMission, mid))
+            await db.commit()
+
+    async def extend():
+        async with sessionmaker()() as db:
+            await missions.extend(db, mid, add_pages=2)
+            await db.commit()
+
+    await asyncio.gather(reconcile(), extend(), reconcile(), reconcile())
+    async with sessionmaker()() as db:
+        rows = (await db.execute(select(CollectorJob, CollectionMissionJob.run_seq).join(CollectionMissionJob).where(
+            CollectionMissionJob.mission_id == mid))).all()
+        run = await db.get(missions.CollectionMissionRun, (mid, 1))
+    assert {seq for _, seq in rows} == {1}
+    children = [job for job, _ in rows if job.request_key.startswith("split:")]
+    assert len(children) == 1
+    allocated = sum((job.cursor or {}).get("processed", 0) if job.status in missions.TERMINAL
+                    else job.envelope["extensions"]["collector:request"]["max_pages"] for job, _ in rows)
+    assert run.extra_pages == 2 and allocated <= run.page_budget + run.extra_pages
+
+
+async def test_extend_raises_current_run_only_and_rerun_starts_a_fresh_run(client, auth, env):  # noqa: F811
+    urls = await _site(client, auth, env, "rerun-run", pages=1)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={"goal": "회차 확장과 재실행", "urls": urls, "max_pages": 1})).json()["id"]
+    extended = (await client.post(BASE + f"/missions/{mid}/extend", headers=auth, json={"add_pages": 4})).json()
+    assert extended["run_seq"] == 1 and extended["runs"][0]["page_budget"] == 5
+    rerun = (await client.post(BASE + f"/missions/{mid}/rerun", headers=auth)).json()
+    assert rerun["run_seq"] == 2 and rerun["runs"][0]["trigger"] == "rerun"
+    assert rerun["runs"][0]["page_budget"] == 1 and rerun["runs"][1]["page_budget"] == 5
+
+
+async def test_mission_sources_and_jobs_cannot_bypass_the_mission_budget(client, auth, env):  # noqa: F811
+    urls = await _site(client, auth, env, "bypass", pages=1)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={"goal": "우회 차단", "urls": urls, "max_pages": 1})).json()["id"]
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    async with sessionmaker()() as db:
+        from ttakkari.collector.control_models import CollectorSource
+        source = await db.scalar(select(CollectorSource).where(CollectorSource.source_key.like(f"mission:{mid}:%")))
+        job = await db.scalar(select(CollectorJob).join(CollectionMissionJob).where(CollectionMissionJob.mission_id == uuid.UUID(mid)))
+    assert (await client.post(BASE + f"/sources/{source.id}/run", headers=auth)).status_code == 409
+    assert (await client.post(BASE + f"/jobs/{job.id}/retry", headers=auth)).status_code == 409

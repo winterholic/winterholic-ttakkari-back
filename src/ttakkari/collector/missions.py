@@ -6,8 +6,10 @@ deterministic. Unregistered rights remain gaps; no client text can grant source 
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -28,6 +30,8 @@ from ttakkari.collector.pipeline import COUNT_KEYS
 from ttakkari.collector_models import (
     CollectionMission,
     CollectionMissionJob,
+    CollectionMissionRun,
+    CollectorFetchCache,
     CollectorItem,
     CollectorJob,
     CollectorOutbox,
@@ -35,6 +39,31 @@ from ttakkari.collector_models import (
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\[\]{}\"']+")
 TERMINAL = {"succeeded", "partial", "failed", "cancelled", "policy_blocked", "quarantined"}
+log = logging.getLogger(__name__)
+
+
+def source_key_for(mission_id: uuid.UUID, url: str) -> str:
+    return f"mission:{mission_id}:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
+
+
+async def get_run(db, mission: CollectionMission, seq: int | None = None, *, trigger: str = "initial") -> CollectionMissionRun:
+    """The run row, created on first use for missions that predate run tracking. Caller holds the mission lock."""
+    seq = seq or mission.current_run_seq or 1
+    run = await db.get(CollectionMissionRun, (mission.id, seq), with_for_update=True, populate_existing=True)
+    if run is None:
+        run = CollectionMissionRun(mission_id=mission.id, run_seq=seq, trigger=trigger, started_at=datetime.now(UTC),
+                                   page_budget=mission.plan["budget"]["pages"], extra_pages=0)
+        db.add(run)
+        await db.flush()
+    return run
+
+
+async def begin_run(db, mission: CollectionMission, trigger: str) -> CollectionMissionRun:
+    """Start a new run that receives the mission's configured per-run budget. Caller holds the mission lock."""
+    seq = (mission.current_run_seq or 1) + 1
+    mission.current_run_seq = seq
+    await db.flush()
+    return await get_run(db, mission, seq, trigger=trigger)
 
 
 def input_url(raw: str):
@@ -101,33 +130,77 @@ async def create(db, *, goal: str, context: str = "", urls: list[str] | None = N
                                 input_hash=digest, goal=goal.strip(), plan=strategy, gaps=[], status="queued")
     db.add(mission)
     await db.flush()
+    await get_run(db, mission, 1)
     await launch(db, mission)
     if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
         await queue_preparation(db, mission)
     return mission
 
 
-async def queue_preparation(db, mission: CollectionMission) -> None:
+async def queue_preparation(db, mission: CollectionMission, run_seq: int | None = None) -> None:
     """Internal orchestration job. No document rights or delivery outbox are manufactured.
 
     Only the server can create its stage and mission relation. It uses the same claim,
     cancellation, attempt fence and generation drain as acquisition jobs.
     """
     ident = uuid.uuid4()
+    run_seq = run_seq or mission.current_run_seq or 1
     envelope = {"mission_id": str(mission.id)}
     job = CollectorJob(id=ident, tenant_id=mission.tenant_id, scope="personal",
-                       source_key=f"mission-prepare:{mission.id}", request_key=f"prepare:{mission.id}",
+                       source_key=f"mission-prepare:{mission.id}",
+                       request_key=f"prepare:{mission.id}" if run_seq == 1 else f"prepare:{mission.id}:{run_seq}",
                        payload_hash=hashlib.sha256(jcs(envelope).encode()).hexdigest(), envelope_id=uuid.uuid4(),
                        envelope=envelope, stage="mission_prepare", status="queued")
     db.add(job)
     await db.flush()
-    db.add(CollectionMissionJob(mission_id=mission.id, job_id=ident))
+    db.add(CollectionMissionJob(mission_id=mission.id, job_id=ident, run_seq=run_seq))
     mission.status = "running"
 
 
-async def reconcile_mission(db, mission: CollectionMission) -> None:
-    """Evaluate budget, auto-split jobs exceeding policy limits, and fairly distribute remaining quota.
+async def refresh_cursor(db, source: CollectorSource, prior: CollectorJob | None) -> dict[str, Any] | None:
+    """Frontier of an incremental refresh, built only from state the collector already keeps.
 
+    Order: what the previous run left unfetched, seeds never fetched, then fetched URLs stalest first. Each URL
+    is fetched conditionally through the existing fetch cache (ETag / Last-Modified / raw hash), so unchanged
+    documents become `not_modified` items that never reach the outbox. An unchanged page yields no links, which
+    is why fetched URLs are listed explicitly instead of being rediscovered from the seeds."""
+    from ttakkari.collector.pipeline import MAX_SEEN, _entry
+
+    cached = (await db.execute(
+        select(CollectorFetchCache.url, CollectorItem.depth)
+        .outerjoin(CollectorItem, CollectorItem.id == CollectorFetchCache.last_item_id)
+        .where(CollectorFetchCache.tenant_id == source.tenant_id, CollectorFetchCache.scope == source.scope,
+               CollectorFetchCache.source_key == source.source_key)
+        .order_by(CollectorFetchCache.last_fetched_at.asc()).limit(MAX_SEEN))).all()
+    leftover = list(((prior.cursor or {}).get("frontier") or []) if prior is not None else [])
+    if not cached and not leftover:
+        return None
+    frontier: list[dict[str, Any]] = []
+    keys: set[str] = set()
+
+    def add(entry: dict[str, Any]) -> None:
+        key = store.url_key(entry["u"])[:16]
+        if key not in keys:
+            keys.add(key)
+            frontier.append(entry)
+
+    for entry in leftover:
+        add({**entry, "u": entry.get("u") or entry.get("url")})
+    fetched = {store.url_key(row.url)[:16] for row in cached}
+    for seed in source.request.get("seeds", []):
+        if store.url_key(seed)[:16] not in fetched:
+            add(_entry(seed, 0))
+    for row in cached:
+        add(_entry(row.url, row.depth or 0))
+    return {"v": 1, "frontier": frontier, "seen": sorted(keys), "processed": 0, "discovered": len(frontier),
+            "counts": dict.fromkeys(COUNT_KEYS, 0)}
+
+
+async def reconcile_mission(db, mission: CollectionMission) -> None:
+    """Evaluate the current run's budget, auto-split jobs exceeding policy limits, and fairly distribute the rest.
+
+    Only jobs of the current run are summed: each run receives the mission's per-run budget anew, and within a
+    run no path (reconcile, extend, split, resume) can allocate beyond it because all of them serialize here.
     Uses actual processed pages from finished jobs (reclaiming unused reservations) and ensures
     independent sources are not blocked by one greedy source.
     """
@@ -145,8 +218,16 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
         CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
         CollectorSource.enabled.is_(True))))
 
-    linked = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob,
-        CollectionMissionJob.job_id == CollectorJob.id).where(CollectionMissionJob.mission_id == mission.id)))
+    run = await get_run(db, mission)
+    run_seq = run.run_seq
+    run_budget = run.page_budget + run.extra_pages
+    rows = (await db.execute(select(CollectorJob, CollectionMissionJob.run_seq).join(CollectionMissionJob,
+        CollectionMissionJob.job_id == CollectorJob.id).where(CollectionMissionJob.mission_id == mission.id))).all()
+    linked = [job for job, seq in rows if seq == run_seq]
+    latest_by_source: dict[str, CollectorJob] = {}
+    for job, _ in rows:
+        if job.stage != "mission_prepare":
+            latest_by_source[job.source_key] = max(latest_by_source.get(job.source_key, job), job, key=lambda j: j.created_at)
 
     used_pages = 0
     active_sources = set()
@@ -163,7 +244,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             used_pages += max(req_pages, processed)
             active_sources.add(job.source_key)
 
-    remaining = max(0, mission.plan["budget"]["pages"] - used_pages)
+    remaining = max(0, run_budget - used_pages)
     entries = mission.plan["sources"]
     gaps = [g for g in mission.gaps if g.get("reason") != "mission_page_budget"]
 
@@ -171,7 +252,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     for entry in entries:
         if entry["adapter"] == "github":
             continue  # Expanded by the durable preparation job, never fetched as HTML.
-        key = f"mission:{mission.id}:{hashlib.sha256(entry['url'].encode()).hexdigest()[:16]}"
+        key = source_key_for(mission.id, entry["url"])
         if key in active_sources:
             continue
         s_jobs = jobs_by_source.get(key, [])
@@ -215,36 +296,33 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
 
         fair_share = max(1, remaining // max(1, len(need_work) - index))
         pages = min(policy.max_pages_per_job, fair_share)
+        mission_ext = {"id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
+                       "reference": entry, "run_seq": run_seq}
 
-        if item["kind"] == "new":
+        source = await db.scalar(select(CollectorSource).where(
+            CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
+            CollectorSource.source_key == item["key"]))
+        if source is None:
             source, _ = await control.register_source(
                 db, ctx, source_key=item["key"], title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
                 interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
                 max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
                 profile="general", auto_import=True)
             await db.flush()
-            job = await control.enqueue(db, source, extensions={"collector:mission": {
-                "id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
-                "reference": entry}})
-            if not await db.scalar(select(CollectionMissionJob.mission_id).where(
-                CollectionMissionJob.mission_id == mission.id, CollectionMissionJob.job_id == job.id
-            )):
-                db.add(CollectionMissionJob(mission_id=mission.id, job_id=job.id))
+
+        if item["kind"] == "new":
+            try:
+                async with db.begin_nested():
+                    job = await control.enqueue(
+                        db, source, extensions={"collector:mission": mission_ext}, max_pages=pages,
+                        cursor=await refresh_cursor(db, source, latest_by_source.get(item["key"])))
+            except JobStateError as exc:
+                gaps.append({"url": entry["url"], "reason": "daily_page_budget" if "daily" in str(exc) else "source_unavailable",
+                             "message": "지금은 이 출처를 수집할 수 없습니다: " + str(exc)[:200]})
+                continue
             remaining -= pages
             queued += 1
         elif item["kind"] == "split_resume":
-            source = await db.scalar(select(CollectorSource).where(
-                CollectorSource.tenant_id == mission.tenant_id, CollectorSource.source_key == item["key"]
-            ))
-            if not source:
-                source, _ = await control.register_source(
-                    db, ctx, source_key=item["key"], title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
-                    interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
-                    max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
-                    profile="general", auto_import=True)
-                await db.flush()
-
-            from datetime import UTC, datetime
             now = datetime.now(UTC)
             ident = uuid.uuid4()
             envelope = control.intake_envelope(source, policy, now, ident)
@@ -252,10 +330,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             req_dict["max_pages"] = pages
             req_dict["seeds"] = [e.get("url") or e.get("u") for e in item["frontier"]]
             envelope["extensions"]["collector:request"] = req_dict
-            envelope["extensions"]["collector:mission"] = {
-                "id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
-                "reference": entry, "parent_job_id": str(item["last_job"].id),
-            }
+            envelope["extensions"]["collector:mission"] = {**mission_ext, "parent_job_id": str(item["last_job"].id)}
             child_cursor = {
                 "v": 1,
                 "frontier": list(item["frontier"]),
@@ -280,12 +355,12 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             )
             db.add(child_job)
             await db.flush()
-            db.add(CollectionMissionJob(mission_id=mission.id, job_id=child_job.id))
+            db.add(CollectionMissionJob(mission_id=mission.id, job_id=child_job.id, run_seq=run_seq))
             source.last_job_id = child_job.id
             remaining -= pages
             queued += 1
 
-    mission.gaps = gaps
+    mission.gaps = list({(g.get("url"), g.get("reason")): g for g in gaps}.values())
     if queued or active_sources:
         mission.status = "running"
     elif mission.plan["mode"] == "research" and not linked:
@@ -417,8 +492,6 @@ async def prepare(job, ctx):
 
 async def register_document_license(db, mission, doc):
     """An observed file grant is scoped to that exact commit/file, never the raw host."""
-    from datetime import UTC, datetime
-
     license_info = doc.get("license") or {}
     if license_info.get("permission") != "allowed":
         return
@@ -440,8 +513,10 @@ async def register_document_license(db, mission, doc):
 
 
 async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict:
-    jobs = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id)
-                                 .where(CollectionMissionJob.mission_id == mission.id, CollectorJob.tenant_id == mission.tenant_id)))
+    job_rows = (await db.execute(select(CollectorJob, CollectionMissionJob.run_seq).join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id)
+                                 .where(CollectionMissionJob.mission_id == mission.id, CollectorJob.tenant_id == mission.tenant_id))).all()
+    jobs = [job for job, _ in job_rows]
+    run_of = {job.id: seq for job, seq in job_rows}
     counts = dict.fromkeys(("discovered", "acquired", "accepted", "held", "failed", "blocked", "duplicate", "imported", "pending_delivery", "not_imported"), 0)
     for job in jobs:
         counts["discovered"] += (job.cursor or {}).get("discovered", 0)
@@ -472,6 +547,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
             results = [{"id": str(row.id), "url": row.final_url or row.url, "title": row.title or row.url,
                         "status": row.status, "reasons": row.reason_codes, "delivery": row.outcome,
                         "document_id": row.document_id, "revision_id": str(row.revision_id) if row.revision_id else None} for row in rows]
+    runs = await run_views(db, mission, job_rows, detailed=detailed)
     state = mission.status
     if state not in ("paused", "cancelled") and jobs and all(job.status in TERMINAL for job in jobs) and not counts["pending_delivery"]:
         latest_jobs = {}
@@ -484,12 +560,55 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
     return {
         "id": str(mission.id), "goal": mission.goal, "title": mission.plan["title"], "status": state,
         "plan": mission.plan if detailed else {k: v for k, v in mission.plan.items() if k != "context"},
+        "run_seq": mission.current_run_seq or 1, "runs": runs,
         "gaps": mission.gaps, "counts": counts, "results": results,
-        "jobs": [{"job_id": str(job.id), "status": job.status, "stage": job.stage,
+        "jobs": [{"job_id": str(job.id), "status": job.status, "stage": job.stage, "run_seq": run_of[job.id],
                   "error": job.last_error} for job in jobs],
         "knowledge_processing": {"storage": "verified" if counts["imported"] else "pending", "semantic": "unverified"},
         "created_at": mission.created_at.isoformat(), "updated_at": mission.updated_at.isoformat(),
     }
+
+
+async def run_views(db, mission: CollectionMission, job_rows, *, detailed: bool) -> list[dict]:
+    """Per-run budget use and results, newest first. `collected` is new or changed content, `unchanged` is
+    a conditional fetch that matched the stored copy (never delivered again), `imported` is a KB receipt."""
+    current = mission.current_run_seq or 1
+    stored = {run.run_seq: run for run in await db.scalars(select(CollectionMissionRun).where(
+        CollectionMissionRun.mission_id == mission.id))}
+    if current not in stored:
+        stored[current] = CollectionMissionRun(mission_id=mission.id, run_seq=current, trigger="initial", started_at=mission.created_at,
+                                               page_budget=mission.plan["budget"]["pages"], extra_pages=0)
+    pages: dict[int, int] = {}
+    active: set[int] = set()
+    for job, seq in job_rows:
+        if job.stage != "mission_prepare":
+            pages[seq] = pages.get(seq, 0) + (job.cursor or {}).get("processed", 0)
+        if job.status not in TERMINAL:
+            active.add(seq)
+    collected: dict[int, int] = {}
+    unchanged: dict[int, int] = {}
+    imported: dict[int, int] = {}
+    if job_rows:
+        item_filters = (CollectionMissionJob.mission_id == mission.id, CollectorItem.tenant_id == mission.tenant_id)
+        for seq, gathered, same in (await db.execute(select(
+            CollectionMissionJob.run_seq,
+            func.count(CollectorItem.id).filter(CollectorItem.raw_sha256.is_not(None), CollectorItem.status != "not_modified"),
+            func.count(CollectorItem.id).filter(CollectorItem.status == "not_modified"),
+        ).join(CollectorItem, CollectorItem.job_id == CollectionMissionJob.job_id).where(*item_filters)
+                .group_by(CollectionMissionJob.run_seq))).all():
+            collected[seq], unchanged[seq] = gathered, same
+        for seq, count in (await db.execute(select(
+            CollectionMissionJob.run_seq, func.count(CollectorItem.id.distinct()),
+        ).join(CollectorItem, CollectorItem.job_id == CollectionMissionJob.job_id).join(
+            CollectorDelivery, CollectorDelivery.item_id == CollectorItem.id).where(
+                *item_filters, CollectorDelivery.outcome == "imported").group_by(CollectionMissionJob.run_seq))).all():
+            imported[seq] = count
+    ordered = sorted(stored.values(), key=lambda run: run.run_seq, reverse=True)
+    return [{"run_seq": run.run_seq, "trigger": run.trigger, "started_at": run.started_at.isoformat(),
+             "page_budget": run.page_budget + run.extra_pages, "pages_used": pages.get(run.run_seq, 0),
+             "collected": collected.get(run.run_seq, 0), "unchanged": unchanged.get(run.run_seq, 0),
+             "imported": imported.get(run.run_seq, 0), "in_progress": run.run_seq in active}
+            for run in ordered[: 20 if detailed else 1]]
 
 
 async def pause(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> CollectionMission:
@@ -577,6 +696,7 @@ async def cancel(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Coll
 
 
 async def extend(db, mission_id: uuid.UUID, *, add_pages: int, tenant_id: str = "owner") -> CollectionMission:
+    """Raise the budget of the current run only; later runs start from the configured per-run budget again."""
     if not 1 <= add_pages <= 100_000:
         raise ValueError("추가할 수집 쪽수를 확인해 주세요 (1~100,000).")
     await store._lock(db, "mission-control", tenant_id, str(mission_id))
@@ -587,10 +707,8 @@ async def extend(db, mission_id: uuid.UUID, *, add_pages: int, tenant_id: str = 
         raise ValueError("수집 임무를 찾을 수 없습니다.")
     if mission.status == "cancelled":
         raise ValueError("중지된 임무는 확장할 수 없습니다. 다시 실행을 이용해 주세요.")
-    mission.plan = {
-        **mission.plan,
-        "budget": {**mission.plan["budget"], "pages": mission.plan["budget"]["pages"] + add_pages},
-    }
+    run = await get_run(db, mission)
+    run.extra_pages += add_pages
     mission.gaps = [g for g in mission.gaps if g.get("reason") != "mission_page_budget"]
     mission.status = "running"
     await db.flush()
@@ -599,6 +717,7 @@ async def extend(db, mission_id: uuid.UUID, *, add_pages: int, tenant_id: str = 
 
 
 async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> CollectionMission:
+    """Start a new run with a fresh per-run budget. Fetching stays conditional, so unchanged documents are not reloaded."""
     await store._lock(db, "mission-control", tenant_id, str(mission_id))
     mission = await db.scalar(select(CollectionMission).where(
         CollectionMission.id == mission_id, CollectionMission.tenant_id == tenant_id
@@ -624,56 +743,84 @@ async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Colle
         for s in sources:
             s.enabled = True
             s.last_job_id = None
-    ctx = AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner")
-    entries = mission.plan["sources"]
-    remaining = mission.plan["budget"]["pages"]
-    active_sources = list(await db.scalars(select(CollectorSource).where(
-        CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
-        CollectorSource.enabled.is_(True))))
-    for index, entry in enumerate(entries):
-        if entry["adapter"] == "github":
-            continue
-        key = f"mission:{mission.id}:{hashlib.sha256(entry['url'].encode()).hexdigest()[:16]}"
-        parsed = input_url(entry["url"])
-        policy = None
-        for candidate in active_sources:
-            if candidate.request and entry["url"] in candidate.request.get("seeds", []):
-                current = await store.active_policy(db, ctx.tenant_id, ctx.scope, candidate.source_key)
-                if current and current[0].allows("store") and not current[0].check_url(parsed):
-                    policy = current[0]
-                    break
-        if not policy:
-            for candidate in active_sources:
-                current = await store.active_policy(db, ctx.tenant_id, ctx.scope, candidate.source_key)
-                if current and current[0].allows("store") and not current[0].check_url(parsed):
-                    policy = current[0]
-                    break
-        if policy and remaining > 0:
-            fair_share = max(1, remaining // max(1, len(entries) - index))
-            pages = min(policy.max_pages_per_job, fair_share)
-            source = await db.scalar(select(CollectorSource).where(
-                CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.source_key == key
-            ))
-            if not source:
-                source, _ = await control.register_source(
-                    db, ctx, source_key=key, title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
-                    interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
-                    max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
-                    profile="general", auto_import=True)
-                await db.flush()
-            job = await control.enqueue(db, source, extensions={"collector:mission": {
-                "id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
-                "reference": entry, "rerun": True}})
-            if not await db.scalar(select(CollectionMissionJob.mission_id).where(
-                CollectionMissionJob.mission_id == mission.id, CollectionMissionJob.job_id == job.id
-            )):
-                db.add(CollectionMissionJob(mission_id=mission.id, job_id=job.id))
-            remaining -= pages
+    run = await begin_run(db, mission, "rerun")
+    await reconcile_mission(db, mission)
     if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
-        await queue_preparation(db, mission)
+        await queue_preparation(db, mission, run.run_seq)
     mission.status = "running"
     await db.flush()
     return mission
+
+
+async def schedule_due_runs(*, now: datetime | None = None) -> int:
+    """Start due scheduled runs of missions. Returns the number of runs started."""
+    from ttakkari.db import sessionmaker
+
+    now = now or datetime.now(UTC)
+    async with sessionmaker()() as db:
+        keys = list(await db.scalars(select(CollectorSource.source_key).where(
+            CollectorSource.enabled.is_(True), CollectorSource.interval_minutes.is_not(None),
+            CollectorSource.next_run_at <= now, CollectorSource.source_key.startswith("mission:"))
+            .order_by(CollectorSource.next_run_at).limit(50)))
+    due: list[uuid.UUID] = []
+    for key in keys:
+        try:
+            mission_id = uuid.UUID(key.split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        if mission_id not in due:
+            due.append(mission_id)
+    started = 0
+    for mission_id in due[:10]:
+        try:
+            async with sessionmaker()() as db:
+                started += await start_scheduled_run(db, mission_id, now=now)
+                await db.commit()
+        except Exception:  # one mission's failure must not stop other missions or the control loop
+            log.exception("scheduled mission run failed mission_id=%s", mission_id)
+    return started
+
+
+async def start_scheduled_run(db, mission_id: uuid.UUID, *, now: datetime, tenant_id: str = "owner") -> int:
+    """One scheduled tick of a mission: a new run, or a recorded skip while the previous run is still in progress."""
+    await store._lock(db, "mission-control", tenant_id, str(mission_id))
+    mission = await db.scalar(select(CollectionMission).where(
+        CollectionMission.id == mission_id, CollectionMission.tenant_id == tenant_id
+    ).with_for_update().execution_options(populate_existing=True))
+    if mission is None:
+        return 0
+    sources = list(await db.scalars(select(CollectorSource).where(
+        CollectorSource.tenant_id == tenant_id, CollectorSource.scope == "personal",
+        CollectorSource.source_key.startswith(f"mission:{mission_id}:")).order_by(CollectorSource.id).with_for_update()))
+    schedule = mission.plan.get("schedule") or {}
+    interval = schedule.get("interval_minutes")
+
+    def advance() -> None:
+        for source in sources:
+            if source.enabled:
+                source.interval_minutes = interval
+                source.next_run_at = now + timedelta(minutes=interval) if interval else None
+
+    if mission.status in ("paused", "cancelled") or not interval:
+        advance()
+        return 0
+    in_progress = await db.scalar(select(func.count()).select_from(CollectorJob).join(
+        CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id).where(
+            CollectionMissionJob.mission_id == mission.id, CollectorJob.status.not_in(TERMINAL)))
+    if in_progress:
+        mission.plan = {**mission.plan, "schedule": {
+            **schedule, "skipped_runs": int(schedule.get("skipped_runs", 0)) + 1,
+            "last_skip": {"at": now.isoformat(), "run_seq": mission.current_run_seq, "reason": "previous_run_in_progress"}}}
+        advance()
+        return 0
+    run = await begin_run(db, mission, "scheduled")
+    mission.gaps = []
+    await reconcile_mission(db, mission)
+    if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
+        await queue_preparation(db, mission, run.run_seq)
+    advance()
+    await db.flush()
+    return 1
 
 
 async def update_schedule(db, mission_id: uuid.UUID, *, interval_minutes: int | None, tenant_id: str = "owner") -> CollectionMission:
@@ -685,11 +832,11 @@ async def update_schedule(db, mission_id: uuid.UUID, *, interval_minutes: int | 
     ).with_for_update())
     if mission is None:
         raise ValueError("수집 임무를 찾을 수 없습니다.")
-    from datetime import UTC, datetime, timedelta
     now = datetime.now(UTC)
     mission.plan = {
         **mission.plan,
         "schedule": {
+            **(mission.plan.get("schedule") or {}),
             "interval_minutes": interval_minutes,
             "updated_at": now.isoformat(),
         },

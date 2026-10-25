@@ -1,6 +1,42 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
-## 현재 이어받을 자리 — 2026-10-25 15:00 KST
+## 현재 이어받을 자리 — 2026-10-25 15:15 KST
+- 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 15:00 KST`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
+- **주기 갱신 회차(run) 단위 예산 격리 및 우회 방지 구현 완료**:
+  1. **회차(Run) 정체성과 예산 상한 격리**:
+     - 마이그레이션 `0073_collection_mission_runs`: `collection_missions.current_run_seq`, `collection_mission_jobs.run_seq`, `collection_mission_runs` 테이블을 추가하고 기존 임무를 1회차('initial')로 백필(additive, 온라인 호환).
+     - `deploy/generation-contract.json` 및 `unit_tests/test_schema_head_admission.py`에 0073 스키마 헤드 반영.
+     - 임무 소유의 source는 임무를 통하지 않고 직접 enqueue/retry 불가하도록 `control.py` 및 `jobs.py`에서 우회 차단.
+     - 임무 작업의 생성 및 할당 시 `run_seq`를 기록하고, `reconcile_mission`, `extend`, fair_share는 같은 회차 내 실제 사용량만 합산하여 예산 상한을 강제.
+  2. **증분 재수집(Incremental Refresh) 및 불변 문서 재적재 방지**:
+     - 기존 저장소의 fetch cache(ETag, Last-Modified, raw SHA256) 및 dedupe 계약을 연결.
+     - `refresh_cursor`를 통해 직전 회차의 미방문 frontier -> 미수집 seed -> 기존 방문 URL(오래된 순) 순으로 frontier를 구성하되, 조건부 요청(conditional fetch)으로 변경 없는 문서는 `not_modified` 처리하여 outbox 및 KB 전달을 건너뜀.
+  3. **회차 중첩 실행 방지 (Skip 처리)**:
+     - 이전 회차의 미완료 작업(`TERMINAL` 외 상태)이 존재하면 새 예약 회차를 시작하지 않고 `skipped_runs` 증가 및 `last_skip` 원인(`previous_run_in_progress`)을 기록.
+  4. **회차 제어 및 상세 응답**:
+     - `extend`는 현재 회차의 예산(`extra_pages`)만 증가시키고, `rerun`은 새로운 회차(`run_seq + 1`, trigger: `rerun`)를 시작.
+     - `view()` 상세 응답에 `run_seq`, `runs` 배열(회차별 수집 `collected`, 변경 없음 `unchanged`, 적재 `imported`, 사용 쪽수 등) 포함.
+  5. **프론트엔드 UI 반영**:
+     - `collectionMissions.ts`에 `CollectionMissionRun` 타입 추가.
+     - `Missions.tsx` 상세 헤더에 `마지막 갱신 회차: N회차` 및 최근 회차 수집/적재 성과 표시.
+     - `CollectPage.test.tsx`에 회차 표시 검증 테스트 추가.
+
+### 이번 검증 범위
+- **Backend 단위·통합 검증**:
+  - `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py tests/test_collection_mission_migration.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py tests/test_collector_product_flow.py tests/test_route_inventory.py tests/test_security_gate_inventory.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_executor_migration_contract.py unit_tests/test_schema_head_admission.py --tb=short` → **247 passed, 66 subtests passed in 11.75s** (반례 테스트 6종 포함).
+  - `ruff check`: 변경된 7개 파일 검사 통과 (0 errors).
+- **Frontend 단위·빌드 검증**:
+  - `vitest run src/pages/CollectPage.test.tsx src/features/collector/` → **18 passed in 0.91s** (회차 표시 검증 포함).
+  - `tsc -b`: 0 errors.
+  - `vite build`: 프로덕션 빌드 성공 및 PWA 서비스 워커 생성 완료.
+
+### 다음 실행 (원래 요구에서 남은 것)
+1. personal/work 실제 데이터·참조·모델 통합(C2): 맥락 문서 및 파일 연계, immutable provenance 보존.
+2. 경량 ML 실제 보수적 선별·독립 평가(C4): 입력 목적 관련성 평가 및 보수적 필터링.
+3. 원래 시나리오 A–E E2E 인수 기준 검증.
+4. clean main 통합·push·운영 배포 및 실제 기능 확인 (현재는 feature branch 커밋만 수행).
+
+## 이전 이어받을 자리 — 2026-10-25 15:00 KST
 - 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 14:24 KST`와 `이번 코드`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
 - **C1/C6 임무 제어, 자동 분할, 공정 할당, 오류 격리 및 프론트엔드 UI 완료**:
   1. **임무 제어 API**: `pause`, `resume`, `cancel`, `extend`(추가 수집: 보존된 frontier 이어가기 + 예산 추가), `rerun`, `update_schedule` 엔드포인트 구현.

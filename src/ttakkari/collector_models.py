@@ -256,12 +256,29 @@ class CollectionMission(Base):
     plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    # Periodic refresh is run-based: each run gets a fresh per-run page budget (CollectionMissionRun).
+    current_run_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class CollectionMissionJob(Base):
     __tablename__ = "collection_mission_jobs"
+    __table_args__ = (Index("ix_collection_mission_job_run", "mission_id", "run_seq"),)
 
     mission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collection_missions.id", ondelete="RESTRICT"), primary_key=True)
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collector_jobs.id", ondelete="RESTRICT"), primary_key=True)
+    run_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
+class CollectionMissionRun(Base):
+    """One initial, scheduled or rerun pass. Budget accounting never crosses run boundaries."""
+
+    __tablename__ = "collection_mission_runs"
+
+    mission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collection_missions.id", ondelete="RESTRICT"), primary_key=True)
+    run_seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    page_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    extra_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -138,7 +138,8 @@ class RetrievalEvalAdapter:
         "top_k",
         "rrf_k",
         "embedding_model_id",
-        "normalize_embeddings",
+        # normalize_embeddings is deliberately absent: only True is honored (see validate_config), so
+        # readiness must report it as a partially supported seed parameter instead of fully supported.
         # Adapter internal parameter keys
         "retriever_mode",
         "chunking_strategy",
@@ -212,8 +213,16 @@ class RetrievalEvalAdapter:
             except (ValueError, TypeError):
                 errors.append("dense_weight는 숫자여야 합니다.")
 
-        if "normalize_embeddings" in config and not isinstance(config["normalize_embeddings"], bool):
-            errors.append("normalize_embeddings는 boolean 값이어야 합니다.")
+        if "normalize_embeddings" in config:
+            if not isinstance(config["normalize_embeddings"], bool):
+                errors.append("normalize_embeddings는 boolean 값이어야 합니다.")
+            elif config["normalize_embeddings"] is False:
+                # Shared embedders (HashEmbedder `_unit`) already return unit vectors and scoring is a dot
+                # product, so False would silently equal True. A raw-vector experiment is not implemented.
+                errors.append(
+                    "normalize_embeddings=False(원시 벡터 점수 실험)는 미지원됩니다: 공용 임베더가 이미 L2 정규화된 "
+                    "벡터를 반환해 False를 줘도 결과가 True와 같습니다. True(기본값)만 허용됩니다."
+                )
 
         if "rrf_k" in config:
             rrf_k_val = config["rrf_k"]

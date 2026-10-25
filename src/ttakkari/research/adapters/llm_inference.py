@@ -23,6 +23,9 @@ QUANT_TYPE_MODELS: dict[str, str] = {
     "Q2_K": "qwen3.8-flash-next-q2k",
 }
 _LIVE_PHASES = ("starting", "ready")
+# HostGpu.start raises this when the supervisor wrote no state within 20s. The supervisor may still come up
+# afterwards, and its launch id (generated inside start) is unknown to us, so we cannot prove or stop it.
+_START_STATE_TIMEOUT_MARKER = "did not report a state"
 
 
 class LlmInferenceAdapter:
@@ -277,7 +280,7 @@ class LlmInferenceAdapter:
             )
 
         from ttakkari.config import get_settings
-        from ttakkari.host_gpu import HostGpu, StartRequest
+        from ttakkari.host_gpu import GpuError, HostGpu, StartRequest
 
         s = get_settings()
         host_gpu = HostGpu(s)
@@ -332,7 +335,10 @@ class LlmInferenceAdapter:
         started_wall = time.monotonic()
         server_started = False
         launch_id: str | None = None
-        cleanup_info: dict[str, Any] = {"attempted": False, "success": False}
+        start_ownership_error: str | None = None
+        cleanup_info: dict[str, Any] = {
+            "attempted": False, "success": True, "stopped": False, "skipped_reason": "server_not_started",
+        }
         run_result: AdapterRunResult | None = None
 
         try:
@@ -345,7 +351,12 @@ class LlmInferenceAdapter:
                 )
                 return run_result
 
-            await asyncio.to_thread(host_gpu.start, start_req)
+            try:
+                await asyncio.to_thread(host_gpu.start, start_req)
+            except GpuError as start_exc:
+                if _START_STATE_TIMEOUT_MARKER in str(start_exc):
+                    start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                raise
             server_started = True
             # start() does not return the launch id; read it right away. HostGpu allows one live
             # instance, so the state written by the start() that just returned is ours.
@@ -424,6 +435,12 @@ class LlmInferenceAdapter:
         finally:
             if server_started:
                 cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch_id)
+            elif start_ownership_error:
+                cleanup_info = {
+                    "attempted": False, "success": False, "stopped": False, "ownership": "unverified",
+                    "error": f"{start_ownership_error} — 감독자가 뒤늦게 뜰 수 있으나 launch_id를 알 수 없어 "
+                             "다른 프로세스를 건드리지 않도록 stop을 호출하지 않았습니다.",
+                }
             if run_result is not None and isinstance(run_result.raw_output, dict):
                 run_result.raw_output["cleanup"] = cleanup_info
 
@@ -437,26 +454,17 @@ class LlmInferenceAdapter:
     def _cleanup_owned_launch(host_gpu: Any, data_dir: Path, launch_id: str | None) -> dict[str, Any]:
         """Stop the server only if it is the launch this run started, and judge the stop result.
 
-        HostGpu.stop() takes no launch id and re-reads the current state itself, so the ownership
-        check below leaves a window of a few ms between the read and the stop.
+        Ownership is enforced inside HostGpu.stop(expected_launch_id=...) on the single state it reads,
+        so there is no check-then-stop window here.
         """
-        from ttakkari.host_gpu import _lock_held, state_dir
+        from ttakkari.host_gpu import LaunchMismatch, _lock_held, state_dir
 
         info: dict[str, Any] = {"attempted": True, "success": False, "launch_id": launch_id, "stopped": False}
         if launch_id is None:
             info["error"] = "ownership_unverified: start() 직후 상태에서 launch_id를 읽지 못해 stop을 호출하지 않았습니다."
             return info
         try:
-            state = host_gpu._current() or {}
-            if state.get("launch_id") != launch_id:
-                # HostGpu keeps a single state; ours is no longer the current (hence not the live) launch.
-                info.update(success=True, skipped_reason="launch_replaced", current_launch_id=state.get("launch_id"))
-                return info
-            if state.get("phase") not in _LIVE_PHASES:
-                info.update(success=True, skipped_reason="already_stopped", phase=state.get("phase"))
-                return info
-
-            stop_res = host_gpu.stop()
+            stop_res = host_gpu.stop(expected_launch_id=launch_id)
             info["result"] = stop_res
             if not isinstance(stop_res, dict):
                 info["error"] = f"unexpected_stop_result: {type(stop_res).__name__}"
@@ -464,8 +472,13 @@ class LlmInferenceAdapter:
                 info["error"] = f"still_running: phase={stop_res.get('phase')}"
             elif _lock_held(state_dir(data_dir)):
                 info["error"] = "lock_still_held: 감독자 종료 후에도 호스트 자원 잠금이 해제되지 않았습니다."
-            else:
+            elif stop_res.get("stopped_now"):
                 info.update(success=True, stopped=True)
+            else:
+                info.update(success=True, skipped_reason="already_stopped")
+        except LaunchMismatch as exc:
+            # HostGpu keeps a single state; ours is no longer the current (hence not the live) launch.
+            info.update(success=True, skipped_reason="launch_replaced", detail=str(exc))
         except Exception as exc:
             info["error"] = f"{type(exc).__name__}: {exc}"
         return info

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from ttakkari.host_gpu import HostGpu
+from ttakkari.host_gpu import Busy, GpuError, HostGpu, LaunchMismatch
 from ttakkari.meetings.local_stt import runner as stt_runner
 from ttakkari.research.adapters import (
     AdapterEnvironmentStatus,
@@ -399,10 +399,6 @@ def _autospecced_host_gpu(*, owner_states, stop_result=None, stop_error=None, lo
         yield SimpleNamespace(start=start, bench=bench, current=current, stop=stop)
 
 
-def test_host_gpu_stop_signature_is_self_only() -> None:
-    assert list(inspect.signature(HostGpu.stop).parameters) == ["self"]
-
-
 @pytest.mark.asyncio
 async def test_llm_cleanup_stops_the_launch_this_run_started() -> None:
     live = {"launch_id": "launch-A", "phase": "ready"}
@@ -411,6 +407,8 @@ async def test_llm_cleanup_stops_the_launch_this_run_started() -> None:
 
     assert result.status == "succeeded"
     assert m.stop.call_count == 1
+    # ownership is enforced inside stop() on the state it reads, not by a separate pre-read here
+    assert m.stop.call_args.kwargs == {"expected_launch_id": "launch-A"}
     cleanup = result.raw_output["cleanup"]
     assert cleanup["attempted"] is True
     assert cleanup["success"] is True
@@ -420,28 +418,29 @@ async def test_llm_cleanup_stops_the_launch_this_run_started() -> None:
 @pytest.mark.asyncio
 async def test_llm_cleanup_does_not_stop_another_runs_launch() -> None:
     mine = {"launch_id": "launch-A", "phase": "ready"}
-    theirs = {"launch_id": "launch-B", "phase": "ready"}
-    with _autospecced_host_gpu(owner_states=[mine, theirs]) as m:
+    refusal = LaunchMismatch("current host GPU launch 'launch-B' is not the expected launch 'launch-A'")
+    with _autospecced_host_gpu(owner_states=[mine], stop_error=refusal) as m:
         result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-    assert m.stop.call_count == 0
+    assert m.stop.call_count == 1
     cleanup = result.raw_output["cleanup"]
     assert cleanup["launch_id"] == "launch-A"
     assert cleanup["stopped"] is False
     assert cleanup["skipped_reason"] == "launch_replaced"
-    assert cleanup["success"] is True  # our launch is no longer the live one
+    assert cleanup["success"] is True  # HostGpu keeps one state; ours is no longer the live launch
 
 
 @pytest.mark.asyncio
 async def test_llm_cleanup_skips_stop_when_launch_already_ended() -> None:
     mine = {"launch_id": "launch-A", "phase": "ready"}
-    ended = {"launch_id": "launch-A", "phase": "stopped"}
-    with _autospecced_host_gpu(owner_states=[mine, ended]) as m:
+    already = {"phase": "stopped", "running": False, "stopped_now": False}
+    with _autospecced_host_gpu(owner_states=[mine], stop_result=already):
         result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-    assert m.stop.call_count == 0
-    assert result.raw_output["cleanup"]["skipped_reason"] == "already_stopped"
-    assert result.raw_output["cleanup"]["success"] is True
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["stopped"] is False
+    assert cleanup["skipped_reason"] == "already_stopped"
+    assert cleanup["success"] is True
 
 
 @pytest.mark.asyncio
@@ -491,6 +490,43 @@ async def test_llm_cleanup_records_stop_exception() -> None:
     assert cleanup["attempted"] is True
     assert cleanup["success"] is False
     assert "RuntimeError" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+async def test_llm_start_state_timeout_is_reported_as_unverified_and_stops_nothing() -> None:
+    # real contract: HostGpu.start raises this after 20s while the supervisor may still come up later
+    assert "did not report a state" in inspect.getsource(HostGpu.start)
+    timeout = GpuError("supervisor did not report a state within 20s")
+    with _autospecced_host_gpu(owner_states=[]) as m:
+        m.start.side_effect = timeout
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    assert result.status == "failed"
+    assert m.stop.call_count == 0
+    assert m.bench.call_count == 0
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["attempted"] is False
+    assert cleanup["success"] is False
+    assert cleanup["ownership"] == "unverified"
+    assert "did not report a state" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "start_error",
+    [Busy("a host GPU test instance is already running; stop it first"), GpuError("supervisor exited 1 before starting the server")],
+)
+async def test_llm_start_rejected_or_dead_supervisor_has_nothing_to_clean(start_error) -> None:
+    with _autospecced_host_gpu(owner_states=[]) as m:
+        m.start.side_effect = start_error
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    assert result.status == "failed"
+    assert m.stop.call_count == 0
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["attempted"] is False
+    assert cleanup["success"] is True
+    assert cleanup["skipped_reason"] == "server_not_started"
 
 
 @pytest.mark.asyncio
@@ -798,25 +834,7 @@ async def test_retrieval_dense_weight_and_normalize_embeddings_influence() -> No
     assert res_low.raw_output["hybrid_alpha"] == 0.95
     assert res_high.raw_output["hybrid_alpha"] == 0.05
 
-    # 2. Influence of normalize_embeddings
-    cfg_norm_true = {
-        "corpus": corpus,
-        "queries": queries,
-        "retriever_mode": "dense_hash",
-        "normalize_embeddings": True,
-    }
-    cfg_norm_false = {
-        "corpus": corpus,
-        "queries": queries,
-        "retriever_mode": "dense_hash",
-        "normalize_embeddings": False,
-    }
-    res_norm_t = await adapter.execute_run(uuid4(), cfg_norm_true, scope="personal")
-    res_norm_f = await adapter.execute_run(uuid4(), cfg_norm_false, scope="personal")
-    assert res_norm_t.status == "succeeded"
-    assert res_norm_f.status == "succeeded"
-    assert res_norm_t.raw_output["normalize_embeddings"] is True
-    assert res_norm_f.raw_output["normalize_embeddings"] is False
+    # 2. normalize_embeddings is covered by the ranking/rejection tests below (False is unsupported).
 
     # 3. Validation errors for invalid dense_weight and rrf_k
     bad_cfg = {
@@ -828,6 +846,89 @@ async def test_retrieval_dense_weight_and_normalize_embeddings_influence() -> No
     errors = adapter.validate_config(bad_cfg, scope="personal")
     assert any("dense_weight" in e for e in errors)
     assert any("rrf_k" in e for e in errors)
+
+
+# BM25 and the hashed 2-gram dense retriever disagree on this corpus: the exact-token doc wins BM25,
+# the many-near-token doc wins dense.
+_DISAGREE_CORPUS = [
+    {"id": "doc-bm25", "title": "", "text": "gpu 가속 설정 안내 문서이며 이 문서는 메모리 배치 스레드 캐시 컨텍스트 길이 서버 포트 모델 로딩 타임아웃 스왑 감시 로그 정리 절차를 길게 설명한다"},
+    {"id": "doc-dense", "title": "", "text": "gpus gpuz gpux 가속기 가속화 가속도"},
+    {"id": "doc-x", "title": "", "text": "날씨 점심 메뉴 추천"},
+]
+_DISAGREE_QUERIES = [
+    {"id": "q-1", "query": "gpu 가속", "relevant_ids": ["doc-bm25"], "relevance_grades": {"doc-bm25": 3}}
+]
+
+
+async def _ranking(**cfg) -> tuple[list[str], dict]:
+    res = await RetrievalEvalAdapter().execute_run(
+        uuid4(), {"corpus": _DISAGREE_CORPUS, "queries": _DISAGREE_QUERIES, **cfg}, scope="personal"
+    )
+    assert res.status == "succeeded", res.error_message
+    query = res.raw_output["queries"][0]
+    return query["ranked_hits"], query
+
+
+@pytest.mark.asyncio
+async def test_retrieval_dense_weight_moves_the_actual_ranking_between_bm25_and_dense() -> None:
+    bm25_rank, _ = await _ranking(retriever_mode="bm25")
+    dense_rank, _ = await _ranking(retriever_mode="dense_hash")
+    assert bm25_rank != dense_rank  # corpus precondition: the two retrievers disagree
+    assert bm25_rank[0] == "doc-bm25" and dense_rank[0] == "doc-dense"
+
+    lexical_rank, lexical_q = await _ranking(retriever_mode="hybrid_linear", dense_weight=0.0)
+    dense_only_rank, dense_q = await _ranking(retriever_mode="hybrid_linear", dense_weight=1.0)
+
+    assert lexical_rank == bm25_rank
+    assert dense_only_rank == dense_rank
+    assert lexical_q["mrr_at_k"] == 1.0
+    assert dense_q["mrr_at_k"] == 0.5  # relevant doc-bm25 drops from rank 1 to rank 2
+
+
+def test_hash_embedder_vectors_are_already_unit_length_so_normalize_false_is_not_realizable() -> None:
+    import math
+
+    from ttakkari.context.embedder import HashEmbedder
+
+    vectors = asyncio.run(HashEmbedder().embed(["gpu 가속 설정", "gpus gpuz gpux 가속기"], query=False))
+    for v in vectors:
+        assert math.isclose(math.sqrt(sum(x * x for x in v)), 1.0, rel_tol=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_retrieval_normalize_embeddings_false_is_rejected_not_silently_ignored() -> None:
+    adapter = RetrievalEvalAdapter()
+    cfg = {"corpus": _DISAGREE_CORPUS, "queries": _DISAGREE_QUERIES, "retriever_mode": "dense_hash"}
+
+    errors = adapter.validate_config({**cfg, "normalize_embeddings": False}, scope="personal")
+    assert any("normalize_embeddings" in e and "미지원" in e for e in errors)
+    assert adapter.validate_config({**cfg, "normalize_embeddings": True}, scope="personal") == []
+
+    res = await adapter.execute_run(uuid4(), {**cfg, "normalize_embeddings": False}, scope="personal")
+    assert res.status == "failed"
+    assert res.error_code == "invalid_config"
+
+    # default (unset) and True produce the same, truthfully normalized, ranking
+    assert (await _ranking(retriever_mode="dense_hash", normalize_embeddings=True))[0] == \
+        (await _ranking(retriever_mode="dense_hash"))[0]
+
+
+def test_retrieval_normalize_embeddings_is_flagged_partial_not_fully_supported() -> None:
+    """The catalog keeps the parameter; readiness must show it as not fully supported."""
+    assert "normalize_embeddings" not in RetrievalEvalAdapter.supported_parameters
+    method = {
+        "slug": "reciprocal_rank_fusion",
+        "lifecycle_status": "validated",
+        "adapter_hints": ["retrieval_eval"],
+        "parameters": [{"key": "rrf_k"}, {"key": "normalize_embeddings"}],
+        "metrics": ["recall_at_k"],
+    }
+    status = compute_execution_status(
+        method, adapter_registry=get_adapter_registry(populate_builtins=True), scope="personal"
+    )
+    assert status.status == "partially_supported"
+    assert status.unsupported_params == ["normalize_embeddings"]
+    assert status.is_executable is True
 
 
 def test_preset_qrels_consistency() -> None:

@@ -11,12 +11,13 @@
 - 임무 문서 작업은 25건 단위로 정상 yield한다. retry 횟수를 소비하지 않고 다음 tick에서 기존 cursor를 이어간다. 전체 요청 page budget에 닿으면 frontier를 버리지 않고 partial + `mission_page_budget`/남은 URL 수로 종료한다. **한 source/job의 정책 한도를 넘는 자동 하위 작업 분할·임무 확장/재개 API는 아직 없다.**
 
 ### 이번 검증 범위
+- **최종 추가 확인:** 코드 revision `02b1510610faf10cef265b4b8f796c98d78b8983`에서 `COLLECTION_LIVE=1 PYTHONPATH=src ../back/.venv/bin/python -m pytest -q -s tests/test_collection_live.py --tb=short` → **2 passed in 8.02s**. GitHub 15개 eligible 중 제한한 2개(SKill.md + references/_sections.md) 실제 적재·ASP.NET 검색 확인. Python 본문 링크 우선 탐색으로 tutorial/builtins/library **3개 모두 실제 적재·Python 검색**, 29개 frontier 보존. 두 임무는 의도한 제한 실험이므로 partial이며 B/D 전체 커버리지 완료가 아니다. 실행 stdout은 이 Run outbox `collection-live-check.txt`로 보존하고 share_file 한다. 아래 첫 외부 실험의 '최종 파일 선택/탐색 순서 재검증 필요'는 이 관측으로 해소했다. 서버/브라우저/작업 세션 잔류 없음, 시험 PG는 fixture teardown으로 정리됐다.
 - Codex 명령 환경, 격리 PG/로컬 HTTP: `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py --tb=short` → **199 passed, 66 subtests passed in 9.50s**. 그 뒤 MIT 앞부분의 추가 제한 문구 반례를 추가/교정하고 `unit_tests/test_collection_adapters.py` → **11 passed**. 같은 범위 중복 수를 합산하지 않는다. 변경 ruff와 diff check clean.
 - opt-in `tests/test_collection_live.py`: 실제 외부 GitHub openai/skills(aspnet-core 하위 경로) 및 Python tutorial→격리 KB 적재/검색, **2 passed in 7.87s**. GitHub commit `49f948faa9258a0c61caceaf225e179651397431`, SKILL.md 포함 2건 적재; 당시 두 번째는 LICENSE였으며 이후 후보에서 제외했으므로 최종 파일 선택은 재검증 필요. Python 3건 budget에서 2건 적재/검색, 1건 changelog response_too_large 보류, 29개 frontier 보존. 이후 본문 링크 우선순위를 변경했으므로 최종 탐색 순서는 재검증 필요. **운영 DB/배포 검증이 아니다.** 이 두 제한 실험으로 E2E-1~5 전체 완료를 주장하지 않는다.
 - 초기 외부 GitHub 시험의 `robots_unreachable`은 위 path 정책 제어 파일 결함이었다. raw host의 실제 robots는 404(no rules), 수정 후 실제 acquisition이 통과했다. 호스트/운영 전체 장애로 일반화하지 않는다.
 
 ### 다음 실행 (원래 요구에서 남은 것)
-1. 새 코드의 GitHub 파일 선택/raw license·Python 본문 링크 순서를 opt-in 외부 검사로 재확인하고 실행 receipt를 보존한다. 이미 유효한 전체 회귀를 처음부터 반복하지 않는다.
+1. 위 최종 외부 검증과 현재 git 상태/영속 계약을 복원한다. GitHub 파일 선택/raw license·Python 본문 링크 순서는 재확인했으므로 같은 검사를 무조건 반복하지 않는다.
 2. 임무 pause/resume/cancel/확장/주기 갱신을 API/UI에 연결하고, source/job page 한도를 넘는 자동 분할·재개를 구현한다. **현재 allocation은 예약 페이지 기준이라 먼저 만난 출처가 예산을 선점하거나 미사용 예약이 남을 수 있다.** 복수 레포/혼합/연구 임무에 실제 사용량 기반의 공정한 하위 작업 할당을 연결해야 한다. 한 출처 metadata 실패가 뒤의 독립 출처를 막지 않도록 준비 작업도 분리/기록한다.
 3. personal/work 실제 데이터·참조·모델 통합(C2), 경량 ML 실제 보수적 선별·독립 평가(C4), 사용자 맥락 자체 적재와 자료 관계, 논문 metadata/브라우저 경로를 이어간다. 원래 시나리오 A–E 인수 기준은 manage_work.original_request로 복원한다.
 4. C1–C7 전체 증거와 미완료를 대조한 뒤 clean main 통합·push·운영 배포 및 실제 기능 확인. 현재 frontend는 e5afcc6 clean, 이번 Run에서 변경하지 않았다. 아직 main merge/push/배포 없음. 별도 worker/외부 서버 없음.

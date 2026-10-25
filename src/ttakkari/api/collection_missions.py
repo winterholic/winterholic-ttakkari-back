@@ -33,7 +33,7 @@ class ExtendInput(BaseModel):
 
 class ScheduleInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    interval_minutes: int | None = Field(default=None, ge=1, le=43_200)
+    interval_minutes: int | None = Field(default=None, ge=15, le=43_200)
 
 
 @router.post("/plan")

@@ -131,7 +131,12 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     Uses actual processed pages from finished jobs (reclaiming unused reservations) and ensures
     independent sources are not blocked by one greedy source.
     """
-    if mission.status in ("cancelled", "paused"):
+    mission_id = mission.id
+    await store._lock(db, "mission-control", mission.tenant_id, str(mission_id))
+    mission = await db.scalar(select(CollectionMission).where(
+        CollectionMission.id == mission_id, CollectionMission.tenant_id == mission.tenant_id
+    ).with_for_update().execution_options(populate_existing=True))
+    if mission is None or mission.status in ("cancelled", "paused"):
         return
     ctx = AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner")
     if any(urlsplit(entry["url"]).hostname == "docs.python.org" for entry in mission.plan["sources"]):

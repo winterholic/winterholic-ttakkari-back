@@ -1,14 +1,20 @@
 """A mission must reach real collector jobs and KB receipts, not fabricated counts."""
+import asyncio
 import uuid
 
 import pytest
 from collector_support import article_html, prose
+from sqlalchemy import select
 from test_collector_control import BASE, source_body
 from test_collector_pipeline import env  # noqa: F401
 
 from ttakkari import kb_delivery
-from ttakkari.collector import runner
-from ttakkari.collector_models import CollectorJob
+from ttakkari.collector import missions, runner
+from ttakkari.collector_models import (
+    CollectionMission,
+    CollectionMissionJob,
+    CollectorJob,
+)
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbRevision, KbSource
 
@@ -428,6 +434,37 @@ async def test_mission_auto_split_when_exceeding_source_policy_page_limit(client
     assert final_detail["status"] == "succeeded"
 
 
+async def test_concurrent_mission_reconciliation_creates_one_frontier_child(client, auth, env):  # noqa: F811
+    url = env.server.url("/split-race/page1")
+    next_url = env.server.url("/split-race/page2")
+    env.server.page("/split-race/page1", article_html("Race", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=2)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0,
+                          max_pages_per_job=2)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = (await client.post(BASE + "/missions", headers=auth,
+                              json={"goal": "동시 분할 검증", "urls": [url], "max_pages": 5})).json()
+    mid = uuid.UUID(made["id"])
+    async with sessionmaker()() as db:
+        job = await db.scalar(select(CollectorJob).join(CollectionMissionJob).where(CollectionMissionJob.mission_id == mid))
+        job.status = "partial"
+        job.cursor = {"v": 1, "processed": 2, "frontier": [{"url": next_url, "u": next_url, "d": 1}],
+                      "seen": [url], "counts": {}}
+        await db.commit()
+
+    async def reconcile():
+        async with sessionmaker()() as db:
+            mission = await db.get(CollectionMission, mid)
+            await missions.reconcile_mission(db, mission)
+            await db.commit()
+
+    await asyncio.gather(reconcile(), reconcile())
+    async with sessionmaker()() as db:
+        children = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob).where(
+            CollectionMissionJob.mission_id == mid, CollectorJob.request_key.like("split:%"))))
+    assert len(children) == 1
+
+
 async def test_mission_fair_allocation_reclaims_unused_pages_for_other_sources(client, auth, env, monkeypatch):  # noqa: F811
     u1 = env.server.url("/fair/short")
     u2 = env.server.url("/fair/long1")
@@ -532,6 +569,20 @@ async def test_mission_control_security_and_validation(client, auth):
     # Validation: invalid add_pages
     assert (await client.post(BASE + f"/missions/{fake_id}/extend", headers=auth, json={"add_pages": 0})).status_code == 422
     assert (await client.post(BASE + f"/missions/{fake_id}/schedule", headers=auth, json={"interval_minutes": 0})).status_code == 422
+
+
+async def test_mission_schedule_rejects_intervals_below_source_constraint(client, auth, env):  # noqa: F811
+    url = env.server.url("/schedule-minimum")
+    env.server.page("/schedule-minimum", article_html("Schedule", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=5)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    mission = (await client.post(BASE + "/missions", headers=auth, json={"goal": "주기 최소값", "urls": [url]})).json()
+
+    response = await client.post(BASE + f"/missions/{mission['id']}/schedule", headers=auth,
+                                 json={"interval_minutes": 5})
+
+    assert response.status_code == 422
 
 
 async def test_mission_schedule_and_rerun_controls(client, auth, env):  # noqa: F811

@@ -140,3 +140,82 @@ def test_stale_reaper_keeps_clusters_owned_by_a_live_generation(tmp_path, monkey
 
     assert reap_stale(tmp_path) == []
     assert live.is_dir()
+
+
+_IPCS = """IPC status from <running system> as of Sun Oct 25 20:58:23 KST 2026
+T     ID     KEY        MODE       OWNER    GROUP  CREATOR   CGROUP NATTCH  SEGSZ  CPID  LPID   ATIME    DTIME    CTIME
+Shared Memory:
+m 101 0x00000001 --rw------- {me} staff {me} staff 0 56 111 0 no-entry no-entry 6:12:03
+m 102 0x00000002 --rw------- {me} staff {me} staff 3 56 111 0 no-entry no-entry 6:12:03
+m 103 0x00000003 --rw------- {me} staff {me} staff 0 4096 111 0 no-entry no-entry 6:12:03
+m 104 0x00000004 --rw------- someone staff someone staff 0 56 111 0 no-entry no-entry 6:12:03
+m 105 0x00000005 --rw------- {me} staff {me} staff 0 56 222 0 no-entry no-entry 6:12:03
+"""
+
+
+def test_sweep_removes_only_unattached_dead_owner_postgres_segments(monkeypatch):
+    import os
+
+    from ttakkari.runs import test_database as td
+
+    removed = []
+
+    def run(command, **kwargs):
+        if command[1:3] == ["-m", "-a"]:
+            return subprocess.CompletedProcess(command, 0, _IPCS.format(me=os.getuid()), "")
+        removed.append(command[-1])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(td.subprocess, "run", run)
+    monkeypatch.setattr(td.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(td.sys, "platform", "darwin")
+    monkeypatch.setattr(td, "_pid_alive", lambda pid: pid == 222)
+
+    assert td._sweep_orphan_shm() == 1
+    assert removed == ["101"]
+
+
+def test_start_sweeps_and_retries_once_when_initdb_hits_shm_limit(tmp_path, monkeypatch):
+    from ttakkari.runs import test_database as td
+
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir()
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+    state = {"initdb": 0, "sweeps": 0}
+
+    def run(command, **kwargs):
+        if str(command[0]).endswith("/initdb"):
+            state["initdb"] += 1
+            assert (tmp_path / next(p.name for p in tmp_path.iterdir() if p.name.startswith(td.PREFIX))
+                    / "initdb-password").exists()
+            if state["initdb"] == 1:
+                raise subprocess.CalledProcessError(
+                    1, command, stderr="shmget(...) failed: No space left on device")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(td.subprocess, "run", run)
+    monkeypatch.setattr(td, "_sweep_orphan_shm", lambda: state.__setitem__("sweeps", state["sweeps"] + 1) or 0)
+    url = RunTestDatabase("run-shm", tmp_path / "workspace", pg_bin=pg_bin, root=tmp_path).start()
+
+    assert url and state["initdb"] == 2 and state["sweeps"] == 2
+
+
+def test_start_failure_message_carries_stderr(tmp_path, monkeypatch):
+    import pytest
+
+    from ttakkari.runs import test_database as td
+
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir()
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+
+    def run(command, **kwargs):
+        if str(command[0]).endswith("/initdb"):
+            raise subprocess.CalledProcessError(1, command, stderr="initdb: boom reason")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(td.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="boom reason"):
+        RunTestDatabase("run-x", tmp_path / "w", pg_bin=pg_bin, root=tmp_path).start()

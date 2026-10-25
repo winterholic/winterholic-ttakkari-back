@@ -672,15 +672,34 @@ async def test_access_scope_unification_and_work_boundary():
     assert access_personal.visibility == "global"
     assert derive_scope_and_visibility(access_personal) == ("personal", "global")
 
-    # 4. personal 스코프이지만 visibility 가 비어있거나 누락된 경우 -> fail-closed ('personal', 'work_only')
-    access_personal_unclear = KbDocumentAccess(
+    # 4. personal 스코프이지만 visibility 가 비어있거나 누락/None 인 경우 -> 통합 공간을 위해 ('personal', 'global') 로 파생
+    access_personal_empty = KbDocumentAccess(
         document_id=uuid.uuid4(),
         tenant_id="owner",
         scope="personal",
         origin_scope="personal",
         visibility="",
     )
-    assert derive_scope_and_visibility(access_personal_unclear) == ("personal", "work_only")
+    assert derive_scope_and_visibility(access_personal_empty) == ("personal", "global")
+
+    access_personal_none = KbDocumentAccess(
+        document_id=uuid.uuid4(),
+        tenant_id="owner",
+        scope="personal",
+        origin_scope="personal",
+        visibility=None,
+    )
+    assert derive_scope_and_visibility(access_personal_none) == ("personal", "global")
+
+    # 5. personal 스코프이지만 명시적으로 visibility='work_only' 로 설정된 경우 -> ('personal', 'work_only')
+    access_personal_explicit_work = KbDocumentAccess(
+        document_id=uuid.uuid4(),
+        tenant_id="owner",
+        scope="personal",
+        origin_scope="personal",
+        visibility="work_only",
+    )
+    assert derive_scope_and_visibility(access_personal_explicit_work) == ("personal", "work_only")
 
 
 @pytest.mark.asyncio

@@ -46,25 +46,30 @@ DEFAULT_MAX_BACKOFF_SECONDS = 3600.0
 def derive_scope_and_visibility(
     access: KbDocumentAccess | None,
 ) -> tuple[str, str]:
-    """원천 문서의 접근 권한(KbDocumentAccess)으로부터 origin_scope와 visibility를 fail-closed로 유도한다.
+    """원천 문서의 접근 권한(KbDocumentAccess)으로부터 origin_scope와 visibility를 유도한다.
 
-    규칙:
-    1. access 행이 없으면 fail-closed 원칙에 따라 ('work', 'work_only') 반환.
-    2. access.scope == 'work' 이거나 origin_scope == 'work' 인 경우 visibility='work_only' 강제 (global 승격 금지).
-    3. personal 스코프이면서 visibility=='global'로 명시 설정된 경우에만 ('personal', 'global') 허용.
-       그 외 불확실하거나 미설정된 경우 fail-closed로 ('personal', 'work_only') 반환.
+    확정 정책:
+    1. access 행이 없거나 scope를 알 수 없는 경우: fail-closed로 ('work', 'work_only') 격리.
+    2. access.scope == 'work' 또는 origin_scope == 'work': 무조건 ('work', 'work_only') 강제 (global 승격 원천 차단).
+    3. access.scope == 'personal': visibility가 누락/공백/NULL인 경우에도 통합 지식 도서관 노출을 위해 'global'로 파생.
+       (단, 명시적으로 visibility == 'work_only'로 설정된 경우에만 'work_only' 존중).
     """
     if access is None:
         return "work", "work_only"
 
-    origin_scope = getattr(access, "origin_scope", None) or access.scope or "work"
-    if access.scope == "work" or origin_scope == "work":
+    scope = getattr(access, "scope", None)
+    origin_scope = getattr(access, "origin_scope", None) or scope or "work"
+
+    if scope == "work" or origin_scope == "work":
         return "work", "work_only"
 
-    visibility = getattr(access, "visibility", None)
-    if visibility == "global":
+    if scope == "personal":
+        visibility = getattr(access, "visibility", None)
+        if visibility == "work_only":
+            return "personal", "work_only"
         return "personal", "global"
-    return "personal", "work_only"
+
+    return "work", "work_only"
 
 
 class KbPipelineOrchestrator:

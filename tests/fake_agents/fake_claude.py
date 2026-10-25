@@ -153,9 +153,11 @@ def main():
         "seven_day": {"utilization": 0.1, "resetsAt": 1792000000},
         "seven_day_overage_included": {"utilization": 0, "resetsAt": 1792000000}}}})
 
-    if hold := re.search(r"HOLD(\d+)", prompt):
+    # 다른 엔진·계정에서 이어받는 Run 은 이전 대화가 프롬프트 앞에 붙는다. 시나리오 키워드는 새 지시에서만 고른다.
+    instruction = prompt.split("[새 지시]")[-1]
+    if hold := re.search(r"HOLD(\d+)", instruction):
         time.sleep(int(hold.group(1)))  # 지연 뒤 일반 성공 경로로 이어진다(실행부 교체 중 running 구간 확보)
-    if "SLEEP" in prompt:
+    if "SLEEP" in instruction:
         time.sleep(60)
         return 0
     lock = (log or "") + ".lock"

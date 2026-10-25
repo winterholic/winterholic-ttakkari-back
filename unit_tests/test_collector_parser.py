@@ -37,8 +37,6 @@ class DetectKindTests(unittest.TestCase):
 
     def test_mismatch_and_binary_are_unsupported_with_a_reason(self):
         cases = [
-            (b"%PDF-1.4 ...", "application/pdf", "pdf_not_supported"),
-            (b"%PDF-1.4 ...", "text/html", "pdf_not_supported"),
             (b"\x89PNG\r\n\x1a\n", "image/png", "binary_content"),
             (b"PK\x03\x04zip", "application/zip", "binary_content"),
             (b"a\x00b" * 10, "text/html", "binary_content"),

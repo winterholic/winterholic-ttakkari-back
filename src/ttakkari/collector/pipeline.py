@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Callable
@@ -259,7 +260,17 @@ async def _prepare(
     if detected.kind in ("feed", "sitemap"):
         return await _discover(p, body, detected.kind, base, entry, spec)
     try:
-        extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
+        if detected.kind == "pdf":
+            from ttakkari.collector.adapters import extract_pdf
+            try:
+                extracted = await extract_pdf(body)
+            except (ValueError, TimeoutError) as exc:
+                p.stage, p.status = "extracted", "held"
+                p.reasons = [str(exc) if isinstance(exc, ValueError) else "pdf_parse_timeout"]
+                p.errors = [_err("extract", p.reasons[0], "PDF 본문을 안전하게 추출하지 못했습니다.")]
+                return p
+        else:
+            extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
     except ValueError as e:
         p.stage, p.status = "extracted", "failed"
         p.errors, p.reasons = [_err("extract", str(e), "no main text could be extracted from the page")], [str(e)]
@@ -341,7 +352,7 @@ async def _analyze(
         params,
     )
     l1 = await quality.run_l1(req.l1, norm.text, lang.language, textproc.NORMALIZER_VERSION)
-    return Analysis(norm.text, norm.steps, norm.truncated, textproc.sha256_text(extracted.text), lang, sig, l0, result,
+    return Analysis(norm.text, norm.steps, norm.truncated or extracted.truncated, textproc.sha256_text(extracted.text), lang, sig, l0, result,
                     extracted, l1)
 
 
@@ -404,7 +415,7 @@ def _build_envelope(
     if a is not None and a.text:
         normalized = {
             "text": a.text, "sha256": textproc.sha256_text(a.text), "language": a.language.language,
-            "parser_version": parse.PARSER_VERSION, "normalizer_version": textproc.NORMALIZER_VERSION,
+            "parser_version": a.extracted.meta.get("parser_version", parse.PARSER_VERSION), "normalizer_version": textproc.NORMALIZER_VERSION,
             "chunker_version": CHUNKER_VERSION, "raw_alignment_handle": None, "truncated": a.truncated,
         }
         published = a.profile_result.published_at or a.extracted.published
@@ -429,9 +440,17 @@ def _build_envelope(
     }
     if p.signals.get("reprocessed_from"):
         ext["collector:lineage"]["reprocessed_from"] = p.signals["reprocessed_from"]
+    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+    if mission:
+        ext["collector:mission"] = mission
+        lineage.append(f"mission:{mission['id']}")
     quality_axes = quality.unmeasured_quality(textproc.NORMALIZER_VERSION)
     if a is not None:
         quality_axes = a.l1.quality
+        if a.extracted.meta.get("adapter") == "pypdf":
+            ext["collector:pdf"] = {"pages": json.loads(a.extracted.meta["pdf_pages"]),
+                                    "total_pages": int(a.extracted.meta["pdf_total_pages"]),
+                                    "page_offsets": "extracted_text_before_normalization"}
         if a.extracted.title:
             ext["collector:page"] = {"title": a.extracted.title.strip()[:300]}
         ext["collector:l0"] = {"version": a.l0.version, "signals": a.l0.signals, "flags": list(a.l0.flags)}
@@ -528,7 +547,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
         exact_of=exact.id if exact is not None else None, cluster_id=cluster_id, profile=req.profile,
         decision_state=STATE_FOR_STATUS.get(status), reason_codes=reasons, errors=errors, signals=signals,
         envelope_id=env_id, envelope=envelope, payload_hash=compute_payload_hash(envelope) if envelope else None,
-        parser_version=parse.PARSER_VERSION if a is not None else None,
+        parser_version=a.extracted.meta.get("parser_version", parse.PARSER_VERSION) if a is not None else None,
         normalizer_version=textproc.NORMALIZER_VERSION if a is not None else None, fetched_at=p.fetched_at,
         created_at=now,
     )
@@ -806,13 +825,17 @@ async def _handle_reprocess(job, ctx, spec, label, req, original_id, expected_ra
                  robots=original_data["robots"])
     p.signals["reprocessed_from"] = str(original_id)
     detected = parse.detect_kind(body, p.media_type)
-    if detected.kind not in ("html", "text"):
+    if detected.kind not in ("html", "text", "pdf"):
         p.status, p.stage = "held", "fetched"
         p.reasons = [f"unsupported_media:{detected.reason or detected.kind}"]
         p.errors = [_err("extract", detected.reason or "unsupported_media", detected.media_type)]
     else:
         try:
-            extracted = await asyncio.to_thread(parse.extract_document, body, url=p.url, kind=detected.kind)
+            if detected.kind == "pdf":
+                from ttakkari.collector.adapters import extract_pdf
+                extracted = await extract_pdf(body)
+            else:
+                extracted = await asyncio.to_thread(parse.extract_document, body, url=p.url, kind=detected.kind)
             p.analysis = await _analyze(extracted, p.url, None, req, deps)
             p.stage = "scored"
         except ValueError as exc:

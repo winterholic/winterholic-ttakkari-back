@@ -19,7 +19,7 @@ from charset_normalizer import from_bytes
 from lxml import etree
 from lxml import html as lxml_html
 
-PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-1"
+PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-2"
 MAX_DISCOVERED_PER_DOCUMENT = 500
 MAX_TEXT_CHARS = 1_000_000
 _BINARY_EXTENSIONS = (
@@ -62,7 +62,7 @@ def detect_kind(raw: bytes, declared_media_type: str) -> DetectedKind:
     declared = declared_media_type.split(";")[0].strip().lower()
     stripped = head.lstrip()
     if head.startswith(b"%PDF-"):
-        return DetectedKind("unsupported", "application/pdf", "pdf_not_supported")
+        return DetectedKind("pdf", "application/pdf")
     if head[:4] in (b"\x89PNG", b"GIF8", b"PK\x03\x04") or head[:3] == b"\xff\xd8\xff":
         return DetectedKind("unsupported", declared or "application/octet-stream", "binary_content")
     if b"\x00" in head:

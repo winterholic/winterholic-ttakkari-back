@@ -48,7 +48,8 @@ async def test_multiple_database_heads_refuse_deployment_without_choosing_first(
 
 @pytest.mark.parametrize(("heads", "expected"), [
     (["0068_library_intent"], ("online", "0068_library_intent")),
-    (["0071_library_platform_v2_merge"], ("current", "0071_library_platform_v2_merge")),
+    (["0071_library_platform_v2_merge"], ("online", "0071_library_platform_v2_merge")),
+    (["0072_collection_missions"], ("current", "0072_collection_missions")),
     (["unknown_branch"], ("idle", "unknown_branch")),
     ([], ("idle", None)),
 ])

@@ -29,3 +29,12 @@
 - 이전 배포 예약 948d3a1f는 이번 조회 시 testing / error null. 성공 주장이 아님. 교정 revision의 배포 예약은 별도 확인.
 
 프론트 교정은 `ad6149d200304017d9bf04afe41bca0609373a04`로 origin/main에 push. 프론트 운영 배포 상태는 아직 미확인.
+
+## 배포 차단 감사 분류 누락 교정 (2026-10-25 15:36 KST)
+
+- 독립 검증자 9c5377ff는 1614882의 코드 경계/좁은 회귀/API 검사를 통과로 보고했다(28 passed 보고). 실제 응답·재개·MCP·로그인 모델 목록·다중 identity·커널 격리는 여전히 미검증이다. 다른 Run outbox의 원문은 파일로 읽지 않았으며 get_worker/read_session의 지원된 결과 범위만 확인했다.
+- 배포 예약 1833c8df는 조회 당시 testing/error=null이며 성공이 아니다. 이전 예약 948d3a1f는 pytest에서 실패했다. 지원 도구 ops_deploy_log의 실패 원인은 test_report_schema_separates_extraction_classification_scope_coverage의 all_collected_classified=False였다(그 시점 4603 passed 후 실패).
+- 1614882에서도 해당 테스트를 단독 실행해 같은 1 failed를 재현했다. run_audit의 unmatched는 정확히 configs의 opencode_bin/copilot_bin, source_files의 opencode_accounts.py/copilot_accounts.py 네 항목이었다. 다른 범주의 unmatched는 없었다.
+- 두 실행 파일 설정을 exec.run_engine, 두 계정 파일을 core.accounts_quota로 분류하는 교정을 검증했다. push 시 다른 작업의 같은 교정 4f2e03a3424055b3e8ad8301784c2d243d0760bb가 main에 먼저 반영된 것을 확인하여 해당 구현을 그대로 재사용한다. 본 추가 커밋에는 신규 회귀와 기록만 포함한다. catch-all, coverage, 제품 건강 판정은 변경하지 않는다.
+- 신규 4개 회귀를 먼저 4 failed로 재현했다. 교정 후 `TTAKKARI_NO_ENV_FILE=1 .venv/bin/python -m pytest -q unit_tests/test_platform_v2_inventory.py` → **55 passed in 61.01s**. 동일 파일 Ruff 및 git diff --check 통과. 이전에 유효했던 엔진 회귀258개는 이 분류 규칙 전용 변경으로 무효화되지 않아 재실행하지 않았다.
+- 최종 추가 커밋은 감사 회귀 테스트와 작업 기록만 바꾸며, 분류기는 선행 4f2e03a를 재사용한다. 기존 런타임 수용 미검증 항목은 닫지 않는다. 교정 revision의 push 및 배포 예약은 영속 목표 계약에서 추적한다.

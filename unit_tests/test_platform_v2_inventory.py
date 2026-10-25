@@ -1080,3 +1080,13 @@ def test_baseline_delta_json_and_md_causality_agreement():
     assert "유발했음이 확인됨" not in json_text
     assert "미확인 가설" in json_text
     assert any("미확인 가설" in item for item in json_data["unverified_runtime_ledger"])
+
+
+@pytest.mark.parametrize("field", ["opencode_bin", "copilot_bin"])
+def test_copilot_engine_executables_are_execution_settings(field):
+    assert classify_config(field) == "exec.run_engine"
+
+
+@pytest.mark.parametrize("filename", ["opencode_accounts.py", "copilot_accounts.py"])
+def test_copilot_account_stores_are_account_management(filename):
+    assert classify_source_file(f"src/ttakkari/{filename}") == "core.accounts_quota"

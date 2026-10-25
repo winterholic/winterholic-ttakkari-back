@@ -190,26 +190,36 @@ def score_document(artifact: dict[str, Any], goal_vec: list[float], doc_vec: lis
 
 
 _child_lock = asyncio.Lock()
-# The e5 child peaks near 2.1GB RSS, so it shares the Mac-wide slot file lock that already keeps local Qwen to one
-# heavy model at a time (runs.qwen_slot). Acquisition order, outermost first: `_child_lock` (this process), then the
-# machine slot via a non-blocking try-lock polled until a deadline. The slot is the only machine lock this path ever
-# takes and it is never held while waiting for anything else; the Qwen path never takes `_child_lock`. A bounded
-# try-lock cannot hold-and-wait, so no cycle with the Qwen teacher is possible.
+# The e5 child peaks near 2.1GB RSS, so concurrent worker processes serialize it through a dedicated file lock in the
+# same run directory as the agent harness slot, using the same helpers (runs.qwen_slot.acquire_process_lock(path)).
+# `qwen-local-slot.lock` belongs to the agent harness: a qwen-local Run try-locks it once at start and fails with
+# QwenSlotBusy, then holds it for the whole Run. The collector therefore never takes, probes or waits on it.
+# KNOWN LIMIT: this does not stop an e5 child from peaking at the same time as a Qwen teacher Run; that is accepted.
+# Acquisition order, outermost first: `_child_lock` (this process), then the e5 file lock via a non-blocking try-lock
+# polled until a deadline. No other lock is held or awaited while holding it, so no cycle is possible.
 GATE_WAIT_SECONDS = 20.0
 GATE_POLL_SECONDS = 0.25
+EMBED_LOCK_NAME = "collector-e5-embed.lock"
 
 
 class EmbedGateBusy(RuntimeError):
-    """Another process (a worker's e5 child or the Qwen teacher) owns the machine slot past the wait budget."""
+    """Another process's e5 child owned the embed lock past the wait budget."""
+
+
+def embed_lock_path() -> Path:
+    from ttakkari.config import get_settings
+
+    return get_settings().home / "run" / EMBED_LOCK_NAME
 
 
 async def _acquire_gate(wait: float, poll: float) -> int:
     # lazy: the runs package pulls models and profiles
     from ttakkari.runs import qwen_slot
 
+    path = embed_lock_path()
     deadline = time.monotonic() + wait
     while True:
-        fd = qwen_slot.acquire_process_lock()
+        fd = qwen_slot.acquire_process_lock(path)
         if fd is not None:
             return fd
         if time.monotonic() >= deadline:
@@ -220,7 +230,7 @@ async def _acquire_gate(wait: float, poll: float) -> int:
 async def default_embed(texts: list[str], prefixes: list[str]) -> tuple[list[list[float]], dict[str, Any]]:
     """The existing disposable e5 child (ttakkari.context.embedder_worker, offline, parent-watched). It is named, not
     imported: the collector package keeps no import dependency on the context/knowledge packages. The child is only
-    spawned while this process holds the machine slot; a busy slot raises EmbedGateBusy and no child starts."""
+    spawned while this process holds the e5 embed lock; a busy lock raises EmbedGateBusy and no child starts."""
     from ttakkari.config import get_settings
     from ttakkari.model_process import run_json_worker
 

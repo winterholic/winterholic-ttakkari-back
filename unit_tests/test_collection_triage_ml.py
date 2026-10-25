@@ -268,7 +268,7 @@ def test_committed_artifact_is_intact_and_matches_the_recorded_evaluation():
     assert triage.TRIAGE_VERSION == "multiaxis-triage-v2"
 
 
-# --- cross-process resource gate for the e5 child (shares the Mac-wide Qwen slot file lock) ---
+# --- cross-process resource gate for the e5 child (dedicated lock file; the harness Qwen slot is never touched) ---
 
 _HOLDER = (
     "import fcntl, os, sys\n"
@@ -281,10 +281,8 @@ _HOLDER = (
 
 @pytest.fixture
 def gate(monkeypatch, tmp_path):
-    from ttakkari.runs import qwen_slot
-
-    path = tmp_path / "run" / "qwen-local-slot.lock"
-    monkeypatch.setattr(qwen_slot, "process_lock_path", lambda: path)
+    path = tmp_path / "run" / triage_ml.EMBED_LOCK_NAME
+    monkeypatch.setattr(triage_ml, "embed_lock_path", lambda: path)
     monkeypatch.setattr(triage_ml, "GATE_WAIT_SECONDS", 0.6)
     monkeypatch.setattr(triage_ml, "GATE_POLL_SECONDS", 0.05)
     spawned: list[dict] = []
@@ -315,7 +313,7 @@ def _release_other_process(proc):
     proc.wait(timeout=10)
 
 
-def test_e5_child_is_not_started_and_pages_stay_unavailable_while_another_process_holds_the_slot(gate, monkeypatch):
+def test_e5_child_is_not_started_and_pages_stay_unavailable_while_another_process_holds_the_embed_lock(gate, monkeypatch):
     path, spawned = gate
     monkeypatch.setattr(triage_ml, "load_artifact", lambda: synthetic_artifact())
     monkeypatch.setattr(triage_ml, "enabled", lambda: (True, ""))
@@ -329,7 +327,7 @@ def test_e5_child_is_not_started_and_pages_stay_unavailable_while_another_proces
     assert out[0]["status"] == "unavailable" and out[0]["reason"] == "embedder_gate_busy" and out[0]["axes"] == {}
 
 
-def test_e5_child_runs_after_the_slot_is_released_and_gives_it_back(gate):
+def test_e5_child_runs_after_the_embed_lock_is_released_and_gives_it_back(gate):
     from ttakkari.runs import qwen_slot
 
     path, spawned = gate
@@ -352,3 +350,20 @@ def test_e5_gate_is_released_when_the_child_raises(gate, monkeypatch):
     with pytest.raises(RuntimeError, match="embedding_worker_failed"):
         asyncio.run(triage_ml.default_embed(["q"], ["query: "]))
     assert qwen_slot.is_process_lock_busy(path) is False
+
+
+def test_e5_runs_and_never_touches_the_harness_qwen_slot_lock(gate, monkeypatch, tmp_path):
+    from ttakkari.runs import qwen_slot
+
+    _, spawned = gate
+    qwen_lock = tmp_path / "run" / "qwen-local-slot.lock"
+    monkeypatch.setattr(qwen_slot, "process_lock_path", lambda: qwen_lock)
+    other = _hold_in_other_process(qwen_lock)  # a qwen-local Run owns the harness slot
+    try:
+        vectors, _ = asyncio.run(triage_ml.default_embed(["q", "p"], ["query: ", "passage: "]))
+        # still held by the other process, so the collector neither took nor released it
+        assert qwen_slot.is_process_lock_busy(qwen_lock) is True
+    finally:
+        _release_other_process(other)
+    assert len(spawned) == 1 and len(vectors) == 2
+    assert qwen_slot.is_process_lock_busy(qwen_lock) is False

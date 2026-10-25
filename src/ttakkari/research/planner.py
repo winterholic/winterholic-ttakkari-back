@@ -471,6 +471,22 @@ async def validate_experiment_plan(
     errors.extend(exp_errors)
     warnings.extend(exp_warnings)
 
+    # Validate expanded configurations against adapter constraints
+    if local_dispatch and adapter_id:
+        from ttakkari.research.adapters import get_adapter_registry
+
+        try:
+            adapter = get_adapter_registry().get_adapter(adapter_id)
+            if adapter:
+                for cfg in expanded_configs:
+                    params_dict = cfg.get("parameters", cfg)
+                    cfg_errors = adapter.validate_config(params_dict, scope=scope)
+                    for ce in cfg_errors:
+                        if ce not in errors:
+                            errors.append(ce)
+        except Exception:
+            pass
+
     # Resource estimate
     runs_count = len(expanded_configs)
     if strategy == "repeat":

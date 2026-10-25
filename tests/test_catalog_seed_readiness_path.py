@@ -270,6 +270,20 @@ async def test_readiness_and_planner_enforce_combinations_and_negative_control()
         assert plan_local.valid is False
         assert any("로컬 자동 실행을 지원하지 않습니다" in err for err in plan_local.errors)
 
+        plan_missing_model = await validate_experiment_plan(
+            db,
+            study_id=study_id,
+            method_id=fa_method.id,
+            compared_method_ids=[],
+            adapter_id="llm_inference",
+            strategy="single",
+            search_space={},
+            fixed_inputs={},
+            budget={"max_runs": 1},
+        )
+        assert plan_missing_model.valid is False
+        assert any("model 또는 지원되는 quant_type" in err for err in plan_missing_model.errors)
+
 
 @pytest.mark.parametrize("combos", [[], None, {}, [None], [{"hardware": "apple_silicon_metal"}]])
 async def test_explicit_malformed_or_empty_combinations_fail_closed(combos):

@@ -65,3 +65,9 @@ ops 원문: 1failed/4971passed/13skipped/2xfailed/4961subtests/1233.82s.
 
 PMS7.2 전체·원문UX10 운영·Metal/lease/raw·프론트Vercel·운영MCP 및 R4/7/12~16은 미완이다.
 기존 유효 인수와 실패 이력을 보존하고 전체 배포 gate/새 검증을 생략하지 않는다.
+
+후속 통합: main4053ee12를 merge e1b27975de59bb4b1740e26e54b84d56a599938b로 통합했다.
+`pytest unit_tests/test_platform_v2_inventory.py -k 'test_report_schema_separates_extraction_classification_scope_coverage or test_research_migrations_belong_to_research_lab' -q --tb=short`
+→ `3 passed, 54 deselected in 4.10s`.
+해당 merge와 교정8ec7586 사이 연구3파일 diff exit0이며 중복 제품 교정은 없다.
+일반 선택 영수증 수집용 API4건은 `4 passed in 0.90s`였고 별도 신규 인수 수로 합산하지 않는다.

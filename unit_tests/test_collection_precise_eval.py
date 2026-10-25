@@ -56,27 +56,44 @@ def test_engine_status_reports_reasons_transparently(monkeypatch):
         assert st["status"] == "unavailable"
         assert "not ready" in st["detail"]
 
-    # Case 4: qwen slot busy
+    # Case 4: a held slot is never probed by the status path, so a busy slot is not a status here
     with (
         patch(
             "ttakkari.runs.desk_qwen.endpoint", return_value="http://127.0.0.1:19300"
         ),
-        patch("ttakkari.runs.qwen_slot.is_process_lock_busy", return_value=True),
+        patch("ttakkari.runs.qwen_slot.acquire_process_lock") as acquire,
+        patch("ttakkari.runs.qwen_slot.is_process_lock_busy") as probe,
     ):
         st = collector_precise_runtime.engine_status()
-        assert st["status"] == "busy"
-        assert "occupied" in st["detail"]
+        assert st["status"] == "ready"
+        acquire.assert_not_called()
+        probe.assert_not_called()
 
     # Case 5: ready
     with (
         patch(
             "ttakkari.runs.desk_qwen.endpoint", return_value="http://127.0.0.1:19300"
         ),
-        patch("ttakkari.runs.qwen_slot.is_process_lock_busy", return_value=False),
     ):
         st = collector_precise_runtime.engine_status()
         assert st["status"] == "ready"
         assert st["endpoint"] == "http://127.0.0.1:19300"
+
+
+def test_view_status_remembers_a_real_busy_claim_briefly_and_hides_the_endpoint(monkeypatch):
+    ready = {"status": "ready", "detail": "ok", "model": "m", "endpoint": "http://127.0.0.1:1"}
+    precise_eval.register_runtime(precise_eval.EvaluatorRuntime(
+        status=lambda: dict(ready), acquire_process_lock=lambda: None, release_process_lock=lambda fd: None))
+    try:
+        monkeypatch.setattr(precise_eval, "_busy_seen_at", None)
+        assert precise_eval.view_engine_status()["status"] == "ready"
+        assert "endpoint" not in precise_eval.view_engine_status()
+        precise_eval._note_busy()
+        assert precise_eval.view_engine_status()["status"] == "busy"
+        monkeypatch.setattr(precise_eval, "_busy_seen_at", precise_eval.time.monotonic() - 31)
+        assert precise_eval.view_engine_status()["status"] == "ready"
+    finally:
+        precise_eval.register_runtime(None)
 
 
 def test_engine_status_is_unavailable_until_runtime_is_registered():

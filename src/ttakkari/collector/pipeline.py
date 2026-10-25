@@ -422,7 +422,7 @@ def _admit_precise(p: Prepared, pending_now: int) -> None:
     settings = get_settings()
     cap = settings.collector_triage_precise_queue_cap
     precise["cap"] = cap
-    precise["engine"] = precise_eval.engine_status()
+    precise["engine"] = precise_eval.view_engine_status()
     if pending_now >= cap:
         precise["state"] = "skipped_cap"
         precise["reasons"] = [*precise["reasons"], "precise_queue_cap_reached"]

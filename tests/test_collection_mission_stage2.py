@@ -1,4 +1,6 @@
 """Stage-2 ML triage through a real mission: decision fields reach the envelope, the KB receipt and the mission view."""
+import asyncio
+
 import numpy as np
 import pytest
 from collector_support import article_html, prose
@@ -61,6 +63,8 @@ async def test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_ev
     assert tri["precise_eval"]["state"] == "pending" and tri["precise_eval"]["engine"]["status"] == "unavailable"
     summary = detail["triage"]
     assert summary["precise_eval"]["pending"] == 1 and summary["precise_eval"]["skipped_cap"] == 0
+    assert summary["precise_eval"]["processing"] == 0 and summary["precise_eval"]["unresolved"] == 0
+    assert detail["counts"]["precise_waiting"] == 1 and detail["counts"]["precise_unresolved"] == 0
     assert summary["precise_eval"]["engine"] == "unavailable" and isinstance(summary["precise_eval"]["engine_detail"], str)
     assert summary["ml"]["documents_by_status"] == {"evaluated": 1}
     assert summary["ml"]["axes_validation"]["topic_relevance_semantic"]["status"] == "validated"
@@ -101,3 +105,42 @@ async def test_without_the_e5_model_the_rules_decide_and_the_gap_is_visible(clie
     assert item["triage"]["validation"]["overall"] == "unvalidated"
     assert detail["triage"]["ml"]["documents_by_status"] == {"disabled": 1}
     assert detail["triage"]["precise_eval"]["pending"] == 0
+
+
+async def test_mission_view_never_touches_the_harness_qwen_slot(client, auth, env, monkeypatch):  # noqa: F811
+    import sys
+
+    from ttakkari import collector_precise_runtime
+    from ttakkari.runs import qwen_slot
+
+    monkeypatch.setattr(triage_ml, "evaluate_documents", fake_ml())
+    mission = await register(client, auth, env)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    collector_precise_runtime.install()
+    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", True)
+    monkeypatch.setattr(get_settings(), "desk_qwen_enabled", True)
+    monkeypatch.setattr("ttakkari.runs.desk_qwen.endpoint", lambda: "http://127.0.0.1:19300")
+    lock_path = qwen_slot.process_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    holder = await asyncio.create_subprocess_exec(sys.executable, "-c", (
+        "import fcntl, os, sys\nfd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)\n"
+        "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\nprint('held', flush=True)\nsys.stdin.readline()\n"), str(lock_path),
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+    try:
+        assert (await holder.stdout.readline()).decode().strip() == "held"
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("mission view touched the harness qwen slot")
+
+        monkeypatch.setattr(qwen_slot, "acquire_process_lock", forbidden)
+        monkeypatch.setattr(qwen_slot, "is_process_lock_busy", forbidden)
+        response = await client.get(BASE + "/missions/" + mission["id"], headers=auth)
+        assert response.status_code == 200
+        engine = response.json()["triage"]["precise_eval"]
+        assert engine["engine"] == "ready" and "127.0.0.1" not in str(engine)  # readiness only, endpoint hidden
+    finally:
+        from ttakkari.collector import precise_eval
+        holder.stdin.write(b"\n")
+        await holder.stdin.drain()
+        await asyncio.wait_for(holder.wait(), 10)
+        precise_eval.register_runtime(None)

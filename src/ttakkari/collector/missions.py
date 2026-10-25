@@ -534,12 +534,12 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
                                  .where(CollectionMissionJob.mission_id == mission.id, CollectorJob.tenant_id == mission.tenant_id))).all()
     jobs = [job for job, _ in job_rows]
     run_of = {job.id: seq for job, seq in job_rows}
-    counts = dict.fromkeys(("discovered", "acquired", "accepted", "held", "failed", "blocked", "duplicate", "imported", "pending_delivery", "not_imported", "review_needed", "auto_accepted", "auto_held"), 0)
+    counts = dict.fromkeys(("discovered", "acquired", "accepted", "held", "failed", "blocked", "duplicate", "imported", "pending_delivery", "not_imported", "review_needed", "auto_accepted", "auto_held", "precise_waiting", "precise_unresolved"), 0)
     for job in jobs:
         counts["discovered"] += (job.cursor or {}).get("discovered", 0)
     results = []
     triage_reasons: dict[str, int] = {}
-    precise_counts = {"pending": 0, "skipped_cap": 0, "evaluated": 0, "failed": 0, "budget_denied": 0}
+    precise_counts = {"pending": 0, "processing": 0, "unresolved": 0, "skipped_cap": 0, "evaluated": 0, "failed": 0, "budget_denied": 0}
     stage2_status: dict[str, int] = {}
     if jobs:
         filters = (CollectorItem.job_id.in_([job.id for job in jobs]), CollectorItem.tenant_id == mission.tenant_id)
@@ -561,6 +561,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         precise_counts.update({state: n for state, n in (await db.execute(
             select(precise_state, func.count(CollectorItem.id)).where(*filters, precise_state.in_(tuple(precise_counts)))
             .group_by(precise_state))).all()})
+        counts["precise_waiting"] = precise_counts["pending"] + precise_counts["processing"]
+        counts["precise_unresolved"] = precise_counts["unresolved"]
         stage2_col = CollectorItem.signals["triage"]["stage2"]["status"].astext
         stage2_status = {k or "not_run": n for k, n in (await db.execute(
             select(stage2_col, func.count(CollectorItem.id)).where(*filters, CollectorItem.kind == "document")
@@ -611,7 +613,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         if not counts["acquired"]:
             state = "partial"
 
-    engine_state = precise_eval.engine_status()  # {"status": ready|busy|unavailable, "detail": ...}; endpoint stays internal
+    engine_state = precise_eval.view_engine_status()  # never probes the harness qwen slot
     triage_summary = {
         "accepted": counts["auto_accepted"],
         "review_needed": counts["review_needed"],

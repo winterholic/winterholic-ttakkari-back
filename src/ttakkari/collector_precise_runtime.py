@@ -12,7 +12,9 @@ from ttakkari.config import get_settings
 
 
 def engine_status() -> dict[str, Any]:
-    """Check readiness of the local bounded evaluation engine and shared slot."""
+    """Endpoint readiness only. It never touches the harness qwen slot (a probe is a real try-lock that could push a
+    starting Qwen Run into its queue); the slot is taken only by a real evaluation call, whose EvaluatorBusy is the
+    one busy signal."""
     settings = get_settings()
     if not settings.collector_teacher_enabled:
         return {
@@ -28,7 +30,7 @@ def engine_status() -> dict[str, Any]:
         }
 
     try:
-        from ttakkari.runs import desk_qwen, qwen_slot
+        from ttakkari.runs import desk_qwen
 
         endpoint = desk_qwen.endpoint()
     except (RuntimeError, ImportError, AttributeError, OSError) as exc:
@@ -41,19 +43,6 @@ def engine_status() -> dict[str, Any]:
         return {
             "status": "unavailable",
             "detail": "local qwen server endpoint not ready",
-            "model": settings.desk_qwen_model,
-        }
-    try:
-        if qwen_slot.is_process_lock_busy():
-            return {
-                "status": "busy",
-                "detail": "local qwen slot is occupied by another process",
-                "model": settings.desk_qwen_model,
-            }
-    except (OSError, RuntimeError) as exc:
-        return {
-            "status": "unavailable",
-            "detail": f"failed to check qwen_slot process lock: {exc}",
             "model": settings.desk_qwen_model,
         }
     return {

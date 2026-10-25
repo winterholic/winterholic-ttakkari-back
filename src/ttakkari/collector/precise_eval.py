@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -111,6 +112,26 @@ _runtime: EvaluatorRuntime | None = None
 def register_runtime(runtime: EvaluatorRuntime | None) -> None:
     global _runtime
     _runtime = runtime
+
+
+BUSY_MEMORY_SECONDS = 30.0
+_busy_seen_at: float | None = None
+
+
+def _note_busy() -> None:
+    global _busy_seen_at
+    _busy_seen_at = time.monotonic()
+
+
+def view_engine_status() -> dict[str, Any]:
+    """Status for views and queue records: endpoint readiness plus the busy outcome of the last real claim, kept in
+    process for a short time. It never probes the slot."""
+    st = engine_status()
+    seen = _busy_seen_at
+    if st.get("status") == "ready" and seen is not None and time.monotonic() - seen < BUSY_MEMORY_SECONDS:
+        return {"status": "busy", "detail": "local qwen slot was occupied at the last evaluation attempt",
+                "model": st.get("model")}
+    return {k: v for k, v in st.items() if k != "endpoint"}
 
 
 def engine_status() -> dict[str, Any]:
@@ -561,6 +582,7 @@ async def consume_pending_once(
                 goal=goal, title=title, text=text, request_key=request_key, job_id=row.job_id
             )
         except EvaluatorBusy as exc:
+            _note_busy()
             await _finish_pending_claim(claimed_id, claim_token, state="pending", detail=str(exc), status="busy")
             continue
         except EvaluatorUnavailable as exc:

@@ -40,6 +40,135 @@ async def test_hybrid_projection_is_idempotent_and_scope_filtered(client, auth):
     assert two["document_id"] != one["document_id"]
 
 
+async def test_metadata_source_and_time_filters_run_on_postgres(client, auth):
+    await register(client, auth, "deployment rollback search metadata filter")
+    from ttakkari import kb_retrieval
+    from ttakkari.db import sessionmaker
+
+    async with sessionmaker()() as db:
+        result = await kb_retrieval.search(
+            db,
+            query="deployment rollback",
+            mode="lexical",
+            filters={
+                "type": "upload",
+                "collected_after": "2000-01-01T00:00:00+00:00",
+            },
+        )
+    assert result["items"]
+
+
+async def test_entity_alias_graph_and_canonical_paths_use_source_evidence(client, auth):
+    import hashlib
+
+    from sqlalchemy import select
+
+    from ttakkari import kb_retrieval
+    from ttakkari.common.entity_norm import norm_name
+    from ttakkari.db import sessionmaker
+    from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision
+    from ttakkari.kb_ontology_models import (
+        KbDocumentEntity,
+        KbEntity,
+        KbEntityAlias,
+        KbEntityCanonical,
+        KbRelation,
+        KbRelationEvidence,
+    )
+
+    body = "Aurora (오로라) manages Nimbus service."
+    registered = await register(client, auth, body)
+    work_registered = await register(
+        client, auth, "Work-only project codename: Polaris.", scope="work"
+    )
+    async with sessionmaker()() as db:
+        document = await db.get(KbDocument, registered["document_id"])
+        revision = await db.get(KbRevision, registered["revision_id"])
+        passage = await db.scalar(
+            select(KbPassage).where(KbPassage.revision_id == revision.id)
+        )
+        aurora = KbEntity(
+            tenant_id="owner", origin_scope="personal", visibility="global",
+            canonical_name="Aurora", norm_name=norm_name("Aurora"),
+            entity_kind="concept", domain="ai", summary="Aurora service",
+        )
+        nimbus = KbEntity(
+            tenant_id="owner", origin_scope="personal", visibility="global",
+            canonical_name="Nimbus", norm_name=norm_name("Nimbus"),
+            entity_kind="concept", domain="ai", summary="Nimbus service",
+        )
+        db.add_all([aurora, nimbus])
+        await db.flush()
+        evidence_body = "Aurora (오로라) manages Nimbus"
+        span_start = body.index(evidence_body)
+        evidence = KbEvidence(
+            passage_id=passage.id,
+            span_start=span_start,
+            span_end=span_start + len(evidence_body),
+            sha256=hashlib.sha256(evidence_body.encode()).hexdigest(),
+            note="fixture source evidence",
+        )
+        db.add(evidence)
+        await db.flush()
+        db.add_all([
+            KbEntityAlias(
+                entity_id=aurora.id, alias="오로라", norm_alias=norm_name("오로라"),
+                alias_kind="synonym", source="extracted",
+            ),
+            KbDocumentEntity(
+                passage_id=passage.id, entity_id=aurora.id,
+                document_id=document.id, revision_id=revision.id, evidence_id=evidence.id,
+            ),
+            KbDocumentEntity(
+                passage_id=passage.id, entity_id=nimbus.id,
+                document_id=document.id, revision_id=revision.id, evidence_id=evidence.id,
+            ),
+            KbEntityCanonical(
+                entity_id=aurora.id, visibility="global",
+                canonical_definition="Aurora manages Nimbus",
+                source_document_ids=[str(document.id)],
+                supporting_evidence_ids=[str(evidence.id)],
+            ),
+        ])
+        work_document = await db.get(KbDocument, work_registered["document_id"])
+        work_revision = await db.get(KbRevision, work_registered["revision_id"])
+        work_passage = await db.scalar(
+            select(KbPassage).where(KbPassage.revision_id == work_revision.id)
+        )
+        db.add_all([
+            KbEntityAlias(
+                entity_id=aurora.id, alias="Polaris", norm_alias=norm_name("Polaris"),
+                alias_kind="synonym", source="extracted",
+            ),
+            KbDocumentEntity(
+                passage_id=work_passage.id, entity_id=aurora.id,
+                document_id=work_document.id, revision_id=work_revision.id,
+            ),
+        ])
+        relation = KbRelation(
+            source_entity_id=aurora.id, target_entity_id=nimbus.id,
+            relation_type="manages", origin_scope="personal", visibility="global",
+            status="active", evidence_count=1, representative_evidence_id=evidence.id,
+        )
+        db.add(relation)
+        await db.flush()
+        db.add(KbRelationEvidence(relation_id=relation.id, evidence_id=evidence.id))
+        await db.commit()
+
+        result = await kb_retrieval.search(db, query="오로라", mode="graph")
+        personal_result_for_work_alias = await kb_retrieval.search(
+            db, query="Polaris", mode="graph"
+        )
+
+    assert result["matched_entities"]
+    card = result["matched_entities"][0]
+    assert card["canonical_name"] == "Aurora"
+    assert card["source_document_ids"] == [registered["document_id"]]
+    assert card["supporting_evidence_ids"]
+    assert card["relations"][0]["target_entity"]["canonical_name"] == "Nimbus"
+    assert personal_result_for_work_alias["matched_entities"] == []
+
+
 async def test_failed_dense_query_is_reported_not_silently_relabelled(client, auth, monkeypatch):
     from ttakkari.context import embedder
     async def fail(*args, **kwargs):

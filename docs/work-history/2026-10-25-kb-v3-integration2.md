@@ -103,3 +103,7 @@ HTTP fetch와 outbox는 거치지 않았다. 그 전체 경로는 `tests/test_co
 
 ### 가짜 L2 + 실PG
 `scripts/kb_v3_real_db_flow.py`에 E 단계를 추가했다. 가짜 L2 어댑터(구독 CLI·모델 서버 호출 없음), 일일 예산 1, 워커 2개를 동시에 돌렸다. 가짜 어댑터 호출은 전체 1회, 원장은 reservation 1건(completed)과 usage 1건(consumed), 두 번째 문서는 `daily_budget_exhausted`로 degraded였고, L2 주장 1건이 저장되고 환각 인용 1건은 거부됐다.
+
+### L2 최종 병합 갱신
+
+L2 브랜치가 `f0ea559`(계정 pool 분리 strict provenance, stdin 전달, 직접 시험에서 live kb worker 일시 정지)까지 전진해 그 HEAD를 마지막 단계로 다시 병합했다(텍스트 충돌 없음). 이전에 병합한 `9336fdb`, `263a162`를 포함한다. 병합 뒤 시험과 가짜 L2 실PG 흐름을 다시 돌려 통과를 확인했다.

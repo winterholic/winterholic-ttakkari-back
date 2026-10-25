@@ -113,8 +113,23 @@ def rank_methods(
             for relation in stored_context.get("relations", [])
         ]
         context = {"relations": relations, "truncated": bool(stored_context.get("truncated"))}
+        failures = []
+        for failure in stored_context.get("failures", []):
+            declared = failure.get("declared_environment", {})
+            observed = failure.get("observed_environment", {})
+            shared = {key: value for key, value in declared.items() if key in observed}
+            conflicts = sorted(applicability(shared, observed)["mismatches"])
+            fits = [applicability(conditions, environment) for conditions in (declared, observed) if conditions]
+            fits = fits or [applicability({}, environment)]
+            status = ("unknown" if conflicts else "incompatible" if any(f["status"] == "incompatible" for f in fits)
+                      else "unknown" if any(f["status"] == "unknown" for f in fits) else "applicable")
+            failures.append({**failure, "environment_conflicts": conflicts,
+                             "applicability": {"status": status, "conditions": fits},
+                             "affects_selection": status != "incompatible"})
+        if failures:
+            context["failures"] = failures
         # A challenge is an unresolved report, not proof that a method cannot work.
-        unresolved = context["truncated"] or any(
+        unresolved = context["truncated"] or any(f["affects_selection"] for f in failures) or any(
             r["affects_selection"]
             for r in relations
         )

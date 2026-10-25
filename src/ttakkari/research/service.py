@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import cast, func, or_, select, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased
 
 from ttakkari import kb_store
@@ -139,7 +140,67 @@ async def selection_context(db, nodes: list[Node], scope: str, limit: int = 200)
                     "evidence_id": str(other.evidence_id) if other.evidence_id else None,
                 },
             })
+    failures, failures_truncated = await selection_failures(db, ids, scope, limit)
+    for ident, item in context.items():
+        if failures[ident]:
+            item["failures"] = failures[ident]
+        item["truncated"] |= failures_truncated
     return context
+
+
+async def selection_failures(db, node_ids: list[uuid.UUID], scope: str, limit: int) -> tuple[dict, bool]:
+    """Read existing failure rows; association with a method is not causal attribution."""
+    failures = {str(ident): [] for ident in node_ids}
+    # Explicit registry lineage also connects runs linked through v2 method_id/compared IDs.
+    catalog = (await db.execute(select(Method.id, Method.source_node_id).where(
+        Method.source_node_id.in_(node_ids), Method.scope.in_([scope, "system"]),
+    ).order_by(Method.created_at.desc(), Method.id).limit(limit + 1))).all()
+    lineage = {str(mid): str(nid) for mid, nid in catalog[:limit]}
+    linked = [cast(Experiment.method_ids, JSONB).contains([ident]) for ident in failures]
+    if lineage:
+        linked.append(Experiment.method_id.in_([uuid.UUID(mid) for mid in lineage]))
+        linked.extend(Experiment.compared_method_ids.contains([mid]) for mid in lineage)
+
+    def associated(exp):
+        ids = set(exp.method_ids or []) & failures.keys()
+        for mid in [str(exp.method_id), *(exp.compared_method_ids or [])]:
+            if mid in lineage:
+                ids.add(lineage[mid])
+        return ids
+
+    legacy = (await db.scalars(select(Experiment).join(Study, Study.id == Experiment.study_id).where(
+        Study.scope == scope, Experiment.state == "failed", or_(*linked),
+        ~select(Run.id).where(Run.experiment_id == Experiment.id).exists(),
+    ).order_by(Experiment.created_at.desc(), Experiment.id).limit(limit + 1))).all()
+    rows = (await db.execute(select(Run, Experiment).join(Experiment, Experiment.id == Run.experiment_id)
+        .join(Study, Study.id == Experiment.study_id)
+        .join(Configuration, Configuration.id == Run.configuration_id)
+        .where(Study.scope == scope, Run.study_id == Study.id, Configuration.experiment_id == Experiment.id,
+               Run.status == "failed", or_(*linked))
+        .order_by(Run.created_at.desc(), Run.id).limit(limit + 1))).all()
+    # Both queries are independently bounded; any omitted history requires review.
+    truncated = len(catalog) > limit or len(legacy) > limit or len(rows) > limit
+    for exp in legacy[:limit]:
+        for ident in associated(exp):
+            failures[ident].append({
+                "experiment_id": str(exp.id), "run_id": None, "study_id": str(exp.study_id),
+                "status": "failed", "adapter_id": exp.adapter,
+                "execution_origin": exp.receipt.get("origin", "unknown"),
+                "declared_environment": exp.environment, "observed_environment": {},
+                "error_code": None, "error_message": exp.receipt.get("error"),
+                "detail_path": f"/api/research/experiments/{exp.id}", "causal_status": "unassessed",
+            })
+    for run, exp in rows[:limit]:
+        for ident in associated(exp):
+            failures[ident].append({
+                "experiment_id": str(exp.id), "run_id": str(run.id), "study_id": str(exp.study_id),
+                "configuration_id": str(run.configuration_id), "status": run.status,
+                "adapter_id": run.adapter_id, "execution_origin": run.execution_origin,
+                "declared_environment": exp.environment, "observed_environment": run.environment_snapshot,
+                "error_code": run.error_code, "error_message": run.error_message,
+                "detail_path": f"/api/research/runs/{run.id}", "causal_status": "unassessed",
+            })
+    return failures, truncated
 
 
 async def get_node(db, study, ident):

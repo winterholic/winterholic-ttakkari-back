@@ -10,6 +10,11 @@ from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+    validate_zip_safety,
+)
 
 
 class DocxParser(BaseParser):
@@ -27,11 +32,31 @@ class DocxParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         import docx
 
-        doc = docx.Document(io.BytesIO(data))
+        try:
+            validate_zip_safety(data, limits=limits)
+        except ValueError as exc:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=str(exc),
+            )
+
+        try:
+            doc = docx.Document(io.BytesIO(data))
+        except Exception as exc:  # noqa: BLE001
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code=f"parser_error_{type(exc).__name__}",
+                error_detail=str(exc),
+            )
+
         body_parts: list[str] = []
         locator_spans: list[LocatorSpan] = []
         cur_pos = 0
@@ -40,7 +65,7 @@ class DocxParser(BaseParser):
         cur_section_path: list[str] = []
 
         for p in doc.paragraphs:
-            text = p.text.strip()
+            text = unicodedata.normalize("NFC", p.text.strip())
             if not text:
                 continue
 
@@ -81,6 +106,7 @@ class DocxParser(BaseParser):
                     end_offset=p_end,
                     section_path=list(cur_section_path),
                     chunk_kind="heading" if level is not None else "prose",
+                    extra={"exact_text": formatted},
                 )
             )
 
@@ -89,7 +115,12 @@ class DocxParser(BaseParser):
             table_rows: list[list[str]] = []
             for row in t.rows:
                 table_rows.append(
-                    [cell.text.strip().replace("\n", " ") for cell in row.cells]
+                    [
+                        unicodedata.normalize(
+                            "NFC", cell.text.strip().replace("\n", " ")
+                        )
+                        for cell in row.cells
+                    ]
                 )
 
             if not table_rows:
@@ -120,12 +151,13 @@ class DocxParser(BaseParser):
                     end_offset=t_end,
                     section_path=list(cur_section_path),
                     chunk_kind="table",
+                    extra={"exact_text": table_text},
                 )
             )
 
         full_body = "".join(body_parts)
         return ParsedDocument(
-            normalized_body=unicodedata.normalize("NFC", full_body),
+            normalized_body=full_body,
             metadata={"parser": self.name, "filename": filename},
             locator_spans=locator_spans,
             status=ParseStatus.SUCCEEDED.value,
@@ -147,11 +179,31 @@ class PptxParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         import pptx
 
-        prs = pptx.Presentation(io.BytesIO(data))
+        try:
+            validate_zip_safety(data, limits=limits)
+        except ValueError as exc:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=str(exc),
+            )
+
+        try:
+            prs = pptx.Presentation(io.BytesIO(data))
+        except Exception as exc:  # noqa: BLE001
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code=f"parser_error_{type(exc).__name__}",
+                error_detail=str(exc),
+            )
+
         body_parts: list[str] = []
         locator_spans: list[LocatorSpan] = []
         cur_pos = 0
@@ -164,7 +216,7 @@ class PptxParser(BaseParser):
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     tf = shape.text_frame
-                    text = tf.text.strip()
+                    text = unicodedata.normalize("NFC", tf.text.strip())
                     if text:
                         if not slide_title and shape == slide.shapes[0]:
                             slide_title = text.split("\n")[0]
@@ -172,7 +224,9 @@ class PptxParser(BaseParser):
 
             # Slide notes
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-                notes_text = slide.notes_slide.notes_text_frame.text.strip()
+                notes_text = unicodedata.normalize(
+                    "NFC", slide.notes_slide.notes_text_frame.text.strip()
+                )
                 if notes_text:
                     slide_lines.append(f"[발표자 노트]\n{notes_text}")
 
@@ -197,12 +251,13 @@ class PptxParser(BaseParser):
                     section_path=section_path,
                     slide_no=slide_no,
                     chunk_kind="prose",
+                    extra={"exact_text": slide_body},
                 )
             )
 
         full_body = "".join(body_parts)
         return ParsedDocument(
-            normalized_body=unicodedata.normalize("NFC", full_body),
+            normalized_body=full_body,
             metadata={
                 "parser": self.name,
                 "slide_count": len(prs.slides),
@@ -228,21 +283,66 @@ class XlsxParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         import openpyxl
 
-        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+        try:
+            validate_zip_safety(data, limits=limits)
+        except ValueError as exc:
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code="limits_exceeded",
+                error_detail=str(exc),
+            )
+
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+        except Exception as exc:  # noqa: BLE001
+            return ParsedDocument(
+                normalized_body="",
+                status=ParseStatus.FAILED.value,
+                error_code=f"parser_error_{type(exc).__name__}",
+                error_detail=str(exc),
+            )
+
         body_parts: list[str] = []
         locator_spans: list[LocatorSpan] = []
         cur_pos = 0
+        total_cells = 0
 
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             rows: list[list[str]] = []
-            for r in ws.iter_rows(values_only=True):
-                # Filter out completely empty rows
-                str_row = [str(c).strip() if c is not None else "" for c in r]
+
+            for sheet_rows_count, r in enumerate(
+                ws.iter_rows(values_only=True), start=1
+            ):
+                if sheet_rows_count > limits.max_xlsx_rows_per_sheet:
+                    return ParsedDocument(
+                        normalized_body="",
+                        status=ParseStatus.FAILED.value,
+                        error_code="limits_exceeded",
+                        error_detail=f"Sheet '{sheet_name}' row count exceeds maximum limit {limits.max_xlsx_rows_per_sheet}",
+                    )
+
+                str_row = [
+                    unicodedata.normalize("NFC", str(c).strip())
+                    if c is not None
+                    else ""
+                    for c in r
+                ]
+                total_cells += len(str_row)
+                if total_cells > limits.max_xlsx_total_cells:
+                    return ParsedDocument(
+                        normalized_body="",
+                        status=ParseStatus.FAILED.value,
+                        error_code="limits_exceeded",
+                        error_detail=f"XLSX total cell count exceeds maximum limit {limits.max_xlsx_total_cells}",
+                    )
+
                 if any(str_row):
                     rows.append(str_row)
 
@@ -274,13 +374,17 @@ class XlsxParser(BaseParser):
                     end_offset=s_end,
                     section_path=[sheet_name],
                     chunk_kind="table",
-                    extra={"sheet_name": sheet_name, "row_range": [1, len(rows)]},
+                    extra={
+                        "sheet_name": sheet_name,
+                        "row_range": [1, len(rows)],
+                        "exact_text": sheet_text,
+                    },
                 )
             )
 
         full_body = "".join(body_parts)
         return ParsedDocument(
-            normalized_body=unicodedata.normalize("NFC", full_body),
+            normalized_body=full_body,
             metadata={
                 "parser": self.name,
                 "sheet_count": len(wb.sheetnames),
@@ -303,6 +407,7 @@ class CsvParser(BaseParser):
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        limits: ParserResourceLimits = DEFAULT_LIMITS,
         **kwargs: Any,
     ) -> ParsedDocument:
         # Decode CSV text
@@ -311,9 +416,34 @@ class CsvParser(BaseParser):
         except UnicodeDecodeError:
             text = data.decode("cp949", errors="replace")
 
+        text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+        text = unicodedata.normalize("NFC", text)
+
         delimiter = "\t" if (filename and filename.endswith(".tsv")) else ","
         reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-        rows = [r for r in reader if any(c.strip() for c in r)]
+        rows: list[list[str]] = []
+        total_cells = 0
+
+        for r in reader:
+            if not any(c.strip() for c in r):
+                continue
+            cleaned_row = [unicodedata.normalize("NFC", c.strip()) for c in r]
+            total_cells += len(cleaned_row)
+            if total_cells > limits.max_xlsx_total_cells:
+                return ParsedDocument(
+                    normalized_body="",
+                    status=ParseStatus.FAILED.value,
+                    error_code="limits_exceeded",
+                    error_detail=f"CSV cell count exceeds limit {limits.max_xlsx_total_cells}",
+                )
+            rows.append(cleaned_row)
+            if len(rows) > limits.max_xlsx_rows_per_sheet:
+                return ParsedDocument(
+                    normalized_body="",
+                    status=ParseStatus.FAILED.value,
+                    error_code="limits_exceeded",
+                    error_detail=f"CSV row count exceeds limit {limits.max_xlsx_rows_per_sheet}",
+                )
 
         if not rows:
             return ParsedDocument(
@@ -337,11 +467,11 @@ class CsvParser(BaseParser):
             end_offset=len(table_text),
             section_path=[Path(filename).stem if filename else "Data"],
             chunk_kind="table",
-            extra={"row_range": [1, len(rows)]},
+            extra={"row_range": [1, len(rows)], "exact_text": table_text},
         )
 
         return ParsedDocument(
-            normalized_body=unicodedata.normalize("NFC", table_text),
+            normalized_body=table_text,
             metadata={
                 "parser": self.name,
                 "row_count": len(rows),

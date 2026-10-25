@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
+from ttakkari.kb_parsers.resource_limits import (
+    DEFAULT_LIMITS,
+    ParserResourceLimits,
+)
 
 
 class ParseStatus(str, Enum):
@@ -37,6 +41,56 @@ class ParsedDocument:
     @property
     def char_count(self) -> int:
         return len(self.normalized_body)
+
+
+def validate_parsed_document(
+    doc: ParsedDocument,
+    limits: ParserResourceLimits = DEFAULT_LIMITS,
+) -> ParsedDocument:
+    """Validate locator span integrity and slice consistency against normalized_body."""
+    if doc.status != ParseStatus.SUCCEEDED.value:
+        return doc
+
+    body = doc.normalized_body
+    body_len = len(body)
+
+    # 1. Text character limit check
+    if body_len > limits.max_text_chars:
+        return dataclasses.replace(
+            doc,
+            status=ParseStatus.FAILED.value,
+            error_code="limits_exceeded",
+            error_detail=f"Parsed body length {body_len} exceeds maximum character limit {limits.max_text_chars}",
+        )
+
+    # 2. Locator span bounds and slice verification
+    for idx, span in enumerate(doc.locator_spans):
+        if not (0 <= span.start_offset <= span.end_offset <= body_len):
+            return dataclasses.replace(
+                doc,
+                status=ParseStatus.FAILED.value,
+                error_code="locator_out_of_bounds",
+                error_detail=(
+                    f"Locator span index {idx} ({span.start_offset}:{span.end_offset}) "
+                    f"out of bounds for normalized body length {body_len}"
+                ),
+            )
+
+        expected_text = span.extra.get("exact_text")
+        if expected_text is not None:
+            actual_text = body[span.start_offset : span.end_offset]
+            if actual_text != expected_text:
+                return dataclasses.replace(
+                    doc,
+                    status=ParseStatus.FAILED.value,
+                    error_code="locator_slice_mismatch",
+                    error_detail=(
+                        f"Locator span index {idx} text mismatch: "
+                        f"expected {expected_text[:30]!r}, got {actual_text[:30]!r}"
+                    ),
+                )
+
+    return doc
 
 
 class BaseParser(abc.ABC):
@@ -79,9 +133,14 @@ class BaseParser(abc.ABC):
 class ParserRegistry:
     """Registry managing format detection and parser dispatch with safety checks."""
 
-    def __init__(self, max_bytes: int = 100 * 1024 * 1024):
+    def __init__(
+        self,
+        max_bytes: int = 100 * 1024 * 1024,
+        limits: ParserResourceLimits | None = None,
+    ):
         self._parsers: list[BaseParser] = []
         self.max_bytes = max_bytes
+        self.limits = limits or DEFAULT_LIMITS
 
     def register(self, parser: BaseParser) -> None:
         self._parsers.append(parser)
@@ -116,7 +175,7 @@ class ParserRegistry:
                 error_detail="Cannot parse empty bytes",
             )
 
-        if len(data) > self.max_bytes:
+        if len(data) > self.max_bytes or len(data) > self.limits.max_file_bytes:
             return ParsedDocument(
                 normalized_body="",
                 status=ParseStatus.FAILED.value,
@@ -136,9 +195,14 @@ class ParserRegistry:
             )
 
         try:
-            return parser.parse(
-                data, filename=filename, content_type=content_type, **kwargs
+            parsed = parser.parse(
+                data,
+                filename=filename,
+                content_type=content_type,
+                limits=self.limits,
+                **kwargs,
             )
+            return validate_parsed_document(parsed, limits=self.limits)
         except Exception as exc:  # noqa: BLE001
             return ParsedDocument(
                 normalized_body="",

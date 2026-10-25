@@ -41,41 +41,58 @@ def is_mostly_hangul(s: str) -> bool:
 
 
 def split_bilingual_label(label: str) -> tuple[str, list[str]]:
-    """Split bilingual or alias-annotated label like '디플로이먼트(Deployment)' into canonical and aliases.
+    """Split bilingual or alias-annotated label like '디플로이먼트(Deployment)' or '쿠버네티스(Kubernetes, k8s)'.
 
     Rules:
+    - Supports multiple parentheses (e.g. 'Foo (Bar) (Baz)') and comma-separated aliases inside brackets.
     - If label is 'Hangul (English)', prefer the standard English name as canonical_name for technical terms.
     - If label is 'English (Hangul)', English is canonical_name and Hangul is an alias.
     - If label is 'Name (Abbrev)', Name is canonical_name and Abbrev is an alias.
     """
     cleaned = label.strip()
-    m = re.match(r"^([^(]+?)\s*\(([^)]+)\)$", cleaned)
-    if not m:
-        return cleaned, [cleaned] if cleaned else []
+    if not cleaned:
+        return "", []
 
-    outer = m.group(1).strip()
-    inner = m.group(2).strip()
+    # Match all parenthesized blocks: e.g., "(Bar)", "(Baz)"
+    bracket_pattern = re.compile(r"\(([^)]+)\)")
+    matches = list(bracket_pattern.finditer(cleaned))
+    if not matches:
+        return cleaned, [cleaned]
 
-    aliases = [outer, inner]
+    # Outer is the text outside all parenthesized blocks
+    outer = bracket_pattern.sub("", cleaned).strip()
+    # Normalize outer spaces
+    outer = re.sub(r"\s+", " ", outer)
 
-    # Decide canonical
-    if is_mostly_hangul(outer) and is_mostly_latin(inner):
-        # e.g., "디플로이먼트(Deployment)" -> canonical: "Deployment"
-        canonical = inner
-    elif is_mostly_latin(outer) and is_mostly_hangul(inner):
-        # e.g., "Kubernetes(쿠버네티스)" -> canonical: "Kubernetes"
+    # Inners collect all elements inside all parentheses, splitting by commas or slashes
+    inners: list[str] = []
+    for m in matches:
+        raw_inner = m.group(1).strip()
+        for item in re.split(r"[,/|]", raw_inner):
+            item_clean = item.strip()
+            if item_clean and item_clean not in inners:
+                inners.append(item_clean)
+
+    if not outer and inners:
+        outer = inners[0]
+        inners = inners[1:]
+
+    # Decide canonical name
+    # If outer is Hangul and an inner is Latin, prefer the first Latin name as canonical
+    latin_inners = [i for i in inners if is_mostly_latin(i)]
+    if is_mostly_hangul(outer) and latin_inners:
+        canonical = latin_inners[0]
+    elif is_mostly_latin(outer):
         canonical = outer
     else:
-        # e.g., "PostgreSQL (Postgres)" -> outer is canonical
-        canonical = outer
+        canonical = outer if outer else (inners[0] if inners else cleaned)
 
-    # Return distinct non-empty aliases with canonical included
+    # Build distinct alias list ensuring canonical is included
     distinct_aliases: list[str] = []
-    for a in aliases:
-        if a and a not in distinct_aliases:
-            distinct_aliases.append(a)
-    if canonical not in distinct_aliases:
-        distinct_aliases.insert(0, canonical)
+    candidates = [canonical, outer] + inners
+    for c in candidates:
+        if c and c not in distinct_aliases:
+            distinct_aliases.append(c)
 
     return canonical, distinct_aliases
 

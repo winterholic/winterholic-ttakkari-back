@@ -42,17 +42,29 @@ class AdapterRegistry:
         return [ad for ad in self._adapters.values() if domain in ad.domains or "*" in ad.domains]
 
     def find_for_method(self, method_slug: str, domain: str | None = None) -> ExecutionAdapter | None:
-        """Find the best matching adapter for a method slug and optional domain."""
+        """Find the best matching adapter for a method slug.
+
+        1. Exact match against adapter's supported_methods list.
+        2. Bounded prefix match (only if explicit prefix ending with '*').
+        3. Fallback to external_report adapter if available.
+        """
         candidates = self.find_for_domain(domain) if domain else list(self._adapters.values())
+
+        # 1. Exact match first (excluding generic wildcard)
         for adapter in candidates:
+            if method_slug in adapter.supported_methods:
+                return adapter
+
+        # 2. Bounded prefix match (excluding single "*")
+        for adapter in candidates:
+            for pattern in adapter.supported_parameters:
+                pass
             for pattern in adapter.supported_methods:
-                if pattern == "*":
+                if pattern != "*" and pattern.endswith("*") and method_slug.startswith(pattern[:-1]):
                     return adapter
-                if pattern.endswith("*") and method_slug.startswith(pattern[:-1]):
-                    return adapter
-                if pattern == method_slug:
-                    return adapter
-        return None
+
+        # 3. Fallback to external_report adapter
+        return self._adapters.get("external_report")
 
 
 _GLOBAL_REGISTRY: AdapterRegistry | None = None

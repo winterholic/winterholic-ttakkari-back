@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -22,10 +23,19 @@ from ttakkari.research.adapters.base import (
 from ttakkari.research.adapters.presets import load_tts_preset
 
 VALID_MODES = {"normalize_only", "synthesize", "synthesize_and_stt"}
-VALID_VOICES = {"M1", "M2", "F1", "F2"}
+VALID_VOICES = {"M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"}
+
+# Voice preset mapping from seed to Supertonic voice IDs
+VOICE_PRESET_MAP: dict[str, str] = {
+    "ko_female_1": "F1",
+    "ko_female_2": "F2",
+    "ko_female_news": "F2",
+    "ko_male_1": "M1",
+    "ko_male_2": "M2",
+}
 
 
-def _apply_custom_dict(text: str, custom_dict: dict[str, str]) -> str:
+def _apply_custom_dict(text: str, custom_dict: dict[str, str], *, case_sensitive: bool = False) -> str:
     """Replace domain terms with custom pronunciation entries."""
     if not custom_dict:
         return text
@@ -33,7 +43,11 @@ def _apply_custom_dict(text: str, custom_dict: dict[str, str]) -> str:
     # Replace longer keys first to prevent partial match conflicts
     for k in sorted(custom_dict.keys(), key=len, reverse=True):
         val = custom_dict[k]
-        result = result.replace(k, val)
+        if case_sensitive:
+            result = result.replace(k, val)
+        else:
+            pattern = re.compile(re.escape(k), re.IGNORECASE)
+            result = pattern.sub(val, result)
     return result
 
 
@@ -44,6 +58,7 @@ def _normalize_with_options(
     use_read_latin: bool = True,
     use_plain_text: bool = True,
     custom_dict: dict[str, str] | None = None,
+    case_sensitive: bool = False,
 ) -> str:
     """Normalize text with granular component toggles."""
     from ttakkari.tts.normalize import (
@@ -58,7 +73,7 @@ def _normalize_with_options(
 
     t = unicodedata.normalize("NFC", text)
     if custom_dict:
-        t = _apply_custom_dict(t, custom_dict)
+        t = _apply_custom_dict(t, custom_dict, case_sensitive=case_sensitive)
     t = _ZERO_WIDTH.sub("", t)
     if use_plain_text:
         t = plain_text(t)
@@ -70,7 +85,7 @@ def _normalize_with_options(
         t = read_latin(t)
     t = _final_cleanup(t)
     if custom_dict:
-        t = _apply_custom_dict(t, custom_dict)
+        t = _apply_custom_dict(t, custom_dict, case_sensitive=case_sensitive)
     return unicodedata.normalize("NFC", t)
 
 
@@ -81,15 +96,27 @@ class TtsSynthesisAdapter:
     version: str = "1.0.0"
     name_ko: str = "로컬 TTS 음성 합성 및 발음 평가 어댑터"
     domains: list[str] = ["tts", "stt"]
+
+    # Explicit whitelist: exactly match methods implemented by this adapter
     supported_methods: list[str] = [
-        "normalization*",
-        "g2p*",
-        "pronunciation-dict*",
-        "voice*",
-        "tts*",
-        "prosody*",
+        "tts_korean_text_normalization",
+        "tts_pronunciation_dictionary",
+        "tts_sentence_segmentation",
+        "tts_duration_prediction",
+        "tts_speaker_embedding_voice_consistency",
     ]
+
+    # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
     supported_parameters: list[str] = [
+        # Catalog seed parameter keys (tts.json)
+        "handle_measure_units",
+        "english_acronym_mode",
+        "case_sensitive",
+        "max_chunk_length",
+        "split_on_comma",
+        "speed_ratio",
+        "voice_preset",
+        # Adapter internal parameter keys
         "mode",
         "engine",
         "voice",
@@ -160,22 +187,41 @@ class TtsSynthesisAdapter:
     def validate_config(self, config: dict[str, Any], *, scope: str) -> list[str]:
         errors: list[str] = []
 
+        # Check for unsupported seed methods/parameters
+        if "descriptive_lenition" in config or "phoneme_format" in config:
+            errors.append(
+                "음소(phoneme) 단위 G2P(tts_korean_g2p)는 미지원됩니다. Supertonic 내장 음소 파이프라인 또는 external_report를 사용하세요."
+            )
+        if "vocoder_type" in config:
+            errors.append(
+                "보코더 교체(tts_vocoder_benchmark)는 미지원됩니다 (Supertonic 3 내장 ONNX vocoder 고정)."
+            )
+        if "pitch_scale" in config or "energy_scale" in config:
+            errors.append(
+                "피치/에너지 운율 제어(tts_prosody_control)는 Supertonic 3 ONNX 모델 구조상 미지원됩니다."
+            )
+
         mode = config.get("mode", "normalize_only")
         if mode not in VALID_MODES:
             errors.append(f"지원되지 않는 mode: '{mode}'. 허용 값: {sorted(VALID_MODES)}")
 
         engine = config.get("engine")
         if engine and engine.lower() == "kokoro":
-            # Note/Warning: contract dictates fallback to supertonic with note
+            # Kokoro is deprecated. We will map to supertonic in execute_run, but flag in warning
             pass
 
-        voice = config.get("voice", "M1")
-        if voice not in VALID_VOICES:
-            errors.append(f"지원되지 않는 voice: '{voice}'. 허용 값: {sorted(VALID_VOICES)}")
+        # Check speed / speed_ratio
+        speed_val = config.get("speed_ratio") if "speed_ratio" in config else config.get("speed", 1.0)
+        if speed_val is not None and (not isinstance(speed_val, (int, float)) or speed_val < 0.5 or speed_val > 2.0):
+            errors.append("속도(speed / speed_ratio)는 0.5 이상 2.0 이하의 숫자여야 합니다.")
 
-        speed = config.get("speed", 1.0)
-        if not isinstance(speed, (int, float)) or speed < 0.5 or speed > 2.0:
-            errors.append("speed는 0.5 이상 2.0 이하의 숫자여야 합니다.")
+        # Check voice / voice_preset
+        voice_val = config.get("voice_preset") or config.get("voice", "M1")
+        resolved_voice = VOICE_PRESET_MAP.get(voice_val, voice_val)
+        if resolved_voice not in VALID_VOICES:
+            errors.append(
+                f"지원되지 않는 voice: '{voice_val}'. 허용 값: {sorted(VALID_VOICES)} 또는 {list(VOICE_PRESET_MAP.keys())}"
+            )
 
         preset_id = config.get("preset_id")
         texts = config.get("texts")
@@ -243,15 +289,43 @@ class TtsSynthesisAdapter:
             raw_texts = config.get("texts", [])
             dataset_name = "custom_texts"
 
+        # Parameter Mapping (Seed -> Adapter)
         mode = config.get("mode", "normalize_only")
         engine_req = config.get("engine", "supertonic")
-        voice = config.get("voice", "M1")
-        speed = float(config.get("speed", 1.0))
-        max_chunk_chars = int(config.get("max_chunk_chars", 220))
-        convert_numbers = bool(config.get("convert_numbers", True))
-        read_latin = bool(config.get("read_latin", True))
+
+        # Map voice
+        voice_param = config.get("voice_preset") or config.get("voice", "M1")
+        voice = VOICE_PRESET_MAP.get(voice_param, voice_param)
+
+        # Map speed
+        speed = float(config.get("speed_ratio") if "speed_ratio" in config else config.get("speed", 1.0))
+
+        # Map max chunk chars
+        max_chunk_chars = int(
+            config.get("max_chunk_length") if "max_chunk_length" in config else config.get("max_chunk_chars", 220)
+        )
+
+        # Map normalization toggles
+        convert_numbers = bool(
+            config.get("handle_measure_units") if "handle_measure_units" in config else config.get("convert_numbers", True)
+        )
+
+        # Map english acronym mode
+        english_mode = config.get("english_acronym_mode")
+        if english_mode == "raw":
+            read_latin = False
+        elif english_mode in ("korean_alphabet", "as_word", "spelled_out"):
+            read_latin = True
+        else:
+            read_latin = bool(config.get("read_latin", True))
+
         plain_text_flag = bool(config.get("plain_text", True))
         custom_dict = config.get("custom_pronunciation_dict") or {}
+        case_sensitive = bool(config.get("case_sensitive", False))
+
+        warnings: list[str] = []
+        if engine_req.lower() == "kokoro":
+            warnings.append("Kokoro는 한국어 음성 미지원으로 폐기되어 Supertonic 3 엔진으로 실행되었습니다.")
 
         # 1. Text Normalization Pipeline
         from ttakkari.tts.normalize import chunk_text
@@ -269,6 +343,7 @@ class TtsSynthesisAdapter:
                 use_read_latin=read_latin,
                 use_plain_text=plain_text_flag,
                 custom_dict=custom_dict,
+                case_sensitive=case_sensitive,
             )
             normalized_char_count += len(norm_s)
             chunks = chunk_text(norm_s, max_chars=max_chunk_chars)
@@ -294,6 +369,7 @@ class TtsSynthesisAdapter:
                     "mode": mode,
                     "engine": "supertonic",
                     "engine_requested": engine_req,
+                    "warnings": warnings,
                     "dataset_name": dataset_name,
                     "sentence_count": len(raw_texts),
                     "chunk_count": len(all_chunks),
@@ -386,10 +462,8 @@ class TtsSynthesisAdapter:
                     from ttakkari.meetings.local_stt import core as stt_core
                     from ttakkari.meetings.local_stt import runner as stt_runner
 
-                    # Run STT worker on audio files if STT runtime available
                     stt_py = getattr(s, "local_stt_python", "") or ""
                     if Path(stt_py).is_file():
-                        # Transcribe synthesized chunks and compute CER/WER
                         for idx, chunk_info in enumerate(audio_chunks_info):
                             wav_path = chunk_info["path"]
                             stt_req = {
@@ -405,7 +479,6 @@ class TtsSynthesisAdapter:
                             transcript = str(stt_out.get("transcript", "")).strip()
                             norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
 
-                            # Find matching raw sentence snippet
                             rates_norm = stt_core.error_rates(norm_ref, transcript)
                             stt_eval_results.append({
                                 "chunk_index": idx,
@@ -427,6 +500,7 @@ class TtsSynthesisAdapter:
                 "mode": mode,
                 "engine": "supertonic",
                 "engine_requested": engine_req,
+                "warnings": warnings,
                 "voice": voice,
                 "speed": speed,
                 "dataset_name": dataset_name,

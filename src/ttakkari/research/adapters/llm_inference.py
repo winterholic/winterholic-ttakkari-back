@@ -25,30 +25,44 @@ class LlmInferenceAdapter:
     version: str = "1.0.0"
     name_ko: str = "로컬 LLM 추론 및 GPU 가속 벤치마크 어댑터"
     domains: list[str] = ["llm"]
+
+    # Explicit whitelist: exactly match methods implemented by this adapter
     supported_methods: list[str] = [
-        "kv-cache*",
-        "quantization*",
-        "flash-attention*",
-        "speculative-decoding*",
-        "prompt-context*",
-        "runtime-hardware*",
-        "llm*",
+        "kv_cache_quantization",
+        "prompt_context_length_tuning",
+        "cpu_gpu_offloading",
+        "flash_attention",
+        "weight_quantization",
+        "system_cpu_thread_binding",
+        "system_batch_size_throughput_tuning",
     ]
+
+    # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
     supported_parameters: list[str] = [
+        # Catalog seed parameter keys (llm_inference.json, systems.json)
+        "cache_type_k",
+        "cache_type_v",
+        "ctx_size",
+        "batch_size",
+        "ubatch_size",
+        "n_gpu_layers",
+        "main_gpu",
+        "flash_attn_enabled",
+        "quant_type",
+        "quant_method",
+        "threads_batch",
+        "logical_batch_size",
+        "physical_ubatch_size",
+        # Adapter internal parameter keys
         "model",
         "gpu_layers",
         "cpu_moe",
         "n_cpu_moe",
-        "ctx_size",
         "threads",
-        "batch_size",
-        "ubatch_size",
         "flash_attn",
         "device",
         "spec_type",
         "parallel",
-        "cache_type_k",
-        "cache_type_v",
         "rope_scaling",
         "prompt",
         "n_predict",
@@ -141,24 +155,47 @@ class LlmInferenceAdapter:
         if scope != "personal":
             errors.append("호스트 GPU 실행은 personal 스코프에서만 허용됩니다.")
 
+        # Check for unsupported seed parameters
+        if config.get("draft_model") and config["draft_model"] not in ("none", None):
+            errors.append(
+                "Draft 모델 기반 투기적 디코딩(speculative_decoding)은 미지원됩니다 (llama-server는 --spec-type ngram-mod만 지원)."
+            )
+        if "max_num_seqs" in config or "waiting_served_ratio" in config:
+            errors.append(
+                "연속 배치(continuous_batching)는 llama-server에서 동적 조절이 미지원됩니다 (parallel 슬롯 분할만 가능)."
+            )
+        if "cache_ttl_seconds" in config:
+            errors.append("접두사 캐시 TTL 제어(prefix_caching)는 llama-server에서 미지원됩니다.")
+        if "fused_layernorm" in config or "fused_rotary_emb" in config:
+            errors.append("커널 퓨전(kernel_fusion)은 컴파일 타임 최적화로 런타임 제어가 미지원됩니다.")
+
+        # Resolve model
         model = config.get("model")
         if not model:
-            errors.append("model 파라미터가 필수입니다.")
-        else:
-            try:
-                from ttakkari.config import get_settings
-                s = get_settings()
-                models_dict = getattr(s, "host_gpu_models", {}) or {}
-                if model not in models_dict:
-                    errors.append(
-                        f"허용되지 않은 모델 별칭: '{model}'. 허용 목록: {sorted(models_dict.keys())}"
-                    )
-            except Exception:
-                pass
+            # Map quant_type to available models if provided
+            quant_type = config.get("quant_type")
+            if quant_type == "Q4_K_M":
+                model = "qwen3.5-4b-q4_k_m"
+            elif quant_type in ("Q2_K", "Q2K"):
+                model = "qwen3.8-flash-next-q2k"
+            else:
+                model = "qwen3.5-4b-q4_k_m"
 
-        gpu_layers = config.get("gpu_layers")
-        if gpu_layers is not None and (not isinstance(gpu_layers, int) or gpu_layers < 0 or gpu_layers > 999):
-            errors.append("gpu_layers는 0 이상 999 이하의 정수여야 합니다.")
+        try:
+            from ttakkari.config import get_settings
+            s = get_settings()
+            models_dict = getattr(s, "host_gpu_models", {}) or {}
+            if model not in models_dict:
+                errors.append(
+                    f"허용되지 않은 모델 별칭: '{model}'. 허용 목록: {sorted(models_dict.keys())}"
+                )
+        except Exception:
+            pass
+
+        # Check gpu_layers / n_gpu_layers
+        gpu_layers_val = config.get("n_gpu_layers") if "n_gpu_layers" in config else config.get("gpu_layers")
+        if gpu_layers_val is not None and (not isinstance(gpu_layers_val, int) or gpu_layers_val < 0 or gpu_layers_val > 999):
+            errors.append("gpu_layers(또는 n_gpu_layers)는 0 이상 999 이하의 정수여야 합니다.")
 
         ctx_size = config.get("ctx_size")
         if ctx_size is not None and (not isinstance(ctx_size, int) or ctx_size < 512 or ctx_size > 1010000):
@@ -173,8 +210,11 @@ class LlmInferenceAdapter:
             errors.append(f"지원되지 않는 cache_type_v: '{cache_type_v}'. 허용 값: f16, q8_0, q4_0")
 
         flash_attn = config.get("flash_attn")
+        flash_attn_enabled = config.get("flash_attn_enabled")
         if flash_attn is not None and flash_attn not in {"on", "off", "auto"}:
             errors.append(f"지원되지 않는 flash_attn: '{flash_attn}'. 허용 값: on, off, auto")
+        if flash_attn_enabled is not None and not isinstance(flash_attn_enabled, bool):
+            errors.append("flash_attn_enabled는 boolean 값이어야 합니다.")
 
         spec_type = config.get("spec_type")
         if spec_type is not None and spec_type not in {"none", "ngram-mod"}:
@@ -220,11 +260,51 @@ class LlmInferenceAdapter:
         s = get_settings()
         host_gpu = HostGpu(s)
 
-        # Build start request with allowed parameters
-        req_kwargs: dict[str, Any] = {"model": config["model"]}
+        # Resolve model
+        model = config.get("model")
+        if not model:
+            quant_type = config.get("quant_type")
+            if quant_type == "Q4_K_M":
+                model = "qwen3.5-4b-q4_k_m"
+            elif quant_type in ("Q2_K", "Q2K"):
+                model = "qwen3.8-flash-next-q2k"
+            else:
+                model = "qwen3.5-4b-q4_k_m"
+
+        # Build start request with parameter mappings
+        req_kwargs: dict[str, Any] = {"model": model}
+
+        # Map gpu_layers / n_gpu_layers
+        if "n_gpu_layers" in config:
+            req_kwargs["gpu_layers"] = int(config["n_gpu_layers"])
+        elif "gpu_layers" in config and config["gpu_layers"] is not None:
+            req_kwargs["gpu_layers"] = int(config["gpu_layers"])
+
+        # Map flash attention
+        if "flash_attn_enabled" in config:
+            req_kwargs["flash_attn"] = "on" if config["flash_attn_enabled"] else "off"
+        elif "flash_attn" in config and config["flash_attn"] is not None:
+            req_kwargs["flash_attn"] = config["flash_attn"]
+
+        # Map threads
+        if "threads_batch" in config:
+            req_kwargs["threads"] = int(config["threads_batch"])
+        elif "threads" in config and config["threads"] is not None:
+            req_kwargs["threads"] = int(config["threads"])
+
+        # Map batch sizes
+        if "logical_batch_size" in config:
+            req_kwargs["batch_size"] = int(config["logical_batch_size"])
+        elif "batch_size" in config and config["batch_size"] is not None:
+            req_kwargs["batch_size"] = int(config["batch_size"])
+
+        if "physical_ubatch_size" in config:
+            req_kwargs["ubatch_size"] = int(config["physical_ubatch_size"])
+        elif "ubatch_size" in config and config["ubatch_size"] is not None:
+            req_kwargs["ubatch_size"] = int(config["ubatch_size"])
+
         for key in [
-            "gpu_layers", "cpu_moe", "n_cpu_moe", "ctx_size", "threads",
-            "batch_size", "ubatch_size", "flash_attn", "device", "spec_type",
+            "cpu_moe", "n_cpu_moe", "ctx_size", "device", "spec_type",
             "parallel", "cache_type_k", "cache_type_v", "rope_scaling", "max_seconds"
         ]:
             if key in config and config[key] is not None:
@@ -239,7 +319,6 @@ class LlmInferenceAdapter:
         server_started = False
 
         try:
-            # Check cancellation before start
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
                 return AdapterRunResult(
                     status="cancelled",
@@ -248,11 +327,9 @@ class LlmInferenceAdapter:
                     wall_seconds=time.monotonic() - started_wall,
                 )
 
-            # Start llama-server on host
             await asyncio.to_thread(host_gpu.start, start_req)
             server_started = True
 
-            # Wait for readiness with cancel_event polling
             deadline = time.monotonic() + 45.0
             ready = False
             while time.monotonic() < deadline:
@@ -279,7 +356,6 @@ class LlmInferenceAdapter:
                     wall_seconds=time.monotonic() - started_wall,
                 )
 
-            # Check cancellation before benchmark
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
                 return AdapterRunResult(
                     status="cancelled",
@@ -288,7 +364,6 @@ class LlmInferenceAdapter:
                     wall_seconds=time.monotonic() - started_wall,
                 )
 
-            # Execute bench
             bench_result = await asyncio.to_thread(
                 host_gpu.bench,
                 prompt=bench_prompt,
@@ -302,7 +377,7 @@ class LlmInferenceAdapter:
                 raw_output=bench_result,
                 environment_snapshot={
                     "scope": scope,
-                    "model": config["model"],
+                    "model": model,
                     "execution_path": "host_gpu",
                     "measured_on": "host GPU path outside sandbox",
                 },
@@ -364,8 +439,6 @@ class LlmInferenceAdapter:
                 )
             )
 
-        # Approximate prefill ms (is_proxy=True)
-        # Find first run prompt_tokens and prefill_tps to calculate approx ms
         runs = raw.get("runs") or []
         first_run = runs[0] if runs else {}
         p_tokens = first_run.get("prompt_tokens")
@@ -399,7 +472,6 @@ class LlmInferenceAdapter:
             )
         )
 
-        # Swap peak growth (proxy for memory footprint)
         status = raw.get("status") or {}
         swap = status.get("swap") or {}
         peak_bytes = swap.get("peak_growth_bytes")

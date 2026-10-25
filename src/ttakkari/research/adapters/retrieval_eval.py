@@ -37,6 +37,14 @@ VALID_RETRIEVER_MODES = {
 VALID_CHUNKING_STRATEGIES = {"none", "paragraph", "fixed_window"}
 VALID_RERANK_MODES = {"none", "token_overlap_top_n"}
 
+CHUNKING_MODE_MAP: dict[str, str] = {
+    "fixed_character": "fixed_window",
+    "recursive_sentence": "paragraph",
+    "none": "none",
+    "paragraph": "paragraph",
+    "fixed_window": "fixed_window",
+}
+
 
 def _tokenize(text: str, remove_stopwords: bool = True) -> list[str]:
     """Tokenize Korean/mixed text into alphanumeric words and subwords."""
@@ -102,23 +110,33 @@ class RetrievalEvalAdapter:
     version: str = "1.0.0"
     name_ko: str = "검색 및 RAG 평가 어댑터"
     domains: list[str] = ["rag", "embedding", "reranker"]
+
+    # Explicit whitelist: exactly match methods implemented by this adapter
     supported_methods: list[str] = [
-        "bm25*",
-        "hybrid*",
-        "chunking*",
-        "rerank*",
-        "lexical*",
-        "dense*",
+        "document_chunking_strategy",
+        "hybrid_retrieval",
+        "reciprocal_rank_fusion",
+        "embedding_model_benchmark",
+        "bm25_lexical_retrieval",
     ]
+
+    # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
     supported_parameters: list[str] = [
-        "retriever_mode",
-        "chunking_strategy",
+        # Catalog seed parameter keys (rag_retrieval.json)
+        "chunking_mode",
         "chunk_size",
         "chunk_overlap",
+        "dense_weight",
+        "top_k",
+        "rrf_k",
+        "embedding_model_id",
+        "normalize_embeddings",
+        # Adapter internal parameter keys
+        "retriever_mode",
+        "chunking_strategy",
         "normalize_korean_stopwords",
         "bm25_k1",
         "bm25_b",
-        "rrf_k",
         "hybrid_alpha",
         "rerank_mode",
         "rerank_window",
@@ -145,7 +163,6 @@ class RetrievalEvalAdapter:
             s = get_settings()
             cache_dir = s.models_dir
             if cache_dir and cache_dir.is_dir():
-                # check if e5 model folder exists in cache
                 e5_candidates = list(cache_dir.glob("*multilingual-e5*"))
                 if e5_candidates:
                     e5_ready = True
@@ -167,6 +184,18 @@ class RetrievalEvalAdapter:
     def validate_config(self, config: dict[str, Any], *, scope: str) -> list[str]:
         errors: list[str] = []
 
+        # Check unsupported seed methods/parameters
+        if "reranker_model" in config:
+            errors.append(
+                "신경망 Cross-Encoder 리랭커(bge-reranker-large 등)는 로컬 가중치 미설치로 미지원됩니다 (대체: token_overlap_top_n 또는 none)."
+            )
+        if "hyde_temperature" in config:
+            errors.append("HyDE 가설 문서 생성(hyde_hypothetical_document)은 생성 모델 연계 미지원으로 제외됩니다.")
+        if "colbert_late_interaction" in config or "dim" in config:
+            errors.append("ColBERT 후기 상호작용(colbert_late_interaction) 모델은 로컬 미지원입니다.")
+        if "hnsw_m" in config or "ef_search" in config:
+            errors.append("HNSW 인덱스 구조 튜닝(vector_index_structure_tuning)은 인메모리 평가기에서 미지원됩니다.")
+
         preset_id = config.get("preset_id")
         corpus = config.get("corpus")
         queries = config.get("queries")
@@ -180,16 +209,34 @@ class RetrievalEvalAdapter:
             except FileNotFoundError:
                 errors.append(f"존재하지 않는 프리셋 ID: '{preset_id}'.")
 
-        retriever_mode = config.get("retriever_mode", "bm25")
-        if retriever_mode not in VALID_RETRIEVER_MODES:
-            errors.append(
-                f"지원되지 않는 retriever_mode: '{retriever_mode}'. 허용 값: {sorted(VALID_RETRIEVER_MODES)}"
-            )
+        # Map chunking_mode -> chunking_strategy
+        raw_chunk_mode = config.get("chunking_mode")
+        if raw_chunk_mode:
+            if raw_chunk_mode == "semantic":
+                errors.append(
+                    "의미론적 유사도 분할(semantic)은 임베딩 모델 부하로 미지원됩니다. recursive_sentence 또는 fixed_character를 선택하세요."
+                )
+            elif raw_chunk_mode not in CHUNKING_MODE_MAP:
+                errors.append(f"지원되지 않는 chunking_mode: '{raw_chunk_mode}'.")
 
         chunking_strategy = config.get("chunking_strategy", "none")
-        if chunking_strategy not in VALID_CHUNKING_STRATEGIES:
+        if chunking_strategy not in VALID_CHUNKING_STRATEGIES and not raw_chunk_mode:
             errors.append(
                 f"지원되지 않는 chunking_strategy: '{chunking_strategy}'. 허용 값: {sorted(VALID_CHUNKING_STRATEGIES)}"
+            )
+
+        # Map embedding_model_id
+        emb_id = config.get("embedding_model_id")
+        if emb_id:
+            if emb_id not in ("hash", "hash_embedder", "e5", "multilingual-e5-large", "intfloat/multilingual-e5-large"):
+                errors.append(
+                    f"임베딩 모델 '{emb_id}'의 로컬 가중치가 없습니다. 지원 모델: hash_embedder, multilingual-e5-large"
+                )
+
+        retriever_mode = config.get("retriever_mode", "bm25")
+        if retriever_mode not in VALID_RETRIEVER_MODES and not emb_id and "dense_weight" not in config:
+            errors.append(
+                f"지원되지 않는 retriever_mode: '{retriever_mode}'. 허용 값: {sorted(VALID_RETRIEVER_MODES)}"
             )
 
         rerank_mode = config.get("rerank_mode", "none")
@@ -203,9 +250,10 @@ class RetrievalEvalAdapter:
                     f"지원되지 않는 rerank_mode: '{rerank_mode}'. 허용 값: {sorted(VALID_RERANK_MODES)}"
                 )
 
-        k = config.get("k", 5)
-        if not isinstance(k, int) or k < 1 or k > 50:
-            errors.append("k 파라미터는 1 이상 50 이하의 정수여야 합니다.")
+        # Top k validation
+        k_val = config.get("top_k") if "top_k" in config else config.get("k", 5)
+        if not isinstance(k_val, int) or k_val < 1 or k_val > 50:
+            errors.append("검색 개수(k / top_k)는 1 이상 50 이하의 정수여야 합니다.")
 
         return errors
 
@@ -251,18 +299,40 @@ class RetrievalEvalAdapter:
             queries = config.get("queries", [])
             dataset_name = "custom_corpus"
 
-        retriever_mode = config.get("retriever_mode", "bm25")
-        chunking_strategy = config.get("chunking_strategy", "none")
+        # Parameter Mapping (Seed -> Adapter)
+        # 1. Chunking strategy
+        if "chunking_mode" in config:
+            chunking_strategy = CHUNKING_MODE_MAP.get(config["chunking_mode"], "none")
+        else:
+            chunking_strategy = config.get("chunking_strategy", "none")
+
         chunk_size = int(config.get("chunk_size", 500))
         chunk_overlap = int(config.get("chunk_overlap", 50))
+
+        # 2. Retriever mode and weights
+        if "dense_weight" in config:
+            # hybrid_retrieval method
+            retriever_mode = "hybrid_rrf"
+            dense_weight = float(config["dense_weight"])
+            hybrid_alpha = 1.0 - dense_weight
+        elif "embedding_model_id" in config:
+            emb_id = str(config["embedding_model_id"])
+            retriever_mode = "dense_e5" if "e5" in emb_id.lower() else "dense_hash"
+            hybrid_alpha = 0.5
+        elif "rrf_k" in config:
+            retriever_mode = "hybrid_rrf"
+            hybrid_alpha = 0.5
+        else:
+            retriever_mode = config.get("retriever_mode", "bm25")
+            hybrid_alpha = float(config.get("hybrid_alpha", 0.5))
+
+        rrf_k = int(config.get("rrf_k", 60))
+        k = int(config.get("top_k") if "top_k" in config else config.get("k", 5))
         remove_stopwords = bool(config.get("normalize_korean_stopwords", True))
         bm25_k1 = float(config.get("bm25_k1", 1.2))
         bm25_b = float(config.get("bm25_b", 0.75))
-        rrf_k = int(config.get("rrf_k", 60))
-        hybrid_alpha = float(config.get("hybrid_alpha", 0.5))
         rerank_mode = config.get("rerank_mode", "none")
         rerank_window = int(config.get("rerank_window", 10))
-        k = int(config.get("k", 5))
 
         # Check cancellation
         if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
@@ -314,7 +384,6 @@ class RetrievalEvalAdapter:
                         wall_seconds=time.monotonic() - started_wall,
                     )
             else:
-                # dense_hash or hybrid with HashEmbedder
                 from ttakkari.context.embedder import HashEmbedder
                 embedder = HashEmbedder()
                 texts = [cu["text"] for cu in chunk_units]
@@ -401,7 +470,6 @@ class RetrievalEvalAdapter:
                     doc_scores[did] = max(doc_scores.get(did, -1.0), dense_scores[idx])
 
             elif retriever_mode == "hybrid_rrf":
-                # Rank chunks by BM25 and Dense, then combine ranks with RRF
                 ranked_bm25 = sorted(range(num_docs), key=lambda i: bm25_scores[i], reverse=True)
                 ranked_dense = sorted(range(num_docs), key=lambda i: dense_scores[i], reverse=True)
                 bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(ranked_bm25)}
@@ -416,7 +484,6 @@ class RetrievalEvalAdapter:
                     doc_scores[did] = max(doc_scores.get(did, 0.0), chunk_rrf[idx])
 
             elif retriever_mode == "hybrid_linear":
-                # Min-max normalize bm25 and dense
                 max_b = max(bm25_scores) if bm25_scores else 1.0
                 min_b = min(bm25_scores) if bm25_scores else 0.0
                 range_b = (max_b - min_b) or 1.0
@@ -440,7 +507,6 @@ class RetrievalEvalAdapter:
                 top_n = ranked_docs[:rerank_window]
                 rest = ranked_docs[rerank_window:]
 
-                # Document text map for reranking
                 doc_text_map = {d["id"]: d["text"] for d in corpus}
 
                 def _rerank_score(did: str) -> float:
@@ -536,7 +602,7 @@ class RetrievalEvalAdapter:
             return []
 
         summary = result.raw_output.get("summary", {})
-        k = result.raw_output.get("k", config.get("k", 5))
+        k = result.raw_output.get("k", config.get("top_k") if "top_k" in config else config.get("k", 5))
 
         return [
             MeasurementRecord(

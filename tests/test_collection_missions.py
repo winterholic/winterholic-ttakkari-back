@@ -758,3 +758,127 @@ async def test_mission_sources_and_jobs_cannot_bypass_the_mission_budget(client,
         job = await db.scalar(select(CollectorJob).join(CollectionMissionJob).where(CollectionMissionJob.mission_id == uuid.UUID(mid)))
     assert (await client.post(BASE + f"/sources/{source.id}/run", headers=auth)).status_code == 409
     assert (await client.post(BASE + f"/jobs/{job.id}/retry", headers=auth)).status_code == 409
+
+
+async def test_two_stale_scheduler_ticks_do_not_start_two_runs_when_reconcile_queues_no_job(
+    client, auth, env, monkeypatch,  # noqa: F811
+):
+    from datetime import UTC, datetime, timedelta
+
+    from ttakkari.collector.control_models import CollectorSource
+    from ttakkari.collector.policy import SourcePolicySpec
+    from ttakkari.collector_models import CollectorSourcePolicy
+
+    urls = await _site(client, auth, env, "stale-ticks", pages=1)
+    mid = (await client.post(BASE + "/missions", headers=auth, json={
+        "goal": "동일 시각 중복 scheduler tick", "urls": urls, "max_pages": 1,
+    })).json()["id"]
+    await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+
+    # A revoked store grant makes reconciliation create no child, exposing whether a stale due
+    # candidate is revalidated after it waits for the mission lock.
+    async with sessionmaker()() as db:
+        source = await db.scalar(select(CollectorSource).where(CollectorSource.source_key.like(f"mission:{mid}:%")))
+        current = await db.scalar(select(CollectorSourcePolicy).where(
+            CollectorSourcePolicy.source_key == source.source_key,
+        ).order_by(CollectorSourcePolicy.version.desc()).limit(1))
+        spec = dict(current.spec)
+        spec["permissions"] = {**spec["permissions"], "store": "denied"}
+        parsed = SourcePolicySpec.from_dict(spec)
+        db.add(CollectorSourcePolicy(
+            tenant_id=source.tenant_id, scope=source.scope, source_key=source.source_key,
+            version=current.version + 1, spec=parsed.to_dict(), spec_hash=parsed.spec_hash(),
+        ))
+        source.next_run_at = datetime.now(UTC) - timedelta(seconds=1)
+        await db.commit()
+
+    original_start = missions.start_scheduled_run
+    arrivals = 0
+    both_candidates_read = asyncio.Event()
+
+    async def hold_candidates(db, mission_id, *, now, tenant_id="owner"):
+        nonlocal arrivals
+        arrivals += 1
+        if arrivals == 2:
+            both_candidates_read.set()
+        await asyncio.wait_for(both_candidates_read.wait(), timeout=3)
+        return await original_start(db, mission_id, now=now, tenant_id=tenant_id)
+
+    monkeypatch.setattr(missions, "start_scheduled_run", hold_candidates)
+    now = datetime.now(UTC)
+
+    async def reconcile():
+        async with sessionmaker()() as db:
+            mission = await db.get(CollectionMission, uuid.UUID(mid))
+            await missions.reconcile_mission(db, mission)
+            await db.commit()
+
+    ticks = await asyncio.wait_for(asyncio.gather(
+        missions.schedule_due_runs(now=now), missions.schedule_due_runs(now=now), reconcile(),
+    ), timeout=5)
+    async with sessionmaker()() as db:
+        mission = await db.get(CollectionMission, uuid.UUID(mid))
+        run_jobs = list(await db.scalars(select(CollectionMissionJob).where(
+            CollectionMissionJob.mission_id == mission.id,
+            CollectionMissionJob.run_seq == 2,
+        )))
+    assert sum(ticks[:2]) == 1
+    assert mission.current_run_seq == 2
+    assert run_jobs == []
+
+
+async def test_scheduler_and_reconcile_race_keep_one_run_child_within_budget(client, auth, env, monkeypatch):  # noqa: F811
+    from datetime import UTC, datetime, timedelta
+
+    from ttakkari.collector.control_models import CollectorSource
+
+    urls = await _site(client, auth, env, "scheduler-reconcile-race", pages=2, max_pages_per_job=1)
+    mid = uuid.UUID((await client.post(BASE + "/missions", headers=auth, json={
+        "goal": "scheduler와 reconcile 경합", "urls": [urls[0]], "max_pages": 3,
+    })).json()["id"])
+    await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 15})
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+
+    now = datetime.now(UTC)
+    async with sessionmaker()() as db:
+        source = await db.scalar(select(CollectorSource).where(
+            CollectorSource.source_key.like(f"mission:{mid}:%")))
+        source.next_run_at = now - timedelta(seconds=1)
+        await db.commit()
+
+    original_start = missions.start_scheduled_run
+    tick_has_due_candidate = asyncio.Event()
+    reconcile_ready = asyncio.Event()
+
+    async def gate_start(db, mission_id, *, now, tenant_id="owner"):
+        tick_has_due_candidate.set()
+        await asyncio.wait_for(reconcile_ready.wait(), timeout=3)
+        return await original_start(db, mission_id, now=now, tenant_id=tenant_id)
+
+    monkeypatch.setattr(missions, "start_scheduled_run", gate_start)
+
+    async def reconcile():
+        async with sessionmaker()() as db:
+            await asyncio.wait_for(tick_has_due_candidate.wait(), timeout=3)
+            mission = await db.get(CollectionMission, mid)
+            reconcile_ready.set()
+            await missions.reconcile_mission(db, mission)
+            await db.commit()
+
+    results = await asyncio.wait_for(asyncio.gather(missions.schedule_due_runs(now=now), reconcile()), timeout=5)
+    async with sessionmaker()() as db:
+        mission = await db.get(CollectionMission, mid)
+        rows = (await db.execute(select(CollectorJob, CollectionMissionJob.run_seq).join(
+            CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id,
+        ).where(CollectionMissionJob.mission_id == mid))).all()
+        run2 = await db.get(missions.CollectionMissionRun, (mid, 2))
+    run2_jobs = [(job, seq) for job, seq in rows if seq == 2]
+    allocated = sum((job.cursor or {}).get("processed", 0) if job.status in missions.TERMINAL else
+                    job.envelope["extensions"]["collector:request"]["max_pages"] for job, _ in run2_jobs)
+    assert results[0] == 1
+    assert mission.current_run_seq == 2
+    assert len(run2_jobs) == 1
+    assert all(seq == 2 for _, seq in run2_jobs)
+    assert allocated <= run2.page_budget + run2.extra_pages == 3

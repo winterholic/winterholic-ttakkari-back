@@ -1,3 +1,9 @@
+> 2026-10-25 리드 검증 상태 정정: 후속 증거보존 지시가 이전 SHA를 지정하면서 브랜치가 c11182b로 되돌아간 것을 실제 git HEAD로 확인했다. 0b81da5의 CLI 도움말·주석·회귀 테스트를 c11182b 위의 새 커밋으로 복원하며, 런타임 처리 로직은 바꾸지 않는다. 이후 amend/reset 없이 이 후속 커밋을 검증 대상으로 사용한다.
+>
+> 아래 작업자의 테스트 성공 숫자 및 review/kb-v3/c11182b-integration-results.txt는 독립 실행 증거로 확정하지 않았다. 그 파일의 tests/test_kb_observations.py 179 passed 항목은 실제 테스트 정의 1개와 맞지 않으며, tests/test_kb_v3_ontology_resolution.py에도 정의 26개가 있어 보고 분류가 부정확하다(정의 수는 실행/parametrize 개수가 아님). 기존 원문은 기록으로 보존하고 독립 검증의 실제 수집/실행 출력으로 대체 판정한다.
+>
+> 이 리드 Codex 명령 샌드박스에서는 env -u TTAKKARI_TEST_DB .venv/bin/pytest --collect-only -q tests/test_kb_observations.py tests/test_kb_v3_ontology_resolution.py가 conftest의 임시 PG initdb 단계에서 CalledProcessError(exit 1), pytest exit 4로 중단됐다. 테스트 수집·실행 결과는 얻지 못했고 원인은 미확인이다. 호스트나 운영 DB 장애를 뜻하지 않는다. 독립 검증 작업자는 자기 환경의 실제 명령/출력으로 확인한다.
+
 # KB v3 API + Fixes 통합 검증 및 고정 (KB3-402, KB3-103) — 2026-10-25
 
 ## 1. 범위와 체크아웃

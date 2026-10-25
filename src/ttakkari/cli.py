@@ -631,7 +631,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=None, help="이번 실행에서 살펴볼 문서 최대 수")
     p.add_argument("--resume", default=None, metavar="RUN_ID", help="이전 실행의 run id 로 같은 보고서에 이어 쓴다(상태는 DB 에서 다시 계산하므로 같은 명령 재실행으로도 이어진다)")
     p.add_argument("--report-dir", default=None, help="progress.jsonl/state.json 을 둘 디렉터리(기본: 데이터 폴더/backfill)")
-    p.add_argument("--classify-legacy", action="store_true", help="접근 행이 없는 레거시 문서를 현재 노출 그대로 personal/global 로 명시하고 처리(기본은 건너뛰고 보고)")
+    p.add_argument("--classify-legacy", action="store_true", help="접근 행이 없는 레거시 문서를 안전 규칙(미상은 work_only 격리, 근거 있는 분류만 personal 허용)에 따라 접근 행을 생성하고 처리(미상자료 공개 승인이 아님, 기본은 건너뛰고 보고)")
     p.add_argument("--include-hidden", action="store_true", help="수집 정책 철회로 숨겨진 문서도 처리(기본은 건너뜀)")
     p.add_argument("--pause", type=float, default=0.0, help="묶음 사이 대기 초")
     p.add_argument("--rollback", default=None, metavar="RUN_ID|all", help="백필이 쌓은 리비전을 이전 리비전으로 되돌린다(--apply 없으면 계획만)")

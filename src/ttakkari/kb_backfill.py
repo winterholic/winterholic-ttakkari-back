@@ -169,7 +169,10 @@ async def classify(db: AsyncSession, doc: KbDocument, *, classify_legacy: bool, 
     if access is not None and access.hidden and not include_hidden:
         return Plan(doc.id, doc.title, SKIP_HIDDEN, "hidden_by_collection_policy")
     if access is None and not classify_legacy:
-        # 접근 행이 없는 문서는 work_only 취급된다. 백필 계획에서 처리하려면 --classify-legacy 로 안전하게 분류하거나 사전에 kb-backfill-access 를 실행해야 한다.
+        # 접근 행이 없는 문서는 work_only 로 취급된다(알 수 없으면 fail-closed 격리).
+        # 백필 계획에서 처리하려면 --classify-legacy 로 안전 규칙(kb_access_backfill.classify)에 따라 분류하거나
+        # 사전에 ttakkari kb-backfill-access 를 실행해야 한다.
+        # --classify-legacy 는 미상자료 공개 승인이 아니며, 출처 근거가 없는 문서는 절대 personal/global 로 올리지 않는다.
         return Plan(doc.id, doc.title, SKIP_UNCLASSIFIED, "no_access_row_needs_classify_legacy_decision")
     rev = await _latest_revision(db, doc.id)
     if rev is None:
@@ -283,7 +286,9 @@ async def apply_plan(db: AsyncSession, plan: Plan, run_id: str, *, classify_lega
     doc = await db.get(KbDocument, plan.document_id)
     prev = await db.get(KbRevision, plan.revision_id)
     if classify_legacy and await db.get(KbDocumentAccess, doc.id) is None:
-        # 접근 행이 없는 문서는 안전 규칙에 따라 분류한다 (알 수 없으면 work_only, 근거 있는 분류만 personal).
+        # 접근 행이 없는 문서는 안전 규칙(kb_access_backfill.classify)에 따라 분류한다.
+        # --classify-legacy 는 미상자료 공개 승인이 아니다: 출처 근거(research personal, collector personal)가
+        # 확인된 경우에만 personal/global 로 허용하고, 알 수 없으면 work(work_only)로 격리하여 회사 자료 노출 확대를 방지한다.
         from ttakkari.kb_access_backfill import classify as classify_access
         source = await db.get(KbSource, prev.source_id) if prev else None
         scope, _rule = classify_access(doc.doc_key, source.origin_meta if source else None)

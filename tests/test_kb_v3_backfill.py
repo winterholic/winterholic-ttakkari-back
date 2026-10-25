@@ -21,6 +21,7 @@ from test_kb_v3_integration_flow import (  # noqa: F401 - _env 는 autouse 픽�
 
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
 from ttakkari.db import sessionmaker
+from ttakkari.kb_access import create_personal_agent_context, create_work_agent_context
 from ttakkari.kb_backfill import (
     BACKFILL_PARSER_VERSION,
     ENQUEUE_ONLY,
@@ -38,6 +39,8 @@ from ttakkari.kb_models import KbDocument, KbPassage, KbRevision
 from ttakkari.kb_ontology_models import KbAssertion, KbEntity
 from ttakkari.kb_pipeline import enqueue_pipeline_job
 from ttakkari.kb_pipeline_models import KbPipelineJob
+from ttakkari.kb_retrieval import search
+from ttakkari.kb_v3_ontology_views import search_entities
 from ttakkari.kb_store import ingest_source, segment_revision, sha256_hex
 from ttakkari.models import utcnow
 
@@ -272,6 +275,66 @@ async def test_classify_legacy_does_not_expose_unprovenanced_documents(tmp_path)
         acc_col_p = await db.get(KbDocumentAccess, res_col_p.document_id)
         assert (acc_col_p.scope, acc_col_p.origin_scope, acc_col_p.visibility) == ("personal", "personal", "global"), \
             "collector personal 은 personal/global 로 허용된다"
+
+
+async def test_classify_legacy_dry_run_apply_idempotent_and_personal_isolation(tmp_path):
+    """--classify-legacy 가 dry-run, apply, 2회차 멱등성을 보장하고,
+    미상 문서와 파생 엔터티가 personal 검색에 절대 노출되지 않음을 증명한다.
+    """
+    secret_text = "# 기밀 프로젝트 알파\n\n알파프로젝트(AlphaProject)는 회사의 극비 신규 프로젝트이다.\n\n알파프로젝트는 내부 보안망에서만 동작한다."
+    async with sessionmaker()() as db:
+        # 접근 행이 없는 과거 미상 문서 (출처 근거 없음)
+        res = await _legacy_doc(
+            db, "upload:unclassified_secret", secret_text, kind="upload",
+            access=False, observe=False, passages="paragraphs",
+        )
+        await db.commit()
+
+    # 1. dry-run: DB 쓰기 0건
+    before = await _snapshot()
+    dry = await _run(apply=False, classify_legacy=True, report_dir=tmp_path)
+    assert dry.by_action[SKIP_UNCLASSIFIED] == 0
+    assert await _snapshot() == before, "dry-run 은 아무것도 쓰지 않는다"
+
+    # 2. apply: 미상 문서는 work_only 로 격리되어 처리됨
+    applied = await _run(apply=True, classify_legacy=True, report_dir=tmp_path)
+    assert applied.by_action[SKIP_UNCLASSIFIED] == 0
+    after_apply = await _snapshot()
+
+    async with sessionmaker()() as db:
+        access = await db.get(KbDocumentAccess, res.document_id)
+        assert access is not None
+        assert (access.scope, access.origin_scope, access.visibility) == ("work", "work", "work_only"), \
+            "미상 문서는 노출 확대 없이 work_only 로 fail-closed 격리된다"
+
+    # 3. 2회차 apply: 멱등성 (행 변화 0)
+    second = await _run(apply=True, classify_legacy=True, report_dir=tmp_path)
+    assert await _snapshot() == after_apply, "두 번째 apply 는 멱등하여 행을 추가하지 않는다"
+
+    # 4. 파이프라인 drain: 작업 처리 및 파생 지식 추출
+    await _drain(_worker())
+
+    # 5. personal 검색 / 파생 엔터티 비노출 검증
+    personal_ctx = create_personal_agent_context()
+    work_ctx = create_work_agent_context()
+
+    async with sessionmaker()() as db:
+        # (1) 검색 패시지: personal 컨텍스트에서는 검색 0건
+        p_res = await search(db, query="알파프로젝트", access_context=personal_ctx, mode="lexical")
+        assert len(p_res["items"]) == 0, "personal 검색에서 work_only 미상 문서 패시지가 비노출되어야 한다"
+
+        # (2) 검색 패시지: work 컨텍스트에서는 정상 조회
+        w_res = await search(db, query="알파프로젝트", access_context=work_ctx, mode="lexical")
+        assert len(w_res["items"]) > 0, "work 검색에서는 work_only 문서가 정상 조회된다"
+
+        # (3) 파생 엔터티: personal 컨텍스트 엔터티 검색에서 비노출
+        p_ents = await search_entities(db, personal_ctx, "알파프로젝트", domain=None, limit=10)
+        assert len(p_ents) == 0, "personal 컨텍스트에서 work_only 파생 엔터티가 비노출되어야 한다"
+
+        # (4) 파생 엔터티: work 컨텍스트에서는 정상 조회
+        w_ents = await search_entities(db, work_ctx, "알파프로젝트", domain=None, limit=10)
+        assert len(w_ents) > 0, "work 컨텍스트에서는 파생 엔터티가 정상 조회된다"
+        assert w_ents[0].visibility == "work_only", "파생 엔터티의 가시성도 work_only 로 보존된다"
 
 
 async def test_limit_resume_and_stop_event_continue_where_they_left_off(corpus, tmp_path):

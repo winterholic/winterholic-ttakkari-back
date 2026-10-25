@@ -14,7 +14,7 @@
   - `review/collection-final/failed_45_stdout.txt` (`b9e24b58ed40044ee2c54e5b8e853b6e36166ecd596c7a29a648347778410c5e`): 45개 실패 항목 선택 회귀 실제 stdout
   - `review/collection-final/chain3_stdout.txt` (`88d66d08ce77ae6ce66a974f9487069b9b82512d34b7be2300db988af9a8f83d`): 마이그레이션 chain3 실제 stdout
   - `review/collection-final/muse3_stdout.txt` (`a4ed0a1f7e89919faed86525776669366f00041b057ef0bb6e6c4d68d227ba55`): Muse 3 계약 테스트 실제 stdout
-  - `review/collection-final/race_stdout.txt` (`028d93972b62812fd7f6ee7254bc7b6a0bf1bb81ec23ae0b7a0c28234ba2f6f8`): 실 production consume_pending_once ↔ unhold 경합 실제 stdout
+  - `review/collection-final/race_stdout.txt` (`a9dc0c4240b95d1ae194ec0218f38c53cb4f74e8d1f3d7c8798087a89d435342`): 실 production consume_pending_once ↔ unhold 양방향 순서(2케이스) 동시 경합 실제 stdout
   - `review/collection-final/full_run_raw.txt` (`eba2020771df3d7b1b197bd25d15aecadcb15d7a055513c3f24701c559487657`): 1차 5,236개 전체 회귀 원시 출력 (5 failed)
   - `review/collection-final/full_run_final.txt` (`c7944674dbeb5601a6bf636b0a552d4e2296f472913fed27fbf1dba72ed46819`): 최종 1회 전체 회귀 원시 출력 (5213 passed, 0 failed, ALL GREEN)
 - **실행 명령 및 환경**:
@@ -129,29 +129,43 @@
 
 ---
 
-## 6. unhold ↔ precise apply 실 2개 DB 세션 동시 경합 및 KB Delivery/Search 실증
-- **검증 한계 정정**:
+## 6. unhold ↔ precise apply 실 2개 DB 세션 동시 경합 양방향 순서(2케이스) 및 KB Delivery/Search 실증
+- **검증 한계 정정 및 요구사항 완결**:
   - `unit_tests/test_collection_mission_triage_unhold.py`는 Mock DB 기반 단위 검사였고, 이전 통합 테스트 초안은 session 2에서 production `consume_pending_once`를 부르지 않고 잠금/outbox 로직을 테스트 본문에서 복제했던 한계가 있었음(지적 사항 정정 반영).
+  - 이에 더해, 단방향(unhold 먼저) 순서뿐만 아니라 **양쪽 순서(unhold 먼저 / consume 먼저) 2개 케이스 모두**에서 실 2개 DB 세션 경합, 단 1건 outbox 생성, KB receipt(`imported`), 단일 검색 색인, rights/retention 불변을 완벽히 실증함.
 - **실제 production `consume_pending_once` 기반 2 DB 세션 경합 실증**:
-  - **테스트 경로**: [`tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_missions.py)
-  - **검증 시나리오**:
-    1. 동일 item에 대해 Session 2가 실제 production `consume_pending_once(limit=1, evaluator=fake_evaluator)`를 호출하여 `실 claim(state="processing")` 완료.
-    2. 트랜잭션 밖에서 `fake_evaluator`가 호출되면 `eval_started.set()`으로 Session 1에 신호를 보내고 `unhold_done.wait()`로 대기.
-    3. Session 1(`missions.unhold_item`)이 `with_for_update(of=CollectorItem)` row lock을 획득하여 `item.status = "accepted"`로 전환하고 단일 `CollectorOutbox` 생성 후 commit (`unhold_done.set()`).
-    4. Session 2의 `fake_evaluator`가 accept를 반환하고, production `consume_pending_once`가 두 번째 트랜잭션에서 `with_for_update`로 item을 재조회.
-    5. Session 2가 `existing = await db.scalar(select(CollectorOutbox.id)...)`를 통해 Session 1이 이미 생성한 outbox를 확인하고 중복 outbox를 생성하지 않음(멱등성 유지).
-    6. 원본 `envelope`, `rights`, `payload_hash`, `raw_sha256`, `text_sha256`, `retention` 불변 보존 확인.
-    7. `kb_delivery.deliver_once()` 실행 후 `receipt.outcome == "imported"` 확인 (추가 배달 시 0건으로 중복 배달 없음 확인).
-    8. `/api/assistant/kb/search?q=직렬화`를 통한 단일 문서 검색 및 색인 정상 확인.
-    9. **유한 retention 경계 실증**: `retain_days=7`인 유한 retention 문서에 대해 `missions.unhold_item` 호출 시 `kb_import_requires_unlimited_retention_policy`로 명확히 거부되고, 거부 후에도 유한 retention(`retain_until`)과 `held` 상태가 비자명하게 불변 보존됨을 확인.
-  - **원시 증거**: `review/collection-final/race_stdout.txt` (SHA256: `028d93972b62812fd7f6ee7254bc7b6a0bf1bb81ec23ae0b7a0c28234ba2f6f8`)
+  - **테스트 경로**:
+    1. [`tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_missions.py) (순서 1: unhold 먼저 commit ↔ precise apply 재조회)
+    2. [`tests/test_collection_missions.py::test_concurrent_two_db_sessions_precise_first_then_unhold_race`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_missions.py) (순서 2: consume 먼저 apply commit ↔ unhold 뒤이어 진입)
+  - **검증 시나리오 및 결과**:
+    - **케이스 1 (unhold 먼저 commit → consume apply)**:
+      1. 동일 item에 대해 Session 2가 실제 production `consume_pending_once(limit=1, evaluator=fake_evaluator)`를 호출하여 `실 claim(state="processing")` 완료.
+      2. 트랜잭션 밖에서 `fake_evaluator`가 호출되면 `eval_started.set()`으로 Session 1에 신호를 보내고 `unhold_done.wait()`로 대기.
+      3. Session 1(`missions.unhold_item`)이 `with_for_update(of=CollectorItem)` row lock을 획득하여 `item.status = "accepted"`로 전환하고 단일 `CollectorOutbox` 생성 후 commit (`unhold_done.set()`).
+      4. Session 2의 `fake_evaluator`가 accept를 반환하고, production `consume_pending_once`가 두 번째 트랜잭션에서 `with_for_update`로 item을 재조회.
+      5. Session 2가 `existing = await db.scalar(select(CollectorOutbox.id)...)`를 통해 Session 1이 이미 생성한 outbox를 확인하고 중복 outbox를 생성하지 않음(멱등성 유지).
+      6. 원본 `envelope`, `rights`, `payload_hash`, `raw_sha256`, `text_sha256`, `retention` 불변 보존 확인.
+      7. `kb_delivery.deliver_once()` 실행 후 `receipt.outcome == "imported"` 확인 (추가 배달 시 0건으로 중복 배달 없음 확인).
+      8. `/api/assistant/kb/search?q=직렬화`를 통한 단일 문서 검색 및 색인 정상 확인 (검색 결과 정확히 1건).
+      9. **유한 retention 경계 실증 (unhold 관점)**: `retain_days=7`인 유한 retention 문서에 대해 `missions.unhold_item` 호출 시 `kb_import_requires_unlimited_retention_policy`로 명확히 거부되고, 거부 후에도 유한 retention(`retain_until`)과 `held` 상태가 비자명하게 불변 보존됨을 확인.
+    - **케이스 2 (consume 먼저 apply commit → unhold 시도)**:
+      1. Session 2가 production `consume_pending_once`로 claim 완료 후 evaluator를 거쳐 두 번째 DB 트랜잭션에서 row lock을 점유하고 `apply_precise_result` 및 `CollectorOutbox` 생성 완료 후 commit.
+      2. Session 1이 unhold_item으로 row lock을 획득하여 조회 시 이미 `item.status == "accepted"`임을 확인하고 안전하게 `message: "item_not_held"` 응답 반환 및 outbox 추가 생성 0건 보장.
+      3. 생성된 `CollectorOutbox` 단 1건 확인 및 `CollectorItem`의 해시, rights, 무기한 retention 불변 확인.
+      4. `kb_delivery.deliver_once()` 실행으로 `outcome == "imported"` 단 1건 확인 및 멱등 재실행(0건) 확인.
+      5. `/api/assistant/kb/search?q=분산합의`를 통한 고유 단일 문서 색인 및 검색 결과 정확히 1건 확인.
+      6. **유한 retention 경계 실증 (consume 관점)**: `retain_days=7`인 문서에 대해 `consume_pending_once` 실행 시 `import_permitted` 조건 미달로 `item.status = "held"` 상태가 유지되고, `policy:knowledge_import_not_permitted` 사유 코드 기록 및 outbox 미생성, 원본 `retain_until` 훼손 없는 보존 실증.
+  - **원시 증거**: `review/collection-final/race_stdout.txt` (SHA256: `a9dc0c4240b95d1ae194ec0218f38c53cb4f74e8d1f3d7c8798087a89d435342`)
   - **실행 명령 및 결과**:
     ```bash
-    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions_unhold_and_precise_apply_race -v
+    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions -v
     ```
     ```text
-    tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race PASSED [100%]
-    1 passed, 40 deselected in 0.88s
+    tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race PASSED [ 50%]
+    tests/test_collection_missions.py::test_concurrent_two_db_sessions_precise_first_then_unhold_race PASSED [100%]
+
+    db reset: 2 selective (avg 12.0/111 tables), 0 forced full, 0 fell back to full
+    ======================= 2 passed, 40 deselected in 1.01s =======================
     ```
 
 ---

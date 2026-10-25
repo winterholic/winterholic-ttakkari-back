@@ -134,9 +134,21 @@ async def test_topic_mission_searches_in_worker_and_acquires_discovered_sources(
     assert detail["plan"]["search_history"][-1]["new_sources"] == 0
 
 
-async def _make_held_mission(client, auth, fixture_env, *, path: str = "/held-document", source_key: str = "postgres-docs", knowledge_permission="allowed", retain_days=None):
+async def _make_held_mission(
+    client,
+    auth,
+    fixture_env,
+    *,
+    path: str = "/held-document",
+    source_key: str = "postgres-docs",
+    knowledge_permission="allowed",
+    retain_days=None,
+    title: str = "직렬화 설계",
+    body_text: str | None = None,
+):
     url = fixture_env.server.url(path)
-    fixture_env.server.page(path, article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
+    text = body_text or (prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다.")
+    fixture_env.server.page(path, article_html(title, [text]))
     body = source_body(source_key=source_key, seeds=[url], max_pages=1)
     body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[fixture_env.server.port], min_delay_seconds=0)
     body["policy"]["permissions"]["knowledge"] = knowledge_permission
@@ -383,6 +395,155 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
         refreshed = await db_finite.get(CollectorItem, finite_item_id)
         assert refreshed.status == "held"
         assert refreshed.envelope["rights"]["retain_until"] == orig_retain_until
+
+
+async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client, auth, env, monkeypatch):  # noqa: F811
+    """실 2개 DB 세션 경합 시 production consume_pending_once가 먼저 commit(apply_precise_result 및 outbox 등록)되고
+    missions.unhold_item이 뒤이어 실행되는 순서 2에서 상호 배제 및 멱등 outbox 등록,
+    단 1건의 knowledge outbox -> receipt/search 전달 및 원본 hash/rights/retention 보존을 검증한다."""
+    import copy
+
+    from ttakkari.collector import precise_eval
+
+    # 1. 고유 키워드 "분산합의"를 포함하는 held 상태의 아이템 생성
+    _, mission, item = await _make_held_mission(
+        client,
+        auth,
+        env,
+        path="/held-precise-first",
+        source_key="postgres-docs-precise-first",
+        title="분산합의 설계",
+        body_text=prose("ko", 35, 12) + " 분산합의 팍소스 트랜잭션 설계 근거를 설명한다.",
+    )
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    item_id = uuid.UUID(item["id"])
+    mission_id = uuid.UUID(mission["id"])
+
+    # item이 production consume_pending_once의 후보로 claim되도록 precise_eval 상태를 pending으로 설정
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        signals = dict(row.signals or {})
+        triage = dict(signals.get("triage") or {})
+        triage["precise_eval"] = {"state": "pending", "needed": True}
+        signals["triage"] = triage
+        row.signals = signals
+        await db.commit()
+
+        orig_env = copy.deepcopy(row.envelope)
+        orig_payload_hash = row.payload_hash
+        orig_raw_sha256 = row.raw_sha256
+        orig_text_sha256 = row.text_sha256
+        orig_rights = copy.deepcopy(row.envelope.get("rights"))
+        envelope_id = row.envelope_id
+
+    # [순서 2 실증]: Session 2가 consume_pending_once로 먼저 claim 및 apply 완료 -> Session 1이 unhold_item 시도
+    eval_started = asyncio.Event()
+
+    async def fake_evaluator(*, goal, title, text, request_key, job_id):
+        eval_started.set()  # Session 2: claim 완료 후 평가 진입 신호
+        return {
+            "topic_relevance": 0.92,
+            "relevance_explanation": "분산합의 팍소스 트랜잭션 설계 목표와 부합함",
+            "information_depth": 0.95,
+            "low_quality_signals": ["none"],
+            "recommendation": "accept",
+            "confidence": 0.98,
+        }
+
+    # 세션 1 워커: Session 2가 apply 트랜잭션에 진입한 후 경합하며 unhold_item 호출
+    async def session1_unhold_worker():
+        await eval_started.wait()
+        # Session 2가 evaluator를 마치고 두 번째 DB 트랜잭션(with_for_update)에 먼저 진입하도록 미세 대기
+        await asyncio.sleep(0.02)
+        async with sessionmaker()() as db1:
+            res = await missions.unhold_item(db1, mission_id, item_id)
+            await db1.commit()
+        return res
+
+    # 세션 2 워커: 실제 production consume_pending_once 실행
+    async def session2_precise_worker():
+        return await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
+
+    # 2개 독립 세션을 비동기로 동시 경합 실행
+    res1, res2 = await asyncio.gather(session1_unhold_worker(), session2_precise_worker())
+    assert res2 == 1  # Session 2가 1개 item 정상 소비 완결
+    # Session 1은 이미 accepted 상태로 변경되었음을 확인하여 안전하게 item_not_held 응답 반환
+    assert res1.get("status") == "accepted"
+    assert res1.get("message") == "item_not_held"
+
+    # 1. 중복 없는 knowledge outbox 확인 (정확히 단 1건)
+    async with sessionmaker()() as db:
+        outboxes = (await db.scalars(select(CollectorOutbox).where(
+            CollectorOutbox.envelope_id == envelope_id,
+            CollectorOutbox.sink == "knowledge"
+        ))).all()
+        assert len(outboxes) == 1
+
+        # 2. CollectorItem 원본 해시, rights, retention 불변 검증
+        final_item = await db.get(CollectorItem, item_id)
+        assert final_item.status == "accepted"
+        assert final_item.envelope == orig_env
+        assert final_item.payload_hash == orig_payload_hash
+        assert final_item.raw_sha256 == orig_raw_sha256
+        assert final_item.text_sha256 == orig_text_sha256
+        assert final_item.envelope.get("rights") == orig_rights
+        assert final_item.envelope.get("rights", {}).get("retain_until") is None
+
+    # 3. KB delivery 실행 및 단 1건 imported receipt 확인
+    delivered = await kb_delivery.deliver_once()
+    assert delivered == 1
+    # 추가 배달 시도 시 0건 (중복 배달 없음)
+    assert await kb_delivery.deliver_once() == 0
+
+    async with sessionmaker()() as db:
+        receipt = await db.get(CollectorDelivery, outboxes[0].id)
+        assert receipt is not None
+        assert receipt.outcome == "imported"
+
+    # 4. KB 검색을 통해 중복 없이 1건 정상 색인/검색 확인
+    hits = (await client.get("/api/assistant/kb/search?q=분산합의", headers=auth)).json()["items"]
+    assert len(hits) == 1
+
+    # [유한 retention 경계 실증 - consume_pending_once 관점]: 유한 retention 문서의 import 차단 및 불변 보존
+    _, finite_mission, finite_item = await _make_held_mission(
+        client,
+        auth,
+        env,
+        path="/held-precise-finite",
+        source_key="postgres-docs-precise-finite",
+        retain_days=7,
+        title="유한보존 합의 문서",
+        body_text=prose("ko", 35, 12) + " 유한 보존 정책이 적용된 합의 문서 내용이다.",
+    )
+    finite_item_id = uuid.UUID(finite_item["id"])
+
+    async with sessionmaker()() as db_finite:
+        row_finite = await db_finite.get(CollectorItem, finite_item_id)
+        assert row_finite.envelope.get("rights", {}).get("retain_until") is not None
+        orig_retain_until = row_finite.envelope["rights"]["retain_until"]
+        signals = dict(row_finite.signals or {})
+        triage = dict(signals.get("triage") or {})
+        triage["precise_eval"] = {"state": "pending", "needed": True}
+        signals["triage"] = triage
+        row_finite.signals = signals
+        await db_finite.commit()
+
+    # consume_pending_once 실행 시 유한 retention 문서는 evaluate 후 import_permitted 조건 미달로 held 유지됨
+    consumed_finite = await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
+    assert consumed_finite == 1
+
+    async with sessionmaker()() as db_finite:
+        refreshed = await db_finite.get(CollectorItem, finite_item_id)
+        assert refreshed.status == "held"
+        assert refreshed.envelope["rights"]["retain_until"] == orig_retain_until
+        assert "policy:knowledge_import_not_permitted" in (refreshed.reason_codes or [])
+        finite_outbox = await db_finite.scalar(
+            select(CollectorOutbox).where(
+                CollectorOutbox.envelope_id == refreshed.envelope_id,
+                CollectorOutbox.sink == "knowledge",
+            )
+        )
+        assert finite_outbox is None
 
 
 

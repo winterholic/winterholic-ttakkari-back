@@ -159,9 +159,46 @@
     uv run pytest tests/test_collection_render.py -k test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_subsequent_pages
     ```
     ```text
-    tests/test_collection_render.py .                                        [100%]
-    1 passed, 9 deselected in 0.08s
+---
+
+## 8. Redirect 매 Hop 단위 robots.txt 및 Pacing 검사 실증 (77a 피드백 반영)
+- **원인 규명**:
+  - `PoliteFetcher.fetch`가 최초 URL에 대해서만 robots.txt를 검사하고, `SafeFetcher._fetch`가 redirect를 따라갈 때 호출하는 `before_request(hop)` 콜백에서는 pacing 대기만 수행하여, `/ok` → `/blocked` redirect 시 `/blocked` 대상 실제 GET 요청이 나가는 결함 확인.
+- **교정 내역**:
+  - [`src/ttakkari/collector/polite.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/collector/polite.py)의 `pace(hop)` 콜백 내에서 `policy.robots_required`일 경우 매 hop마다 `_rules(hop, policy)`를 조회하여 `rules.allowed(hop.target)` 및 hop origin의 cooldown, crawl-delay를 검사하도록 수정.
+- **검증 결과 (3개 신규 테스트 전건 통과)**:
+  - **테스트 경로**: [`tests/test_collector_fetch.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collector_fetch.py)
+    1. `test_robots_disallow_on_redirect_hop_blocks_destination_get`: robots disallow 경로로의 redirect 시 목적지 GET 실행 차단 및 `PolicyBlocked("robots_disallowed")` 발생 실증.
+    2. `test_allowed_redirect_hop_succeeds_with_robots`: 허용된 redirect 목적지는 정상 200 수집 성공 실증.
+    3. `test_redirect_to_different_allowed_origin_enforces_destination_robots`: 다른 허용된 origin으로 redirect 시 목적지 origin의 robots.txt 규정 정당 검사 실증.
+  - **실행 명령 및 결과**:
+    ```bash
+    uv run pytest tests/test_collector_fetch.py -k "test_robots_disallow_on_redirect_hop_blocks_destination_get or test_allowed_redirect_hop_succeeds_with_robots or test_redirect_to_different_allowed_origin_enforces_destination_robots"
     ```
+    ```text
+    tests/test_collector_fetch.py ...                                        [100%]
+    3 passed, 72 deselected in 0.55s
+    ```
+
+---
+
+## 9. Policy-only Public Helper의 Owned Policy-aware Client 보장
+- **원인 규명**:
+  - `render.default_fetch`에서 `polite`가 전달되지 않고 `policy`만 전달된 경우, 기존 코드가 `SafeFetcher`에 `host_check`만 넘겨 robots/pacing이 실행되지 않는 계약 불일치 확인.
+- **교정 내역**:
+  - `polite=None`이더라도 `policy`가 존재하면 [`src/ttakkari/collector/render.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/collector/render.py)가 자체 `owned_fetcher`와 `MemoryHostState` 기반 `PoliteFetcher`를 구성하여 항상 robots/pacing을 수행하도록 보장.
+  - 자신이 생성한 owned client는 closer 호출 시 `owned_fetcher.aclose`로 정상 clean up되도록 소유권 분리.
+- **검증 결과**:
+  - **테스트 경로**: [`tests/test_collection_render.py::test_default_fetch_without_polite_uses_owned_policy_aware_client_and_closes`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_render.py)
+  - **실행 명령 및 결과**:
+    ```bash
+    uv run pytest tests/test_collection_render.py -k test_default_fetch_without_polite_uses_owned_policy_aware_client_and_closes
+    ```
+    ```text
+    tests/test_collection_render.py .                                        [100%]
+    1 passed, 10 deselected in 0.08s
+    ```
+
 
 
 

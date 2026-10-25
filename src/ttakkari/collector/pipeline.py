@@ -47,7 +47,11 @@ from ttakkari.collector.contracts import (
 )
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.jobs import ClaimedJob, OutboxItem
-from ttakkari.collector.library import in_library
+from ttakkari.collector.library import effective_pool, in_library
+
+
+def _job_pool(job: Any) -> str:
+    return effective_pool(getattr(job, "pool", None), getattr(job, "scope", None))
 from ttakkari.collector.netguard import NetGuard, UrlRejected, normalize_url
 from ttakkari.collector.policy import (
     CollectRequest,
@@ -213,7 +217,7 @@ async def _prepare(
     parsed = normalize_url(raw_url, allowed_schemes=spec.schemes, allowed_ports=spec.ports)
     source_key = job.envelope["source"]["key"]
     async with sessionmaker()() as db:
-        cache = await store.get_fetch_cache(db, job.tenant_id, job.pool, source_key, p.url_key)
+        cache = await store.get_fetch_cache(db, job.tenant_id, _job_pool(job), source_key, p.url_key)
     etag, last_modified = (cache.etag, cache.last_modified) if cache else (None, None)
     try:
         polite = await deps.polite.fetch(parsed, spec, etag=etag, last_modified=last_modified)
@@ -447,12 +451,12 @@ async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | Non
     if a is None or not a.text:
         return None, []
     text_sha = textproc.sha256_text(a.text)
-    exact = await store.canonical_by_text(db, job.tenant_id, job.pool, text_sha, exclude_url_key=p.url_key)
+    exact = await store.canonical_by_text(db, job.tenant_id, _job_pool(job), text_sha, exclude_url_key=p.url_key)
     if exact is not None or a.minhash is None:
         return exact, []
     near: list[dict[str, Any]] = []
     for cand in await store.near_candidates(
-        db, job.tenant_id, job.pool, textproc.band_hashes(a.minhash), exclude_text_sha256=text_sha
+        db, job.tenant_id, _job_pool(job), textproc.band_hashes(a.minhash), exclude_text_sha256=text_sha
     ):
         jac = textproc.estimated_jaccard(a.minhash, cand.minhash)
         if jac >= textproc.NEAR_THRESHOLD:
@@ -664,7 +668,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
     if a is not None and a.minhash is not None and exact is None:
         store.add_bands(db, row.id, job.tenant_id, job.scope, textproc.band_hashes(a.minhash))
     if p.cache_hit:
-        await store.touch_fetch_cache(db, job.tenant_id, job.pool, source_key, p.url_key, p.etag, p.last_modified, now)
+        await store.touch_fetch_cache(db, job.tenant_id, _job_pool(job), source_key, p.url_key, p.etag, p.last_modified, now)
     elif p.raw_sha256 and status in ("accepted", "held", "discovered"):
         # Validators are kept only for outcomes a 304 may safely reuse. A failed extraction must be re-fetched.
         await store.put_fetch_cache(db, job.tenant_id, job.scope, source_key, p.url, etag=p.etag,
@@ -772,7 +776,7 @@ def _summary(cursor: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
-    if job.stage == "mission_prepare":
+    if getattr(job, "stage", None) == "mission_prepare":
         from ttakkari.collector import missions
         return await missions.prepare(job, ctx)
     deps = get_deps()

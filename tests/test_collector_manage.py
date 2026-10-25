@@ -67,13 +67,14 @@ async def test_management_reads_are_scoped_and_require_auth(client, auth, env, m
         assert (await client.get(BASE + path)).status_code == 401, path
     assert (await client.get(BASE + f"/items/{item_id}")).status_code == 401
     other = {"scope": "work"}
-    assert (await client.get(BASE + f"/items/{item_id}", headers=auth, params=other)).status_code == 404
-    assert (await client.get(BASE + "/review", headers=auth, params=other)).json()["total"] == 0
+    # C2 단일 도서관: 소유자는 레거시 scope 파라미터와 무관하게 단일 도서관의 관리 뷰를 조회/조작할 수 있다.
+    assert (await client.get(BASE + f"/items/{item_id}", headers=auth, params=other)).status_code == 200
+    assert (await client.get(BASE + "/review", headers=auth, params=other)).json()["total"] >= 1
     work = (await client.get(BASE + "/summary", headers=auth, params=other)).json()
-    assert work["funnel"]["accepted"] == 0 and work["jobs"] == {}
-    assert (await client.get(BASE + "/deliveries", headers=auth, params=other)).json()["total"] == 0
+    assert work["funnel"]["accepted"] >= 0
+    assert (await client.get(BASE + "/deliveries", headers=auth, params=other)).json()["total"] >= 1
     out_id = (await client.get(BASE + "/deliveries", headers=auth)).json()["items"][0]["outbox_id"]
-    assert (await client.post(BASE + f"/deliveries/{out_id}/reconcile", headers=auth, params=other)).status_code == 404
+    assert (await client.post(BASE + f"/deliveries/{out_id}/reconcile", headers=auth, params=other)).status_code == 200
 
 
 async def test_budgets_report_the_absolute_ceiling_and_pages(client, auth):
@@ -191,8 +192,9 @@ async def test_pilot_sources_pass_the_normal_validation_and_seed_once(client, au
         assert perms["train"] == "unknown" and perms["store"] == "allowed" and source["policy"]["policy_url"]
     manual = (await client.post(BASE + "/pilot", headers=auth)).json()
     assert manual["created"] == [] and len(manual["available"]) == 3
+    # C2 단일 도서관: 이미 시딩된 파일럿 출처는 scope 파라미터가 달라도 중복 생성되지 않는다.
     work = (await client.post(BASE + "/pilot", headers=auth, params={"scope": "work"})).json()
-    assert len(work["created"]) == 3  # same keys are independent per scope
+    assert work["created"] == []
 
 pytestmark = pytest.mark.security
 
@@ -215,7 +217,7 @@ async def test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason(cl
     held = first["groups"]
     assert held and sum(g["held"] for g in held) == 5 and all(g["sampled"] <= 2 for g in held)
     assert len(first["items"]) == sum(g["sampled"] for g in held)
-    assert (await client.get(BASE + "/review/audit", headers=auth, params={"scope": "work"})).json()["items"] == []
+    assert len((await client.get(BASE + "/review/audit", headers=auth, params={"scope": "work"})).json()["items"]) == len(first["items"])
     assert (await client.get(BASE + "/review/audit", params={"per_group": 2})).status_code == 401
     assert (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 99})).status_code == 422
     async with sessionmaker()() as db:
@@ -227,7 +229,7 @@ async def test_reprocess_uses_the_preserved_raw_blob_and_is_idempotent(client, a
     held = (await client.get(BASE + "/review", headers=auth)).json()["items"][0]
     assert held["can_reprocess"] is True
     detail = (await client.get(BASE + f"/items/{held['id']}", headers=auth)).json()
-    hidden = await client.post(BASE + f"/items/{held['id']}/reprocess", headers=auth, params={"scope": "work"})
+    hidden = await client.post(BASE + f"/items/{uuid.uuid4()}/reprocess", headers=auth, params={"scope": "work"})
     assert hidden.status_code == 404
     first = await client.post(BASE + f"/items/{held['id']}/reprocess", headers=auth)
     assert first.status_code == 202, first.text

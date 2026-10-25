@@ -77,6 +77,7 @@ def stubs(tmp_path: Path):
     env = {
         "PATH": f"{d}{os.pathsep}{os.environ['PATH']}",
         "PYTHONPATH": str(d),
+        "TMPDIR": str(tmp_path),
         "STUB_LOG": str(log),
         "STUB_TABLES": "calendar_events\nmemos\n",
         "STUB_COUNTS": "calendar_events=5,memos=3",

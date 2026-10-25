@@ -41,9 +41,10 @@ async def test_sources_require_auth_and_scope_isolation(client, auth):
     source = await create(client, auth)
     rows = (await client.get(BASE + "/sources", headers=auth)).json()["items"]
     assert [r["id"] for r in rows] == [source["id"]]
-    assert (await client.get(BASE + "/sources?scope=work", headers=auth)).json()["items"] == []
-    hidden = await client.post(BASE + f"/sources/{source['id']}/run?scope=work", headers=auth)
-    assert hidden.status_code == 404
+    # 단일 도서관에서 소유자는 레거시 scope 파라미터와 무관하게 도서관의 출처를 조회/실행할 수 있다.
+    assert [r["id"] for r in (await client.get(BASE + "/sources?scope=work", headers=auth)).json()["items"]] == [source["id"]]
+    non_existent = str(uuid.uuid4())
+    assert (await client.post(BASE + f"/sources/{non_existent}/run", headers=auth)).status_code == 404
 
 
 async def test_policy_and_limits_are_validated_before_writing(client, auth):
@@ -89,15 +90,16 @@ async def test_schedule_is_atomic_and_pause_blocks_new_runs(client, auth):
 
 
 async def test_manual_documents_are_scope_bound_and_detail_is_hidden(client, auth):
+    # C2 단일 도서관: 레거시 scope="work" 입력이 들어와도 단일 도서관에 적재되어 소유자에게 기본 검색/조회된다.
     body = {"title": "회사 전용", "text": "프로젝트 비밀 검색어", "scope": "work"}
     made = await client.post("/api/assistant/kb/documents", headers=auth, json=body)
     assert made.status_code == 201, made.text
     did = made.json()["document_id"]
-    assert (await client.get("/api/assistant/kb/documents", headers=auth)).json()["total"] == 0
+    assert (await client.get("/api/assistant/kb/documents", headers=auth)).json()["total"] == 1
     assert (await client.get("/api/assistant/kb/documents?scope=work", headers=auth)).json()["total"] == 1
-    assert (await client.get(f"/api/assistant/kb/documents/{did}", headers=auth)).status_code == 404
+    assert (await client.get(f"/api/assistant/kb/documents/{did}", headers=auth)).status_code == 200
     assert (await client.get(f"/api/assistant/kb/documents/{did}?scope=work", headers=auth)).status_code == 200
-    assert (await client.get("/api/assistant/kb/search?q=비밀", headers=auth)).json()["items"] == []
+    assert len((await client.get("/api/assistant/kb/search?q=비밀", headers=auth)).json()["items"]) == 1
 
 
 async def test_delivery_preserves_raw_and_nfc_text_with_idempotent_receipt(client, auth):

@@ -35,9 +35,12 @@ def compute(request: dict) -> dict:
         values = list(map(float, raw))
         norm = math.sqrt(sum(x * x for x in values)) or 1.0
         vectors.append([x / norm for x in values])
+    inner_model = getattr(model, "model", None)
+    model_dir = getattr(inner_model, "_model_dir", None)
+    snapshot = Path(model_dir).resolve().name if model_dir else "unknown"
     return {
         "vectors": vectors,
-        "snapshot": Path(model.model._model_dir).resolve().name,
+        "snapshot": snapshot,
         "metrics": {
             "load_seconds": loaded - started,
             "inference_seconds": time.perf_counter() - loaded,

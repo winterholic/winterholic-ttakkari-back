@@ -972,7 +972,7 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
 
 
 @orchestrator_tool
-async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local"] = "auto",
+async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,

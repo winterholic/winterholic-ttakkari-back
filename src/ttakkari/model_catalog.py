@@ -13,6 +13,19 @@ ANTIGRAVITY_MODELS = [
 ANTIGRAVITY_DEFAULT = "claude-sonnet-5-5-high"
 ANTIGRAVITY_QUOTA_GROUPS = ("agy_claude_and_gpt_models", "agy_gemini_models", "agy_gemini_4_argon")
 
+OPENCODE_COPILOT_MODELS = [
+    "github-copilot/gpt-5.6-sol",
+    "github-copilot/gpt-5.4-nano",
+    "github-copilot/gpt-6.1-sol",
+    "github-copilot/claude-sonnet-5.5",
+    "github-copilot/claude-opus-4.7",
+    "github-copilot/gemini-3.8-flash",
+    "github-copilot/gemini-4-argon",
+    "github-copilot/mai-code-1.1-flash",
+]
+
+OPENCODE_DEFAULT = "github-copilot/gpt-5.6-sol"
+
 
 # Muse 는 생각 수준을 max 로 고정한다(사용자 결정 2026-10-19). 세션·Run·API 요청이 다른 값을 줘도 실행 직전에 이 값으로 바꾼다.
 MUSE_EFFORT = "max"

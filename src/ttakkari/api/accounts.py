@@ -50,7 +50,7 @@ Pool = Literal["personal", "work"]
 
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    engine: Literal["claude", "codex", "antigravity", "muse"]
+    engine: Literal["claude", "codex", "antigravity", "muse", "opencode"]
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
@@ -122,6 +122,11 @@ def login_command(engine: str, config_dir: str | None) -> str:
     if engine == "claude":
         # 초기 프롬프트로 /login 을 넘기는 동작은 버전마다 다를 수 있어(확인 필요) claude 를 띄우고 /login 을 입력하게 안내한다.
         return f"CLAUDE_CONFIG_DIR={config_dir} claude" if config_dir else "claude"
+    if engine == "opencode":
+        if config_dir:
+            from ttakkari import opencode_accounts as managed_oc
+            return managed_oc.login_command(config_dir)
+        return f"{get_settings().opencode_bin} auth login -p github-copilot"
     if engine == "antigravity":
         if config_dir:
             return shlex.join(["env", f"PYTHONPATH={Path(__file__).resolve().parents[2]}", sys.executable,
@@ -148,17 +153,24 @@ def _out(a: EngineAccount) -> AccountOut:
         if observed is not None and observed.login:
             login = observed.login
     managed_status = {}
-    if a.engine == 'antigravity' and a.config_dir:
+    if a.engine == 'opencode' and a.config_dir:
+        from ttakkari import opencode_accounts as managed_oc
+        try:
+            managed_status = managed_oc.status(a.config_dir)
+        except (ValueError, OSError):
+            managed_status = {'auth_state': 'invalid_profile', 'last_error': 'invalid_profile'}
+    elif a.engine == 'antigravity' and a.config_dir:
         from ttakkari import antigravity_accounts as managed
         try:
             managed_status = managed.status(a.config_dir)
         except (ValueError, OSError):
             managed_status = {'auth_state': 'invalid_profile', 'last_error': 'invalid_profile'}
+    iso_mode = 'managed_xdg_home' if (a.engine == 'opencode' and managed_status) else ('managed_home_keychain' if (a.engine == 'antigravity' and managed_status) else None)
     return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir, enabled=a.enabled,
                       priority=a.priority, max_used_percent=a.max_used_percent, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
                       login_command=None if login == "ok" else login_command(a.engine, a.config_dir),
                       auth_state=managed_status.get('auth_state'), auth_error=managed_status.get('last_error'),
-                      isolation_mode='managed_home_keychain' if managed_status else None,
+                      isolation_mode=iso_mode,
                       execution_enabled=profiles.execution_ready(profiles._profile(a)))
 
 
@@ -219,7 +231,10 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
                       enabled=body.enabled, priority=(top if top is not None else -1) + 1, pool=body.pool,
                       work_enabled=body.enabled, work_priority=_next_work_priority(rows),
                       max_used_percent=body.max_used_percent if body.max_used_percent is not None else 100)
-    if a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
+    if a.engine == 'opencode':
+        from ttakkari import opencode_accounts as managed_oc
+        a.config_dir = str(managed_oc.allocate(accounts_dir().resolve(), a.id).home)
+    elif a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
         # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
         # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.
         d = accounts_dir() / str(a.id)
@@ -643,6 +658,30 @@ class AntigravityConfirmIn(BaseModel):
     # 사용자가 방금 전용 HOME 으로 로그인한 Google 계정. 따까리는 이 값을 토큰에서 읽지 않고 사용자 확인으로만 받는다.
     principal: str | None = Field(default=None, max_length=254)
     confirm: bool = False
+
+
+@router.post("/{account_id}/opencode/check", response_model=AccountOut)
+async def opencode_check(account_id: uuid.UUID, _: User, db: Db, request: Request) -> AccountOut:
+    """전용 격리 홈으로 opencode auth list를 실행해 GitHub Copilot 로그인 여부를 확인한다."""
+    from ttakkari import opencode_accounts as managed_oc
+    a = await _get(db, account_id)
+    if a.engine != "opencode" or not a.config_dir:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "전용 홈을 쓰는 OpenCode 계정만 확인할 수 있습니다.")
+    try:
+        if managed_oc.load(a.config_dir).account_id != a.id:
+            raise managed_oc.OpencodeProfileError("account_mismatch")
+        await asyncio.to_thread(managed_oc.check_auth, a.config_dir)
+    except (managed_oc.OpencodeProfileError, OSError) as exc:
+        code = str(exc) if isinstance(exc, managed_oc.OpencodeProfileError) else "cli_error"
+        record(db, action="account.opencode_check", target_type="account", target_id=a.id,
+               detail={"ok": False, "code": code}, ip=client_ip(request))
+        await _commit(db)
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": code, "message": f"OpenCode 확인 실패: {code}"}) from exc
+    record(db, action="account.opencode_check", target_type="account", target_id=a.id,
+           detail={"ok": True}, ip=client_ip(request))
+    await _commit(db)
+    await manager.release_waiting()
+    return _out(a)
 
 
 @router.post("/{account_id}/antigravity/check", response_model=AccountOut)

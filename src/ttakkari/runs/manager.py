@@ -27,6 +27,7 @@ from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.agents.codex import CodexAdapter
 from ttakkari.agents.muse import MuseAdapter
+from ttakkari.agents.opencode import OpencodeAdapter
 from ttakkari.agents.qwen_local import MODEL as QWEN_LOCAL_MODEL
 from ttakkari.agents.qwen_local import QwenLocalAdapter
 from ttakkari.artifacts import preview
@@ -78,7 +79,7 @@ log = logging.getLogger(__name__)
 
 ADAPTERS: dict[str, AgentAdapter] = {
     "claude": ClaudeAdapter(), "codex": CodexAdapter(), "antigravity": AntigravityAdapter(),
-    "muse": MuseAdapter(),
+    "muse": MuseAdapter(), "opencode": OpencodeAdapter(),
 }
 QWEN_LOCAL_ADAPTER = QwenLocalAdapter(worker_path=get_settings().qwen_local_worker_path,
                                       enabled=get_settings().qwen_local_enabled,
@@ -1056,7 +1057,7 @@ class RunManager:
         def conversation_key(profile):
             if is_meeting:
                 return meeting_routing.conversation_key(profile)
-            if task_type or profile.engine in {"antigravity", "muse"} or (pinned_fallback and profile.engine != sess.engine):
+            if task_type or profile.engine in {"antigravity", "muse", "opencode"} or (pinned_fallback and profile.engine != sess.engine):
                 return worker_routing.conversation_key(profile)
             return profile.key
 
@@ -1072,7 +1073,7 @@ class RunManager:
             # Legacy account-only IDs identify the original model. They cannot be
             # reused for another model sharing the same provider account.
             if profile.engine == sess.engine and (
-                profile.engine not in {"antigravity", "muse"}
+                profile.engine not in {"antigravity", "muse", "opencode"}
                 or profile.model == worker_routing.primary_target(sess.engine, requested_model)[1]
             ):
                 return es.get(profile.key)
@@ -1332,6 +1333,12 @@ class RunManager:
                 with contextlib.suppress(ValueError, OSError):
                     await asyncio.to_thread(
                         managed_agy.record_run, prof.config_dir, success=not failed,
+                        error=" ".join(t for t in texts if t)[:2000] if failed else None)
+            if prof.engine == "opencode" and prof.config_dir and not stopped:
+                from ttakkari import opencode_accounts as managed_oc
+                with contextlib.suppress(ValueError, OSError):
+                    await asyncio.to_thread(
+                        managed_oc.record_run, prof.config_dir, success=not failed,
                         error=" ".join(t for t in texts if t)[:2000] if failed else None)
             limited = (failed and prof.engine != "qwen-local"
                        and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
@@ -2169,7 +2176,7 @@ def _looks_like_agent(pid: int) -> bool:
                              check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity", "/muse ", "muse-runtime/bridge.mjs"))
+    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity", "/muse ", "muse-runtime/bridge.mjs", "opencode"))
 
 def _tmp_dirs() -> list[Path]:
     dirs = {Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()}
@@ -2270,6 +2277,8 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     메인 오케스트레이터는 엔진마다 허용된 한 쌍(설정 orchestrator_fallback_models)으로만 띄운다.
     작업 세션이 다른 엔진으로 넘어가면 같은 급의 상대 모델(model_counterparts)로 바꾼다."""
     s = get_settings()
+    if prof.engine == "opencode" and sess.kind != SessionKind.orchestrator:
+        return prof.model or run.model or s.worker_default_models["opencode"]["model"], run.effort or "medium"
     if prof.engine == "muse" and sess.kind != SessionKind.orchestrator:
         return prof.model or run.model or s.worker_default_models["muse"]["model"], MUSE_EFFORT
     if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:

@@ -140,6 +140,15 @@ fail-open 탐색: 위 계약 위반 fail-open은 발견하지 못했다. 인접 
 
 브라우저에서 시험하지 않은 것: 고급(JSON) 탭에서 `extra.k` 리스트로 shadowed를 만드는 경로(vitest에만 있음), 대상 연구를 다른 연구/새 연구로 바꿔 생성, 320~390px 폭, WebKit. 이들은 미실행이다.
 
+### 인계 후 추가 확인 요청: 채택 → reload → 최고 설정/연결 artifact
+
+| 경로 | 판정 | 근거 |
+|---|---|---|
+| 현재 화면에서 결과를 채택한 뒤 reload | 미실행 | 기존 브라우저 검증은 분석 결과에서 후속 실험을 생성하고 출처 배지가 reload 뒤 유지되는지만 확인했다. 채택 동작은 수행하지 않았다. |
+| reload 후 최고 설정 및 연결 artifact 표시 | 미실행 | 기존 검증에서 최고 설정의 지속성이나 연결 artifact 링크/관계를 검사하지 않았다. |
+
+따라서 이 보고서의 브라우저 PASS는 **후속 실험 생성·출처 유지** 범위에만 해당하며, 채택 상태 및 artifact 표시를 보증하지 않는다.
+
 ## 5. 원문 UX 질문 판정 (`refactor-v2-requirements.md:62`)
 
 - 7 성공 이유·실패 원인: **부분**. 실패 원인(`error_code: error_message`)은 결과 분석과 실행 모니터에 표시된다(PASS). `자동 수치 요약`은 측정이 부족하면 `측정 데이터가 충분하지 않습니다`만 말한다. 사용자가 이유를 직접 남기는 해석 노트는 저장 단계에서 깨진다(F3). F3가 고쳐지기 전에는 "답해진다"고 할 수 없다.
@@ -150,3 +159,7 @@ fail-open 탐색: 위 계약 위반 fail-open은 발견하지 못했다. 인접 
 
 - backend 프로브: 임시 `tests/zz_probe_c_reuse_review.py`(사본은 outbox `c-reuse-review-shots/`)를 `scripts/pytest_slots.py --timeout 300 -- uv run pytest -q tests/zz_probe_c_reuse_review.py`로 실행. 표준 `TTAKKARI_TEST_DB` 사용.
 - 브라우저: `tests/pg_sandbox`로 임시 클러스터를 띄우고 `TTAKKARI_CORS_ORIGINS`에 dev server 출처를 넣어 `uvicorn`(포트 28799) 실행, `VITE_API_BASE=http://127.0.0.1:28799 npx vite --port 25173`, 로그인 후 playwright-core로 구동.
+
+## 인계 후 보고서 보완
+
+2026-10-26 인계 요청에 따라 위 채택/reload/artifact 경로를 원래 실행 기록과 대조했다. 기존 시험에 포함되지 않아 미실행으로 남겼다. 이 보완은 보고서만 수정했으며 제품 코드는 변경하지 않았다. 보완 시 worktree HEAD는 이 보고서 커밋 `0f675591`이었고, 그 부모 제품 revision은 `9f087f07`이었다. 해당 revision의 runner/artifact 관련 파일 및 테스트는 수정하지 않았다.

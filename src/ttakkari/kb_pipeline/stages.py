@@ -74,6 +74,23 @@ class DefaultParsingProcessor:
         if not body.strip():
             return StageResult.failed("empty_revision_body")
 
+        # Older Collector revisions stored trafilatura plain text without heading levels. Parsing
+        # that normalized text as though structure still existed would report a false success.
+        if (
+            media_type.split(";", 1)[0].strip().lower() in ("text/html", "application/xhtml+xml")
+            and parser_version.startswith("trafilatura-")
+            and not parser_version.endswith("+parse-2")
+        ):
+            return StageResult.held(
+                "collector_html_structure_revision_required",
+                detail={
+                    "missing_capability": "collector_html_structure_revision_required",
+                    "parser_version": parser_version,
+                    "structure_recoverable_from_revision_body": False,
+                    "raw_reprocess_required": True,
+                },
+            )
+
         binary_parsers = (
             PdfParser, DocxParser, PptxParser, XlsxParser, LegacyOfficeParser, MediaAudioParser, ImageParser,
         )

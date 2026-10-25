@@ -87,6 +87,15 @@ async def deliver_item(db, outbox, item):
                      "item_id": str(item.id), "raw_handle": env["raw"]["blob_handle"], "rights": rights,
                      "collector_source_key": item.source_key,
                      "normalizer_version": normalized["normalizer_version"],
+                     "parser_version": normalized["parser_version"],
+                     "chunker_version": normalized["chunker_version"],
+                     "normalized_sha256": normalized["sha256"],
+                     "normalizer_steps": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "normalizer_steps", []
+                     ),
+                     "heading_structure": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "heading_structure"
+                     ),
                      "raw_alignment_handle": normalized["raw_alignment_handle"]},
     )
     access_row = await db.get(KbDocumentAccess, result.document_id)

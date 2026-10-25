@@ -228,3 +228,119 @@ async def test_other_errors_still_fail_the_run(new_session, isolated_manager, mo
 
     run = await load(run_id)
     assert run.status == RunStatus.failed and "boom" in (run.error or "")
+
+
+# ---- 접수(desk): 바깥 세션이 연결을 쥔 채 안쪽 연결을 여는 같은 교착
+
+async def make_desk_runs(client, auth, make_dir, n: int) -> list[uuid.UUID]:
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": root.name, "root_path": str(root)}, headers=auth)).json()
+    desk = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "desk"}, headers=auth)).json()
+    ids: list[uuid.UUID] = []
+    async with sessionmaker()() as db:
+        for i in range(n):
+            run = Run(session_id=uuid.UUID(desk["id"]), workspace_id=uuid.UUID(ws["id"]),
+                      prompt=f"접수 {i}", engine="auto", status=RunStatus.queued)
+            db.add(run)
+            await db.flush()
+            ids.append(run.id)
+        await db.commit()
+    return ids
+
+
+@pytest.fixture
+def desk_runtime_like(monkeypatch):
+    """generation 모드의 접수 경로: 계정 선택이 안쪽 연결을 따로 열고, 답은 0.3초 뒤에 온다."""
+    from ttakkari.runs import desk, profiles
+
+    prof = profiles.Profile(id=uuid.uuid4(), name="fake-codex", engine="codex", model="m")
+
+    async def availability(_db, _engine, _pool, **_kw):
+        return [prof], []
+
+    async def choose_async(pool, _run_id, **_kw):
+        async with sessionmaker()() as nested:  # GenerationRuntime.choose_profile 이 하는 일
+            await nested.execute(text("SELECT 1"))
+        return pool[0]
+
+    async def ask(_prof, _system, _prompt, **_kw):
+        await asyncio.sleep(0.3)
+        return desk.Attempt('{"action": "answer", "reply": "ok"}', None, 300)
+
+    monkeypatch.setattr(profiles, "availability", availability)
+    monkeypatch.setattr(profiles, "choose_async", choose_async)
+    monkeypatch.setattr(desk, "_ask", ask)
+    monkeypatch.setattr(desk.desk_qwen, "available", lambda: False)
+
+
+async def test_burst_of_desk_runs_does_not_deadlock_the_pool(
+        client, auth, make_dir, small_pool, isolated_manager, desk_runtime_like):
+    m = isolated_manager
+    run_ids = await make_desk_runs(client, auth, make_dir, 8)
+
+    def launch_desk(run_id):
+        task = asyncio.create_task(m._execute_desk(run_id))
+        m._handles[run_id] = _Handle(task=task)
+        return task
+
+    await asyncio.wait_for(asyncio.gather(*(launch_desk(rid) for rid in run_ids)), 60)
+
+    runs = [await load(rid) for rid in run_ids]
+    assert [r.status for r in runs] == [RunStatus.succeeded] * len(run_ids), [(r.status, r.error) for r in runs]
+    assert not m._handles
+
+
+async def test_desk_pool_timeout_requeues_instead_of_failing(client, auth, make_dir, isolated_manager, monkeypatch):
+    from ttakkari.runs import desk
+
+    m = isolated_manager
+    (run_id,) = await make_desk_runs(client, auth, make_dir, 1)
+
+    async def exhausted(_db, _run, _sess):
+        raise PoolTimeoutError(POOL_ERROR)
+
+    monkeypatch.setattr(desk, "handle", exhausted)
+    task = asyncio.create_task(m._execute_desk(run_id))
+    m._handles[run_id] = _Handle(task=task)
+    await task
+    try:
+        run = await load(run_id)
+        assert run.status == RunStatus.queued, run.error  # 아직 아무것도 확정되지 않았으니 다시 접수한다
+        assert run.resume_after is not None and m.is_waiting(run_id)
+    finally:
+        m._disarm(run_id)
+
+
+# ---- 폴백 재선택 직전에 바깥 연결 반납
+
+async def test_release_connection_ends_the_outer_transaction(new_session, isolated_manager):
+    m = isolated_manager
+    (run_id,) = await make_runs(new_session, 1, status=RunStatus.running)
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        await db.execute(text("SELECT 1"))
+        assert db.in_transaction()  # available_profiles() 같은 조회가 연결을 쥔 상태
+        await m._release_connection(db, run)
+        assert not db.in_transaction()  # 안쪽 연결을 열기 전에 풀로 돌아갔다
+
+
+# ---- 재큐잉 뒤 종결되는 Run 의 재시도 기록 정리
+
+async def test_finishing_a_requeued_run_clears_its_retry_counter(new_session, isolated_manager, monkeypatch):
+    m = isolated_manager
+    (run_id,) = await make_runs(new_session, 1)
+
+    async def exhausted(db, run_id):
+        raise PoolTimeoutError(POOL_ERROR)
+
+    monkeypatch.setattr(m, "_run", exhausted)
+    await launch(m, run_id)
+    assert m._pool_retries == {run_id: 1}
+    try:
+        async with sessionmaker()() as db:
+            run = await db.get(Run, run_id)
+            await m.cancel_queued(db, run)  # 재큐잉 뒤 사용자가 취소: _execute 를 다시 거치지 않는다
+            await db.commit()
+        assert run_id not in m._pool_retries
+    finally:
+        m._disarm(run_id)

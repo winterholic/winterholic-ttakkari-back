@@ -754,6 +754,13 @@ class RunManager:
                 return
         await runtime.release(run_id, token)
 
+    async def _release_connection(self, db: AsyncSession, run: Run) -> None:
+        """안쪽 연결(choose_profile 등)을 얻기 전에 바깥 세션의 트랜잭션을 끝내 풀 연결을 돌려준다.
+
+        한도·슬롯 폴백의 재선택은 시작 슬롯 밖에서 일어난다. 바깥 세션이 available_profiles() 조회로 연결을 쥔 채
+        안쪽 연결을 기다리면, 여러 Run 이 같은 순간 폴백할 때 풀이 말라 서로 기다린다."""
+        await self._commit(db, run)
+
     @contextlib.asynccontextmanager
     async def _start_slot(self, run_id: uuid.UUID):
         """시작 단계 동시 상한. 슬롯을 기다리는 동안은 DB 연결을 쥐지 않는다.
@@ -896,6 +903,7 @@ class RunManager:
                 await self._commit(db, run)
                 await desk.handle(db, run, sess)
                 await self._finish(db, run, RunStatus.succeeded)
+            self._pool_retries.pop(run_id, None)
         except generation.OwnershipLost:
             log.error("discarded stale writes for desk run %s", run_id)
         except asyncio.CancelledError:
@@ -912,6 +920,12 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("desk run %s crashed", run_id)
+            # 접수의 DB 쓰기는 _finish 의 한 번의 커밋으로만 확정되고 외부 부수효과(LLM 호출 비용 제외)가 없다.
+            # 풀 고갈로 죽었다면 아직 아무것도 확정되지 않았으니 다시 줄 세워도 중복 기획이 생기지 않는다.
+            if isinstance(e, PoolTimeoutError) and await self._requeue_after_pool_timeout(
+                    run_id, authorized=runtime is None or token is not None):
+                return
+            self._pool_retries.pop(run_id, None)
             if runtime is not None and token is None:
                 return
             async with sm() as db:
@@ -1053,6 +1067,8 @@ class RunManager:
         choose_account = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
 
         async def choose(candidates, run_id, **kwargs):
+            if run.status == RunStatus.running:  # 첫 선택은 시작 슬롯이 보호한다. 폴백 재선택만 여기서 연결을 푼다.
+                await self._release_connection(db, run)
             if is_meeting:
                 candidates = meeting_routing.first_stage(candidates)
             elif task_type:
@@ -1907,6 +1923,7 @@ class RunManager:
             db.info["runtime_lease"] = (h.owner, run.id, h.token)
             await h.owner.fence(db, run.id, h.token)
         self._disarm(run.id)
+        self._pool_retries.pop(run.id, None)
         run.status = status
         run.finished_at = utcnow()
         if error:

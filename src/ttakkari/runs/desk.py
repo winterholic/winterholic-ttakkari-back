@@ -88,6 +88,9 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     observe_shadow_route(s, run, sess, leads, pool, prompt, system)
 
     decision: Decision | None = await _try_qwen(db, run, sess, leads)
+    if decision is None:
+        # choose_async 는 generation 모드에서 안쪽 연결을 새로 연다. 바깥 세션이 앞선 조회로 연결을 쥔 채면 교착한다.
+        await _release_connection(db, run)
     for _ in range(0 if decision is not None else min(MAX_ATTEMPTS, len(pool))):
         # 접수도 같은 엔진의 계정끼리 사용량을 비교한다. 다른 엔진의 미측정값은 이 비교를 끄지 않는다.
         candidates = [p for p in pool if p.engine == pool[0].engine]
@@ -108,12 +111,7 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         events.append(db, run, "desk.retry", {"account": prof.name, "engine": prof.engine, "ms": res.elapsed_ms,
                                                "warm": res.warm,
                                                "reason": "usage_limit" if limited else reason[:300]})
-        from ttakkari.generation import fence_pending, wake
-        await fence_pending(db)
-        if get_settings().runtime_generation:
-            await wake(db, run.id)
-        await db.commit()
-        events.notify(run.id)
+        await _release_connection(db, run)
 
     if decision is None:
         decision = Decision("delegate", FALLBACK_REPLY)
@@ -131,6 +129,20 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         events.append(db, run, "desk.delegated", payload)
     run.result_text = reply
     events.append(db, run, "message", {"text": reply})
+
+
+async def _release_connection(db: AsyncSession, run: Run) -> None:
+    """바깥 세션의 트랜잭션을 끝내 풀 연결을 돌려준다.
+
+    접수 Run 은 DB 조회 뒤 LLM·Qwen 응답을 수 초 기다리고, generation 모드의 choose_async 는 안쪽 연결을 따로 연다.
+    그동안 바깥 세션이 연결을 쥐고 있으면 접수가 풀 크기만큼 겹칠 때 서로를 기다려 풀 timeout 까지 막힌다(2026-10-25).
+    """
+    from ttakkari.generation import fence_pending, wake
+    await fence_pending(db)
+    if get_settings().runtime_generation:
+        await wake(db, run.id)
+    await db.commit()
+    events.notify(run.id)
 
 
 def observe_shadow_route(settings, run: Run, sess: ChatSession, leads: list[ChatSession], pool: list,
@@ -269,6 +281,7 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
     base_url = desk_qwen.endpoint()
     if base_url is None:
         return None  # 서버가 준비 전이거나 실패 중: 기다리지 않고 Luna/Haiku 로 간다
+    await _release_connection(db, run)  # Qwen 응답을 기다리는 동안 연결을 쥐지 않는다
     started = time.monotonic()
     try:
         with desk_qwen.measure_operational_run(run.id, base_url):

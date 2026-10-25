@@ -1,4 +1,4 @@
-"""The integrated C1 and C2 migrations share one linear, online-safe schema path."""
+"""The C1/C2 migration path remains intact inside the combined schema graph."""
 import importlib.util
 import json
 import uuid
@@ -31,7 +31,8 @@ def test_c1_and_c2_form_a_serial_migration_path_and_generation_contract():
 
     assert runs.down_revision == "0072_collection_missions"
     assert library.down_revision == runs.revision
-    assert contract["schema_revision"] == library.revision
+    assert contract["schema_revision"] == _load("0075_collection_research_merge").revision
+    assert library.revision in contract["online_migration_from"]
     assert runs.revision in contract["online_migration_from"]
     assert "0072_collection_missions" in contract["online_migration_from"]
 

@@ -93,7 +93,9 @@
         "wer",
         "cer"
       ],
-      "expected_effects": "무음 구간 디코딩 낭비를 없애 전체 STT 처리 속도 2배 이상 가속 및 무음 환각 박멸",
+      "expected_effects": [
+        "무음 구간 디코딩 낭비를 없애 전체 STT 처리 속도 가속 및 무음 환각 억제"
+      ],
       "side_effects": "임계값이 너무 높으면 말끝의 작은 속삭임이나 어미가 잘려나갈 수 있음",
       "relations": [
         {
@@ -104,7 +106,7 @@
         {
           "type": "combines_with",
           "target": "stt_hallucination_detection",
-          "note": "VAD와 환각 감지기를 상호 보완적으로 배치하여 무음 환각 완벽 억제"
+          "note": "VAD와 환각 감지기를 상호 보완적으로 배치하여 무음 환각 억제 및 안정성 강화"
         }
       ],
       "evidence": [
@@ -132,7 +134,7 @@
       "slug": "stt_chunk_window_overlap",
       "name": "Audio Chunk Window & Overlap Tuning",
       "name_ko": "오디오 청크 윈도우 및 오버랩 최적화",
-      "summary": "장시간 오디오를 30초 단위 윈도우로 분할할 때 오버랩(Overlap) 길이와 경계 윈도우 스케줄을 최적화하여 경계면 단어 절단 및 중복 전사를 방지합니다.",
+      "summary": "장시간 오디오를 모델 입력 윈도우(Whisper 30초 규격 등) 단위로 분할할 때 오버랩(Overlap) 길이와 경계 윈도우 스케줄을 최적화하여 경계면 단어 절단 및 중복 전사를 방지합니다.",
       "principle": "Whisper 모델은 30초 고정 길이의 멜-스펙트로그램을 입력으로 받습니다. 긴 오디오를 처리할 때 슬라이딩 윈도우의 겹치는 구간을 설정하고, 이전 윈도우의 타임스탬프와 일치하는 중복 토큰을 디스태킹(De-duplication)하여 병합합니다.",
       "category": "stt",
       "targets": [
@@ -204,7 +206,9 @@
         "cer",
         "latency"
       ],
-      "expected_effects": "청크 경계면에서 문장이 중간에 잘려 발생하는 오인식 90% 이상 제거",
+      "expected_effects": [
+        "청크 분할 경계면에서의 음절 절단 및 단어 누락 오류를 완화하여 전사 연속성 확보"
+      ],
       "side_effects": "오버랩 길이가 길어질수록 중복 디코딩으로 인해 전체 전사 시간이 늘어남",
       "relations": [
         {
@@ -383,7 +387,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "beam_size=5는 Whisper의 표준 기본값이며, 실시간 음성 비서에는 beam_size=1(Greedy)이 선호됨."
+        "notes": "whisper.cpp의 -b 플래그. 저지연 스트리밍 전사에서는 beam_size=1~2 권장."
       },
       "metrics": [
         "cer",
@@ -391,7 +395,9 @@
         "rtf",
         "latency"
       ],
-      "expected_effects": "Greedy 대비 모호한 발음이나 웅얼거림에서 음소 오류율(CER) 10~15% 개선",
+      "expected_effects": [
+        "Greedy 검색 대비 다중 가설 탐색을 통해 난청 구간 및 복잡한 어휘에서의 음절 오류율(CER) 감소 기대"
+      ],
       "side_effects": "beam_size가 커질수록 디코딩 계산량이 비례 증가하여 전사 속도가 느려짐",
       "relations": [
         {
@@ -515,7 +521,7 @@
       "slug": "stt_context_prompt_conditioning",
       "name": "Context Prompt & Previous Text Conditioning",
       "name_ko": "컨텍스트 프롬프트 및 이전 텍스트 조건화",
-      "summary": "initial_prompt에 회의 주제, 참석자 이름, 도메인 전문 용어를 미리 주입하고, condition_on_previous_text 옵션으로 이전 30초 윈도우의 문맥을 연속 디코딩에 반영합니다.",
+      "summary": "initial_prompt에 회의 주제, 참석자 이름, 도메인 전문 용어를 미리 주입하고, condition_on_previous_text 옵션으로 이전 오디오 윈도우의 문맥을 연속 디코딩에 반영합니다.",
       "principle": "Whisper 디코더는 이전 텍스트 토큰을 프롬프트 프리픽스로 입력받을 수 있습니다. 도메인 어휘를 프롬프트에 제공하면 고유명사의 철자 정확도가 올라가고, 이전 문맥 조건화를 통해 대화의 흐름과 문체 일관성이 유지됩니다.",
       "category": "stt",
       "targets": [
@@ -552,7 +558,7 @@
           "key": "initial_prompt",
           "label": "초기 힌트 프롬프트 (initial_prompt)",
           "type": "text",
-          "default": "따까리 AI 비서, Mac Studio, LLM 추론, Kokoro 음성 합성",
+          "default": "따까리 AI 비서, Mac Studio, LLM 추론, Supertonic 3 음성 합성",
           "description": "고유명사 및 도메인 전문 어휘를 쉼표로 나열한 사전 힌트",
           "advanced": false,
           "required": false,
@@ -579,7 +585,9 @@
         "wer",
         "accuracy"
       ],
-      "expected_effects": "전문 용어(모델명, 회사명, 인명)의 전사 정확도 50% 이상 극적 개선",
+      "expected_effects": [
+        "전문 용어(고유명사, 기술 용어, 인명)의 오인식을 완화하고 일관된 표기 유도"
+      ],
       "side_effects": "condition_on_previous_text=true 상태에서 한 번 환각이 발생하면 다음 윈도우까지 환각이 전파되는 루프 발생 위험",
       "relations": [
         {
@@ -604,7 +612,7 @@
       "slug": "stt_hallucination_detection",
       "name": "STT Hallucination & Repetition Detection",
       "name_ko": "음성 인식 환각 및 무한 반복 감지",
-      "summary": "무음이나 배경음악 구간에서 발생하는 Whisper 특유의 환각 자막('MBC 뉴스...', '구독과 좋아요...')과 동일 어절 반복을 압축률 및 로그 확률로 즉시 감지하여 제거합니다.",
+      "summary": "무음 및 잡음 구간에서 모델이 동일 구문을 무한 반복하는 환각 패턴을 감지하여 디코딩을 중단하고 폴백(Fallback)을 트리거합니다.",
       "principle": "전사된 텍스트의 gzip 압축률(compression_ratio), 토큰 무음 확률(no_speech_prob), 평균 토큰 로그 확률(avg_logprob)의 복합 조건을 판정하여 환각 패턴과 일치하면 해당 세그먼트를 전사 결과에서 삭제합니다.",
       "category": "stt",
       "targets": [
@@ -675,7 +683,9 @@
         "wer",
         "quality"
       ],
-      "expected_effects": "침묵 구간에서 엉뚱한 자막이나 유튜브 인사말이 생성되는 유령 환각 99% 차단",
+      "expected_effects": [
+        "무음 구간 및 배경 소음 환경에서 발생하는 무한 루프 반복 및 비음성 환각 텍스트 필터링 (임계치 튜닝에 따른 정밀도-재현율 트레이드오프 수반)"
+      ],
       "side_effects": "발음이 불명확하거나 배경 잡음이 섞인 실제 유효 발화가 무음으로 오판되어 누락될 위험",
       "relations": [
         {
@@ -788,7 +798,7 @@
       "slug": "stt_language_detection_routing",
       "name": "Automatic Language Detection & Model Routing",
       "name_ko": "자동 언어 감지 및 모델 라우팅",
-      "summary": "오디오 시작 30초 내의 음향 특징을 기반으로 발화 언어(한국어, 영어, 일본어 등)를 자동 판별하고, 감지된 언어에 최적화된 STT 모델 또는 프롬프트 설정으로 즉시 라우팅합니다.",
+      "summary": "다국어 오디오 스트림 유입 시 도입부 오디오 구간을 분석하여 주 언어 코드를 판정하고, 언어별 특화 모델이나 전용 프롬프트로 디코더를 동적 라우팅합니다.",
       "principle": "Whisper의 인코더 출력에서 언어 토큰 예측 확률 분포를 계산하여 최대 확률 언어를 선택합니다. 한국어로 판정되면 한국어 특화 파라미터(beam_size 등)를 활성화합니다.",
       "category": "stt",
       "targets": [
@@ -880,7 +890,7 @@
       "slug": "stt_word_level_timestamps",
       "name": "Word-Level Timestamps via Cross-Attention",
       "name_ko": "단어 단위 정밀 타임스탬프 정렬",
-      "summary": "문장 단위 대략적 시간 정보에 그치지 않고, 디코더의 교차 어텐션(Cross-Attention) 가중치 맵을 분석하여 개별 단어 및 음절 단위의 밀리초 수준 시작/종료 시간을 추출합니다.",
+      "summary": "크로스 어텐션 가중치 매트릭스 및 동적 시간 워핑(DTW)을 적용하여 전사된 텍스트와 원본 오디오 간의 단어 단위 정밀 정렬 타임스탬프를 추출합니다.",
       "principle": "디코더가 텍스트 토큰을 생성할 때 오디오 프레임에 주는 어텐션 피크 위치를 Dynamic Time Warping (DTW) 알고리즘으로 추적하여 정확한 오디오-텍스트 정렬 타임스탬프를 복원합니다.",
       "category": "stt",
       "targets": [
@@ -933,7 +943,9 @@
         "accuracy",
         "quality"
       ],
-      "expected_effects": "음성-자막 실시간 하이라이팅 및 특정 단어 클릭 시 해당 음성 위치로 즉각 점프 가능",
+      "expected_effects": [
+        "음성-자막 동기화 하이라이팅 및 특정 단어 클릭 시 해당 오디오 위치 탐색 편의 제공"
+      ],
       "side_effects": "어텐션 맵 유지 및 DTW 후처리 연산으로 메모리와 시간이 약간 증가",
       "relations": [
         {
@@ -959,7 +971,7 @@
       "name": "Apple Silicon Metal Whisper Tuning (whisper.cpp)",
       "name_ko": "Apple Silicon Metal Whisper 추론 튜닝",
       "summary": "C/C++ 기반 whisper.cpp를 Apple Silicon의 Metal GPU 가속 및 NEON 벡터 연산으로 구동하며 스레드 수(-t)와 프로세서 분담을 최적화하여 초고속 저전력 음성 전사를 실현합니다.",
-      "principle": "Python 오버헤드와 PyTorch 런타임 종속성을 완전히 걷어내고, Apple Metal Shading Language로 작성된 고속 행렬곱 커널과 통합 메모리(Zero-Copy)를 활용하여 대기 시간을 극소화합니다.",
+      "principle": "Python 오버헤드와 PyTorch 런타임 종속성을 배제하고, Apple Metal Shading Language로 작성된 고속 행렬곱 커널과 통합 메모리(Zero-Copy)를 활용하여 대기 시간을 극소화합니다.",
       "category": "stt",
       "targets": [
         "stt",
@@ -1042,7 +1054,7 @@
         "runtimes": [
           "whisper.cpp"
         ],
-        "notes": "Mac Studio M2 Max/Ultra 등 Apple Silicon 환경에서 실시간 대비 15~20배 속도로 전사 가능."
+        "notes": "Mac Studio M2 Max/Ultra 등 Apple Silicon 환경에서 고속 추론 가능."
       },
       "metrics": [
         "rtf",

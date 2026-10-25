@@ -1,6 +1,5 @@
 """Validation test suite for catalog_seed/*.json integrity, contracts, and claims."""
 
-import fnmatch
 import json
 import re
 from pathlib import Path
@@ -22,6 +21,12 @@ ALLOWED_PARAM_TYPES = {
     "text",
 }
 
+ALLOWED_EVIDENCE_STATUSES = {
+    "source_reported",
+    "widely_practiced",
+    "unverified",
+}
+
 FORBIDDEN_ABSOLUTE_PATTERNS = [
     re.compile(r"오류(율)?\s*0%\s*보장"),
     re.compile(r"오류\s*박멸"),
@@ -32,7 +37,31 @@ FORBIDDEN_ABSOLUTE_PATTERNS = [
     re.compile(r"출력\s*분포를\s*완벽히\s*유지"),
     re.compile(r"하드웨어에\s*완벽히\s*피팅"),
     re.compile(r"24GB.*65B.*미세조정|65B.*24GB.*미세조정"),
+    re.compile(r"완전(히)?\s*(제거|해결|차단|방지|무결|보장|일치)"),
+    re.compile(r"완벽(히)?\s*(유지|피팅|연동|제거|동기화|일치|보장|억제)"),
+    re.compile(r"(무조건|100%)\s*(보장|준수|활용|차단|제거|일치)"),
+    re.compile(r"99%\s*(차단|무력화|제거|방어)"),
+    re.compile(r"90%\s*(제거|차단|감소)"),
+    re.compile(r"끊김\s*없는\s*오디오\s*재생\s*보장"),
+    re.compile(r"지연시간\s*0초"),
 ]
+
+QUANTITATIVE_EFFECT_PATTERNS = [
+    re.compile(r"\d+(\.\d+)?\s*%"),
+    re.compile(r"\d+(\.\d+)?\s*배"),
+]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema_and_app():
+    """Bypass conftest DB initialization for pure seed catalog validation."""
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clean():
+    """Bypass conftest DB clean fixture for pure seed catalog validation."""
+    yield
 
 
 def load_taxonomy():
@@ -131,17 +160,106 @@ def test_no_unsupported_absolute_claims():
     methods = load_all_methods()
     violations = []
     for m in methods:
+        relation_notes = [rel.get("note", "") for rel in m.get("relations", [])]
+        comp_notes = m.get("compatibility", {}).get("notes", "") if isinstance(m.get("compatibility"), dict) else ""
         full_text = " ".join([
             m.get("summary", ""),
             m.get("principle", ""),
             " ".join(m.get("expected_effects", []) if isinstance(m.get("expected_effects"), list) else [m.get("expected_effects", "")]),
             " ".join(m.get("side_effects", []) if isinstance(m.get("side_effects"), list) else [m.get("side_effects", "")]),
+            comp_notes,
+            " ".join(relation_notes),
         ])
         for pat in FORBIDDEN_ABSOLUTE_PATTERNS:
             if pat.search(full_text):
                 violations.append((m["_file"], m["slug"], pat.pattern))
 
     assert not violations, f"Forbidden absolute claims found: {violations}"
+
+
+def test_empty_evidence_semantics_and_no_quantitative_claims():
+    """Verify evidence semantic consistency:
+
+    1. All evidence_status values belong to ALLOWED_EVIDENCE_STATUSES.
+    2. When evidence is empty, status must not be 'source_reported'.
+    3. When evidence is empty and status is 'widely_practiced' (not 'unverified'),
+       expected_effects must not contain quantitative claims (% or 배).
+    4. Not all empty-evidence methods are blindly marked 'widely_practiced' (unverified count > 0).
+    5. Methods with evidence must be 'source_reported'.
+    """
+    methods = load_all_methods()
+    unverified_count = 0
+    widely_practiced_count = 0
+    violations = []
+
+    for m in methods:
+        status = m.get("evidence_status")
+        assert status in ALLOWED_EVIDENCE_STATUSES, (
+            f"[{m['_file']}] Method {m['slug']} has invalid evidence_status: {status}"
+        )
+
+        ev = m.get("evidence", [])
+        if not ev:
+            assert status in {"widely_practiced", "unverified"}, (
+                f"[{m['_file']}] Empty evidence method {m['slug']} cannot be {status}"
+            )
+            if status == "unverified":
+                unverified_count += 1
+            elif status == "widely_practiced":
+                widely_practiced_count += 1
+                effects = m.get("expected_effects", [])
+                effects_text = " ".join(effects if isinstance(effects, list) else [effects])
+                for pat in QUANTITATIVE_EFFECT_PATTERNS:
+                    if pat.search(effects_text):
+                        violations.append((m["_file"], m["slug"], pat.pattern, effects_text))
+        else:
+            assert status == "source_reported", (
+                f"[{m['_file']}] Method {m['slug']} with evidence must be source_reported, got {status}"
+            )
+
+    assert not violations, f"Empty evidence widely_practiced methods have quantitative claims: {violations}"
+    assert unverified_count > 0, "At least some uncertain/hypothetical methods must be marked 'unverified'"
+    assert widely_practiced_count > 0, "Standard practices should be marked 'widely_practiced'"
+
+
+def test_kokoro_retirement_and_runtime_integrity():
+    """Verify Kokoro TTS is isolated as deprecated hypothesis and not referenced as runnable runtime."""
+    methods = load_all_methods()
+    by_slug = {m["slug"]: m for m in methods}
+
+    # 1. tts_kokoro_pipeline_tuning must be deprecated and not offer execution adapters
+    kokoro_m = by_slug.get("tts_kokoro_pipeline_tuning")
+    assert kokoro_m is not None, "tts_kokoro_pipeline_tuning must exist in catalog"
+    assert kokoro_m.get("lifecycle_status") == "deprecated", (
+        "tts_kokoro_pipeline_tuning must be marked lifecycle_status='deprecated'"
+    )
+    assert kokoro_m.get("adapter_hints") == [], (
+        "tts_kokoro_pipeline_tuning must have empty adapter_hints to prevent runnable execution"
+    )
+
+    # 2. No other method may use Kokoro in runtimes, combines_with, or tags
+    for m in methods:
+        slug = m["slug"]
+        if slug == "tts_kokoro_pipeline_tuning":
+            continue
+
+        comp = m.get("compatibility", {})
+        runtimes = [r.lower() for r in comp.get("runtimes", [])]
+        assert "kokoro" not in runtimes, (
+            f"[{m['_file']}] Method {slug} references Kokoro in compatibility.runtimes"
+        )
+
+        tags = [t.lower() for t in m.get("tags", [])]
+        assert "kokoro" not in tags, (
+            f"[{m['_file']}] Method {slug} includes 'kokoro' in tags"
+        )
+
+        for rel in m.get("relations", []):
+            if (rel.get("target") or rel.get("to_slug")) == "tts_kokoro_pipeline_tuning":
+                rel_type = rel.get("type")
+                assert rel_type != "combines_with", (
+                    f"[{m['_file']}] Method {slug} has combines_with link to deprecated Kokoro pipeline"
+                )
 
 
 if __name__ == "__main__":
@@ -160,5 +278,10 @@ if __name__ == "__main__":
     print("Running test_no_unsupported_absolute_claims...")
     test_no_unsupported_absolute_claims()
     print("  PASS")
+    print("Running test_empty_evidence_semantics_and_no_quantitative_claims...")
+    test_empty_evidence_semantics_and_no_quantitative_claims()
+    print("  PASS")
+    print("Running test_kokoro_retirement_and_runtime_integrity...")
+    test_kokoro_retirement_and_runtime_integrity()
+    print("  PASS")
     print("\nALL CATALOG SEED INTEGRITY CONTRACTS PASSED.")
-

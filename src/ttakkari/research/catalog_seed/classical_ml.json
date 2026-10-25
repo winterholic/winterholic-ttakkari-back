@@ -177,14 +177,16 @@
         "runtimes": [
           "scikit-learn"
         ],
-        "notes": "순수 CPU scikit-learn 환경에서 완벽 지원."
+        "notes": "순수 CPU scikit-learn 환경에서 표준 지원."
       },
       "metrics": [
         "accuracy",
         "speed",
         "peak_memory_mb"
       ],
-      "expected_effects": "차원의 저주(Curse of Dimensionality) 해소, 과적합 억제 및 모델 추론 지연시간 50% 단축",
+      "expected_effects": [
+        "불필요한 노이즈 피처를 제거하여 차원의 저주와 과적합 위험을 낮추고 피처 수 감소에 따른 추론 지연시간 단축 기대"
+      ],
       "side_effects": "피처 간 복잡한 비선형 상호작용이 있을 때 단일 중요도 평가에서 유용한 조합이 누락될 수 있음",
       "relations": [
         {
@@ -573,7 +575,9 @@
         "accuracy",
         "stability"
       ],
-      "expected_effects": "단일 최강 단독 모델 대비 1~3%의 추가 예측 오차 감소 및 예측 분산 안정화",
+      "expected_effects": [
+        "서로 다른 모델 패밀리의 오차 패턴을 상호 보완하여 단일 모델 대비 추가적인 일반화 성능 개선 및 예측 분산 안정화 기대"
+      ],
       "side_effects": "파이프라인 복잡도 증가 및 여러 모델을 순차 실행해야 하므로 추론 지연시간 증가",
       "relations": [
         {
@@ -678,7 +682,7 @@
         {
           "type": "combines_with",
           "target": "approximate_nearest_neighbor_annoy_hnsw",
-          "note": "추출된 아이템 잠재 벡터를 ANN 인덱스에 적재하여 실시간 추천 쿼리 서빙"
+          "note": "추출된 아이템 잠재 벡터를 ANN 인덱스에 적재하여 저지연 추천 쿼리 서빙"
         }
       ],
       "evidence": [
@@ -1001,8 +1005,8 @@
       "slug": "feature_scaling_outlier_clipping",
       "name": "Feature Scaling & Outlier Clipping (RobustScaler)",
       "name_ko": "피처 스케일링 및 이상치 클리핑",
-      "summary": "극단적 이상치(Outlier)로 인한 왜곡을 방지하기 위해 사분위수(IQR) 기반 RobustScaler 또는 상하위 1% 윈저화(Winsorization/Clipping)를 적용하여 수치 피처의 안정적인 분포를 형성합니다.",
-      "principle": "StandardScaler(Z-score)는 이상치가 존재할 때 평균과 표준편차 자체가 왜곡됩니다. 중앙값과 사분위 범위(IQR)를 기준으로 스케일링하거나 상한/하한 백분위수로 클리핑하여 극단값의 부정적 영향을 차단합니다.",
+      "summary": "극단적 이상치(Outlier)로 인한 왜곡을 방지하기 위해 사분위수(IQR) 기반 RobustScaler 또는 사전 정의된 백분위수 윈저화(Winsorization/Clipping)를 적용하여 수치 피처의 안정적인 분포를 형성합니다.",
+      "principle": "StandardScaler(Z-score)는 이상치가 존재할 때 평균과 표준편차 자체가 왜곡됩니다. 중앙값과 사분위 범위(IQR)를 기준으로 스케일링하거나 상한/하한 백분위수로 클리핑하여 극단값의 부정적 영향을 완화합니다.",
       "category": "classical_ml",
       "targets": [
         "classical_ml",

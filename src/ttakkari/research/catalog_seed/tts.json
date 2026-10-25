@@ -97,8 +97,8 @@
         },
         {
           "type": "combines_with",
-          "target": "tts_kokoro_pipeline_tuning",
-          "note": "Kokoro 음성 합성 엔진의 전처리 모듈로 결합"
+          "target": "tts_speech_stitching",
+          "note": "정규화 및 문장 분할 후 청크 간 매끄러운 오디오 스티칭 파이프라인 형성"
         }
       ],
       "evidence": [
@@ -117,7 +117,6 @@
       "tags": [
         "text_normalization",
         "korean_tts",
-        "kokoro",
         "preprocessing"
       ]
     },
@@ -225,8 +224,7 @@
       "tags": [
         "g2p",
         "korean_phonemes",
-        "ipa",
-        "kokoro"
+        "ipa"
       ]
     },
     {
@@ -572,9 +570,9 @@
         ],
         "runtimes": [
           "pytorch",
-          "kokoro"
+          "onnxruntime"
         ],
-        "notes": "운율 제어 가능 아키텍처 필요. Supertonic 3의 경우 화자 스타일 임베딩에 운율이 결합되어 있어 단독 F0 미세 조작은 추가 어댑터 구현 필요."
+        "notes": "현재 따까리 로컬 TTS 운영 엔진은 Supertonic 3(ONNX CPU)이며, 제공되는 20종 음성 스타일(F1~F10, M1~M10)과 발화 속도(speed) 파라미터 조절을 통해 간접 운율을 제어합니다. 신경망 내부 F0/에너지의 직접 수정은 별도 음성 합성기 연구 과제입니다."
       },
       "metrics": [
         "quality",
@@ -617,7 +615,7 @@
       "name": "Duration Predictor Tuning",
       "name_ko": "음소 지속시간 예측기 튜닝",
       "summary": "각 음소가 발화될 시간 길이(프레임 수)를 예측하는 지속시간 예측 모델의 스케일과 분산을 조정하여 부자연스러운 늘어짐이나 급한 발화를 방지합니다.",
-      "principle": "비자기회귀(Non-autoregressive) TTS 모델(FastSpeech, Kokoro 계열)은 지속시간 예측기를 통해 음소 표현을 시간 축으로 확장합니다. 지속시간 스케일 팩터를 통해 발화 속도를 조절합니다.",
+      "principle": "FastSpeech 등 비자기회귀(Non-autoregressive) 음성 합성기는 텍스트 음소열을 입력받아 각 음소가 몇 밀리초(프레임) 동안 발화되어야 하는지 지속시간 예측기(Duration Predictor)를 통해 산출합니다. 분산 제어기(Variance Adaptor)에서 지속시간을 늘리거나 줄임으로써 특정 단어의 발화 속도와 쉼(Pause)을 제어합니다.",
       "category": "tts",
       "targets": [
         "tts"
@@ -666,7 +664,7 @@
           "onnxruntime",
           "pytorch"
         ],
-        "notes": "비자기회귀 TTS 모델의 음소 지속시간 스케일링 계수 제어. Supertonic 3의 경우 speed 파라미터로 속도 조절 지원."
+        "notes": "현재 따까리 운영 엔진인 Supertonic 3는 사전 훈련된 ONNX 모델 내부에서 지속시간을 자체 처리하므로, 모델 내부 음소 지속시간 직접 조작은 미지원되며 전체 발화 속도(speed) 조정만 지원."
       },
       "metrics": [
         "rtf",
@@ -679,8 +677,8 @@
       "relations": [
         {
           "type": "combines_with",
-          "target": "tts_kokoro_pipeline_tuning",
-          "note": "Kokoro 실시간 재생 파이프라인에서 속도 조절 인자로 활용"
+          "target": "tts_prosody_control",
+          "note": "음소 지속시간과 운율 궤적을 연계하여 합성 리듬 제어"
         }
       ],
       "evidence": [
@@ -912,7 +910,7 @@
       "name": "Speech Stitching & Crossfade",
       "name_ko": "문장 간 음성 스티칭 및 크로스페이드",
       "summary": "개별 청크 단위로 분할 합성된 음성 세그먼트들을 자연스러운 무음 간격(Inter-sentence pause)과 미세 크로스페이드(Crossfade)를 주어 매끄럽게 연결합니다.",
-      "principle": "단순 파형 덧붙이기는 경계면에서 위상 불일치로 인한 틱(Click/Pop) 잡음을 유발합니다. 5~10ms 선형 또는 코사인 크로스페이드를 적용하고 문맥 쉼표 여부에 따라 150~350ms의 자연스러운 묵음을 삽입합니다.",
+      "principle": "단순 파형 덧붙이기는 경계면에서 위상 불일치로 인한 틱(Click/Pop) 잡음을 유발할 수 있습니다. 청크 연결 경계면에 미세 크로스페이드(crossfade_ms 파라미터 기준)를 적용하고 문맥 경계에 적절한 묵음(sentence_pause_ms 기준)을 삽입하여 급격한 위상 변화를 완화합니다.",
       "category": "tts",
       "targets": [
         "tts"
@@ -973,13 +971,15 @@
         "runtimes": [
           "pytorch"
         ],
-        "notes": "실시간 스트리밍 재생 버퍼와 결합하여 끊김 없는 오디오 재생 보장."
+        "notes": "스트리밍 또는 청크 단위 재생 버퍼와 결합하여 끊김 없는 오디오 조립을 지원."
       },
       "metrics": [
         "quality",
         "consistency"
       ],
-      "expected_effects": "청크 분할 합성 음성임에도 한 호흡으로 녹음한 것처럼 이질감 없는 자연스러움 제공",
+      "expected_effects": [
+        "청크 분할 합성 음성임에도 한 호흡으로 녹음한 것처럼 이질감 없는 자연스러운 연결성 제공"
+      ],
       "side_effects": "간격이 너무 길면 늘어지고, 너무 짧으면 말이 숨 가쁘게 들림",
       "relations": [
         {
@@ -1052,17 +1052,17 @@
           "cpu"
         ],
         "runtimes": [
-          "kokoro",
-          "pytorch"
+          "onnxruntime",
+          "python"
         ],
-        "notes": "따까리 현재 운영 런타임은 단일 배치 완료 후 청크 전달 계약을 사용하므로, 완전한 실시간 청크 스트리밍은 Phase 2 프로토콜 확장이 필요함 (local-tts.md 참조)."
+        "notes": "현재 따까리 로컬 TTS 백엔드(Supertonic 3 ONNX CPU)는 문장 단위 청크를 단일 배치로 순차 합성하여 반환하며, 패킷 단위 스트리밍 오디오 전송은 Phase 2 연구 과제임."
       },
       "metrics": [
         "latency",
         "rtf"
       ],
       "expected_effects": [
-        "첫 청크 조기 합성으로 첫 음성 출력 지연(TTFA) 단축 목표 (실제 사용자 체감 지연은 버퍼링 및 네트워크 환경에 따라 실측 평가 필요)"
+        "문장 단위 청크 스트리밍을 통해 첫 청크 재생 지연시간(TTFA)을 단축하고 사용자 체감 지연 개선 기대"
       ],
       "side_effects": "첫 청크가 너무 짧으면 문맥 부족으로 인해 억양이 부자연스러울 수 있음",
       "relations": [
@@ -1073,7 +1073,7 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "tts_synthesis"
       ],
@@ -1088,8 +1088,8 @@
       "slug": "tts_sampling_decoding_tuning",
       "name": "Decoder Sampling & Noise Scale Tuning",
       "name_ko": "디코더 샘플링 및 노이즈 스케일 튜닝",
-      "summary": "확산(Diffusion) 또는 플로우 매칭 기반 TTS 모델에서 샘플링 온도, 노이즈 스케일, 오일러 디노이징 스텝 수를 조정하여 합성 속도와 음색 청명도 균형을 제어합니다.",
-      "principle": "StyleTTS2 및 최신 음성 모델은 잠재 공간(Latent Space)에서 노이즈를 제어합니다. 노이즈 스케일이 낮으면 결정론적이고 안정적이지만 단조롭고, 높으면 풍부한 호흡음이 생기지만 잡음이 섞일 수 있습니다.",
+      "summary": "확산(Diffusion) 및 보코더 기반 음성 합성 모델의 디코더 샘플링 스텝, 노이즈 스케일(Noise Scale), 온도(Temperature) 파라미터를 튜닝하여 음성의 명료도와 발화 안정성을 최적화합니다.",
+      "principle": "생성형 음성 합성기의 확률적 디코더에서 노이즈 스케일을 조절하여 기계음 느낌과 자연스러운 호흡 음색 간의 균형을 맞춥니다.",
       "category": "tts",
       "targets": [
         "tts"
@@ -1147,10 +1147,10 @@
           "cpu"
         ],
         "runtimes": [
-          "kokoro",
-          "pytorch"
+          "pytorch",
+          "onnxruntime"
         ],
-        "notes": "Kokoro TTS 디코더 파라미터로 제공됨."
+        "notes": "Supertonic 3(ONNX CPU) 운영 엔진은 고정 결정론적 추론 그래프를 사용하여 임의의 노이즈 스케일 sweep 파라미터가 노출되지 않으며, 본 항목은 연구용 가설 파라미터 탐색으로 분류됨."
       },
       "metrics": [
         "quality",
@@ -1162,20 +1162,19 @@
       "relations": [
         {
           "type": "combines_with",
-          "target": "tts_kokoro_pipeline_tuning",
-          "note": "Kokoro 모델 추론 시 핵심 튜닝 요소로 활용"
+          "target": "tts_vocoder_benchmark",
+          "note": "보코더 복원 품질과 샘플링 디코더 파라미터 상호작용 분석"
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "tts_synthesis"
       ],
       "tags": [
         "sampling",
         "noise_scale",
-        "decoder_tuning",
-        "kokoro"
+        "decoder_tuning"
       ]
     },
     {
@@ -1281,10 +1280,10 @@
     },
     {
       "slug": "tts_kokoro_pipeline_tuning",
-      "name": "Kokoro On-Device Korean TTS Pipeline Tuning",
-      "name_ko": "Kokoro 온디바이스 한국어 TTS 파이프라인 튜닝",
-      "summary": "경량 온디바이스 TTS 모델인 Kokoro 아키텍처의 한국어 합성 파이프라인(텍스트 정규화, G2P, 스타일 벡터 주입, ONNX/PyTorch 추론)을 엔드투엔드로 통합 튜닝하는 연구 가설입니다.",
-      "principle": "Kokoro 모델(82M 파라미터)의 경량 구조를 바탕으로 온디바이스 환경에서 음성을 생성하기 위한 전후처리와 추론 엔진 설정을 일체화합니다. 주의: Kokoro 공식 가중치(hexgrad/kokoro)에는 한국어가 없어 커뮤니티 IPA 매핑 기반의 가설 파이프라인이며, 실제 따까리 운영 엔진으로는 Supertonic 3 (ONNX CPU)가 채택되어 있습니다.",
+      "name": "Kokoro On-Device Korean TTS Pipeline Tuning (Deprecated Hypothesis)",
+      "name_ko": "Kokoro 온디바이스 한국어 TTS 파이프라인 튜닝 (폐기 가설)",
+      "summary": "공식 한국어 음성 부재로 폐기된 Kokoro 모델 가설 파이프라인(운영 엔진은 Supertonic 3로 확정)에 대한 과거 연구 및 비교 분석용 레퍼런스 항목.",
+      "principle": "Kokoro 모델(82M 파라미터)의 경량 구조를 바탕으로 온디바이스 환경에서 음성을 생성하기 위한 전후처리와 추론 엔진 설정을 일체화하는 과거 가설이었습니다. Kokoro 공식 가중치(hexgrad/kokoro)에는 한국어가 없어 폐기되었으며, 실제 따까리 운영 엔진으로는 Supertonic 3 (ONNX CPU)가 확정 채택되었습니다.",
       "category": "tts",
       "targets": [
         "tts",
@@ -1362,7 +1361,7 @@
           "kokoro",
           "pytorch"
         ],
-        "notes": "Kokoro 공식 보이스에는 한국어가 없으며, 한국어 발화를 위해서는 espeak-ng/G2P 한국어 IPA 변환 및 별도 가중치가 필요합니다. 실제 따까리 운영 엔진은 Supertonic 3 (ONNX CPU)입니다."
+        "notes": "Kokoro는 공식 한국어 음성 부재로 인해 따까리 로컬 TTS 운영 엔진 선정에서 폐기되었습니다(docs/design/local-tts.md). 현재 운영 엔진은 Supertonic 3(ONNX CPU)이며, 본 항목은 실행 가능한 방법이 아닌 과거 가설 및 비교 분석용 레퍼런스로 보존됩니다."
       },
       "metrics": [
         "rtf",
@@ -1371,19 +1370,19 @@
         "quality"
       ],
       "expected_effects": [
-        "경량 신경망 구조 기반의 온디바이스 음성 생성 가능성 탐색 (실제 따까리 운영 엔진인 Supertonic 3 ONNX CPU의 실측치는 TTFA 0.70~1.03초, RTF 0.17~0.19 수준이며, 본 가설 파이프라인은 별도 IPA 환경 및 실측 평가 필요)"
+        "경량 신경망 구조 기반 온디바이스 음성 생성 가능성 탐색 (과거 가설 레퍼런스이며 현재 운영 엔진인 Supertonic 3 ONNX CPU 실측치는 TTFA 0.70~1.03초, RTF 0.17~0.19)"
       ],
       "side_effects": "백엔드 전환 시 메모리 초기화 오버헤드 발생",
       "relations": [
         {
           "type": "combines_with",
           "target": "tts_korean_text_normalization",
-          "note": "한국어 특유의 숫자/기호 정규화 모듈을 전단에 필수 배치"
+          "note": "과거 가설: 한국어 특유의 숫자/기호 정규화 모듈 결합 검토"
         },
         {
           "type": "combines_with",
           "target": "tts_korean_g2p",
-          "note": "Kokoro의 IPA 어휘 사전에 맞춰 정밀 변환된 음소열 공급"
+          "note": "과거 가설: 커뮤니티 IPA 매핑 기반 음소열 공급 검토"
         }
       ],
       "evidence": [
@@ -1393,18 +1392,24 @@
           "url": "https://github.com/hexgrad/kokoro",
           "year": 2024,
           "claim": "82M 파라미터 경량 아키텍처(영어 중심 지원). 공식 한국어 음성은 미포함"
+        },
+        {
+          "kind": "doc",
+          "title": "Local TTS Engine Architecture & Supertonic 3 Decision",
+          "url": "docs/design/local-tts.md",
+          "year": 2026,
+          "claim": "Kokoro 한국어 부재로 채택 폐기. 운영 엔진은 Supertonic 3(ONNX CPU) 확정 (TTFA 0.70~1.03초, RTF 0.17~0.19)"
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": [
-        "tts_synthesis"
-      ],
+      "adapter_hints": [],
       "tags": [
         "kokoro",
         "on_device_tts",
         "apple_silicon",
         "korean_tts"
-      ]
+      ],
+      "lifecycle_status": "deprecated"
     }
   ]
 }

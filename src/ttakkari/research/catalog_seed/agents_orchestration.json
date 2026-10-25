@@ -170,19 +170,21 @@
           "llama.cpp",
           "vllm"
         ],
-        "notes": "OpenAI 호환 function-calling API 및 llama.cpp JSON 문법 제약과 완벽 연동."
+        "notes": "OpenAI 호환 function-calling API 및 llama.cpp JSON 문법 제약(Grammar-based sampling)과 연동 가능."
       },
       "metrics": [
         "accuracy",
         "consistency"
       ],
-      "expected_effects": "잘못된 도구 선택 및 필수 파라미터 누락 오류율 70% 이상 격감",
+      "expected_effects": [
+        "도구 스키마 및 인자 설명의 명확화를 통해 모델의 잘못된 도구 선택 및 필수 파라미터 누락을 완화하고 호출 성공률 향상 유도"
+      ],
       "side_effects": "도구 설명문이 너무 길어지면 프롬프트 컨텍스트 창을 과도하게 점유",
       "relations": [
         {
           "type": "combines_with",
           "target": "structured_output_json_schema_grammar",
-          "note": "문법 기반 디코딩 제약과 결합하여 100% 스키마 정합 보장"
+          "note": "문법 기반 디코딩 제약과 결합하여 스키마 정합성 강화"
         }
       ],
       "evidence": [],
@@ -471,7 +473,7 @@
       "name": "Context Sliding Window & Memory Summarization",
       "name_ko": "에이전트 컨텍스트 슬라이딩 윈도우 및 주기적 요약",
       "summary": "수십 턴 이상 진행되는 장기 에이전트 실행에서 컨텍스트 토큰 한계(Context Window)를 초과하지 않도록, 오래된 턴의 원문 로그를 핵심 요약문으로 압축 치환합니다.",
-      "principle": "최근 K개 턴은 무손실 원본을 유지하고, 그 이전의 도구 호출 및 결과 로그는 소형 모델이 핵심 결정 사항과 획득 지식 위주로 요약하여 컨텍스트 상단에 메모리 블록으로 갱신합니다.",
+      "principle": "최근 N개 턴(recent_turns_to_keep 파라미터 기본값 기준)은 원본 대화를 보존하고, 그 이전의 긴 도구 호출 및 중간 출력은 소형 모델이 핵심 결정 사항과 획득 지식 위주로 요약하여 컨텍스트 상단에 메모리 블록으로 갱신합니다.",
       "category": "agents_orchestration",
       "targets": [
         "agent_orchestration",
@@ -543,7 +545,9 @@
         "peak_memory_mb",
         "stability"
       ],
-      "expected_effects": "컨텍스트 오버플로로 인한 OOM이나 세션 중단 방지 및 API 토큰 비용 60% 절감",
+      "expected_effects": [
+        "컨텍스트 오버플로로 인한 OOM이나 세션 중단을 방지하고 누적 대화에 따른 프롬프트 토큰 비용 절감"
+      ],
       "side_effects": "요약 과정에서 초기에 논의된 세부 기술 파라미터나 특정 파일 경로가 유실될 위험",
       "relations": [
         {
@@ -655,7 +659,7 @@
           "title": "llama.cpp GBNF Grammar Guide",
           "url": "https://github.com/ggerganov/llama.cpp",
           "year": 2023,
-          "claim": "공식 문서 보고: GBNF 문법 기반 디코딩을 통해 임의의 정규 문법 및 JSON 스키마를 완벽 준수"
+          "claim": "공식 문서 보고: GBNF 문법 기반 디코딩을 통해 지정된 정규 문법 및 JSON 스키마에 부합하는 토큰만 샘플링 제어"
         }
       ],
       "evidence_status": "source_reported",
@@ -674,7 +678,7 @@
       "slug": "agent_tool_selection_routing",
       "name": "Semantic Tool Selection & Routing",
       "name_ko": "의미론적 도구 선택 및 라우팅",
-      "summary": "사용 가능한 도구가 수십 개 이상일 때 모든 도구 스키마를 프롬프트에 넣지 않고, 사용자 요청과 가장 관련 있는 상위 3~5개 도구만을 임베딩 검색으로 선별하여 주입합니다.",
+      "summary": "사용 가능한 도구가 많을 때 모든 도구 스키마를 프롬프트에 넣지 않고, 사용자 요청과 가장 관련 있는 도구만을 임베딩 검색(top_k_tools 기준)으로 선별하여 주입합니다.",
       "principle": "도구 목록을 벡터 DB에 인덱싱하고 사용자 질문 벡터와의 코사인 유사도로 필터링하여 관련 도구만 동적 주입함으로써 컨텍스트 낭비를 줄이고 도구 오인식을 방지합니다.",
       "category": "agents_orchestration",
       "targets": [
@@ -732,7 +736,9 @@
         "cost",
         "latency"
       ],
-      "expected_effects": "도구 선택 정확도 향상 및 대규모 도구 환경에서 프롬프트 토큰 소모 80% 절감",
+      "expected_effects": [
+        "요청과 무관한 도구 스키마 주입을 배제하여 도구 오인식을 줄이고 프롬프트 컨텍스트 토큰 소모 절감"
+      ],
       "side_effects": "임베딩 검색 실패로 필요한 도구가 프롬프트에서 누락될 경우 과업 수행 불가",
       "relations": [
         {
@@ -901,13 +907,15 @@
         "stability",
         "accuracy"
       ],
-      "expected_effects": "보안 취약점 및 악의적 프롬프트 인젝션 공격 99% 무력화",
+      "expected_effects": [
+        "프롬프트 인젝션 및 민감 정보 노출 위험 완화 (규칙셋 및 분류기 적용 범위에 국한되며 원천적 방어는 불가)"
+      ],
       "side_effects": "과도한 안전 필터 적용 시 정상적인 개발/보안 질문까지 거부하는 오탐(False Positive) 발생",
       "relations": [
         {
           "type": "combines_with",
           "target": "structured_output_json_schema_grammar",
-          "note": "출력 형식 안전성과 내용 안전성을 함께 보장"
+          "note": "출력 형식 안전성과 내용 안전성을 함께 점검"
         }
       ],
       "evidence": [],
@@ -999,7 +1007,7 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "external_report"
       ],

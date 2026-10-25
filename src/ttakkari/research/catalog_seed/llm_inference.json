@@ -346,7 +346,7 @@
         "peak_memory_mb"
       ],
       "expected_effects": [
-        "긴 시퀀스 프롬프트 처리 시간(TTFT) 단축 및 중간 어텐션 버퍼 VRAM 절감 (CUDA 환경 기준 2~4배 가속 보고, Apple Silicon Metal은 실측 필요)"
+        "긴 시퀀스 프롬프트 처리 시간(TTFT) 단축 및 중간 어텐션 버퍼 VRAM 절감 (원논문 기준 BERT-large 15%, GPT-2 3배, LRA 2.4배 가속 보고, Apple Silicon Metal은 별도 실측 필요)"
       ],
       "side_effects": "아주 짧은 시퀀스(<128 토큰)에서는 커널 런치 오버헤드로 인해 성능 차이가 미미할 수 있음",
       "relations": [
@@ -367,7 +367,7 @@
           "title": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
           "url": "https://arxiv.org/abs/2205.14135",
           "year": 2022,
-          "claim": "논문 보고: 표준 어텐션 대비 2~4배 가속 및 시퀀스 길이에 따른 메모리 선형 복잡도 달성"
+          "claim": "논문 보고(NVIDIA A100 GPU): 표준 어텐션 대비 BERT-large(seq 512) 15% 가속, GPT-2(seq 1K) 3배 가속, Long Range Arena(seq 1K~4K) 2.4배 가속 및 시퀀스 길이에 따른 메모리 선형 복잡도 달성 (Apple Silicon Metal 등 타 플랫폼은 별도 로컬 실측 필요)"
         }
       ],
       "evidence_status": "source_reported",
@@ -972,7 +972,9 @@
         "tokens_per_sec",
         "latency"
       ],
-      "expected_effects": "메모리 대역폭 의존형 레이어의 실행 지연 10~25% 감소",
+      "expected_effects": [
+        "메모리 대역폭 병목 연산의 중간 텐서 메모리 왕복(Round-trip)을 줄여 실행 지연시간 단축 및 커널 런치 오버헤드 완화 기대"
+      ],
       "side_effects": "레지스터 사용량 증가 시 커널 동시성(Occupancy)이 저하될 수 있으므로 정밀한 튜닝 필요",
       "relations": [
         {
@@ -1162,7 +1164,7 @@
         "ttft_ms"
       ],
       "expected_effects": "단일 GPU VRAM에 들어가지 않는 거대 모델(70B 등)을 OOM 없이 안전하게 구동",
-      "side_effects": "부분 오프로드 시 CPU-GPU 간 데이터 전송 대역폭 병목으로 인해 100% GPU 적재 대비 생성 속도 급감",
+      "side_effects": "부분 오프로드 시 CPU-GPU 간 데이터 전송 대역폭 병목으로 인해 전체 GPU 적재 대비 생성 속도 저하",
       "relations": [
         {
           "type": "combines_with",
@@ -1379,7 +1381,9 @@
         "ttft_ms",
         "tokens_per_sec"
       ],
-      "expected_effects": "필요한 컨텍스트만큼만 메모리를 예약하여 수 GB의 VRAM을 절약하고, ubatch 최적화로 TTFT 단축",
+      "expected_effects": [
+        "작업에 필요한 컨텍스트 크기 및 마이크로 배치 크기 설정을 통해 불필요한 KV 캐시 메모리 점유를 줄이고 TTFT 단축 기대"
+      ],
       "side_effects": "실제 입력 프롬프트가 설정된 ctx_size를 초과하면 컨텍스트 잘림이나 오류 발생",
       "relations": [
         {
@@ -1405,7 +1409,7 @@
       "name": "Model Pruning (Structured & Unstructured)",
       "name_ko": "모델 가지치기 (프루닝)",
       "summary": "신경망 가중치 중 중요도가 낮은 연결이나 레이어/헤드를 제거하여 연산 파라미터 수를 줄이고 추론을 경량화합니다.",
-      "principle": "가중치 크기나 헤시안 행렬 기반 민감도 분석(Wanda, SparseGPT)을 통해 성능 기여도가 미미한 가중치를 0으로 만들거나(비구조적) 블록/헤드를 완전히 잘라냅니다(구조적).",
+      "principle": "가중치 크기나 헤시안 행렬 기반 민감도 분석(Wanda, SparseGPT)을 통해 성능 기여도가 미미한 가중치를 0으로 만들거나(비구조적) 블록/헤드를 구조적으로 제거합니다.",
       "category": "llm_inference",
       "targets": [
         "llm",

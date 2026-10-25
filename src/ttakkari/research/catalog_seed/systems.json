@@ -164,7 +164,9 @@
         "ttft_ms",
         "cpu_utilization"
       ],
-      "expected_effects": "불필요한 스레드 경합 제거로 CPU 추론 속도 15~30% 향상 및 지연시간 안정화",
+      "expected_effects": [
+        "불필요한 코어 간 컨텍스트 스위칭과 스레드 경합을 완화하여 CPU 추론 처리량 및 지연시간 안정화 기대 (CPU 토폴로지별 실측 필요)"
+      ],
       "side_effects": "전체 논리 코어를 초과 설정 시 스케줄러 락 경합으로 심각한 속도 저하 발생",
       "relations": [
         {
@@ -190,7 +192,7 @@
       "name": "Batch Size & Throughput-Latency Pareto Tuning",
       "name_ko": "배치 크기별 처리량-지연시간 파레토 튜닝",
       "summary": "프롬프트 배치 크기(-b)와 물리적 마이크로 배치(-ub)를 계단식으로 변경하면서 단일 요청 지연시간(Latency)과 시스템 전체 처리량(Throughput) 간의 파레토 최적 지점을 도출합니다.",
-      "principle": "배치 크기를 키우면 행렬곱(GEMM)의 산술 연산 밀도(Arithmetic Intensity)가 높아져 GPU 연산기를 100% 활용할 수 있으나, 단일 요청의 큐 대기 시간과 지연시간은 증가합니다. 두 지표의 트레이드오프 곡선을 측정합니다.",
+      "principle": "배치 크기를 키우면 행렬곱(GEMM)의 산술 연산 밀도(Arithmetic Intensity)가 높아져 GPU 연산 자원을 더욱 효과적으로 활용할 수 있으나, 단일 요청의 큐 대기 시간과 지연시간은 증가합니다. 두 지표의 트레이드오프 곡선을 측정합니다.",
       "category": "systems",
       "targets": [
         "serving_infra",
@@ -265,7 +267,9 @@
         "ttft_ms",
         "latency"
       ],
-      "expected_effects": "단일 사용자 지연을 해치지 않는 선에서 서빙 처리량 3배 이상 극대화",
+      "expected_effects": [
+        "연산 장치의 병렬 자원을 활용하여 시스템 전체 배치 처리량(Tokens/s)을 극대화하고 처리량-지연시간 간의 최적 파레토 지점 도출"
+      ],
       "side_effects": "너무 큰 배치는 급격한 메모리 할당 스파이크를 일으켜 OOM 위험 초래",
       "relations": [
         {
@@ -290,7 +294,7 @@
       "slug": "system_gpu_kernel_profiling",
       "name": "GPU Kernel Profiling (Metal Instruments / Nsight)",
       "name_ko": "GPU 커널 프로파일링",
-      "summary": "Apple Instruments Metal System Trace 또는 NVIDIA Nsight Systems를 이용해 커널별 실행 시간, 워프 점유율(Occupancy), 레지스터 스필(Spill), 메모리 접근 병목을 나노초 단위로 계측합니다.",
+      "summary": "추론 및 학습 중 GPU 커널 실행 타임라인(Timeline)을 계측하여 가장 많은 시간을 점유하는 주요 핫스팟 커널(Attention, Normalization 등)을 식별하고 병목을 분석합니다.",
       "principle": "어텐션, RMSNorm, GEMM 등 개별 GPU 셰이더 함수의 타임라인을 추적하여 GPU 실행 파이프라인에서 불필요한 동기화 배리어(Wait barrier)나 SIMD 레인의 유휴(Idle) 원인을 시각화합니다.",
       "category": "systems",
       "targets": [
@@ -348,7 +352,9 @@
         "latency",
         "tokens_per_sec"
       ],
-      "expected_effects": "가장 많은 시간을 소모하는 상위 1~2개 핫스팟 커널(Bottleneck Kernel)의 정확한 식별",
+      "expected_effects": [
+        "전체 파이프라인 지연시간을 지배하는 핵심 병목 커널 식별 및 최적화 타깃 도출"
+      ],
       "side_effects": "상세 트레이스 덤프 시 대용량 파일(수백 MB~수 GB) 생성",
       "relations": [
         {
@@ -445,7 +451,7 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "llm_inference",
         "external_report"
@@ -461,7 +467,7 @@
       "slug": "system_memory_allocation_tuning",
       "name": "Memory Allocation & Page Locking Tuning (--mlock)",
       "name_ko": "메모리 할당자 및 페이지 고정 튜닝",
-      "summary": "--mlock 플래그를 통해 모델 가중치가 OS 스왑(Swap) 메모리로 방출되는 것을 강제 방지하고, jemalloc/mimalloc 등 고성능 메모리 할당자를 적용하여 힙 단편화를 방지합니다.",
+      "summary": "대형 모델 실행 시 메모리 단편화와 동적 할당 오버헤드를 줄이기 위해 jemalloc/mimalloc을 연동하고, mlock 플래그를 통해 스왑 아웃으로 인한 지연을 방지합니다.",
       "principle": "OS 가상 메모리 관리자는 메모리가 부족할 때 장시간 미사용 메모리 페이지를 디스크 스왑 파일로 내보냅니다. 가중치 페이지가 스왑되면 다음 추론 시 디스크 읽기로 인해 수 초간 멈칫하는 현상이 발생합니다. mlock 시스템 콜로 RAM에 페이지를 영구 고정합니다.",
       "category": "systems",
       "targets": [
@@ -526,7 +532,9 @@
         "ttft_ms",
         "stability"
       ],
-      "expected_effects": "백그라운드에서 오랜 시간 대기 후 첫 질문 입력 시 발생하는 스왑 랙(Freeze) 완전 제거",
+      "expected_effects": [
+        "장시간 다중 요청 서빙 시 메모리 단편화 억제 및 페이지 폴트/스왑 아웃으로 인한 지연 스파이크 방지"
+      ],
       "side_effects": "실제 물리 RAM보다 큰 모델에 mlock을 걸면 시스템 전체가 OOM 패닉에 빠질 수 있음",
       "relations": [
         {
@@ -608,7 +616,9 @@
         "tokens_per_sec",
         "peak_memory_mb"
       ],
-      "expected_effects": "모델 로딩 지연시간 0초(즉각 시작) 및 대용량 멀티모달 이미지/오디오 입력 주입 시 전송 지연 소멸",
+      "expected_effects": [
+        "통합 메모리(UMA) 구조에서 제로카피 버퍼 공유를 통해 CPU-GPU 간 명시적 텐서 복사 오버헤드 최소화"
+      ],
       "side_effects": "메모리 일관성(Coherency) 유지를 위해 캐시 플러시가 적절히 동기화되어야 함",
       "relations": [
         {
@@ -618,7 +628,7 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "llm_inference"
       ],
@@ -801,7 +811,7 @@
         "runtimes": [
           "llama.cpp",
           "vllm",
-          "kokoro",
+          "supertonic",
           "whisper.cpp"
         ],
         "notes": "따까리 오케스트레이터의 동적 실행기 선택 계층에 연동."
@@ -811,7 +821,9 @@
         "latency",
         "cost"
       ],
-      "expected_effects": "단일 고정 엔진 대비 복합 워크로드 전체 완수 시간 30% 단축",
+      "expected_effects": [
+        "단일 고정 엔진 대비 복합 워크로드의 엔드투엔드 처리 지연 및 자원 경합 완화 기대 (실제 워크로드 프로파일링 및 벤치마크 조건에 종속)"
+      ],
       "side_effects": "이종 엔진 간 모델 중복 로딩 시 순간적인 메모리 경합 발생 가능",
       "relations": [
         {
@@ -821,7 +833,7 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "widely_practiced",
+      "evidence_status": "unverified",
       "adapter_hints": [
         "llm_inference"
       ],
@@ -1012,7 +1024,7 @@
       "name": "NUMA Node Memory Interleaving & Binding",
       "name_ko": "NUMA 노드 메모리 인터리빙 및 바인딩",
       "summary": "다중 소켓 CPU 서버에서 메모리 대역폭을 균등 활용하기 위해 numactl --interleave=all 정책을 적용하거나 단일 소켓에 연산과 메모리를 로컬 고정(Local Binding)하여 크로스 소켓 레이턴시를 제거합니다.",
-      "principle": "NUMA(Non-Uniform Memory Access) 아키텍처에서는 원격 CPU 소켓의 메모리에 접근할 때 인터커넥트(QPI/UPI) 버스를 건너가야 하므로 지연시간이 2~3배 늘어납니다. 대역폭 중심 워크로드는 전 노드 인터리빙을, 지연시간 중심 워크로드는 단일 노드 로컬 바인딩을 적용합니다.",
+      "principle": "NUMA(Non-Uniform Memory Access) 아키텍처에서는 원격 CPU 소켓의 메모리에 접근할 때 인터커넥트(QPI/UPI) 버스를 건너가야 하므로 로컬 메모리 접근 대비 지연시간 증가 및 대역폭 저하가 발생합니다. 대역폭 중심 워크로드는 전 노드 인터리빙을, 지연시간 중심 워크로드는 단일 노드 로컬 바인딩을 적용합니다.",
       "category": "systems",
       "targets": [
         "systems",

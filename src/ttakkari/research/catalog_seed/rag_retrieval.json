@@ -100,7 +100,9 @@
         "mrr",
         "ndcg"
       ],
-      "expected_effects": "문맥 단절 오류를 방지하여 Recall@k 최대 15~20% 개선",
+      "expected_effects": [
+        "문서 특성에 맞는 최적 청크 크기와 오버랩 설정을 통해 문맥 단절을 완화하고 검색 재현율(Recall@k) 개선 기대"
+      ],
       "side_effects": "오버랩 비율이 과도하면 인덱스 크기가 비대해지고 중복 검색 결과 증가",
       "relations": [
         {
@@ -379,8 +381,10 @@
         "latency",
         "accuracy"
       ],
-      "expected_effects": "멀티턴 대화 상황에서 대명사 참조 실패로 인한 엉뚱한 검색을 90% 이상 차단",
-      "side_effects": "검색 전에 LLM 순전파가 선행되므로 전체 파이프라인 지연시간(TTFT)이 50~200ms 증가",
+      "expected_effects": [
+        "멀티턴 대화 맥락에서 대명사 참조 실패 및 모호한 질의로 인한 검색 실패율 완화"
+      ],
+      "side_effects": "검색 전에 LLM 순전파가 선행되므로 모델 크기와 부하에 따른 추가 파이프라인 지연시간(TTFT) 및 토큰 비용 수반",
       "relations": [
         {
           "type": "combines_with",
@@ -899,8 +903,8 @@
       "slug": "retrieval_result_caching",
       "name": "Semantic Retrieval Caching",
       "name_ko": "검색 결과 시맨틱 캐싱",
-      "summary": "질의 문자열의 단순 해시 일치뿐 아니라, 의미론적 코사인 유사도가 임계치를 넘는 유사 질문에 대해 이전 검색 결과 청크 및 답변을 캐시에서 즉시 반환합니다.",
-      "principle": "새 질의의 임베딩 벡터를 캐시 저장소의 이전 질의 벡터들과 비교하여 유사도(예: >= 0.95)가 충족되면 전체 인덱스 검색 및 LLM 파이프라인을 우회하여 즉각 응답합니다.",
+      "summary": "질의 문자열의 단순 해시 일치뿐 아니라, 의미론적 코사인 유사도가 임계치를 넘는 유사 질문에 대해 이전 검색 결과 청크 및 답변을 캐시에서 신속히 반환합니다.",
+      "principle": "새 질의의 임베딩 벡터를 캐시 저장소의 이전 질의 벡터들과 비교하여 유사도(similarity_threshold 파라미터 기준)가 충족되면 전체 인덱스 검색 및 LLM 파이프라인을 우회하여 응답합니다.",
       "category": "rag_retrieval",
       "targets": [
         "rag",
@@ -957,8 +961,10 @@
         "cost",
         "throughput"
       ],
-      "expected_effects": "반복적이거나 유사한 질문 인입 시 응답 지연시간 95% 단축(수 밀리초 이내 반환) 및 LLM 호출 비용 0",
-      "side_effects": "임계값이 너무 낮으면 완전히 다른 질문에 대해 이전 답변이 오반환되는 캐시 오염 발생",
+      "expected_effects": [
+        "반복적이거나 유사한 질문 유입 시 인덱스 탐색 및 언어 모델 호출을 우회하여 응답 지연시간 단축 및 연산 비용 절감 기대"
+      ],
+      "side_effects": "임계값이 너무 낮으면 다른 의도의 질문에 이전 답변이 오반환되는 캐시 오염 주의",
       "relations": [
         {
           "type": "combines_with",

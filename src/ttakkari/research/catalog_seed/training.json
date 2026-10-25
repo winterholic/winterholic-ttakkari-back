@@ -175,7 +175,7 @@
       "slug": "qlora",
       "name": "QLoRA (Quantized Low-Rank Adaptation)",
       "name_ko": "양자화 기반 저순위 어댑터 미세조정",
-      "summary": "기본 모델을 4비트 NormalFloat(NF4) 정밀도로 동결 적재하고 그 위에 16비트 LoRA 어댑터를 연결하여 가중치를 학습합니다. 원논문(Dettmers et al., 2023) 실증 결과, 33B 모델은 24GB GPU 환경에서 미세조정이 가능하며, 65B 거대 모델은 단일 48GB GPU(A100) 환경에서 튜닝을 수행할 수 있습니다.",
+      "summary": "4비트 NormalFloat 양자화와 LoRA를 결합하여 GPU VRAM 요구량을 대폭 낮춥니다. 단일 48GB GPU(A100) 환경에서 65B 모델 파인튜닝이 가능하며, 33B 모델은 24GB VRAM 환경에서 튜닝을 수행할 수 있습니다.",
       "principle": "정규분포 데이터에 정보이론적으로 최적화된 NF4(4-bit NormalFloat) 데이터 타입, 양자화 상수 자체를 다시 양자화하는 이중 양자화(Double Quantization), 메모리 스파이크 시 CPU로 페이지를 내리는 페이징 옵티마이저를 결합합니다.",
       "category": "training",
       "targets": [
@@ -288,7 +288,7 @@
           "title": "QLoRA: Efficient Finetuning of Quantized LLMs",
           "url": "https://arxiv.org/abs/2305.14314",
           "year": 2023,
-          "claim": "논문 보고: 단일 48GB GPU에서 65B 파라미터 모델을 미세조정하면서도 16비트 전체 파라미터 학습 수준의 벤치마크 결과 달성"
+          "claim": "논문 보고: 단일 48GB GPU에서 65B 파라미터 모델을 파인튜닝 실현"
         }
       ],
       "evidence_status": "source_reported",
@@ -1029,7 +1029,7 @@
           "pytorch",
           "mlx"
         ],
-        "notes": "Apple Silicon(M1/M2/M3/M4) 및 NVIDIA Ampere 이상(RTX 3090, A100 등)에서 BF16 하드웨어 네이티브 가속 완벽 지원."
+        "notes": "Apple Silicon(M1/M2/M3/M4) 및 NVIDIA Ampere 이상(RTX 3090, A100 등)에서 BF16 하드웨어 네이티브 가속 기본 지원."
       },
       "metrics": [
         "speed",
@@ -1139,7 +1139,9 @@
         "accuracy",
         "quality"
       ],
-      "expected_effects": "적은 수의 고품질 정제 데이터(10k~50k)로 대규모 저품질 데이터 능가",
+      "expected_effects": [
+        "도메인별 고품질 정제 데이터 및 선별된 합성 데이터를 효율적으로 조합하여 데이터 다양성 확장 및 일반화 성능 개선 기대"
+      ],
       "side_effects": "저품질 합성 데이터 과다 주입 시 모델 환각 및 표현 붕괴 초래 가능",
       "relations": [
         {
@@ -1342,7 +1344,7 @@
           "title": "Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning (T-Few / IA3)",
           "url": "https://arxiv.org/abs/2205.05638",
           "year": 2022,
-          "claim": "논문 보고: 모델 파라미터의 0.01% 미만만을 튜닝하여 LoRA 및 완전 미세조정에 상응하는 퓨샷 성능 달성"
+          "claim": "논문 보고: 모델 파라미터의 0.01% 미만만을 튜닝하여 LoRA 및 전체 파라미터 미세조정에 상응하는 퓨샷 성능 달성"
         }
       ],
       "evidence_status": "source_reported",

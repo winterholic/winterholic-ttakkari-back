@@ -63,7 +63,12 @@ cd back
   확인할 수 없으면 `cleanup_pending` 으로 남아 무거운 작업 슬롯을 유지한다. 이는 운영자가 `/api/agent/operations/{id}` 상태를 다시 조회해도
   증거가 확보되기 전에는 실패 종결로 바뀌지 않는다. 오류 문구의 pid·pgid 를 호스트에서 직접 확인해(`ps -g <pgid>`) 그룹이 실제로 없음이 분명할 때만
   운영자가 해당 작업 기록(`~/.ttakkari/operations/jobs/<id>.json`)을 정리한다. 앱은 신원 결속이 안 된 그룹에는 신호를 보내지 않는다. 취소·시간 초과도 러너가 그룹 전체(리더만이 아니라 손자까지)의 소멸을 확인한 뒤에만 `cancelled`/`timeout` 으로 남기며, 확인하지 못하면 `cleanup_pending` 으로 슬롯을 유지한다.
-  자식을 띄우는 순간 러너가 죽어 신원이 기록되지 않은 경우(`unrecorded`)도 신호를 보내지 않고 `cleanup_pending` 으로 남는다.
+  자식을 띄우는 순간 러너가 죽어 신원이 기록되지 않은 경우에는 자식이 fork 직후 스스로 적은 pid 파일(`jobs/<id>.child`)과 기록해 둔 예정 명령 해시,
+  시작 시각으로 신원을 복원해 같은 검증을 거친 뒤 정리한다. pid 파일이 없으면 자식이 띄워지지 않은 것이므로 `runner_lost` 로 종결한다.
+  복원이 안 되면(`unrecorded`) 신호를 보내지 않고 `cleanup_pending` 으로 남으며 오류에 job id·kind·runner pid/시작 시각이 들어 있다. 이때는
+  `ps -axo pid,pgid,ppid,lstart,command | grep -E 'scripts/'` 로 러너 시작 시각 이후에 뜬 `scripts/` 명령(백업·스냅샷·복원 스크립트)을 찾는다.
+  부모가 1(launchd)이고 오류의 runner 시각 직후에 시작된 프로세스가 그 고아다. 그룹(`pgid`)을 확인해 종료하면 다음 조회에서 자동으로 `failed` 로 풀리고,
+  아무것도 없음이 분명하면 `jobs/<id>.json` 을 정리한다.
   종료 감사는 DB 커밋 뒤 `finish_audited` 표식을 기록한다. 감사 커밋에 실패하면 terminal 상태와 `audit_pending`/`audit_error` 를 보존하고
   다음 상태·목록 조회에서 재시도한다. 요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
 - 결과에는 개수·해시·시각·대상 identity 만 담는다. 출력 꼬리는 `scrub` 마스킹 후 경로를 `<home>` 등으로 치환해 1500자만 보존한다.

@@ -48,8 +48,19 @@ _KILL_GRACE = 5
 GROUP_UNCONFIRMED = "cleanup_pending"
 
 
-def _lower_priority() -> None:
-    os.setpriority(os.PRIO_PROCESS, 0, 10)
+class GroupCleanupUnconfirmed(Exception):
+    """자식 신원을 기록하지 못해 선정리했지만 그룹 소멸을 확인하지 못했다."""
+
+
+def _child_setup(pidfile: bytes | None):
+    """fork 직후 exec 전에 실행한다. 우선순위를 낮추고, 러너가 신원을 기록하기 전에 죽는 경우를 위해 pid 를 적어 둔다."""
+    def setup() -> None:
+        os.setpriority(os.PRIO_PROCESS, 0, 10)
+        if pidfile:
+            fd = os.open(pidfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.write(fd, b"%d" % os.getpid())
+            os.close(fd)
+    return setup
 
 
 def _group_gone(proc: subprocess.Popen) -> bool:
@@ -93,10 +104,12 @@ def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, 
     """
     if job_id:
         # Popen 과 신원 기록 사이에 러너가 죽어도 reconcile 이 미기록 자식을 성공으로 오해하지 않게 먼저 표식을 남긴다
-        jobs.update(job_id, child_starting=True)
+        jobs.update(job_id, child_starting=True, child_starting_at=time.time(),
+                    child_planned_sha256=hashlib.sha256(" ".join(plan.argv).encode()).hexdigest())
     # 낮은 우선순위: 백업이 다른 사용자 Run 의 CPU 를 빼앗지 않게 한다. nice 래퍼는 exec 로 cmdline 이 바뀌어
     # 신원 해시가 어긋나므로 쓰지 않고 자식이 exec 하기 전에 우선순위만 낮춘다.
-    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_lower_priority,  # noqa: PLW1509
+    pidfile = os.fsencode(jobs.child_pidfile(job_id)) if job_id else None
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
                             stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     # 자식 프로세스 신원 기록 (SIGKILL 시 정리용). Popen 은 exec 가 끝난 뒤 돌아오므로 cmdline 이 안정된 값이다
     if job_id:
@@ -111,9 +124,11 @@ def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, 
             jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started,
                         child_cmdline_sha256=hashlib.sha256(cmdline.encode()).hexdigest() if cmdline else None,
                         child_starting=False)
-        except Exception:
-            _kill_group(proc)  # 기록하지 못한 자식을 남기지 않는다
+        except Exception as exc:
+            if not _kill_group(proc):  # 기록하지 못한 자식을 남기지 않는다. 정리를 확인하지 못하면 슬롯을 유지한다
+                raise GroupCleanupUnconfirmed(type(exc).__name__) from exc
             raise
+        jobs.child_pidfile(job_id).unlink(missing_ok=True)
 
     deadline = time.monotonic() + plan.timeout
     while proc.poll() is None:
@@ -265,6 +280,8 @@ async def _run(job_id: str) -> int:
                 error = (error or "") + f" 격리 DB 정리 확인 실패: {type(exc).__name__}"
     except plans.Refused as exc:
         status, error = "failed", f"refused: {exc}"
+    except GroupCleanupUnconfirmed:
+        status = GROUP_UNCONFIRMED
     except Exception as exc:  # noqa: BLE001 -- 어떤 오류도 기록에 남기고 끝낸다
         status, error = "failed", f"runner_error: {type(exc).__name__}"
     finally:

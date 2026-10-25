@@ -868,22 +868,19 @@ def test_real_runner_sigkill_leaves_verifiable_child_identity(tmp_path, monkeypa
         proc.kill()
 
 
-def test_runner_sigkill_before_child_identity_is_recorded_blocks_slot(tmp_path, monkeypatch):
+def test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile(tmp_path, monkeypatch):
     proc, job_id = _spawn_real_runner(tmp_path, monkeypatch, "3")
     leader = None
     try:
         children = _wait_for(lambda: psutil.Process(proc.pid).children())
         leader = children[0].pid
-        time.sleep(0.3)
-        assert not _job_field(job_id, "child_pid")  # 기록 전 창
+        _wait_for(lambda: jobs.child_pidfile(job_id).exists())
+        assert not _job_field(job_id, "child_pid")  # 러너가 신원을 기록하기 전 창
         os.kill(proc.pid, signal.SIGKILL)
         proc.wait(timeout=5)
         reconciled = jobs.reconciled(job_id)
-        assert reconciled["status"] == "cleanup_pending", reconciled
-        assert "unrecorded" in reconciled["error"]
-        assert _group_exists(leader)  # 기록 없는 그룹에는 신호를 보내지 않는다
-        with pytest.raises(jobs.Conflict, match="backup_db"):
-            jobs.prepare_heavy("restore_rehearsal", "other")
+        assert reconciled["status"] == "failed" and reconciled["error"].startswith("runner_lost"), reconciled
+        _wait_for(lambda: not _group_exists(leader), 5)  # 자식이 스스로 적은 pid 로 신원을 결속해 정리했다
     finally:
         if leader:
             with contextlib.suppress(OSError):
@@ -1028,3 +1025,125 @@ def test_audit_lock_is_released_when_a_waiter_is_cancelled():
         await reacquired.__aexit__(None, None, None)
 
     assert _run_with_deadline(main) is True
+
+
+# ---- 재검증 N1~N3: 불완전 기록의 양쪽 id 확인, 미기록 자식의 단서·자동 종결, 선정리 실패 ----
+
+def _spawn_sleeper(env=None) -> subprocess.Popen:
+    proc = subprocess.Popen(["/bin/sh", "-c", "sleep 60; :"], start_new_session=True, env=env,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.3)
+    return proc
+
+
+def _identity_of(proc: subprocess.Popen) -> dict:
+    import hashlib
+    live = psutil.Process(proc.pid)
+    return {"child_pid": proc.pid, "child_pgid": proc.pid, "child_started": live.create_time(),
+            "child_cmdline_sha256": hashlib.sha256(" ".join(live.cmdline()).encode()).hexdigest()}
+
+
+def _lost_runner_job(**extra) -> dict:
+    return jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0} | extra)
+
+
+@pytest.mark.parametrize("override", [
+    {"child_pgid": "pid+1"},  # 기록된 pgid 만 틀리고 리더는 살아 있다
+    {"child_pgid": None},
+    {"child_pid": None},
+    {"child_started": None},
+])
+def test_incomplete_identity_record_needs_every_recorded_id_gone(override):
+    proc = _spawn_sleeper()
+    try:
+        record = _identity_of(proc)
+        record.update({k: (proc.pid + 1 if v == "pid+1" else v) for k, v in override.items()})
+        job = _lost_runner_job(**record)
+        reconciled = jobs.reconciled(job["id"])
+        assert reconciled["status"] == "cleanup_pending", reconciled
+        assert proc.poll() is None  # 신원이 결속되지 않았으므로 신호를 보내지 않았다
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
+def _starting_job(planned_argv: list[str], **extra) -> dict:
+    import hashlib
+    return _lost_runner_job(child_starting=True, child_starting_at=time.time() - 1,
+                            child_planned_sha256=hashlib.sha256(" ".join(planned_argv).encode()).hexdigest(), **extra)
+
+
+def test_unrecorded_child_without_pid_file_never_forked_closes_as_runner_lost():
+    job = _starting_job(["/bin/sh", "-c", "sleep 60; :"])
+    assert jobs.reconciled(job["id"])["status"] == "failed"
+
+
+def test_unrecorded_child_is_verified_via_its_own_pid_file_then_cleaned():
+    argv = ["/bin/sh", "-c", "sleep 60; :"]
+    job = _starting_job(argv)
+    child = _spawn_sleeper()
+    try:
+        jobs.child_pidfile(job["id"]).write_text(str(child.pid))
+        _reap_in_background(child)  # 실제 고아는 launchd 가 회수한다
+        closed = jobs.reconciled(job["id"])
+        assert closed["status"] == "failed" and closed["error"].startswith("runner_lost"), closed.get("error")
+        assert child.wait(timeout=3) == -signal.SIGTERM
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(child.pid, signal.SIGKILL)
+
+
+def test_unrecorded_child_with_unbound_pid_file_blocks_with_clues_and_sends_no_signal():
+    job = _starting_job(["/bin/sh", "-c", "something else entirely"])
+    other = _spawn_sleeper()  # pid 파일의 pid 가 다른 명령을 돌리고 있다(pid 재사용 등)
+    try:
+        jobs.child_pidfile(job["id"]).write_text(str(other.pid))
+        pending = jobs.reconciled(job["id"])
+        assert pending["status"] == "cleanup_pending", pending
+        for clue in (job["id"], "backup_db", "runner_pid=", "ps -axo", "identity mismatch"):
+            assert clue in pending["error"], clue
+        assert other.poll() is None
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(other.pid, signal.SIGKILL)
+
+
+def test_unrecorded_child_with_malformed_pid_file_blocks_with_clues():
+    job = _starting_job(["/bin/true"])
+    jobs.child_pidfile(job["id"]).write_text("not-a-pid")
+    pending = jobs.reconciled(job["id"])
+    assert pending["status"] == "cleanup_pending"
+    for clue in (job["id"], "backup_db", "runner_pid=", "ps -axo", "malformed"):
+        assert clue in pending["error"], clue
+
+
+async def test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed(monkeypatch):
+    monkeypatch.setattr(runner, "_TERM_GRACE", 0.2)
+    monkeypatch.setattr(runner, "_KILL_GRACE", 0.2)
+    monkeypatch.setattr(plans, "make_plan", lambda kind, job_id: plans.Plan(
+        "backup_db", ["/bin/sh", "-c", "sleep 60; :"], {"PATH": "/usr/bin:/bin"}, 30))
+    real_update, real_killpg = jobs.update, runner.os.killpg
+    seen = {}
+
+    def flaky_update(job_id, **fields):
+        if "child_pid" in fields:
+            raise OSError("simulated disk full")
+        return real_update(job_id, **fields)
+
+    def probe_only(pgid, sig):
+        seen.setdefault("pgid", pgid)
+        return real_killpg(pgid, 0) if sig == 0 else None  # 신호는 무시해 정리 실패를 재현한다
+
+    monkeypatch.setattr(jobs, "update", flaky_update)
+    monkeypatch.setattr(runner.os, "killpg", probe_only)
+    job = jobs.create("backup_db", "s")
+    try:
+        assert await runner._run(job["id"]) == 0
+        done = jobs.get(job["id"])
+        assert done["status"] == "cleanup_pending" and not done.get("finished_at"), done
+    finally:
+        if "pgid" in seen:
+            with contextlib.suppress(OSError):
+                real_killpg(seen["pgid"], signal.SIGKILL)

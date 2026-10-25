@@ -131,24 +131,86 @@ def runner_alive(job: dict) -> bool:
     return _runner_state(job)[0] is True
 
 
+def _id_gone(value: int) -> bool:
+    """value 를 pid 로도 pgid 로도 쓰는 프로세스·그룹이 없음이 확인될 때만 True."""
+    try:
+        os.killpg(value, 0)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        return False
+    else:
+        return False
+    return not psutil.pid_exists(value)
+
+
+def child_pidfile(job_id: str) -> Path:
+    """자식이 fork 직후 exec 전에 스스로 pid 를 적는 파일. 러너가 신원을 기록하기 전에 죽었을 때의 단서다."""
+    return root() / "jobs" / f"{uuid.UUID(job_id)}.child"
+
+
+def _recover_unrecorded_child(job: dict) -> tuple[dict | None, str | None]:
+    """(복원한 신원 기록, 차단 사유). 둘 다 None 이면 띄워진 자식이 없었다는 뜻이다."""
+    clue = f"child start was in progress but its identity is unrecorded ({_unrecorded_clue(job)})"
+    try:
+        text = child_pidfile(job["id"]).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None, None  # exec 전 단계에 이르지 못했다: 띄워진 자식이 없다
+    except OSError as exc:
+        return None, f"{clue}; pid file unreadable ({type(exc).__name__})"
+    try:
+        pid = int(text)
+    except ValueError:
+        return None, f"{clue}; pid file malformed"
+    planned, since = job.get("child_planned_sha256"), job.get("child_starting_at")
+    if not planned or since is None:
+        return None, f"{clue}; pid file found (pid={pid}) but planned command was not recorded"
+    try:
+        live = psutil.Process(pid)
+        started = live.create_time()
+    except psutil.NoSuchProcess:
+        return {"child_pid": pid, "child_pgid": pid, "child_started": None, "child_cmdline_sha256": planned}, None
+    except (psutil.Error, OSError) as exc:
+        return None, f"{clue}; pid file found (pid={pid}) but lookup failed ({type(exc).__name__})"
+    if started < since - 2:
+        return None, f"{clue}; pid file found (pid={pid}) but that process predates the start (pid reused)"
+    return {"child_pid": pid, "child_pgid": pid, "child_started": started, "child_cmdline_sha256": planned}, None
+
+
+def _unrecorded_clue(job: dict) -> str:
+    return (f"job={job['id']}, kind={job.get('kind')}, runner_pid={job.get('runner_pid')}, "
+            f"runner_started={job.get('runner_started')}; "
+            f"find it with: ps -axo pid,pgid,ppid,lstart,command | grep -E 'scripts/'")
+
+
 def _clean_child_process_group(job: dict) -> tuple[bool, str | None]:
-    """기록된 leader·생성시각·명령행·pgid를 결속 검증한 뒤 그룹을 정리한다."""
+    """기록된 leader·생성시각·명령행·pgid를 결속 검증한 뒤 그룹을 정리한다.
+
+    러너가 신원을 기록하기 전에 죽었다면 자식이 스스로 적은 pid 파일과 기록해 둔 예정 명령으로 신원을 복원해 같은 검증을 거친다.
+    """
+    if not job.get("child_pid") and not job.get("child_pgid") and job.get("child_starting"):
+        recovered, blocked = _recover_unrecorded_child(job)
+        if blocked:
+            return False, blocked
+        if recovered is None:
+            return True, None  # 자식이 띄워지지 않았다
+        cleaned, reason = _clean_recorded_child(recovered)
+        return cleaned, (f"{reason} [unrecorded child; {_unrecorded_clue(job)}]" if reason else None)
+    return _clean_recorded_child(job)
+
+
+def _clean_recorded_child(job: dict) -> tuple[bool, str | None]:
     pid = job.get("child_pid")
     started = job.get("child_started")
     cmdline = job.get("child_cmdline")
     cmdline_hash = job.get("child_cmdline_sha256")
     pgid = job.get("child_pgid")
     if not pid and not pgid:
-        if job.get("child_starting"):
-            return False, "child start was in progress but its identity is unrecorded (cannot verify or signal)"
         return True, None  # 자식을 띄우기 전에 러너가 사라진 경우: 정리할 대상이 없다
     if not pid or not pgid or started is None or (not cmdline and not cmdline_hash) or pgid != pid:
-        try:
-            os.killpg(pgid or pid, 0)
-        except ProcessLookupError:
-            return True, None  # 신원은 불완전해도 그룹이 이미 없어 신호가 필요 없다
-        except OSError:
-            pass
+        # 신원은 불완전해도 기록된 id 가 전부 사라졌다면 신호가 필요 없다. 하나라도 남았거나 확인 못 하면 차단한다
+        if all(_id_gone(value) for value in {pid, pgid} if value):
+            return True, None
         return False, f"child identity record incomplete or unbound (pid={pid}, pgid={pgid})"
     try:
         proc = psutil.Process(pid)
@@ -309,6 +371,7 @@ def _prune() -> None:
     done = [j for j in all_jobs() if j["status"] in TERMINAL]
     for old in done[:-KEEP_TERMINAL]:
         _path(old["id"]).unlink(missing_ok=True)
+        child_pidfile(old["id"]).unlink(missing_ok=True)
 
 
 class Conflict(Exception):

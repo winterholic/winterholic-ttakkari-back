@@ -1,0 +1,578 @@
+{
+  "methods": [
+    {
+      "slug": "react_agent_loop_tuning",
+      "name": "ReAct (Reasoning + Acting) Agent Loop Tuning",
+      "name_ko": "ReAct 에이전트 루프 및 최대 반복 제어",
+      "summary": "추론(Thought)과 행동(Action), 관찰(Observation)을 교차 반복하는 ReAct 루프의 최대 반복 횟수(max_iterations)와 조기 중단(Early Stopping) 조건을 최적화하여 무한 루프를 방지하고 과업 완수율을 높입니다.",
+      "principle": "에이전트가 각 스텝마다 현재 환경 관찰 결과를 바탕으로 다음 추론 단계를 계획하고 도구를 호출합니다. 루프 탈출 조건과 진행 상황 감지를 튜닝하여 불필요한 토큰 낭비와 제자리 맴돌기(Stalling)를 차단합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["system_architecture", "serving"],
+      "goals": ["accuracy", "cost", "stability"],
+      "interventions": ["pipeline_reconfiguration", "parameter_tuning"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "max_iterations",
+          "label": "최대 반복 횟수",
+          "type": "integer",
+          "default": 10,
+          "min": 3,
+          "max": 30,
+          "step": 1,
+          "description": "에이전트가 단일 목표 달성을 위해 실행할 수 있는 최대 도구 호출 루프 수",
+          "advanced": false
+        },
+        {
+          "key": "stop_on_repeated_action",
+          "label": "동일 행동 반복 감지 시 중단",
+          "type": "boolean",
+          "default": true,
+          "description": "동일한 인자로 도구를 연속 2회 이상 호출할 경우 루프 탈출 및 성찰 트리거",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["agent_orchestration_framework"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "따까리 에이전트 하네스 및 LangChain/AutoGPT 구조에서 핵심 작동 엔진."
+      },
+      "metrics": ["accuracy", "cost", "latency"],
+      "expected_effects": "에이전트 무한 루프로 인한 토큰 폭탄 방지 및 복합 다단계 태스크 완수율 20% 향상",
+      "side_effects": "max_iterations가 너무 작으면 복잡한 조사/코딩 과업 도중 조기 포기 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "agent_tool_schema_optimization",
+          "note": "도구 명세 최적화와 결합하여 액션 단계의 오류율 최소화"
+        },
+        {
+          "type": "combines_with",
+          "target": "reflection_self_correction",
+          "note": "루프 실패 시 자가 교정 단계를 트리거하도록 연계"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+          "url": "https://arxiv.org/abs/2210.03629",
+          "year": 2022,
+          "claim": "논문 보고: 추론(Reasoning)과 행동(Action)의 결합을 통해 지식 집약적 태스크 및 상호작용 의사결정 성능 대폭 향상"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["react", "agent_loop", "tool_use", "orchestration"]
+    },
+    {
+      "slug": "agent_tool_schema_optimization",
+      "name": "Tool Schema Prompt & Argument Optimization",
+      "name_ko": "도구 정의 스키마 및 프롬프트 최적화",
+      "summary": "에이전트에게 제공되는 도구(Tool/Function)의 이름, 한국어/영어 설명문, 인자(Arguments) 타입 및 JSON 스키마를 명료하게 다듬어 환각 인자 생성 및 잘못된 도구 호출을 줄입니다.",
+      "principle": "LLM은 도구 설명문의 뉘앙스에 따라 호출 여부를 결정합니다. 각 도구의 사용 목적(When to use), 비사용 조건(When NOT to use), 필수 인자 예시를 스키마 description에 명시하여 모델의 함수 호출 의사결정 엔트로피를 낮춥니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["preprocessing", "tokenization"],
+      "goals": ["accuracy", "quality", "consistency"],
+      "interventions": ["pipeline_reconfiguration", "parameter_tuning"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "strict_json_schema",
+          "label": "엄격한 JSON 스키마 강제 (Strict)",
+          "type": "boolean",
+          "default": true,
+          "description": "스키마 외 추가 속성(additionalProperties) 생성을 엄격 차단",
+          "advanced": false
+        },
+        {
+          "key": "include_few_shot_examples",
+          "label": "도구 호출 Few-Shot 예시 포함",
+          "type": "boolean",
+          "default": false,
+          "description": "스키마 설명 내에 모범 호출 인자 JSON 예시 포함",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["function_calling_capable_model"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "OpenAI 호환 function-calling API 및 llama.cpp JSON 문법 제약과 완벽 연동."
+      },
+      "metrics": ["accuracy", "consistency"],
+      "expected_effects": "잘못된 도구 선택 및 필수 파라미터 누락 오류율 70% 이상 격감",
+      "side_effects": "도구 설명문이 너무 길어지면 프롬프트 컨텍스트 창을 과도하게 점유",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "structured_output_json_schema_grammar",
+          "note": "문법 기반 디코딩 제약과 결합하여 100% 스키마 정합 보장"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["tool_schema", "function_calling", "prompt_engineering"]
+    },
+    {
+      "slug": "reflection_self_correction",
+      "name": "Self-Reflection & Output Correction",
+      "name_ko": "자기 성찰 및 출력 자가 교정",
+      "summary": "에이전트가 생성한 중간 코드나 도구 실행 결과에 에러가 발생했을 때, 에러 로그를 검토하고 자신의 이전 가설을 비판적으로 평가(Self-Reflection)한 후 수정된 실행안을 재도출합니다.",
+      "principle": "Reflexion 프레임워크에 기반하여, 실패 메모리 버퍼(Memory of Trajectory)에 오답 원인을 기록하고 이를 프롬프트에 주입하여 동일한 실수를 되풀이하지 않도록 유도합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["system_architecture", "postprocessing"],
+      "goals": ["accuracy", "quality", "stability"],
+      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "max_reflection_attempts",
+          "label": "최대 자가 교정 시도 수",
+          "type": "integer",
+          "default": 3,
+          "min": 1,
+          "max": 5,
+          "step": 1,
+          "description": "단일 에러에 대해 자가 교정을 시도할 최대 횟수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["structured_feedback_loop"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "단독 LLM 호출보다 코딩 및 데이터 분석 검증에서 위력 발휘."
+      },
+      "metrics": ["accuracy", "quality"],
+      "expected_effects": "복잡한 코딩 태스크(HumanEval 등)에서 1차 통과율 대비 최종 성공률 25~35% 상승",
+      "side_effects": "교정 루프가 돌 때마다 추가 LLM 호출이 발생하여 전체 토큰 비용 증가",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "react_agent_loop_tuning",
+          "note": "ReAct 에이전트의 예외 처리 핸들러로 통합"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+          "url": "https://arxiv.org/abs/2303.11366",
+          "year": 2023,
+          "claim": "논문 보고: 언어적 피드백 기반 자기 성찰을 통해 가중치 업데이트 없이도 다양한 추론 벤치마크 점수 대폭 개선"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["reflexion", "self_correction", "error_recovery", "coding_agents"]
+    },
+    {
+      "slug": "plan_and_solve_prompting",
+      "name": "Plan-and-Solve Prompting Strategy",
+      "name_ko": "계획 후 실행 분할 프롬프팅 (Plan-and-Solve)",
+      "summary": "복잡한 복합 과업을 즉시 실행하지 않고, 1단계에서 전체 작업을 세부 하위 과업 리스트로 계획(Planning)한 뒤 2단계에서 각 단계를 순차적으로 해결(Solving)합니다.",
+      "principle": "거대 문제를 작은 독립 문제들로 분할(Decomposition)하여 인지 부하를 줄이고, 각 하위 과업 완수 시 중간 상태를 기록하여 전체 목표 달성의 누락을 방지합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["system_architecture", "preprocessing"],
+      "goals": ["accuracy", "consistency"],
+      "interventions": ["pipeline_reconfiguration"],
+      "research_methods": ["ab_test", "baseline"],
+      "parameters": [
+        {
+          "key": "dynamic_replanning",
+          "label": "동적 재계획 허용",
+          "type": "boolean",
+          "default": true,
+          "description": "실행 중 예상 밖의 결과 발생 시 기존 계획을 동적으로 수정 허용",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["multi_step_agent_runtime"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "장기 연구 과제 및 다단계 시스템 진단에 적합."
+      },
+      "metrics": ["accuracy", "reproducibility"],
+      "expected_effects": "10단계 이상의 긴 워크플로에서 중간 목표 망각 및 방향성 상실 방지",
+      "side_effects": "사소하고 단순한 작업에서도 불필요하게 계획을 수립하여 초기 응답 지연 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "multi_agent_role_delegation",
+          "note": "수립된 계획의 하위 단계를 전문 하위 에이전트들에게 분배"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models",
+          "url": "https://arxiv.org/abs/2305.04091",
+          "year": 2023,
+          "claim": "논문 보고: 계획 수립과 세부 해결의 분리를 통해 산술 및 다단계 추론 벤치마크에서 제로샷 CoT 대비 뛰어난 정확도 입증"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["planning", "decomposition", "multi_step", "orchestration"]
+    },
+    {
+      "slug": "multi_agent_role_delegation",
+      "name": "Multi-Agent Role Delegation (Supervisor & Workers)",
+      "name_ko": "멀티 에이전트 역할 분담 및 오케스트레이션",
+      "summary": "총괄 감독자(Supervisor) 에이전트가 사용자의 목표를 해석하고, 코드 작성 전문가, 웹 리서처, 데이터 분석가 등 특화된 하위 워커 에이전트에게 작업을 위임 조율합니다.",
+      "principle": "단일 프롬프트에 모든 책임을 부여하는 대신, 개별 에이전트의 시스템 프롬프트와 가용 도구를 역할에 맞게 엄격히 한정(Role Specialization)하여 도구 선택 혼선과 환각을 차단합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration"],
+      "layers": ["system_architecture"],
+      "goals": ["quality", "accuracy", "scalability"],
+      "interventions": ["pipeline_reconfiguration", "model_replacement"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "orchestration_pattern",
+          "label": "오케스트레이션 패턴",
+          "type": "enum",
+          "default": "supervisor_worker",
+          "options": [
+            {"value": "supervisor_worker", "label": "중앙 감독자-워커 (Supervisor-Worker)"},
+            {"value": "sequential_pipeline", "label": "순차 파이프라인 (Relay Hand-off)"},
+            {"value": "debate", "label": "에이전트 토론 및 교차 검증 (Debate)"}
+          ],
+          "description": "에이전트 간 메시지 전달 및 제어 흐름 구조",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["subagent_messaging_protocol"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "따까리의 invoke_subagent 및 send_message 메커니즘과 일치."
+      },
+      "metrics": ["quality", "accuracy", "cost"],
+      "expected_effects": "단일 에이전트가 감당하기 어려운 거대 프로젝트를 모듈화하여 성공률 극대화",
+      "side_effects": "에이전트 간 메시지 전달 과정에서 컨텍스트 복제 및 통신 비용(토큰) 급증",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "plan_and_solve_prompting",
+          "note": "감독자 에이전트가 계획을 세운 뒤 워커들에게 하위 태스크를 위임"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["multi_agent", "supervisor", "delegation", "subagent"]
+    },
+    {
+      "slug": "context_sliding_window_summarization",
+      "name": "Context Sliding Window & Memory Summarization",
+      "name_ko": "에이전트 컨텍스트 슬라이딩 윈도우 및 주기적 요약",
+      "summary": "수십 턴 이상 진행되는 장기 에이전트 실행에서 컨텍스트 토큰 한계(Context Window)를 초과하지 않도록, 오래된 턴의 원문 로그를 핵심 요약문으로 압축 치환합니다.",
+      "principle": "최근 K개 턴은 무손실 원본을 유지하고, 그 이전의 도구 호출 및 결과 로그는 소형 모델이 핵심 결정 사항과 획득 지식 위주로 요약하여 컨텍스트 상단에 메모리 블록으로 갱신합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["memory", "preprocessing", "system_architecture"],
+      "goals": ["memory", "cost", "stability"],
+      "interventions": ["pipeline_reconfiguration", "caching"],
+      "research_methods": ["ab_test", "repeated_measurement"],
+      "parameters": [
+        {
+          "key": "recent_turns_to_keep",
+          "label": "보존할 최근 턴 수",
+          "type": "integer",
+          "default": 6,
+          "min": 2,
+          "max": 20,
+          "step": 2,
+          "description": "요약하지 않고 원본 그대로 보존할 최신 대화/도구 턴 개수",
+          "advanced": false
+        },
+        {
+          "key": "max_summary_tokens",
+          "label": "요약문 최대 토큰 수",
+          "type": "integer",
+          "default": 500,
+          "min": 100,
+          "max": 2000,
+          "step": 50,
+          "description": "압축된 장기 기억 요약의 토큰 상한선",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["summarizer_capability"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "따까리 세션 메모리 관리의 표준 메커니즘."
+      },
+      "metrics": ["cost", "peak_memory_mb", "stability"],
+      "expected_effects": "컨텍스트 오버플로로 인한 OOM이나 세션 중단 방지 및 API 토큰 비용 60% 절감",
+      "side_effects": "요약 과정에서 초기에 논의된 세부 기술 파라미터나 특정 파일 경로가 유실될 위험",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "react_agent_loop_tuning",
+          "note": "장기 반복 실행 루프의 메모리 안정 장치로 결합"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["memory", "sliding_window", "summarization", "long_context"]
+    },
+    {
+      "slug": "structured_output_json_schema_grammar",
+      "name": "Grammar-Constrained Decoding (GBNF & JSON Schema)",
+      "name_ko": "문법 기반 정형 출력 제어 (GBNF / JSON Schema)",
+      "summary": "LLM이 JSON이나 정해진 서식을 출력할 때 정규 문법(GBNF / Regex)을 디코더 로짓 마스크(Logit Mask)에 직접 적용하여, 구문 오류(Syntax Error)를 0%로 강제합니다.",
+      "principle": "다음 토큰을 샘플링할 때 현재 상태에서 JSON 스키마나 문법 규칙상 불가능한 어휘 토큰들의 로짓을 -무한대(-inf)로 마스킹합니다. 프롬프트 안내에만 의존하는 방식과 달리 수학적으로 100% 문법 준수를 보장합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "llm"],
+      "layers": ["decoding", "runtime"],
+      "goals": ["consistency", "stability", "accuracy"],
+      "interventions": ["algorithm_change", "kernel_optimization"],
+      "research_methods": ["ab_test", "repeated_measurement"],
+      "parameters": [
+        {
+          "key": "grammar_type",
+          "label": "문법 제약 유형",
+          "type": "enum",
+          "default": "json_schema",
+          "options": [
+            {"value": "json_schema", "label": "JSON Schema 직접 강제"},
+            {"value": "gbnf", "label": "GBNF (배커스-나우르 문법 규칙)"},
+            {"value": "regex", "label": "정규표현식 제약 (Regex)"}
+          ],
+          "description": "로짓 마스크 생성 규칙 체계",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["grammar_support_in_engine"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "llama.cpp의 --grammar 플래그 및 outlines, xgrammar 라이브러리 지원."
+      },
+      "metrics": ["consistency", "accuracy", "speed"],
+      "expected_effects": "에이전트가 JSON 파싱 에러(JSONDecodeError)로 인해 크래시되는 문제를 100% 영구 해결",
+      "side_effects": "복잡한 재귀 문법의 경우 토큰당 로짓 마스크 계산 오버헤드로 생성 속도가 소폭 감소할 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "agent_tool_schema_optimization",
+          "note": "도구 인자 생성 시 스키마 문법 제약을 디코더에 적용"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "llama.cpp GBNF Grammar Guide",
+          "url": "https://github.com/ggerganov/llama.cpp",
+          "year": 2023,
+          "claim": "공식 문서 보고: GBNF 문법 기반 디코딩을 통해 임의의 정규 문법 및 JSON 스키마를 완벽 준수"
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["llm_inference"],
+      "tags": ["gbnf", "grammar", "structured_output", "json_schema", "robustness"]
+    },
+    {
+      "slug": "agent_tool_selection_routing",
+      "name": "Semantic Tool Selection & Routing",
+      "name_ko": "의미론적 도구 선택 및 라우팅",
+      "summary": "사용 가능한 도구가 수십 개 이상일 때 모든 도구 스키마를 프롬프트에 넣지 않고, 사용자 요청과 가장 관련 있는 상위 3~5개 도구만을 임베딩 검색으로 선별하여 주입합니다.",
+      "principle": "도구 목록을 벡터 DB에 인덱싱하고 사용자 질문 벡터와의 코사인 유사도로 필터링하여 관련 도구만 동적 주입함으로써 컨텍스트 낭비를 줄이고 도구 오인식을 방지합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "embedding"],
+      "layers": ["preprocessing", "system_architecture"],
+      "goals": ["accuracy", "cost", "speed"],
+      "interventions": ["pipeline_reconfiguration", "caching"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "top_k_tools",
+          "label": "선별 도구 수 (Top-K)",
+          "type": "integer",
+          "default": 4,
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "description": "프롬프트에 노출할 최대 도구 개수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["vector_retrieval_support"],
+        "hardware": ["cpu", "apple_silicon_metal"],
+        "runtimes": ["scikit-learn", "llama.cpp"],
+        "notes": "도구 수가 30개 이상인 대규모 MCP 서버 환경에서 필수."
+      },
+      "metrics": ["accuracy", "cost", "latency"],
+      "expected_effects": "도구 선택 정확도 향상 및 대규모 도구 환경에서 프롬프트 토큰 소모 80% 절감",
+      "side_effects": "임베딩 검색 실패로 필요한 도구가 프롬프트에서 누락될 경우 과업 수행 불가",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "agent_tool_schema_optimization",
+          "note": "선별된 소수 도구의 스키마를 정밀하게 공급"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["tool_selection", "routing", "mcp", "semantic_search"]
+    },
+    {
+      "slug": "chain_of_thought_prompting",
+      "name": "Chain-of-Thought & Few-Shot In-Context Learning",
+      "name_ko": "생각의 사슬 (CoT) 및 퓨샷 인컨텍스트 학습",
+      "summary": "프롬프트에 단계별 추론 과정('Let's think step by step')을 유도하거나 질의-추론-정답 예시를 2~3개 제공하여 복잡한 논리 및 수학적 문제의 정답률을 극적으로 높입니다.",
+      "principle": "트랜스포머는 중간 추론 토큰을 생성할 때 계산량(FLOPs)과 어텐션 상태 공간을 확장합니다. 직접 정답을 출력하게 하는 것보다 단계별 추론을 출력하게 하면 연산 깊이가 늘어나 정답에 수렴합니다.",
+      "category": "agents_orchestration",
+      "targets": ["llm", "slm_on_device"],
+      "layers": ["preprocessing", "decoding"],
+      "goals": ["accuracy", "quality"],
+      "interventions": ["pipeline_reconfiguration", "parameter_tuning"],
+      "research_methods": ["ab_test", "baseline"],
+      "parameters": [
+        {
+          "key": "few_shot_examples_count",
+          "label": "Few-Shot 예시 개수",
+          "type": "integer",
+          "default": 2,
+          "min": 0,
+          "max": 5,
+          "step": 1,
+          "description": "프롬프트에 주입할 모범 추론 예시 수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["general_llm_support"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm"],
+        "notes": "모든 LLM 런타임에서 즉시 사용 가능한 프롬프트 기법."
+      },
+      "metrics": ["accuracy", "quality"],
+      "expected_effects": "수학, 기호 논리, 코드 디버깅 정답률 20~40% 대폭 상승",
+      "side_effects": "추론 토큰이 길어짐에 따라 응답 지연시간 및 토큰 비용 증가",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "plan_and_solve_prompting",
+          "note": "추론 단계별 사고와 명시적 계획 수립을 결합"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+          "url": "https://arxiv.org/abs/2201.11903",
+          "year": 2022,
+          "claim": "논문 보고: 생각의 사슬 프롬프팅을 통해 대규모 언어 모델의 다단계 산술 및 상식 추론 능력 비약적 향상"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["cot", "chain_of_thought", "few_shot", "reasoning"]
+    },
+    {
+      "slug": "agent_safety_guardrails",
+      "name": "Input/Output Safety Guardrails (Llama-Guard)",
+      "name_ko": "입출력 안전 가드레일 및 검증",
+      "summary": "프롬프트 주입(Prompt Injection), 탈옥(Jailbreak), 민감 개인정보(PII) 유출 및 악성 코드 생성을 사전에 감지하고 차단하는 전후처리 가드레일 필터를 적용합니다.",
+      "principle": "사용자 입력 및 모델 최종 출력을 경량 분류 모델(Llama-Guard) 또는 정규식 룰셋에 통과시켜 정책 위반 확률을 판정하고, 위험 감지 시 안전 표준 템플릿 응답으로 대체합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration", "serving_infra"],
+      "layers": ["preprocessing", "postprocessing"],
+      "goals": ["stability", "consistency"],
+      "interventions": ["pre_postprocessing_addition", "model_replacement"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "pii_masking_enabled",
+          "label": "개인정보 자동 마스킹 (PII)",
+          "type": "boolean",
+          "default": true,
+          "description": "주민번호, 전화번호, 이메일, API 키의 자동 익명화 마스킹",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["guardrail_engine"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch", "scikit-learn"],
+        "notes": "프로덕션 배포 및 기업용 서비스 연동 시 필수 보안 요건."
+      },
+      "metrics": ["stability", "accuracy"],
+      "expected_effects": "보안 취약점 및 악의적 프롬프트 인젝션 공격 99% 무력화",
+      "side_effects": "과도한 안전 필터 적용 시 정상적인 개발/보안 질문까지 거부하는 오탐(False Positive) 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "structured_output_json_schema_grammar",
+          "note": "출력 형식 안전성과 내용 안전성을 함께 보장"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["guardrails", "safety", "prompt_injection", "pii"]
+    },
+    {
+      "slug": "agent_trajectory_evaluation",
+      "name": "Agent Trajectory & Goal Achievement Evaluation",
+      "name_ko": "에이전트 궤적 및 목표 달성률 평가",
+      "summary": "에이전트의 전체 실행 경로(도구 호출 순서, 인자 정합성, 소요 단계 수, 최종 결과물)를 기록하고 기대 상태(Golden Trajectory)와 비교 평가하여 비효율적인 우회 경로를 교정합니다.",
+      "principle": "최종 응답의 정답 여부뿐만 아니라 최소 도구 호출로 목표를 달성했는지(Step Efficiency), 불필요한 파일 읽기나 엉뚱한 검색을 하지 않았는지 궤적 단위 지표(Trajectory Metric)를 산출합니다.",
+      "category": "agents_orchestration",
+      "targets": ["agent_orchestration"],
+      "layers": ["system_architecture"],
+      "goals": ["accuracy", "cost", "speed"],
+      "interventions": ["pipeline_reconfiguration"],
+      "research_methods": ["profiling", "ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "eval_mode",
+          "label": "평가 모드",
+          "type": "enum",
+          "default": "rule_and_llm",
+          "options": [
+            {"value": "rule_and_llm", "label": "규칙 + LLM 심사위원 (LLM-as-a-Judge)"},
+            {"value": "rule_only", "label": "정적 규칙 기반 (도구 성공률, 에러 횟수)"}
+          ],
+          "description": "궤적 평가 기준 방식",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["trajectory_logger"],
+        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp"],
+        "notes": "따까리 세션 트랜스크립트(transcript.jsonl)와 연동하여 자동 분석 가능."
+      },
+      "metrics": ["accuracy", "cost", "latency"],
+      "expected_effects": "에이전트 개발 시 비효율적인 도구 호출 경로와 방황을 객관적으로 가시화하고 최적화",
+      "side_effects": "LLM 심사위원 모드 사용 시 평가 자체에 추가 토큰 소모",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "react_agent_loop_tuning",
+          "note": "평가 결과를 바탕으로 에이전트 루프 파라미터 개선"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": ["external_report"],
+      "tags": ["trajectory_eval", "agent_benchmarking", "llm_as_a_judge"]
+    }
+  ]
+}

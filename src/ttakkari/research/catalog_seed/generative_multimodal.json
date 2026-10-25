@@ -1,0 +1,594 @@
+{
+  "methods": [
+    {
+      "slug": "diffusion_sampler_comparison",
+      "name": "Diffusion Sampler Comparison (Euler vs DPM++ 2M vs DDIM)",
+      "name_ko": "확산 모델 샘플러 알고리즘 비교",
+      "summary": "확산 역과정(Reverse Process) 미분방정식을 푸는 다양한 수치해석 샘플러들의 수렴 속도, 디테일 표현력, 생성 지연시간을 비교하여 최소 스텝에서 최고의 시각적 품질을 달성합니다.",
+      "principle": "DPM++ 2M Karras 등 고차 다중스텝 예측기(Multistep Predictor)는 2차 도함수를 활용하여 오일러(Euler) 방식보다 적은 반복 횟수(15~20스텝)로도 부드러운 궤적을 그리며 고품질 잠재 벡터에 수렴합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation", "video_generation"],
+      "layers": ["decoding", "runtime"],
+      "goals": ["quality", "speed", "latency"],
+      "interventions": ["algorithm_change", "parameter_tuning"],
+      "research_methods": ["ab_test", "repeated_measurement"],
+      "parameters": [
+        {
+          "key": "sampler_name",
+          "label": "샘플러 선택",
+          "type": "enum",
+          "default": "dpmpp_2m_karras",
+          "options": [
+            {"value": "euler_a", "label": "Euler Ancestral (확률적 표준)"},
+            {"value": "euler", "label": "Euler (결정론적 기본)"},
+            {"value": "dpmpp_2m_karras", "label": "DPM++ 2M Karras (고품질 고속)"},
+            {"value": "ddim", "label": "DDIM (인버전 역추적 적합)"}
+          ],
+          "description": "노이즈 제거에 사용할 ODE/SDE 샘플링 수치 알고리즘",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["diffusers_library"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch"],
+        "notes": "ComfyUI, WebUI, Diffusers 파이프라인에서 기본 지원."
+      },
+      "metrics": ["latency", "quality", "speed"],
+      "expected_effects": "기존 50스텝 샘플러 대비 20스텝만으로 동등 이상의 선명도 및 텍스처 완성도 확보 (시간 60% 단축)",
+      "side_effects": "일부 조상 샘플러(Ancestral)는 스텝마다 랜덤 노이즈를 주입하므로 시드가 같아도 스텝 수 변경 시 구도가 완전히 바뀜",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "diffusion_step_count_tuning",
+          "note": "선택된 샘플러의 수렴 특성에 맞춰 적정 스텝 수 결정"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Elucidating the Design Space of Diffusion-Based Generative Models (Karras et al.)",
+          "url": "https://arxiv.org/abs/2206.00364",
+          "year": 2022,
+          "claim": "논문 보고: Karras 스케줄과 DPM 2차 수치해법을 통해 적은 스텝 수로도 최상급 FID 점수 달성"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["diffusion", "samplers", "dpmpp", "image_generation"]
+    },
+    {
+      "slug": "diffusion_step_count_tuning",
+      "name": "Denoising Steps & Schedule Tuning",
+      "name_ko": "디노이징 스텝 수 및 스케줄 튜닝",
+      "summary": "확산 모델의 노이즈 제거 반복 스텝 수(Steps)를 10~50 사이에서 튜닝하여 생성 시간과 이미지 세부 디테일(손가락, 텍스트, 질감) 간의 최적 타협점을 찾습니다.",
+      "principle": "스텝 수가 너무 적으면 잠재 공간에서 노이즈가 덜 걷혀 뿌연 블러가 남고, 너무 많으면 지연시간만 선형 증가하며 품질 향상이 포화됩니다. 품질 점수 한계 효용 지점을 계측합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation"],
+      "layers": ["decoding", "runtime"],
+      "goals": ["speed", "quality", "latency"],
+      "interventions": ["parameter_tuning"],
+      "research_methods": ["parameter_sweep", "ab_test"],
+      "parameters": [
+        {
+          "key": "steps",
+          "label": "디노이징 스텝 수 (Steps)",
+          "type": "integer",
+          "default": 20,
+          "min": 4,
+          "max": 60,
+          "step": 2,
+          "description": "노이즈 역변환을 수행할 총 반복 횟수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["diffusion_pipeline"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch"],
+        "notes": "SD 1.5, SDXL, Flux 계열의 핵심 생성 시간 제어 변수."
+      },
+      "metrics": ["latency", "speed", "quality"],
+      "expected_effects": "불필요한 과잉 반복을 줄여 생성 지연 40~50% 단축",
+      "side_effects": "스텝 수를 12 이하로 너무 낮출 경우 미세 구조 및 형태 붕괴 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "diffusion_sampler_comparison",
+          "note": "샘플러 유형에 따라 스텝 수 포화 지점이 달라짐"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["steps", "denoising", "speed", "image_generation"]
+    },
+    {
+      "slug": "cfg_scale_tuning",
+      "name": "Classifier-Free Guidance (CFG) Scale Tuning",
+      "name_ko": "분류기 없는 유도 (CFG) 스케일 튜닝",
+      "summary": "텍스트 프롬프트 조건부 예측과 무조건부(Unconditional) 예측 간의 외삽 가중치(CFG Scale)를 조절하여 프롬프트 충실도와 이미지의 자연스러움 균형을 맞춥니다.",
+      "principle": "CFG는 e = e_uncond + s * (e_cond - e_uncond) 수식으로 예측 노이즈를 유도합니다. 스케일(s)이 높으면 프롬프트 지시를 강박적으로 따르지만 채도 과포화나 거친 아티팩트가 생기고, 낮으면 창의적이지만 지시 불이행이 발생합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation", "video_generation"],
+      "layers": ["decoding", "postprocessing"],
+      "goals": ["quality", "consistency"],
+      "interventions": ["parameter_tuning"],
+      "research_methods": ["parameter_sweep", "ab_test"],
+      "parameters": [
+        {
+          "key": "cfg_scale",
+          "label": "CFG 스케일 (Guidance Scale)",
+          "type": "number",
+          "default": 7.0,
+          "min": 1.0,
+          "max": 18.0,
+          "step": 0.5,
+          "description": "텍스트 지시 준수 강도 계수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["diffusion_pipeline"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch"],
+        "notes": "Flux 등 최신 플로우 매칭 모델은 Guidance 3.5 내외, SDXL은 6~8이 권장됨."
+      },
+      "metrics": ["quality", "consistency"],
+      "expected_effects": "프롬프트 키워드 정확한 반영 및 피부/물체 질감의 과포화 번현상(Deep fried effect) 방지",
+      "side_effects": "12 이상의 과도한 CFG는 대비 깨짐과 기괴한 인체 왜곡을 초래",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "clip_skip_text_encoder_tuning",
+          "note": "텍스트 인코더 레이어 표현력과 CFG 스케일 간의 상호작용 조율"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Classifier-Free Diffusion Guidance",
+          "url": "https://arxiv.org/abs/2207.12598",
+          "year": 2022,
+          "claim": "논문 보고: 별도의 분류기 없이 무조건부 모델과 조건부 모델의 조합만으로 생성 품질과 조건 일치도 극대화"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["cfg", "guidance_scale", "prompt_adherence"]
+    },
+    {
+      "slug": "latent_consistency_models_distillation",
+      "name": "Few-Step Distillation (LCM / Turbo / Lightning)",
+      "name_ko": "초고속 잠재 일관성 증류 가속 (LCM / Turbo)",
+      "summary": "다단계 확산 역과정을 단 2~4스텝의 일관성 함수(Consistency Function)로 증류한 어댑터나 가중치를 적용하여, 실시간 수준(수백 밀리초)으로 고해상도 이미지를 생성합니다.",
+      "principle": "PF-ODE(확률 흐름 상미분방정식) 궤적 상의 모든 점이 동일한 초기 데이터 점으로 사상되도록 훈련된 잠재 일관성 증류 기법을 통해 20스텝 이상의 연산을 4스텝으로 압축합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation"],
+      "layers": ["model_architecture", "decoding"],
+      "goals": ["speed", "latency", "cost"],
+      "interventions": ["compression_quantization", "model_replacement"],
+      "research_methods": ["ab_test", "baseline"],
+      "parameters": [
+        {
+          "key": "distilled_steps",
+          "label": "증류 스텝 수",
+          "type": "integer",
+          "default": 4,
+          "min": 1,
+          "max": 8,
+          "step": 1,
+          "description": "LCM/Turbo 전용 스텝 수 (보통 4 또는 8)",
+          "advanced": false
+        },
+        {
+          "key": "distilled_cfg",
+          "label": "증류 CFG 스케일",
+          "type": "number",
+          "default": 1.5,
+          "min": 1.0,
+          "max": 2.5,
+          "step": 0.1,
+          "description": "LCM 모드에서 사용하는 저배율 CFG (1.0~2.0)",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["lcm_lora_or_turbo_model"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch"],
+        "notes": "Mac Studio Apple Silicon MPS 환경에서 1초 미만 실시간 이미지 생성 가능."
+      },
+      "metrics": ["latency", "speed", "quality"],
+      "expected_effects": "이미지 한 장 생성 시간을 10초대에서 0.5~1.5초대로 단축 (10배 이상 가속)",
+      "side_effects": "미세한 텍스트 렌더링이나 복잡한 배경의 질감 표현력이 다단계 풀 스텝 대비 약간 단순화됨",
+      "relations": [
+        {
+          "type": "alternative_to",
+          "target": "diffusion_step_count_tuning",
+          "note": "일반 확산 스텝 튜닝의 한계를 뛰어넘어 초저스텝 구조로 변환"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Latent Consistency Models: Synthesizing High-Resolution Images with Few-Step Inference",
+          "url": "https://arxiv.org/abs/2310.04378",
+          "year": 2023,
+          "claim": "논문 보고: 일관성 모델 증류를 통해 2~4스텝 만으로 고해상도 이미지의 고속 합성 성공"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["lcm", "turbo", "lightning", "few_step_diffusion", "real_time"]
+    },
+    {
+      "slug": "diffusion_vae_tiling_slicing",
+      "name": "VAE Tiling & Slicing for VRAM Conservation",
+      "name_ko": "VAE 타일링 및 슬라이싱을 통한 VRAM 절약",
+      "summary": "1024x1024 이상의 고해상도 이미지를 잠재 공간에서 픽셀 공간으로 디코딩할 때 발생하는 VAE의 극심한 VRAM 스파이크를 방지하기 위해 타일 단위로 분할 디코딩 후 블렌딩합니다.",
+      "principle": "VAE 디코더는 피크 메모리가 해상도의 제곱에 비례합니다. 잠재 텐서를 일정한 오버랩을 가진 작은 타일들로 슬라이싱하고 순차 디코딩한 뒤, 가중치 알파 블렌딩으로 이음새 없이 원본 해상도 픽셀 맵을 재구성합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation", "multimodal"],
+      "layers": ["memory", "postprocessing", "runtime"],
+      "goals": ["memory", "stability"],
+      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
+      "research_methods": ["ab_test", "repeated_measurement"],
+      "parameters": [
+        {
+          "key": "tile_sample_min_size",
+          "label": "타일 최소 크기",
+          "type": "integer",
+          "default": 512,
+          "min": 256,
+          "max": 1024,
+          "step": 64,
+          "unit": "px",
+          "description": "분할 처리할 단일 타일 크기",
+          "advanced": false
+        },
+        {
+          "key": "tile_overlap",
+          "label": "타일 오버랩 크기",
+          "type": "integer",
+          "default": 64,
+          "min": 16,
+          "max": 128,
+          "step": 16,
+          "unit": "px",
+          "description": "타일 경계면 블렌딩 중첩 영역",
+          "advanced": true
+        }
+      ],
+      "compatibility": {
+        "requires": ["vae_tiling_support"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["pytorch"],
+        "notes": "ComfyUI 및 Diffusers의 enable_vae_tiling()으로 제공."
+      },
+      "metrics": ["peak_memory_mb", "stability", "latency"],
+      "expected_effects": "고해상도(2k, 4k) 업스케일링 디코딩 시 VAE VRAM 소모량 70% 절감으로 OOM 방지",
+      "side_effects": "타일별 반복 디코딩으로 인해 VAE 디코딩 소요 시간이 약 1.5~2배 증가",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "diffusion_sampler_comparison",
+          "note": "대용량 이미지 생성 워크플로의 메모리 방어선으로 결합"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["vae_tiling", "vram_reduction", "high_resolution", "diffusers"]
+    },
+    {
+      "slug": "clip_skip_text_encoder_tuning",
+      "name": "CLIP Skip & Text Encoder Layer Selection",
+      "name_ko": "CLIP Skip 및 텍스트 인코더 레이어 선택",
+      "summary": "CLIP 텍스트 인코더의 마지막 레이어 대신 뒤에서 두 번째(CLIP Skip 2) 등의 중간 레이어 은닉 상태를 확산 모델의 프롬프트 임베딩으로 전달하여 창작 의도 반영력을 높입니다.",
+      "principle": "CLIP의 최종 레이어는 이미지-텍스트 대조 학습(Contrastive Learning)에 지나치게 특화되어 일반적인 단어의 개념적 세부 뉘앙스가 추상화되어 있습니다. 한두 단계 이전 레이어가 더 풍부한 시각적 속성 묘사를 보존합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation"],
+      "layers": ["encoding", "preprocessing"],
+      "goals": ["quality", "consistency"],
+      "interventions": ["algorithm_change", "parameter_tuning"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "clip_skip",
+          "label": "CLIP Skip (생략 레이어 수)",
+          "type": "integer",
+          "default": 2,
+          "min": 1,
+          "max": 4,
+          "step": 1,
+          "description": "텍스트 인코더 마지막에서 몇 번째 레이어 출력을 사용할지 (애니/일러스트는 2 선호)",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["clip_text_encoder"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["pytorch"],
+        "notes": "SD 1.5 기반 서브컬처 체크포인트에서 사실상의 표준 설정."
+      },
+      "metrics": ["quality", "consistency"],
+      "expected_effects": "의상, 헤어스타일, 색상 등 세부 프롬프트 묘사의 재현율 대폭 개선",
+      "side_effects": "실사 모델에서 Skip을 과도하게 적용하면 사실적 질감 표현이 저하될 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "cfg_scale_tuning",
+          "note": "인코딩된 텍스트 피처의 강도에 맞추어 CFG 스케일 조율"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["clip_skip", "text_encoder", "prompt_adherence"]
+    },
+    {
+      "slug": "controlnet_conditioning",
+      "name": "ControlNet Multi-Conditioning Tuning",
+      "name_ko": "ControlNet 다중 조건부 제어 튜닝",
+      "summary": "Canny 에지, OpenPose 인체 포즈, Depth 깊이 맵 등 보조 조건 신호를 확산 모델의 중간 레이어에 주입하고 제어 강도(weight)와 종료 스텝을 튜닝하여 완벽한 구도와 자세를 통제합니다.",
+      "principle": "사전학습된 가중치를 잠금(Lock)하고 복제된 제어 브랜치(Zero Convolution)를 통해 외부 공간 정보를 U-Net/DiT 블록에 가산 주입함으로써 원본 지능을 보존한 채 공간적 형태를 지시합니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation", "video_generation"],
+      "layers": ["model_architecture", "decoding"],
+      "goals": ["accuracy", "quality", "consistency"],
+      "interventions": ["pipeline_reconfiguration", "parameter_tuning"],
+      "research_methods": ["ab_test", "parameter_sweep"],
+      "parameters": [
+        {
+          "key": "control_strength",
+          "label": "제어 강도 (Weight)",
+          "type": "number",
+          "default": 1.0,
+          "min": 0.1,
+          "max": 2.0,
+          "step": 0.05,
+          "description": "ControlNet 조건이 이미지 생성에 미치는 가중치",
+          "advanced": false
+        },
+        {
+          "key": "ending_step_ratio",
+          "label": "제어 종료 스텝 비율",
+          "type": "number",
+          "default": 0.8,
+          "min": 0.2,
+          "max": 1.0,
+          "step": 0.05,
+          "description": "디노이징 후반부 세부 질감 표현을 위해 제어를 일찍 해제할 시점",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["controlnet_model_checkpoint"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["pytorch"],
+        "notes": "추가 신경망 브랜치가 실행되므로 단일 생성 대비 약 20~30%의 추가 VRAM 필요."
+      },
+      "metrics": ["accuracy", "quality", "peak_memory_mb"],
+      "expected_effects": "텍스트 프롬프트만으로는 불가능한 복잡한 캐릭터 포즈나 실내 인테리어 구조를 100% 일치시킴",
+      "side_effects": "제어 강도가 너무 세면 경계선이 인위적으로 각지거나 부자연스러운 질감 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "lora_weight_merging_multimodal",
+          "note": "ControlNet 자세 제어와 캐릭터 전용 LoRA를 동시 적용"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Adding Conditional Control to Text-to-Image Diffusion Models (ControlNet)",
+          "url": "https://arxiv.org/abs/2302.05543",
+          "year": 2023,
+          "claim": "논문 보고: 영벡터 컨볼루션을 통해 대형 텍스트-투-이미지 모델에 정밀한 공간적 조건 제어 부여"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": ["external_report"],
+      "tags": ["controlnet", "pose_estimation", "spatial_control", "canny"]
+    },
+    {
+      "slug": "lora_weight_merging_multimodal",
+      "name": "Multimodal LoRA Merging & Weight Tuning",
+      "name_ko": "멀티모달 LoRA 가중치 합성 및 강도 튜닝",
+      "summary": "특정 화풍, 인물 얼굴, 의상, 조명 등을 학습한 복수의 LoRA 어댑터 가중치를 비율에 맞춰 합성(Merge)하거나 동시 로드 시 스케일을 튜닝하여 상호 충돌 없는 합성 스타일을 구현합니다.",
+      "principle": "각 LoRA의 저순위 행렬 W = W_base + scale_1 * Delta_W1 + scale_2 * Delta_W2 형태로 결합합니다. 가중치 텐서를 런타임에 직접 원본 모델에 더해버리면(Bake-in) 추가 어댑터 추론 오버헤드를 0으로 만들 수 있습니다.",
+      "category": "generative_multimodal",
+      "targets": ["image_generation"],
+      "layers": ["model_architecture", "runtime"],
+      "goals": ["quality", "consistency", "speed"],
+      "interventions": ["parameter_tuning", "model_replacement"],
+      "research_methods": ["parameter_sweep", "ab_test"],
+      "parameters": [
+        {
+          "key": "lora_scale",
+          "label": "LoRA 강도 스케일",
+          "type": "number",
+          "default": 0.8,
+          "min": 0.1,
+          "max": 1.5,
+          "step": 0.05,
+          "description": "어댑터 스타일의 주입 강도 배율",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["lora_safetensors_file"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["pytorch"],
+        "notes": "ComfyUI LoRA Loader 및 Diffusers 파이프라인에서 기본 탑재."
+      },
+      "metrics": ["quality", "consistency"],
+      "expected_effects": "단일 기본 모델을 기반으로 수십 가지의 특정 브랜드 캐릭터 및 아트 스타일을 자유자재로 연출",
+      "side_effects": "복수의 LoRA 강도 합이 과도하면(>1.5) 얼굴이 까맣게 타거나 해부학적 인체 기형 유발",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "controlnet_conditioning",
+          "note": "LoRA 캐릭터 외형과 ControlNet 구도 제어를 통합 워크플로로 구성"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["lora", "image_lora", "merging", "style_tuning"]
+    },
+    {
+      "slug": "vlm_image_resolution_patching",
+      "name": "VLM Dynamic Resolution Patching",
+      "name_ko": "VLM 동적 해상도 패치 분할",
+      "summary": "비전-언어 모델(VLM)에 고해상도 이미지가 주어졌을 때, 강제로 단일 저해상도로 축소하지 않고 종횡비를 보존하며 다수의 고정 그리드 패치로 타일링 분할하여 미세 텍스트와 객체를 판독합니다.",
+      "principle": "LLaVA-NeXT, Qwen-VL 등 최신 VLM은 이미지를 글로벌 썸네일 1개와 로컬 고해상도 크롭 패치 N개로 분할하여 비전 인코더(ViT)를 통과시킵니다. 이미지 패치 토큰 수가 가변적이므로 풍부한 세부 정보를 LLM에 전달합니다.",
+      "category": "generative_multimodal",
+      "targets": ["multimodal", "slm_on_device"],
+      "layers": ["preprocessing", "encoding"],
+      "goals": ["accuracy", "quality"],
+      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "max_dynamic_patches",
+          "label": "최대 동적 패치 수",
+          "type": "integer",
+          "default": 6,
+          "min": 1,
+          "max": 12,
+          "step": 1,
+          "description": "고해상도 이미지를 분할할 최대 타일 수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["vlm_vision_encoder"],
+        "hardware": ["apple_silicon_metal", "cuda"],
+        "runtimes": ["llama.cpp", "vllm", "pytorch"],
+        "notes": "llama.cpp의 mmproj 멀티모달 프로젝터 및 Qwen2-VL 모델에서 지원."
+      },
+      "metrics": ["accuracy", "peak_memory_mb", "latency"],
+      "expected_effects": "OCR 영수증 판독, 도표 분석, 복잡한 문서 Q&A에서 인식 정확도 40% 이상 대폭 향상",
+      "side_effects": "패치 수가 늘어날수록 LLM의 입력 토큰 수가 수천 개로 급증하여 추론 속도가 느려지고 VRAM 점유 증가",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "multi_modal_feature_fusion",
+          "note": "분할된 비전 토큰들을 텍스트 언어 모델 토큰과 어텐션 융합"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["llm_inference", "external_report"],
+      "tags": ["vlm", "multimodal", "dynamic_resolution", "patching", "ocr"]
+    },
+    {
+      "slug": "video_generation_temporal_consistency",
+      "name": "Video Generation Temporal Attention Tuning",
+      "name_ko": "비디오 생성 시간축 어텐션 일관성 제어",
+      "summary": "동영상 생성 모델에서 연속 프레임 간의 깜빡임(Flickering)과 피사체 형태 왜곡을 억제하기 위해 시간축 어텐션(Temporal Attention) 가중치와 모션 버킷(Motion Bucket) 파라미터를 조절합니다.",
+      "principle": "공간 어텐션(Spatial Attention) 외에 프레임 축을 가로지르는 1D 시간축 크로스 어텐션 모듈을 통해 이전 프레임의 객체 외형과 배경 조명을 다음 프레임이 자연스럽게 계승하도록 유도합니다.",
+      "category": "generative_multimodal",
+      "targets": ["video_generation"],
+      "layers": ["attention", "model_architecture"],
+      "goals": ["consistency", "quality"],
+      "interventions": ["parameter_tuning", "algorithm_change"],
+      "research_methods": ["ab_test", "error_analysis"],
+      "parameters": [
+        {
+          "key": "motion_bucket_id",
+          "label": "모션 강도 (Motion Bucket ID)",
+          "type": "integer",
+          "default": 127,
+          "min": 1,
+          "max": 255,
+          "step": 8,
+          "description": "움직임의 격렬함 정도 (SVD 기준, 낮을수록 정적이고 안정적임, 확인 필요: 최적값은 프롬프트에 종속)",
+          "advanced": false
+        },
+        {
+          "key": "fps",
+          "label": "생성 프레임레이트 (FPS)",
+          "type": "integer",
+          "default": 6,
+          "min": 4,
+          "max": 24,
+          "step": 1,
+          "unit": "fps",
+          "description": "초당 생성 프레임 수",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["video_diffusion_model"],
+        "hardware": ["cuda", "apple_silicon_metal"],
+        "runtimes": ["pytorch"],
+        "notes": "Stable Video Diffusion (SVD) 및 CogVideoX 계열에서 지원."
+      },
+      "metrics": ["consistency", "quality", "peak_memory_mb"],
+      "expected_effects": "프레임이 진행됨에 따라 피사체의 얼굴이나 의상이 붕괴되는 현상 억제 및 매끄러운 카메라 무빙 연출",
+      "side_effects": "모션 강도가 너무 낮으면 정지 사진처럼 굳어버리고, 너무 높으면 심각한 화면 깨짐 유발",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "diffusion_sampler_comparison",
+          "note": "비디오 전용 ODE 샘플러와 시간축 어텐션 결합"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": ["external_report"],
+      "tags": ["video_generation", "temporal_attention", "svd", "consistency"]
+    },
+    {
+      "slug": "multi_modal_feature_fusion",
+      "name": "Cross-Attention Feature Fusion Optimization",
+      "name_ko": "멀티모달 크로스 어텐션 피처 융합 최적화",
+      "summary": "비전 인코더의 이미지 특징 벡터와 텍스트 토큰 벡터가 교차하는 어텐션 프로젝션 레이어(MLP 프로젝터)의 구조와 정렬을 최적화하여 이미지-텍스트 간 정합성을 높입니다.",
+      "principle": "비전 공간과 언어 공간의 차원 불일치를 해소하기 위해 2계층 이상의 GeLU 활성화 기반 MLP 프로젝터를 사용하며, 크로스 어텐션 계산 시 시각적 접지(Visual Grounding) 정보가 텍스트 추론에 직접 반영되도록 결합합니다.",
+      "category": "generative_multimodal",
+      "targets": ["multimodal", "llm"],
+      "layers": ["model_architecture", "attention"],
+      "goals": ["accuracy", "quality"],
+      "interventions": ["algorithm_change", "model_replacement"],
+      "research_methods": ["ab_test", "ablation"],
+      "parameters": [
+        {
+          "key": "projector_type",
+          "label": "멀티모달 프로젝터 유형",
+          "type": "enum",
+          "default": "mlp2x_gelu",
+          "options": [
+            {"value": "mlp2x_gelu", "label": "2-Layer MLP with GeLU"},
+            {"value": "linear", "label": "단일 선형 투영 (Linear)"},
+            {"value": "qformer", "label": "Q-Former (쿼리 기반 어텐션 압축)"}
+          ],
+          "description": "비전 피처를 언어 모델 임베딩 공간으로 사상하는 아키텍처",
+          "advanced": false
+        }
+      ],
+      "compatibility": {
+        "requires": ["vlm_architecture"],
+        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
+        "runtimes": ["pytorch"],
+        "notes": "LLaVA 계열 아키텍처의 핵심 융합 블록."
+      },
+      "metrics": ["accuracy", "quality"],
+      "expected_effects": "이미지에 포함된 객체의 위치, 관계, 속성을 텍스트로 정확히 추론하는 정렬 능력 향상",
+      "side_effects": "프로젝터 계층이 복잡해질수록 미세조정 시 학습 수렴 불안정성 증가 가능",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "vlm_image_resolution_patching",
+          "note": "패치 분할된 시각 특징을 효과적으로 융합"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": ["external_report"],
+      "tags": ["feature_fusion", "cross_attention", "projector", "vlm"]
+    }
+  ]
+}

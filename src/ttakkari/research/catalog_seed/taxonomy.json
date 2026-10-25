@@ -1,0 +1,424 @@
+{
+  "targets": [
+    {
+      "id": "llm",
+      "label_ko": "대형 언어 모델 (LLM)",
+      "description": "수십억 이상의 파라미터를 가진 범용 생성 언어 모델"
+    },
+    {
+      "id": "slm_on_device",
+      "label_ko": "온디바이스 소형 언어 모델 (SLM)",
+      "description": "제한된 디바이스 메모리 및 전력 환경에서 구동되는 1B~8B급 경량 언어 모델"
+    },
+    {
+      "id": "embedding",
+      "label_ko": "임베딩 모델",
+      "description": "텍스트 및 멀티모달 입력을 고밀도 벡터 공간으로 변환하는 표현 모델"
+    },
+    {
+      "id": "reranker",
+      "label_ko": "리랭커 모델",
+      "description": "질의-문서 쌍의 교차 어텐션을 통해 정확한 관련도 순위를 매기는 크로스 인코더"
+    },
+    {
+      "id": "rag",
+      "label_ko": "RAG 파이프라인",
+      "description": "문서 검색, 인덱싱, 컨텍스트 주입 및 생성 결합 시스템"
+    },
+    {
+      "id": "tts",
+      "label_ko": "음성 합성 (TTS)",
+      "description": "텍스트를 자연스러운 인간 음성 파형으로 변환하는 합성 시스템"
+    },
+    {
+      "id": "stt",
+      "label_ko": "음성 인식 (STT)",
+      "description": "음성 오디오 신호를 텍스트 및 타임스탬프로 전사하는 음성인식 모델"
+    },
+    {
+      "id": "image_generation",
+      "label_ko": "이미지 생성 모델",
+      "description": "확산(Diffusion) 및 흐름 매칭 기반 텍스트-투-이미지 생성 모델"
+    },
+    {
+      "id": "video_generation",
+      "label_ko": "비디오 생성 모델",
+      "description": "시간적 일관성을 유지하며 동영상을 생성하는 비디오 확산 모델"
+    },
+    {
+      "id": "multimodal",
+      "label_ko": "멀티모달 비전-언어 모델 (VLM)",
+      "description": "이미지/비디오와 텍스트를 동시에 이해하고 추론하는 멀티모달 모델"
+    },
+    {
+      "id": "classical_ml",
+      "label_ko": "전통 머신러닝",
+      "description": "트리 앙상블(GBDT), 선형 회귀, 군집, 행렬 분해 등 고전적 통계/ML 모델"
+    },
+    {
+      "id": "recommender_search",
+      "label_ko": "추천 및 검색 시스템",
+      "description": "대규모 아이템 카탈로그 대상 개인화 추천 및 하이브리드 검색 시스템"
+    },
+    {
+      "id": "serving_infra",
+      "label_ko": "서빙 및 추론 인프라",
+      "description": "모델 호스팅, 동적 배치, 로드 밸런싱, 분산 스케줄링 인프라"
+    },
+    {
+      "id": "data_pipeline",
+      "label_ko": "데이터 파이프라인",
+      "description": "데이터 수집, 전처리, 토큰화, 청킹, 임베딩 캐싱 데이터 처리망"
+    },
+    {
+      "id": "agent_orchestration",
+      "label_ko": "에이전트 오케스트레이션",
+      "description": "도구 호출, 계획, 다중 에이전트 협업, 메모리 제어 프레임워크"
+    },
+    {
+      "id": "systems",
+      "label_ko": "시스템 및 OS 하드웨어",
+      "description": "메모리 대역폭, CPU 스레딩, GPU 아키텍처 및 커널 하드웨어 계층"
+    }
+  ],
+  "layers": [
+    {
+      "id": "model_architecture",
+      "label_ko": "모델 구조",
+      "description": "신경망 레이어 구성, 어텐션 헤드, 정규화, 활성화 함수 등 아키텍처"
+    },
+    {
+      "id": "training",
+      "label_ko": "학습 알고리즘",
+      "description": "손실 함수, 옵티마이저, 역전파, 하이퍼파라미터 스케줄"
+    },
+    {
+      "id": "data",
+      "label_ko": "데이터셋 및 샘플링",
+      "description": "학습/평가 데이터셋 분포, 정제 품질, 필터링 기준, 증강 기법"
+    },
+    {
+      "id": "preprocessing",
+      "label_ko": "전처리",
+      "description": "입력 데이터 정규화, 음소 변환, 오디오 리샘플링, 이미지 크기 조정"
+    },
+    {
+      "id": "postprocessing",
+      "label_ko": "후처리",
+      "description": "모델 출력 보정, 음성 음량 노멀라이징, 텍스트 정제, 환각 필터링"
+    },
+    {
+      "id": "tokenization",
+      "label_ko": "토큰화",
+      "description": "어휘 사전 분할(BPE/WordPiece), 특수 토큰, 패딩 규칙"
+    },
+    {
+      "id": "encoding",
+      "label_ko": "인코딩",
+      "description": "입력 토큰/신호의 은닉 벡터 임베딩 변환 및 인코더 블록"
+    },
+    {
+      "id": "decoding",
+      "label_ko": "디코딩",
+      "description": "자기회귀 로짓 샘플링, 빔 서치, 투기적 디코딩 알고리즘"
+    },
+    {
+      "id": "attention",
+      "label_ko": "Attention 메커니즘",
+      "description": "Self-Attention, Cross-Attention, FlashAttention 연산 블록"
+    },
+    {
+      "id": "kv_cache",
+      "label_ko": "KV 캐시",
+      "description": "트랜스포머 디코더 Key-Value 캐시 저장, 양자화, 페이징"
+    },
+    {
+      "id": "gpu_kernel",
+      "label_ko": "GPU 커널",
+      "description": "CUDA/Metal 셰이더 커널 수준의 타일링, 공유 메모리, 레지스터 최적화"
+    },
+    {
+      "id": "compiler",
+      "label_ko": "컴파일러",
+      "description": "그래프 최적화 컴파일러(TorchInductor, MLX, CoreML, XLA, TVM)"
+    },
+    {
+      "id": "runtime",
+      "label_ko": "실행 런타임",
+      "description": "추론 실행 엔진(llama.cpp, vLLM, ONNX Runtime, TensorRT-LLM)"
+    },
+    {
+      "id": "memory",
+      "label_ko": "메모리 관리",
+      "description": "호스트/디바이스 메모리 할당자, 통합 메모리 전송, Zero-Copy, mlock"
+    },
+    {
+      "id": "hardware",
+      "label_ko": "하드웨어 장치",
+      "description": "Apple Silicon Metal, NVIDIA GPU, CPU AVX/NEON 아키텍처"
+    },
+    {
+      "id": "network",
+      "label_ko": "네트워크 및 통신",
+      "description": "분산 텐서 병렬 통신(NCCL), 파이프라인 통신, RPC 오버헤드"
+    },
+    {
+      "id": "serving",
+      "label_ko": "서빙 레이어",
+      "description": "HTTP/gRPC API 엔드포인트, 요청 파이프라인, 세션 유지"
+    },
+    {
+      "id": "scheduler",
+      "label_ko": "스케줄러",
+      "description": "요청 배치 스케줄링, 우선순위 큐, 프리임프션"
+    },
+    {
+      "id": "system_architecture",
+      "label_ko": "시스템 아키텍처",
+      "description": "전체 에이전트/연구실 파이프라인 구성 및 계층 간 결합도"
+    }
+  ],
+  "goals": [
+    {
+      "id": "accuracy",
+      "label_ko": "정확도",
+      "description": "예측 및 태스크 수행의 정답률, Precision, Recall, F1 점수 향상"
+    },
+    {
+      "id": "quality",
+      "label_ko": "품질 및 완성도",
+      "description": "생성 텍스트/음성/이미지의 자연스러움, 유창성, 충실도 향상"
+    },
+    {
+      "id": "speed",
+      "label_ko": "속도 향상",
+      "description": "전체 처리 시간 단축 및 실행 주기 가속화"
+    },
+    {
+      "id": "latency",
+      "label_ko": "지연 시간 단축",
+      "description": "첫 토큰 생성 시간(TTFT) 및 단일 요청 응답 시간 감소"
+    },
+    {
+      "id": "throughput",
+      "label_ko": "처리량 증대",
+      "description": "단위 시간당 생성 토큰 수(tok/s) 및 초당 처리 요청 수(RPS) 확대"
+    },
+    {
+      "id": "memory",
+      "label_ko": "메모리 절감",
+      "description": "VRAM/RAM 점유량 감소 및 피크 메모리 사용량 최적화"
+    },
+    {
+      "id": "gpu_utilization",
+      "label_ko": "GPU 활용률",
+      "description": "GPU 연산 코어(Tensor/Matrix) 점유율 극대화 및 유휴 시간 제거"
+    },
+    {
+      "id": "cpu_utilization",
+      "label_ko": "CPU 활용률",
+      "description": "멀티코어 CPU 병렬성 극대화 및 컨텍스트 스위칭 최소화"
+    },
+    {
+      "id": "cost",
+      "label_ko": "비용 절감",
+      "description": "API 호출 비용, 컴퓨팅 인프라 비용 및 토큰 소모량 감축"
+    },
+    {
+      "id": "stability",
+      "label_ko": "안정성",
+      "description": "OOM 방지, 런타임 크래시 예방, 수치 오버플로 방지"
+    },
+    {
+      "id": "reproducibility",
+      "label_ko": "재현성",
+      "description": "시드 고정 및 결정론적 실행을 통한 결과 재현 가능성 확보"
+    },
+    {
+      "id": "scalability",
+      "label_ko": "확장성",
+      "description": "대규모 동시 사용자 및 거대 데이터셋 환경으로의 확장 지원"
+    },
+    {
+      "id": "consistency",
+      "label_ko": "일관성",
+      "description": "화자 음색, 생성 스타일, 서식 준수, 문법의 균일성 유지"
+    },
+    {
+      "id": "energy",
+      "label_ko": "에너지 효율",
+      "description": "소비 전력 절감 및 발열에 따른 써멀 스로틀링 완화"
+    }
+  ],
+  "interventions": [
+    {
+      "id": "parameter_tuning",
+      "label_ko": "파라미터 변경",
+      "description": "학습률, 배치 크기, 온도, 가중치 등 하이퍼파라미터 수치 조정"
+    },
+    {
+      "id": "algorithm_change",
+      "label_ko": "알고리즘 변경",
+      "description": "기본 수식, 손실 함수, 탐색 알고리즘 또는 어텐션 수식 교체"
+    },
+    {
+      "id": "model_replacement",
+      "label_ko": "모델 교체",
+      "description": "백본 아키텍처, 인코더/디코더 모델 또는 파운데이션 모델 변경"
+    },
+    {
+      "id": "pipeline_reconfiguration",
+      "label_ko": "파이프라인 재구성",
+      "description": "처리 단계 순서 변경, 분기 추가, 단축 경로 생성"
+    },
+    {
+      "id": "pre_postprocessing_addition",
+      "label_ko": "전후처리 추가",
+      "description": "입력 정규화 모듈, 발음 사전, 출력 검증기 등 전/후처리 블록 삽입"
+    },
+    {
+      "id": "kernel_optimization",
+      "label_ko": "커널 최적화",
+      "description": "GPU/CPU 연산자 융합, 메모리 접근 패턴 수정 및 저수준 커널 교체"
+    },
+    {
+      "id": "caching",
+      "label_ko": "캐싱",
+      "description": "중간 연산 결과, KV 상태, 프롬프트 프리픽스 또는 검색 결과 캐시"
+    },
+    {
+      "id": "compression_quantization",
+      "label_ko": "압축 및 양자화",
+      "description": "가중치/활성화 8bit/4bit 양자화, 가지치기, 지식 증류"
+    },
+    {
+      "id": "parallelization",
+      "label_ko": "병렬화",
+      "description": "데이터/텐서/파이프라인 병렬화 및 CPU/GPU 오프로딩 분산 처리"
+    },
+    {
+      "id": "fine_tuning_training",
+      "label_ko": "학습 및 미세조정",
+      "description": "LoRA, Full Fine-tuning, DPO 등 도메인 데이터 추가 학습"
+    },
+    {
+      "id": "data_augmentation",
+      "label_ko": "데이터 증강",
+      "description": "합성 데이터 생성, 노이즈 주입, 샘플 리밸런싱"
+    },
+    {
+      "id": "compiler_optimization",
+      "label_ko": "컴파일 최적화",
+      "description": "JIT 컴파일 플래그, 계산 그래프 융합, 하드웨어 특화 벡터화"
+    }
+  ],
+  "research_methods": [
+    {
+      "id": "baseline",
+      "label_ko": "베이스라인 측정",
+      "description": "기본 설정 상태에서의 성능, 지연시간, 품질 단일 벤치마크"
+    },
+    {
+      "id": "ab_test",
+      "label_ko": "A/B 비교 평가",
+      "description": "대조군(A)과 실험군(B) 간의 주요 지표 통계적 비교"
+    },
+    {
+      "id": "ablation",
+      "label_ko": "소거 연구 (Ablation)",
+      "description": "특정 컴포넌트나 기능을 제거하며 각 요소의 기여도 측정"
+    },
+    {
+      "id": "parameter_sweep",
+      "label_ko": "파라미터 스윕",
+      "description": "단일 연속 파라미터의 범위를 순차 변경하며 변동 곡선 측정"
+    },
+    {
+      "id": "grid_search",
+      "label_ko": "격자 탐색 (Grid Search)",
+      "description": "지정된 후보 파라미터들의 모든 데카르트 곱 조합 전수 탐색"
+    },
+    {
+      "id": "random_search",
+      "label_ko": "무작위 탐색 (Random Search)",
+      "description": "정의된 탐색 공간 내에서 균등 확률로 무작위 샘플링 평가"
+    },
+    {
+      "id": "bayesian_optimization",
+      "label_ko": "베이지안 최적화",
+      "description": "가우시안 프로세스 등을 이용해 적은 횟수로 최적 파라미터 수렴"
+    },
+    {
+      "id": "repeated_measurement",
+      "label_ko": "반복 측정",
+      "description": "동일 설정 3~10회 이상 반복 실행하여 평균, 분산, 신뢰구간 계측"
+    },
+    {
+      "id": "sensitivity_analysis",
+      "label_ko": "민감도 분석",
+      "description": "입력 크기나 프롬프트 변동에 따른 지표 민감도 계측"
+    },
+    {
+      "id": "profiling",
+      "label_ko": "프로파일링",
+      "description": "타임라인 트레이스 및 하드웨어 카운터를 통한 병목 계측"
+    },
+    {
+      "id": "error_analysis",
+      "label_ko": "오류 분석",
+      "description": "실패 샘플(발음 오인식, 환각, OOM)의 원인 정밀 분류"
+    },
+    {
+      "id": "combination_experiment",
+      "label_ko": "조합 실험",
+      "description": "복수의 최적화 기법을 동시 적용하여 시너지 및 충돌 검증"
+    }
+  ],
+  "categories": [
+    {
+      "id": "llm_inference",
+      "label_ko": "LLM 추론",
+      "description": "거대 언어 모델의 지연시간, 처리량 및 메모리 효율화 추론 최적화"
+    },
+    {
+      "id": "training",
+      "label_ko": "모델 학습",
+      "description": "파라미터 효율적 미세조정(PEFT), 선호도 학습 및 최적화 기법"
+    },
+    {
+      "id": "rag_retrieval",
+      "label_ko": "RAG 및 정보 검색",
+      "description": "검색 정확도 향상, 청킹, 하이브리드 인덱싱 및 리랭킹 기법"
+    },
+    {
+      "id": "tts",
+      "label_ko": "음성 합성 (TTS)",
+      "description": "음성 합성 자연스러움, 발음 정확도, 운율 및 음향 파이프라인"
+    },
+    {
+      "id": "stt",
+      "label_ko": "음성 인식 (STT)",
+      "description": "음성 전사 정확도 향상, VAD, 노이즈 내성 및 환각 억제"
+    },
+    {
+      "id": "systems",
+      "label_ko": "시스템 및 인프라",
+      "description": "하드웨어 대역폭, 스레딩, GPU 커널 및 메모리 할당 저수준 튜닝"
+    },
+    {
+      "id": "generative_multimodal",
+      "label_ko": "생성형 멀티모달",
+      "description": "이미지/비디오 확산 모델, VLM 해상도 및 멀티모달 융합 기법"
+    },
+    {
+      "id": "classical_ml",
+      "label_ko": "전통 머신러닝",
+      "description": "GBDT 트리 앙상블, 피처 엔지니어링, 추천 행렬 분해 및 통계 모델"
+    },
+    {
+      "id": "agents_orchestration",
+      "label_ko": "에이전트 및 오케스트레이션",
+      "description": "도구 호출, 계획 수립, 자기 교정 및 다중 에이전트 협업 구조"
+    }
+  ]
+}

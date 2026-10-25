@@ -228,7 +228,9 @@ def test_child_commands_are_real_ttakkari_entrypoints():
     assert (SRC / "ttakkari" / "cli.py").is_file() and (SRC / "ttakkari" / "executor.py").is_file()
     assert child_env()["PYTHONPATH"].split(os.pathsep)[0] == str(SRC)
     url = make_url(os.environ["TTAKKARI_TEST_DB"])
-    assert url.host in {"127.0.0.1", "localhost", "::1"} and url.database == "ttakkari_test"
+    # 로컬 pytest 는 ttakkari_test, 배포 release 단계는 후보별 ttakkari_gen_<hex> 를 쓴다. 운영 DB 만 막는다.
+    assert url.host in {"127.0.0.1", "localhost", "::1"}
+    assert url.database.startswith(("ttakkari_test", "ttakkari_gen_"))
 
 
 @pytest.mark.usefixtures("executor_schema")

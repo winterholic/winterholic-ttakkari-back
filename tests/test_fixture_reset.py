@@ -9,18 +9,46 @@ from __future__ import annotations
 import ast
 import importlib.util
 import re
+import uuid
 from pathlib import Path
 
 import conftest
+import pytest
 from argon2 import Type
-from sqlalchemy import text
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, inspect, text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.schema import CreateSchema, DropSchema
 
+from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import Credential
 from ttakkari.security import passwords
 
 PASSWORD_MODULE = Path(passwords.__file__)
 CRED = Credential.__tablename__
+
+
+@pytest.mark.parametrize("legacy_tables", [False, True])
+async def test_schema_rebuild_handles_a_new_named_alter_foreign_key(legacy_tables):
+    schema = "reset_probe_" + uuid.uuid4().hex
+    expected = MetaData(schema=schema)
+    Table("parent", expected, Column("id", Integer, primary_key=True))
+    Table("child", expected, Column("id", Integer, primary_key=True),
+          Column("parent_id", Integer, ForeignKey(
+              f"{schema}.parent.id", name="new_parent_fk", use_alter=True)))
+    engine = create_async_engine(str(get_settings().database_url))
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(CreateSchema(schema))
+            if legacy_tables:
+                await connection.execute(text(f'CREATE TABLE "{schema}".parent (id INTEGER PRIMARY KEY)'))
+                await connection.execute(text(f'CREATE TABLE "{schema}".child (id INTEGER PRIMARY KEY, parent_id INTEGER)'))
+            await connection.run_sync(conftest.rebuild_test_schema, expected)
+            keys = await connection.run_sync(lambda conn: inspect(conn).get_foreign_keys("child", schema=schema))
+            assert [key["name"] for key in keys] == ["new_parent_fk"]
+            await connection.execute(DropSchema(schema, cascade=True))
+    finally:
+        await engine.dispose()
 
 
 def _load_fresh_passwords_module():

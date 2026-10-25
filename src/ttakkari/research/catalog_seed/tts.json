@@ -1,0 +1,1357 @@
+{
+  "methods": [
+    {
+      "slug": "tts_korean_text_normalization",
+      "name": "Korean Text Normalization (TN)",
+      "name_ko": "한국어 텍스트 정규화 (TN)",
+      "summary": "숫자, 날짜, 시간, 통화 단위, 영어 약어, 기호, 특수문자를 문맥에 부합하는 정확한 한글 음소 표기로 변환하여 낭독 오류를 방지합니다. 예컨대 '3월 25일'을 '삼월 이십오일'로, '3개'를 '세 개'로 올바르게 읽도록 문맥 규칙을 적용합니다.",
+      "principle": "한국어의 수사 체계는 고유어 수사(하나, 둘, 셋)와 한자어 수사(일, 이, 삼)로 나뉘며, 뒤따르는 단위 의존명사에 따라 읽는 법이 결정됩니다. 정규식 패턴 매칭 및 문맥 품사 태깅을 결합하여 비표준 텍스트를 발화 가능한 표준 텍스트로 치환합니다.",
+      "category": "tts",
+      "targets": [
+        "tts",
+        "data_pipeline"
+      ],
+      "layers": [
+        "preprocessing",
+        "data"
+      ],
+      "goals": [
+        "accuracy",
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis",
+        "baseline"
+      ],
+      "parameters": [
+        {
+          "key": "handle_measure_units",
+          "label": "단위 의존명사 처리",
+          "type": "boolean",
+          "default": true,
+          "description": "개, 명, 마리, 살 등 수분류사에 따른 고유어 수사 자동 변환",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "english_acronym_mode",
+          "label": "영어 약어 읽기 방식",
+          "type": "enum",
+          "default": "korean_alphabet",
+          "options": [
+            {
+              "value": "korean_alphabet",
+              "label": "한글 알파벳 음가 (AI -> 에이아이)"
+            },
+            {
+              "value": "as_word",
+              "label": "외래어 발음 (NASA -> 나사)"
+            },
+            {
+              "value": "spelled_out",
+              "label": "개별 철자 분리"
+            }
+          ],
+          "description": "영문 알파벳 표기 음성 변환 전략",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "korean_tn_rules"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "supertonic",
+          "onnxruntime",
+          "pytorch"
+        ],
+        "notes": "한국어 텍스트 정규화 규칙(따까리 tts/normalize.py)을 프런트엔드 전처리 단계에 탑재. 현재 Supertonic 3 및 일반 TTS 파이프라인 공통 적용."
+      },
+      "metrics": [
+        "cer",
+        "accuracy",
+        "quality"
+      ],
+      "expected_effects": [
+        "숫자, 날짜, 통화, 단위, 영문 약어 오독을 방지하고 음절 오류율(CER) 개선 기대 (CER은 STT 재인식 기반 proxy 지표이며 실제 청취 품질과 구분 필요)"
+      ],
+      "side_effects": "동음이의어 문맥(예: '10월'을 '십월'이 아닌 '시월'로 예외 처리) 누락 시 어색한 발음 발생",
+      "relations": [
+        {
+          "type": "precedes",
+          "target": "tts_korean_g2p",
+          "note": "텍스트 정규화가 완료된 표준 한글 문장이 G2P 모듈로 전달되어야 함"
+        },
+        {
+          "type": "combines_with",
+          "target": "tts_speech_stitching",
+          "note": "정규화 및 문장 분할 후 청크 간 매끄러운 오디오 스티칭 파이프라인 형성"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "국립국어원 누리집",
+          "url": "https://korean.go.kr",
+          "year": 2020,
+          "claim": "공식 기관 포털: 한글 맞춤법·표준어·표준 발음 규정의 출처. 숫자·단위를 읽는 세부 규칙 문서 경로는 확인하지 못함(확인 필요). 구현 근거는 src/ttakkari/tts/normalize.py의 normalize_text."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "text_normalization",
+        "korean_tts",
+        "preprocessing"
+      ]
+    },
+    {
+      "slug": "tts_korean_g2p",
+      "name": "Korean Grapheme-to-Phoneme (G2P)",
+      "name_ko": "한국어 자소-음소 변환 (G2P)",
+      "summary": "정규화된 한글 표기를 실제 음성 표준 발음법(국립국어원 표준 발음법)에 맞게 음소(IPA 또는 음성 자모) 열로 변환합니다. 비음화, 유음화, 구개음화, 격음화, 연음 규칙을 엄밀하게 적용합니다.",
+      "principle": "한국어는 표음문자이지만 형태 음소적 표기법을 따르므로 '국립[궁닙]', '굳이[구지]', '신라[실라]'처럼 표기와 실제 발음 간에 음운 변동이 빈번합니다. 규칙 기반 상태 머신 및 사전 예외 처리를 통해 음소 수준의 음성 기호열을 생성합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "preprocessing",
+        "tokenization"
+      ],
+      "goals": [
+        "accuracy",
+        "quality"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "pre_postprocessing_addition"
+      ],
+      "research_methods": [
+        "error_analysis",
+        "ab_test"
+      ],
+      "parameters": [
+        {
+          "key": "descriptive_lenition",
+          "label": "자연스러운 구어체 연음 허용",
+          "type": "boolean",
+          "default": true,
+          "description": "문어체 엄격 원칙 대신 자연스러운 대화형 연음 규칙 적용",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "phoneme_format",
+          "label": "음소 출력 포맷",
+          "type": "enum",
+          "default": "ipa",
+          "options": [
+            {
+              "value": "ipa",
+              "label": "국제 음성 기호 (IPA)"
+            },
+            {
+              "value": "jamo",
+              "label": "한글 발음 자모 (표준 발음 표기)"
+            }
+          ],
+          "description": "합성 모델이 입력으로 요구하는 음소 토큰 포맷",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "g2pk_or_espeak_ng"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "pytorch",
+          "python"
+        ],
+        "notes": "Supertonic 3 등 엔드투엔드 모델은 자체 음소/토큰 매핑을 사용하므로, 독립 G2P 모듈 분리 적용은 현재 운영 어댑터에서 미구현 상태(연구 가설 및 추가 어댑터 구현 필요)임."
+      },
+      "metrics": [
+        "cer",
+        "accuracy",
+        "quality"
+      ],
+      "expected_effects": [
+        "복잡한 음운 변동(비음화, 유음화, 연음 등)이 포함된 한국어 문장에서 발음 어색함 완화 (실제 청취 품질은 정성 평가 필요)"
+      ],
+      "side_effects": "합성어 간 경계(사이시옷, 덧생김 등) 판정이 모호할 때 사전 없이는 오발음 유발",
+      "relations": [
+        {
+          "type": "precedes",
+          "target": "tts_pronunciation_dictionary",
+          "note": "일반 규칙 기반 G2P를 통과한 후 사용자 예외 사전으로 덮어씀"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "Kyubyong/g2pK",
+          "url": "https://github.com/Kyubyong/g2pK",
+          "year": 2019,
+          "claim": "대표 구현 README: 한국어 g2p 모듈. Mecab 형태소 분석으로 문맥을 보고 발음을 결정하고, 규칙이 모든 경우를 덮지 못하므로 idioms.txt에 예외를 추가하는 구조. 영어 알파벳 단어는 한글로 변환. 표준 발음법과의 대응은 README에서 확인하지 못함(확인 필요)."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "g2p",
+        "korean_phonemes",
+        "ipa"
+      ]
+    },
+    {
+      "slug": "tts_pronunciation_dictionary",
+      "name": "User Pronunciation Dictionary",
+      "name_ko": "사용자 맞춤 발음 사전",
+      "summary": "자동 G2P 규칙으로 올바르게 변환되지 않는 도메인 특화 전문 용어, 브랜드명, 인명, 신조어의 발음을 사용자가 직접 정의한 음소 기호로 강제 매핑합니다.",
+      "principle": "G2P 변환 전후 단계에서 사용자 정의 단어 사전을 우선 탐색(Trie 또는 해시 맵)하여, 일치하는 어절을 사용자가 지정한 정밀한 발음 표기로 직통 치환합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "preprocessing",
+        "data"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "error_analysis",
+        "baseline",
+        "ab_test"
+      ],
+      "parameters": [
+        {
+          "key": "case_sensitive",
+          "label": "대소문자 구분",
+          "type": "boolean",
+          "default": false,
+          "description": "영문 전문용어 매칭 시 대소문자 일치 강제 여부",
+          "advanced": false,
+          "required": false,
+          "sweepable": false
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "lexicon_file"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "supertonic",
+          "python"
+        ],
+        "notes": "따까리 메모리 및 사용자 환경에 저장된 도메인 발음 사전과 연계하여 정규화 단계에서 우선 치환."
+      },
+      "metrics": [
+        "accuracy",
+        "quality"
+      ],
+      "expected_effects": [
+        "사전에 등록한 고유명사·브랜드명의 발음 오류를 줄일 수 있음(감소 폭은 용어별 청취·지표 측정 필요)"
+      ],
+      "side_effects": "동일 철자가 일반 단어로 쓰일 때 오버라이드될 위험(문맥 인지 매핑 필요)",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_korean_g2p",
+          "note": "G2P 규칙과 사용자 사전을 결합하여 최종 음소열 완성"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "research adapter: tts_synthesis.py (custom_pronunciation_dict)",
+          "url": "src/ttakkari/research/adapters/tts_synthesis.py",
+          "year": 2026,
+          "claim": "프로젝트 구현 근거: 어댑터가 custom_pronunciation_dict(키-값 문자열 딕셔너리)를 입력 텍스트에 치환 적용함(코드 기준). 외부 문헌 근거가 아니며 발음 개선 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "pronunciation_dictionary",
+        "lexicon",
+        "tts_customization"
+      ]
+    },
+    {
+      "slug": "tts_sentence_segmentation",
+      "name": "Sentence Segmentation & Breath Chunking",
+      "name_ko": "문장 분할 및 호흡 청킹 최적화",
+      "summary": "장문의 텍스트를 마침표, 쉼표, 접속사 및 어조 종결 어미를 기준으로 자연스러운 발화 호흡 단위로 분할하여 음성 합성 지연시간을 줄이고 문장 끝 잘림을 예방합니다.",
+      "principle": "TTS 신경망은 입력이 너무 길면 어텐션 정렬이 흔들리거나 어미가 흐려질 수 있어 문장 부호 기준으로 적절한 길이의 청크로 나누어 합성합니다. 청크 길이는 설정 값이며 운영 설정은 아래 근거 문서를 따릅니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "preprocessing",
+        "runtime"
+      ],
+      "goals": [
+        "latency",
+        "quality",
+        "stability"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
+      "parameters": [
+        {
+          "key": "max_chunk_length",
+          "label": "최대 청크 글자 수",
+          "type": "integer",
+          "default": 80,
+          "min": 20,
+          "max": 200,
+          "step": 10,
+          "description": "쉼표나 구두점을 기준으로 분할할 단일 발화 텍스트 최대 길이",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "split_on_comma",
+          "label": "쉼표 분할 활성화",
+          "type": "boolean",
+          "default": true,
+          "description": "문장이 길 때 쉼표(,) 위치에서도 호흡 청크 분할 허용",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "sentence_tokenizer"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "supertonic",
+          "onnxruntime",
+          "python"
+        ],
+        "notes": "src/ttakkari/tts/normalize.py의 split_sentences·chunk_text가 문장 분할과 청크 분할을 제공함(코드 확인)."
+      },
+      "metrics": [
+        "rtf",
+        "latency",
+        "quality"
+      ],
+      "expected_effects": [
+        "첫 음성 출력까지의 지연시간(TTFA) 단축 및 긴 문장에서의 어텐션 붕괴/어미 흐려짐 완화"
+      ],
+      "side_effects": "단어 중간이나 밀접한 수식 관계 사이에서 잘못 끊으면 어색한 무음 발생",
+      "relations": [
+        {
+          "type": "precedes",
+          "target": "tts_speech_stitching",
+          "note": "분할되어 각각 합성된 음성 조각들을 자연스럽게 이어붙여야 함"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "benchmark",
+          "title": "docs/tts/benchmark-2026-10-21.md",
+          "url": "docs/tts/benchmark-2026-10-21.md",
+          "year": 2026,
+          "claim": "프로젝트 내부 실측 문서: Supertonic 3 ONNX CPU 벤치마크 결과와 청크 처리 조건(수치와 조건은 문서 원문 참조). 이 카탈로그는 수치를 재기록하지 않음."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "sentence_segmentation",
+        "chunking",
+        "latency",
+        "breath_control"
+      ]
+    },
+    {
+      "slug": "tts_phoneme_alignment",
+      "name": "Phoneme Alignment (CTC Forced Alignment)",
+      "name_ko": "음소-음향 정렬 최적화",
+      "summary": "합성될 음소 시퀀스와 생성되는 오디오 스펙트로그램 프레임 간의 정확한 시간적 매핑(Forced Alignment)을 계산하여 각 음소의 시작과 끝을 정밀 제어합니다.",
+      "principle": "CTC(Connectionist Temporal Classification) 손실 또는 비터비(Viterbi) 탐색 알고리즘을 이용하여 음소 토큰과 음향 특징 사이의 최적 시간 정렬 경로를 산출합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "attention",
+        "decoding"
+      ],
+      "goals": [
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
+      "parameters": [
+        {
+          "key": "alignment_threshold",
+          "label": "정렬 신뢰도 임계치",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.1,
+          "max": 0.9,
+          "step": 0.05,
+          "description": "음소 매핑 확신도 하한선",
+          "advanced": true,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "ctc_alignment_model"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
+        "notes": "단어 단위 립싱크 또는 자막 연동에 활용되며, 현재 로컬 운영 엔진(Supertonic 3)에서는 내부 고정 모델로 직접 분리 노출되지 않음."
+      },
+      "metrics": [
+        "quality",
+        "accuracy"
+      ],
+      "expected_effects": [
+        "음소와 오디오 프레임 간 정렬을 통해 자음 누락이나 모음 이상 연장 현상 완화"
+      ],
+      "side_effects": "추가적인 정렬 연산으로 인해 합성 속도가 소폭 느려질 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_duration_prediction",
+          "note": "음소 지속시간 예측 모델의 정확한 학습 타깃으로 활용"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "Montreal Forced Aligner documentation",
+          "url": "https://montreal-forced-aligner.readthedocs.io",
+          "year": 2017,
+          "claim": "공식 문서: 음향 모델과 발음 사전을 이용한 음소-오디오 강제 정렬 도구 사용법. 정렬 정확도 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "alignment",
+        "ctc",
+        "forced_alignment",
+        "phonemes"
+      ]
+    },
+    {
+      "slug": "tts_prosody_control",
+      "name": "Prosody, Pitch & Energy Control",
+      "name_ko": "운율, 피치 및 에너지 제어",
+      "summary": "문장의 억양 곡선(F0), 발화 강도(Energy), 감정 톤을 파라미터로 제어하여 기계적인 단조로움을 없애고 생동감 있는 자연스러운 발화를 생성합니다.",
+      "principle": "기본 주파수(F0) 윤곽과 스펙트럼 에너지 프레임을 예측하거나 외부 제어 벡터를 주입하여, 의문문의 말끝 올림이나 강조 단어의 볼륨 상승을 조절합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "model_architecture",
+        "decoding"
+      ],
+      "goals": [
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "parameter_tuning",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "ab_test"
+      ],
+      "parameters": [
+        {
+          "key": "pitch_scale",
+          "label": "피치 스케일 (음높이)",
+          "type": "number",
+          "default": 1.0,
+          "min": 0.5,
+          "max": 1.5,
+          "step": 0.05,
+          "description": "기본 음높이 조정 배율 (1.0 기준)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "energy_scale",
+          "label": "에너지 스케일 (발화 강도)",
+          "type": "number",
+          "default": 1.0,
+          "min": 0.5,
+          "max": 1.5,
+          "step": 0.05,
+          "description": "발화 음향 파워 및 강도 배율",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "prosody_controllable_model"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "onnxruntime"
+        ],
+        "notes": "현재 따까리 로컬 TTS 운영 엔진은 Supertonic 3(ONNX CPU)이며, 제공되는 20종 음성 스타일(F1~F10, M1~M10)과 발화 속도(speed) 파라미터 조절을 통해 간접 운율을 제어합니다. 신경망 내부 F0/에너지의 직접 수정은 별도 음성 합성기 연구 과제입니다."
+      },
+      "metrics": [
+        "quality",
+        "consistency"
+      ],
+      "expected_effects": [
+        "단조로운 로봇 음성 탈피 및 문맥에 맞춘 감정/억양 제어 가능성 탐색"
+      ],
+      "side_effects": "피치를 과도하게 올리거나 낮추면 음성 왜곡 및 쇳소리(Artifact) 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_speaker_embedding_voice_consistency",
+          "note": "화자 고유의 음색을 유지하면서 운율 곡선만 제어"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "StyleTTS 2: Towards Human-Level Text-to-Speech through Style Diffusion and Adversarial Training with Large Speech Language Models",
+          "url": "https://arxiv.org/abs/2306.07691",
+          "year": 2023,
+          "claim": "논문 초록 보고: 스타일을 잠재 확률 변수로 확산 모델링해 참조 음성 없이 텍스트에 맞는 스타일을 생성, LJSpeech에서 사람 녹음을 넘고 VCTK에서 동등(조건: 영어 원어민 평가, 논문 모델). 현재 운영 엔진 Supertonic 3에 적용 가능하다는 근거가 아님."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "prosody",
+        "pitch",
+        "f0",
+        "energy",
+        "expressive_tts"
+      ]
+    },
+    {
+      "slug": "tts_duration_prediction",
+      "name": "Duration Predictor Tuning",
+      "name_ko": "음소 지속시간 예측기 튜닝",
+      "summary": "각 음소가 발화될 시간 길이(프레임 수)를 예측하는 지속시간 예측 모델의 스케일과 분산을 조정하여 부자연스러운 늘어짐이나 급한 발화를 방지합니다.",
+      "principle": "FastSpeech 등 비자기회귀(Non-autoregressive) 음성 합성기는 텍스트 음소열을 입력받아 각 음소가 몇 밀리초(프레임) 동안 발화되어야 하는지 지속시간 예측기(Duration Predictor)를 통해 산출합니다. 분산 제어기(Variance Adaptor)에서 지속시간을 늘리거나 줄임으로써 특정 단어의 발화 속도와 쉼(Pause)을 제어합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "model_architecture",
+        "decoding"
+      ],
+      "goals": [
+        "speed",
+        "quality"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "ab_test"
+      ],
+      "parameters": [
+        {
+          "key": "speed_ratio",
+          "label": "발화 속도 비율 (Speed)",
+          "type": "number",
+          "default": 1.0,
+          "min": 0.5,
+          "max": 2.0,
+          "step": 0.05,
+          "description": "음소 지속시간 스케일링 계수 (0.8은 느리게, 1.2는 빠르게)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "duration_predictor_architecture"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "supertonic",
+          "onnxruntime",
+          "pytorch"
+        ],
+        "notes": "현재 따까리 운영 엔진인 Supertonic 3는 사전 훈련된 ONNX 모델 내부에서 지속시간을 자체 처리하므로, 모델 내부 음소 지속시간 직접 조작은 미지원되며 전체 발화 속도(speed) 조정만 지원."
+      },
+      "metrics": [
+        "rtf",
+        "quality"
+      ],
+      "expected_effects": [
+        "발화 속도 비율 조절 시 발음 뭉개짐을 줄이면서 일관된 시간 제어"
+      ],
+      "side_effects": "발화 속도를 크게 높이면 명료도가 떨어질 수 있음(임계 배속은 모델별 실측 필요)",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_prosody_control",
+          "note": "음소 지속시간과 운율 궤적을 연계하여 합성 리듬 제어"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "FastSpeech: Fast, Robust and Controllable Text to Speech",
+          "url": "https://arxiv.org/abs/1905.09263",
+          "year": 2019,
+          "claim": "논문 초록 보고: 어텐션 정렬에서 추출한 음소 지속시간 예측기와 length regulator로 병렬 멜 스펙트로그램을 생성, 자기회귀 Transformer TTS 대비 멜 생성 270배, end-to-end 합성 38배 가속, 단어 누락·반복 감소, 속도 조절 가능(조건: LJSpeech, 논문 모델). Supertonic 3 파라미터 지원을 입증하지 않음."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "duration_predictor",
+        "speed",
+        "playback_rate"
+      ]
+    },
+    {
+      "slug": "tts_vocoder_benchmark",
+      "name": "Neural Vocoder Benchmark (HiFi-GAN vs BigVGAN)",
+      "name_ko": "신경망 보코더 비교 벤치마크",
+      "summary": "중간 표현인 멜-스펙트로그램을 시간 영역의 실제 오디오 오디오 파형(Waveform)으로 복원하는 신경망 보코더들의 음질과 연산 속도를 비교합니다.",
+      "principle": "HiFi-GAN은 다중 주기 판별자(MPD)를 기반으로 빠른 추론을 제공하며, BigVGAN은 주기적 활성화 함수(Snake)를 적용해 고주파 표현을 개선하려는 모델입니다(BigVGAN 수치는 이 시드에서 인용하지 않음).",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "decoding",
+        "runtime"
+      ],
+      "goals": [
+        "quality",
+        "speed",
+        "latency"
+      ],
+      "interventions": [
+        "model_replacement"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "vocoder_type",
+          "label": "보코더 아키텍처",
+          "type": "enum",
+          "default": "hifigan",
+          "options": [
+            {
+              "value": "hifigan",
+              "label": "HiFi-GAN (경량 표준)"
+            },
+            {
+              "value": "bigvgan",
+              "label": "BigVGAN (Snake 활성화)"
+            },
+            {
+              "value": "soundstream",
+              "label": "SoundStream (신경망 오디오 코덱)"
+            }
+          ],
+          "description": "파형 복원에 사용할 신경망 보코더 모델",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "vocoder_weights"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
+        "notes": "Supertonic 3는 엔드투엔드 ONNX 구조로 내부 보코더가 일체화되어 있어 단독 보코더 분리 교체는 별도 연구 파이프라인 필요."
+      },
+      "metrics": [
+        "rtf",
+        "quality",
+        "peak_memory_mb"
+      ],
+      "expected_effects": "보코더별 음질과 연산 속도를 같은 조건에서 비교해 선택 근거를 만듦(결과는 측정 필요)",
+      "side_effects": [
+        "BigVGAN 등 고연산 보코더는 뛰어난 음질 대신 연산량이 커서 온디바이스 환경에서 지연시간 증가 가능"
+      ],
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_audio_postprocessing",
+          "note": "보코더 출력 파형에 대해 후처리 필터 적용"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis",
+          "url": "https://arxiv.org/abs/2010.05646",
+          "year": 2020,
+          "claim": "논문 초록 보고: 단일 화자 데이터셋 MOS가 사람 음질과 유사하며 V100 GPU 1대에서 22.05kHz 음성을 실시간보다 167.9배 빠르게 생성, 소형 버전은 CPU에서 실시간보다 13.4배 빠름(조건: 논문 데이터셋, V100/CPU 환경)."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "vocoder",
+        "hifigan",
+        "bigvgan",
+        "waveform"
+      ]
+    },
+    {
+      "slug": "tts_audio_postprocessing",
+      "name": "Audio Postprocessing Pipeline (Loudness & De-essing)",
+      "name_ko": "음성 오디오 후처리 파이프라인",
+      "summary": "합성된 음성 파형의 음량(LUFS)을 목표치에 맞게 정규화하고, 치찰음(De-essing) 및 문장 앞뒤의 불필요한 무음(Silence)을 정밀 트리밍합니다.",
+      "principle": "EBU R128 등의 라우드니스 노멀라이제이션 원리를 적용하여 문장 간 볼륨 일관성을 유지(공식 방송 표준 권고 기준과 일반 선택 파라미터 목표값 분리)하고, 하이패스/노치 필터로 보코더 고주파 잡음 및 팝핑을 억제합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "postprocessing"
+      ],
+      "goals": [
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
+      "parameters": [
+        {
+          "key": "target_lufs",
+          "label": "목표 음량 (LUFS)",
+          "type": "number",
+          "default": -16.0,
+          "min": -24.0,
+          "max": -10.0,
+          "step": 0.5,
+          "unit": "LUFS",
+          "description": "후처리 정규화 목표 음량 (공식 방송 표준 EBU R128의 권고 기준과 구분되는 선택 파라미터)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "trim_silence_db",
+          "label": "무음 트리밍 임계값 (dB)",
+          "type": "number",
+          "default": -40.0,
+          "min": -60.0,
+          "max": -20.0,
+          "step": 2.0,
+          "unit": "dB",
+          "description": "시작과 끝부분 무음 구간을 잘라낼 오디오 신호 감쇠 기준선",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "soundfile_or_scipy"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "scikit-learn"
+        ],
+        "notes": "순수 CPU 디지털 신호 처리(DSP)로 밀리초 이내에 연산 완료."
+      },
+      "metrics": [
+        "quality",
+        "consistency"
+      ],
+      "expected_effects": [
+        "갑작스러운 볼륨 불균형 완화 및 무음 트리밍으로 청취 편안함 향상"
+      ],
+      "side_effects": "트리밍 임계값이 너무 높으면 말끝의 모음 여운이나 부드러운 자음이 잘려나감",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_speech_stitching",
+          "note": "후처리 정규화가 완료된 음성 청크를 교차 결합"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "EBU R 128: Loudness normalisation and permitted maximum level of audio signals",
+          "url": "https://tech.ebu.ch/publications/r128",
+          "year": 2020,
+          "claim": "공식 표준 문서: 방송 오디오 라우드니스 정규화 권고(프로그램 라우드니스 목표 -23 LUFS, 조건: EBU R 128 표준 방송 오디오 규격). 파라미터 조절 범위 및 기본값은 사용자가 선택하는 목표 음량이며 공식 방송 표준과 구분됨."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "postprocessing",
+        "lufs",
+        "de_essing",
+        "audio_cleanup"
+      ]
+    },
+    {
+      "slug": "tts_speech_stitching",
+      "name": "Speech Stitching & Crossfade",
+      "name_ko": "문장 간 음성 스티칭 및 크로스페이드",
+      "summary": "청크 단위로 분할 합성된 음성 세그먼트를 문장 사이 무음과 짧은 크로스페이드로 이어 붙입니다.",
+      "principle": "단순 파형 이어 붙이기는 경계에서 클릭/팝 잡음이 날 수 있어 경계에 짧은 크로스페이드(crossfade_ms)와 문장 사이 무음(sentence_pause_ms)을 넣는 방식입니다. 기본값은 예시 설정이며 권장값 근거가 아닙니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "postprocessing",
+        "runtime"
+      ],
+      "goals": [
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "pre_postprocessing_addition"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
+      "parameters": [
+        {
+          "key": "crossfade_ms",
+          "label": "크로스페이드 길이 (ms)",
+          "type": "integer",
+          "default": 10,
+          "min": 0,
+          "max": 50,
+          "step": 2,
+          "unit": "ms",
+          "description": "청크 경계 오디오 크로스페이드 길이(예시 기본값이며 최적값 근거 없음)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "sentence_pause_ms",
+          "label": "문장 간 묵음 간격 (ms)",
+          "type": "integer",
+          "default": 250,
+          "min": 50,
+          "max": 800,
+          "step": 25,
+          "unit": "ms",
+          "description": "문장 사이 삽입 무음 길이(예시 기본값이며 최적값 근거 없음)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "numpy_audio_manipulation"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
+        "notes": "청크 단위 재생·조립 단계에서 numpy/ffmpeg 등으로 구현할 수 있음. 스트리밍 재생과의 결합은 구현되어 있지 않음."
+      },
+      "metrics": [
+        "quality",
+        "consistency"
+      ],
+      "expected_effects": [
+        "청크 경계의 클릭 잡음과 부자연스러운 끊김을 줄이는 것을 목표로 함(청취 평가나 지표로 확인 필요)"
+      ],
+      "side_effects": "간격이 너무 길면 늘어지고, 너무 짧으면 말이 숨 가쁘게 들림",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_sentence_segmentation",
+          "note": "문장 분할 단위와 결합하여 전체 오디오 파이프라인 형성"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "FFmpeg filters: acrossfade",
+          "url": "https://ffmpeg.org/ffmpeg-filters.html",
+          "year": 2024,
+          "claim": "공식 문서: 두 오디오 입력을 크로스페이드로 연결하는 acrossfade 필터와 duration, curve 파라미터. 청크 연결 시 크로스페이드가 표준 도구로 제공된다는 근거이며 TTS 품질 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "stitching",
+        "crossfade",
+        "pause_control",
+        "tts"
+      ]
+    },
+    {
+      "slug": "tts_streaming_chunk_synthesis",
+      "name": "Streaming Low-Latency TTS Synthesis",
+      "name_ko": "저지연 스트리밍 음성 합성",
+      "summary": "전체 문장이 완성되기를 기다리지 않고 텍스트 스트림에서 첫 구두점/어절 단위로 첫 오디오 청크를 먼저 합성해 재생 시작 지연을 줄이는 설계입니다.",
+      "principle": "LLM 텍스트 생성과 TTS 추론을 비동기로 연결해 첫 오디오 청크 재생 시작 시간(TTFA)을 줄이려는 구조입니다. 이득은 첫 청크 길이와 엔진 지연에 좌우되며 현 운영 엔진에서의 효과는 측정되지 않았습니다.",
+      "category": "tts",
+      "targets": [
+        "tts",
+        "serving_infra"
+      ],
+      "layers": [
+        "serving",
+        "runtime",
+        "scheduler"
+      ],
+      "goals": [
+        "latency",
+        "speed"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "first_chunk_min_chars",
+          "label": "첫 청크 최소 글자 수",
+          "type": "integer",
+          "default": 15,
+          "min": 5,
+          "max": 50,
+          "step": 5,
+          "description": "최초 오디오 합성을 트리거할 최소 누적 문자 수",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "async_streaming_engine"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "onnxruntime",
+          "python"
+        ],
+        "notes": "현재 따까리 로컬 TTS 백엔드(Supertonic 3, ONNX CPU)는 문장 단위 청크를 순차 합성해 반환하며 패킷 단위 스트리밍 전송은 구현되어 있지 않음(가설 항목)."
+      },
+      "metrics": [
+        "latency",
+        "rtf"
+      ],
+      "expected_effects": [
+        "첫 청크 합성을 앞당겨 체감 지연(TTFA)을 줄일 수 있다는 가설(검증 전)"
+      ],
+      "side_effects": "첫 청크가 너무 짧으면 문맥 부족으로 인해 억양이 부자연스러울 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_sentence_segmentation",
+          "note": "청크 분할 기준을 스트리밍 첫 청크에 유연하게 적용"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "streaming",
+        "low_latency",
+        "ttfa",
+        "real_time_voice"
+      ]
+    },
+    {
+      "slug": "tts_sampling_decoding_tuning",
+      "name": "Decoder Sampling & Noise Scale Tuning",
+      "name_ko": "디코더 샘플링 및 노이즈 스케일 튜닝",
+      "summary": "확산(Diffusion) 및 보코더 기반 음성 합성 모델의 디코더 샘플링 스텝, 노이즈 스케일(Noise Scale), 온도(Temperature) 파라미터를 튜닝하여 음성의 명료도와 발화 안정성을 최적화합니다.",
+      "principle": "생성형 음성 합성기의 확률적 디코더에서 노이즈 스케일을 조절하여 기계음 느낌과 자연스러운 호흡 음색 간의 균형을 맞춥니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "decoding"
+      ],
+      "goals": [
+        "quality",
+        "speed",
+        "consistency"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "ab_test"
+      ],
+      "parameters": [
+        {
+          "key": "noise_scale",
+          "label": "노이즈 스케일 (Noise Scale)",
+          "type": "number",
+          "default": 0.667,
+          "min": 0.1,
+          "max": 1.0,
+          "step": 0.05,
+          "description": "잠재 공간 샘플링 노이즈 크기",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "length_scale",
+          "label": "길이 스케일 (Length Scale)",
+          "type": "number",
+          "default": 1.0,
+          "min": 0.5,
+          "max": 2.0,
+          "step": 0.05,
+          "description": "전체 발화 길이 배율 (속도 반비례)",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "flow_or_diffusion_tts"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "onnxruntime"
+        ],
+        "notes": "Supertonic 3(ONNX CPU) 운영 엔진은 결정론적 추론 그래프라 noise_scale 같은 샘플링 파라미터가 노출되지 않음. 이 항목은 연구용 가설 파라미터이며 현재 운영 엔진에서는 실행할 수 없음."
+      },
+      "metrics": [
+        "quality",
+        "rtf",
+        "consistency"
+      ],
+      "expected_effects": "노이즈 스케일·길이 배율에 따른 명료도와 안정성 변화를 비교하는 설계(가설, 검증 전)",
+      "side_effects": "노이즈 스케일을 지나치게 낮추면 기계음처럼 들릴 수 있다는 가설(임계값 근거 없음)",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_vocoder_benchmark",
+          "note": "보코더 복원 품질과 샘플링 디코더 파라미터 상호작용 분석"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "sampling",
+        "noise_scale",
+        "decoder_tuning"
+      ]
+    },
+    {
+      "slug": "tts_speaker_embedding_voice_consistency",
+      "name": "Speaker Embedding & Voice Consistency",
+      "name_ko": "화자 임베딩 및 음색 일관성 유지",
+      "summary": "다화자(Multi-speaker) TTS에서 목표 화자의 음색 벡터(Voice Profile Embedding)를 정밀 조정하여 긴 대화나 멀티턴 상황에서도 동일한 목소리 특성을 변함없이 유지합니다.",
+      "principle": "사전 추출된 화자 임베딩(d-vector 등)을 신경망의 어텐션 및 어댑터 레이어에 조건부 주입(FiLM 또는 Cross-Attention)하여 합성되는 음성의 포먼트(Formant)와 기저 음색을 고정합니다.",
+      "category": "tts",
+      "targets": [
+        "tts"
+      ],
+      "layers": [
+        "model_architecture",
+        "encoding"
+      ],
+      "goals": [
+        "consistency",
+        "quality"
+      ],
+      "interventions": [
+        "parameter_tuning",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "voice_preset",
+          "label": "화자 프리셋 선택",
+          "type": "enum",
+          "default": "ko_female_1",
+          "options": [
+            {
+              "value": "ko_female_1",
+              "label": "한국어 여성 표준 (ko_female_1)"
+            },
+            {
+              "value": "ko_male_1",
+              "label": "한국어 남성 표준 (ko_male_1)"
+            },
+            {
+              "value": "ko_female_news",
+              "label": "한국어 뉴스 브리핑 톤"
+            }
+          ],
+          "description": "선택할 기준 화자 프로필 임베딩",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "multi_speaker_model"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "supertonic",
+          "onnxruntime"
+        ],
+        "notes": "따까리 운영 엔진인 Supertonic 3(ONNX CPU)는 20종의 화자 스타일(M1~M10, F1~F10)을 제공하며, 어댑터의 VOICE_PRESET_MAP(ko_female_1->F1, ko_male_1->M1 등)을 통해 매핑됩니다. Kokoro 공식 가중치에는 한국어 음성이 지원되지 않습니다."
+      },
+      "metrics": [
+        "consistency",
+        "quality"
+      ],
+      "expected_effects": [
+        "문맥이나 문장이 바뀌어도 화자의 성별, 음색 톤의 일관성을 높게 유지 (음색 왜곡 여부 청취 평가 필요)"
+      ],
+      "side_effects": "임베딩 합성(Interpolation)을 무리하게 시도하면 잡음이나 성별 왜곡 발생",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "tts_prosody_control",
+          "note": "화자 음색은 유지한 채 억양만 동적으로 변화"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "docs/design/local-tts.md",
+          "url": "docs/design/local-tts.md",
+          "year": 2026,
+          "claim": "프로젝트 내부 설계 문서: Supertonic 3 어댑터가 voice_styles M1~M10, F1~F10(20종)을 사용한다고 기술(설계 문서 원문 기준). 화자 일관성 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "tts_synthesis"
+      ],
+      "tags": [
+        "speaker_embedding",
+        "voice_consistency",
+        "multi_speaker"
+      ]
+    },
+    {
+      "slug": "tts_kokoro_pipeline_tuning",
+      "name": "Kokoro On-Device Korean TTS Pipeline Tuning (Deprecated Hypothesis)",
+      "name_ko": "Kokoro 온디바이스 한국어 TTS 파이프라인 튜닝 (폐기 가설)",
+      "summary": "공식 한국어 음성 부재로 폐기된 Kokoro 가설 파이프라인에 대한 과거 연구 기록. 실행·선택 가능한 방법이 아니며 운영 엔진은 Supertonic 3(ONNX CPU)로 확정되었음.",
+      "principle": "Kokoro 모델(82M 파라미터)의 경량 구조로 온디바이스 음성을 생성하려던 과거 가설입니다. Kokoro 공식 가중치에는 한국어가 없어 폐기되었고 따까리 운영 엔진은 Supertonic 3입니다. 이 항목은 실행 설정을 제공하지 않으며 비교 분석용 기록으로만 남깁니다.",
+      "category": "tts",
+      "targets": [
+        "tts",
+        "slm_on_device"
+      ],
+      "layers": [
+        "runtime",
+        "system_architecture"
+      ],
+      "goals": [
+        "speed",
+        "latency",
+        "quality",
+        "memory"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "baseline",
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [],
+      "compatibility": {
+        "requires": [],
+        "hardware": [],
+        "runtimes": [],
+        "execution": "unsupported",
+        "notes": "Kokoro는 공식 한국어 음성 부재로 따까리 로컬 TTS 운영 엔진 선정에서 폐기되었습니다(docs/design/local-tts.md). 실행 런타임·백엔드 선택값·어댑터를 노출하지 않으며 로더/readiness가 실행 가능 항목으로 승격하지 못하도록 설정과 호환성 조합을 비워 둡니다."
+      },
+      "metrics": [],
+      "expected_effects": [],
+      "side_effects": [],
+      "relations": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "Kokoro-82M TTS Repository",
+          "url": "https://github.com/hexgrad/kokoro",
+          "year": 2024,
+          "claim": "저장소 보고: 82M 파라미터 경량 TTS. 공식 한국어 음성 포함 여부는 이 저장소 페이지만으로 직접 확인하지 못했고 프로젝트 설계 문서의 결정에 따름(확인 필요: 저장소 지원 언어 목록)."
+        },
+        {
+          "kind": "doc",
+          "title": "Local TTS Engine Architecture & Supertonic 3 Decision",
+          "url": "docs/design/local-tts.md",
+          "year": 2026,
+          "claim": "프로젝트 설계 문서: Kokoro 한국어 음성 부재로 채택 폐기, 운영 엔진은 Supertonic 3(ONNX CPU)로 확정. 문서에 기록된 Supertonic 3 실측은 TTFA 0.70~1.03초, RTF 0.17~0.19(조건: Mac Studio, diffusion steps 8, CPU 4스레드, 단문·중문·장문 n=5 중앙값, docs/tts/benchmark-2026-10-21.md). Kokoro 수치가 아님."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [],
+      "tags": [
+        "kokoro",
+        "deprecated",
+        "historical"
+      ],
+      "lifecycle_status": "deprecated"
+    }
+  ]
+}

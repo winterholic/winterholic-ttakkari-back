@@ -291,9 +291,11 @@ def collect_ttakkari_tools(tools: list[Any], orchestrator_only: frozenset[str]) 
         ("읽기 전용", tool_policy.READ_ONLY_TOOLS), ("PMS", tool_policy.PMS_TOOLS), ("배포", tool_policy.DEPLOY_TOOLS),
         ("체크리스트", tool_policy.CHECKLIST_TOOLS), ("비서 쓰기", tool_policy.ASSISTANT_WRITE_TOOLS),
         ("운영 로그", tool_policy.OPS_LOG_TOOLS), ("NotebookLM", tool_policy.NOTEBOOKLM_TOOLS),
-        ("호스트 환경", tool_policy.HOST_ENV_TOOLS), ("작업자 관리", tool_policy.WORKER_MANAGEMENT_TOOLS),
+        ("호스트 환경", tool_policy.HOST_ENV_TOOLS), ("호스트 운영", tool_policy.HOST_OPERATION_TOOLS),
+        ("작업자 관리", tool_policy.WORKER_MANAGEMENT_TOOLS),
         ("벤치마크", tool_policy.BENCHMARK_TOOLS), ("리버스", tool_policy.REVERSE_TOOLS),
-        ("연구", tool_policy.RESEARCH_TOOLS), ("예약", tool_policy.SCHEDULE_TOOLS)) for name in names}
+        ("연구", tool_policy.RESEARCH_TOOLS), ("예약", tool_policy.SCHEDULE_TOOLS),
+        ("크리에이티브", tool_policy.CREATIVE_TOOLS)) for name in names}
     items = []
     for tool in tools:
         name = tool.name

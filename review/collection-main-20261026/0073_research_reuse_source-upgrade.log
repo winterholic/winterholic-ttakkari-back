@@ -1,0 +1,9 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0071_library_platform_v2_merge -> 0072_collection_missions, Durable collection intent and links to the existing acquisition ledger. Additive.
+INFO  [alembic.runtime.migration] Running upgrade 0072_collection_missions -> 0073_collection_mission_runs, Run identity for periodic mission refresh so page budgets apply per run. Additive.
+INFO  [alembic.runtime.migration] Running upgrade 0073_collection_mission_runs -> 0074_collection_single_library, Single knowledge library (C2): access pool columns, document aliases and a merge ledger. Additive, online.
+INFO  [alembic.runtime.migration] Running upgrade 0074_collection_single_library, 0073_research_reuse_source -> 0075_collection_research_merge, Converge collection missions and Research Lab without rewriting either history.
+
+EXIT_CODE=0

@@ -1475,6 +1475,7 @@ def classify_route(method: str, path: str) -> str:
             "/api/notifications",
             "/api/desk",
             "/api/agent/system",
+            "/api/agent/operations",
             "/api/agent/notify",
             "/api/harness",
         )
@@ -1622,7 +1623,7 @@ def classify_mcp_tool(name: str) -> str:
         return "core.accounts_quota"
     if n in ("request_backend_deploy", "backend_deploy_status"):
         return "core.generation_deploy"
-    if n in ("notify_user",):
+    if n in ("notify_user", "host_operation_start", "host_operation_status", "host_operation_cancel"):
         return "core.system_routing"
     if n in (
         "manage_work",
@@ -1786,7 +1787,7 @@ def classify_table(name: str) -> str:
 def classify_migration(stem: str) -> str:
     s = stem.lower()
     # Core & Control
-    if s == "0071_library_platform_v2_merge":
+    if s in ("0071_library_platform_v2_merge", "0075_collection_research_merge"):
         # A no-op merge joins the library and execution branches; deployment
         # owns convergence, while each parent retains its domain's DDL.
         return "core.generation_deploy"
@@ -1855,7 +1856,7 @@ def classify_migration(stem: str) -> str:
         return "domain.creative_studio"
     if "notebooklm" in s:
         return "domain.notebooklm"
-    if "research_lab" in s:
+    if "research_lab" in s or s == "0073_research_reuse_source":
         return "domain.research_lab"
     if "reverse" in s:
         return "domain.reverse_eng"
@@ -1956,6 +1957,7 @@ def classify_config(field: str) -> str:
             "runtime_api_url",
             "runtime_poll_seconds",
             "trust_proxy_ip_header",
+            "backup_passphrase_file",
             "harness_view",
         )
     ):
@@ -2086,6 +2088,8 @@ def classify_source_file(rel_path: str) -> str:
                 "/push/",
                 "/desk_feedback.py",
                 "/backup_status.py",
+                "/operations/",
+                "/api/operations.py",
                 "/sysinfo.py",
                 "/schema_aliases.py",
                 "/textsafe.py",

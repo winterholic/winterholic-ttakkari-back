@@ -1,0 +1,68 @@
+COMMAND: ../back/.venv/bin/python -m pytest -q --noconftest unit_tests/test_migration_logging.py
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_migration_keeps_transfer_diagnostics_enabled _______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5419/test_migration_keeps_transfer_0')
+
+    def test_migration_keeps_transfer_diagnostics_enabled(tmp_path):
+        root = Path(__file__).resolve().parents[1]
+        # Alembic configures process-wide logging. Isolate that side effect while
+        # exercising the actual env.py and upgrade functions without a database.
+        source = '''
+    import io
+    import json
+    import logging
+    from alembic import command
+    from alembic.config import Config
+    from fastapi import Request
+    from ttakkari.transfer import diagnostics
+    
+    events = []
+    class Capture(logging.Handler):
+        def emit(self, record):
+            events.append(json.loads(record.getMessage()))
+    
+    diagnostics.log.addHandler(Capture())
+    diagnostics.log.setLevel(logging.INFO)
+    config = Config("alembic.ini", output_buffer=io.StringIO())
+    command.upgrade(config, "0073_research_reuse_source:head", sql=True)
+    assert not diagnostics.log.disabled, "migration disabled the transfer diagnostic logger"
+    request = Request({"type": "http", "state": {"raw_transfer": {"requestId": "migration-check"}}})
+    diagnostics.emit(request, "request_received")
+    assert events == [{**events[0], "event": "request_received", "requestId": "migration-check"}]
+    print("migration_diagnostics_ok")
+    '''
+        env = os.environ.copy()
+        env.update(
+            PYTHONPATH=str(root / "src"),
+            TTAKKARI_NO_ENV_FILE="1",
+            TTAKKARI_HOME=str(tmp_path / "home"),
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", source], cwd=root, env=env,
+            capture_output=True, text=True, timeout=30,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+E         INFO  [alembic.runtime.migration] Generating static SQL
+E         INFO  [alembic.runtime.migration] Will assume transactional DDL.
+E         INFO  [alembic.runtime.migration] Running upgrade 0071_library_platform_v2_merge -> 0072_collection_missions, Durable collection intent and links to the existing acquisition ledger. Additive.
+E         INFO  [alembic.runtime.migration] Running upgrade 0072_collection_missions -> 0073_collection_mission_runs, Run identity for periodic mission refresh so page budgets apply per run. Additive.
+E         INFO  [alembic.runtime.migration] Running upgrade 0073_collection_mission_runs -> 0074_collection_single_library, Single knowledge library (C2): access pool columns, document aliases and a merge ledger. Additive, online.
+E         INFO  [alembic.runtime.migration] Running upgrade 0074_collection_single_library, 0073_research_reuse_source -> 0075_collection_research_merge, Converge collection missions and Research Lab without rewriting either history.
+E         Traceback (most recent call last):
+E           File "<string>", line 19, in <module>
+E             assert not diagnostics.log.disabled, "migration disabled the transfer diagnostic logger"
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         AssertionError: migration disabled the transfer diagnostic logger
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/../...logger"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: migration disabled the transfer diagnostic logger\n').returncode
+
+unit_tests/test_migration_logging.py:46: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_migration_logging.py::test_migration_keeps_transfer_diagnostics_enabled
+1 failed in 0.39s
+
+EXIT_CODE=1

@@ -1,0 +1,1194 @@
+{
+  "methods": [
+    {
+      "slug": "system_memory_bandwidth_profiling",
+      "name": "Memory Bandwidth & Cache Profiling",
+      "name_ko": "메모리 대역폭 및 캐시 계층 프로파일링",
+      "summary": "신경망 추론 시 호스트 메모리 버스, L2/SLC(System Level Cache), 통합 메모리(Unified Memory) 대역폭 포화 상태를 계측하여 디코딩 병목 원인을 규명합니다.",
+      "principle": "자기회귀 디코딩은 토큰마다 가중치를 메모리에서 읽어야 해서 메모리 대역폭에 좌우될 수 있다는 가설에 따라 유효 대역폭과 포화 여부를 측정합니다(배치·모델에 따라 연산이 병목일 수 있어 검증 전).",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "llm",
+        "serving_infra"
+      ],
+      "layers": [
+        "memory",
+        "hardware"
+      ],
+      "goals": [
+        "throughput",
+        "speed",
+        "latency"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "profiling",
+        "baseline",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "sample_interval_ms",
+          "label": "샘플링 간격 (ms)",
+          "type": "integer",
+          "default": 100,
+          "min": 10,
+          "max": 1000,
+          "step": 10,
+          "unit": "ms",
+          "description": "메모리 대역폭 모니터링 폴링 주기",
+          "advanced": false,
+          "required": false,
+          "sweepable": false
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "hardware_counters_or_powermetrics"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "pytorch"
+        ],
+        "notes": "칩별 이론 대역폭은 Apple 공식 사양을 호스트 칩 기준으로 확인해야 하며 이 항목은 수치를 고정하지 않음. 측정 도구(powermetrics, Instruments)와 읽을 수 있는 카운터는 macOS·칩 세대별로 확인 필요. 참고 자료: llama.cpp 커뮤니티 측정 토론 https://github.com/ggml-org/llama.cpp/discussions/4167 (비공식, 근거로 채택하지 않음)."
+      },
+      "metrics": [
+        "throughput",
+        "tokens_per_sec",
+        "peak_memory_mb"
+      ],
+      "expected_effects": "이론 최대 대역폭 대비 실제 활용 효율을 측정해 병목 지점을 특정함",
+      "side_effects": "고주기 프로파일링 실행 시 약간의 CPU 계측 오버헤드 수반",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_batch_size_throughput_tuning",
+          "note": "배치 크기 변경에 따른 유효 대역폭 포화 곡선 분석"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "llm_inference",
+        "external_report"
+      ],
+      "tags": [
+        "memory_bandwidth",
+        "profiling",
+        "unified_memory",
+        "hardware"
+      ]
+    },
+    {
+      "slug": "system_cpu_thread_binding",
+      "name": "CPU Thread & Core Affinity Binding",
+      "name_ko": "CPU 스레드 수 및 코어 어피니티 바인딩",
+      "summary": "추론 연산에 투입할 CPU 스레드 수(-t)를 물리적 성능 코어(P-Core) 수에 맞추고 효율 코어(E-Core)나 하이퍼스레딩 가상 스레드로의 컨텍스트 스위칭을 제한합니다.",
+      "principle": "행렬곱 연산은 가장 느린 스레드를 기다리는 동기화 지점이 있어 스레드 수와 코어 배치에 민감할 수 있습니다. llama.cpp는 스레드 수와 CPU 마스크 옵션을 제공하며, 적정 스레드 수는 CPU 토폴로지별로 측정해야 합니다. macOS가 임의의 코어 고정(affinity)을 허용하는지는 확인 필요입니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "slm_on_device",
+        "stt"
+      ],
+      "layers": [
+        "runtime",
+        "scheduler",
+        "hardware"
+      ],
+      "goals": [
+        "speed",
+        "cpu_utilization",
+        "latency"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "threads",
+          "label": "스레드 수 (-t / --threads)",
+          "type": "integer",
+          "default": 8,
+          "min": 1,
+          "max": 32,
+          "step": 1,
+          "description": "연산에 할당할 CPU 워커 스레드 개수",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "threads_batch",
+          "label": "배치 전용 스레드 수 (-tb)",
+          "type": "integer",
+          "default": 16,
+          "min": 1,
+          "max": 32,
+          "step": 1,
+          "description": "프롬프트 처리(Prefill) 시 일시 투입할 스레드 수 (llama.cpp -tb)",
+          "advanced": true,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "multi_core_cpu"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "whisper.cpp"
+        ],
+        "notes": "스레드 수는 llama.cpp -t 옵션이며 최적값은 칩·모델별 실측이 필요함. 이 호스트에서 코어 고정(cpu-mask)이 실제로 적용되는지는 확인 필요."
+      },
+      "metrics": [
+        "tokens_per_sec",
+        "ttft_ms",
+        "cpu_utilization"
+      ],
+      "expected_effects": [
+        "스레드 수와 CPU 배치에 따른 CPU 추론 처리량·지연시간 변화를 측정(효과 크기와 최적 값은 CPU 토폴로지별 실측 필요)"
+      ],
+      "side_effects": "논리 코어 수를 넘겨 스레드를 설정하면 스케줄러 경합으로 속도가 떨어질 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_compiler_optimization_flags",
+          "note": "최적화 컴파일된 바이너리와 스레드 어피니티 결합"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "llama.cpp server README (-t, --cpu-mask, --cpu-strict, --prio)",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+          "year": 2025,
+          "claim": "공식 문서: -t/--threads(기본 -1), -C/--cpu-mask, --cpu-strict, --prio 등 스레드 수·CPU 친화도·우선순위 옵션 정의. 성능 수치는 포함하지 않음. llama.cpp 서버 README(master, 2026-10-25 조회) 기준이며 플래그명·지원 값은 빌드 버전마다 달라 호스트 llama-server 빌드에서 확인 필요."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "cpu_threads",
+        "p_core",
+        "llama_cpp",
+        "core_affinity"
+      ]
+    },
+    {
+      "slug": "system_batch_size_throughput_tuning",
+      "name": "Batch Size & Throughput-Latency Pareto Tuning",
+      "name_ko": "배치 크기별 처리량-지연시간 파레토 튜닝",
+      "summary": "프롬프트 배치 크기(-b)와 물리적 마이크로 배치(-ub)를 계단식으로 변경하면서 단일 요청 지연시간(Latency)과 시스템 전체 처리량(Throughput) 간의 파레토 최적 지점을 도출합니다.",
+      "principle": "배치 크기를 키우면 행렬곱의 산술 강도가 높아져 연산 자원을 더 잘 쓸 수 있으나 단일 요청의 대기 시간은 늘 수 있습니다. 두 지표의 trade-off 곡선을 측정합니다.",
+      "category": "systems",
+      "targets": [
+        "serving_infra",
+        "llm",
+        "systems"
+      ],
+      "layers": [
+        "runtime",
+        "scheduler",
+        "memory"
+      ],
+      "goals": [
+        "throughput",
+        "latency",
+        "gpu_utilization"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "grid_search",
+        "profiling"
+      ],
+      "parameters": [
+        {
+          "key": "logical_batch_size",
+          "label": "논리적 배치 크기 (-b)",
+          "type": "integer",
+          "default": 2048,
+          "min": 128,
+          "max": 8192,
+          "step": 256,
+          "unit": "tokens",
+          "description": "한 번에 처리할 논리적 토큰 총량",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "physical_ubatch_size",
+          "label": "물리적 마이크로 배치 크기 (-ub)",
+          "type": "integer",
+          "default": 512,
+          "min": 64,
+          "max": 2048,
+          "step": 64,
+          "unit": "tokens",
+          "description": "단일 GPU 커널 실행 시 할당할 마이크로 배치 단위",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "batch_capable_engine"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
+        "notes": "llama-server와 vLLM 모두 배치 관련 파라미터를 제공하나 이름·의미가 다름. 어댑터 llm_inference는 llama.cpp 경로만 지원함."
+      },
+      "metrics": [
+        "throughput",
+        "tokens_per_sec",
+        "ttft_ms",
+        "latency"
+      ],
+      "expected_effects": [
+        "배치·마이크로 배치 설정에 따른 처리량(Tokens/s)과 지연시간 곡선을 측정해 trade-off 지점을 찾음(최적 지점은 모델·하드웨어별 실측 필요)"
+      ],
+      "side_effects": "너무 큰 배치는 급격한 메모리 할당 스파이크를 일으켜 OOM 위험 초래",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_memory_bandwidth_profiling",
+          "note": "배치 확대에 따른 메모리 대역폭 한계 도달 여부 계측"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "llama.cpp server README (-b, -ub)",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+          "year": 2025,
+          "claim": "공식 문서: -b/--batch-size(논리 최대 배치, 기본 2048), -ub/--ubatch-size(물리 최대 배치, 기본 512). 성능 수치는 포함하지 않음. llama.cpp 서버 README(master, 2026-10-25 조회) 기준이며 플래그명·지원 값은 빌드 버전마다 달라 호스트 llama-server 빌드에서 확인 필요."
+        },
+        {
+          "kind": "doc",
+          "title": "llama.cpp llama-bench README",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/llama-bench/README.md",
+          "year": 2025,
+          "claim": "공식 문서: prompt/generation 처리 속도를 배치 크기 등 파라미터별로 측정하는 llama-bench 사용법."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "batch_size",
+        "ubatch",
+        "throughput",
+        "pareto_optimal"
+      ]
+    },
+    {
+      "slug": "system_gpu_kernel_profiling",
+      "name": "GPU Kernel Profiling (Metal Instruments / Nsight)",
+      "name_ko": "GPU 커널 프로파일링",
+      "summary": "추론 및 학습 중 GPU 커널 실행 타임라인(Timeline)을 계측하여 가장 많은 시간을 점유하는 주요 핫스팟 커널(Attention, Normalization 등)을 식별하고 병목을 분석합니다.",
+      "principle": "어텐션, RMSNorm, GEMM 등 개별 GPU 셰이더 함수의 타임라인을 추적하여 GPU 실행 파이프라인에서 불필요한 동기화 배리어(Wait barrier)나 SIMD 레인의 유휴(Idle) 원인을 시각화합니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "llm"
+      ],
+      "layers": [
+        "gpu_kernel",
+        "hardware"
+      ],
+      "goals": [
+        "speed",
+        "gpu_utilization",
+        "latency"
+      ],
+      "interventions": [
+        "kernel_optimization"
+      ],
+      "research_methods": [
+        "profiling",
+        "ablation"
+      ],
+      "parameters": [
+        {
+          "key": "trace_duration_seconds",
+          "label": "트레이스 수집 시간 (초)",
+          "type": "integer",
+          "default": 10,
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "unit": "s",
+          "description": "GPU 커널 실행 트레이스를 캡처할 지속 시간",
+          "advanced": false,
+          "required": false,
+          "sweepable": false
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "profiler_toolchain_installed"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "pytorch"
+        ],
+        "notes": "macOS는 Xcode Instruments/Metal 도구로 Metal 워크로드를 프로파일링할 수 있고 xctrace CLI 지원 범위는 확인 필요. CUDA는 Nsight 도구를 사용."
+      },
+      "metrics": [
+        "gpu_utilization",
+        "latency",
+        "tokens_per_sec"
+      ],
+      "expected_effects": [
+        "실행 시간을 많이 차지하는 커널을 식별해 최적화 대상을 정함"
+      ],
+      "side_effects": "상세 트레이스는 큰 파일을 만들 수 있음(크기는 실행 길이·도구별로 다름)",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_metal_vs_cuda_path_comparison",
+          "note": "커널 레벨 프로파일링 결과를 Metal과 CUDA 간 비교 분석"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "NVIDIA Nsight Systems",
+          "url": "https://developer.nvidia.com/nsight-systems",
+          "year": 2024,
+          "claim": "공식 제품 문서: GPU 커널 타임라인 프로파일링 도구."
+        },
+        {
+          "kind": "doc",
+          "title": "Apple: Optimizing GPU performance (Xcode, Metal debugger)",
+          "url": "https://developer.apple.com/documentation/xcode/optimizing-gpu-performance",
+          "year": 2024,
+          "claim": "공식 문서: Xcode의 Metal GPU 프로파일링 도구 사용 안내."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "profiling",
+        "metal_trace",
+        "nsight",
+        "gpu_kernel"
+      ]
+    },
+    {
+      "slug": "system_metal_vs_cuda_path_comparison",
+      "name": "Apple Metal vs NVIDIA CUDA Path Comparison",
+      "name_ko": "Apple Metal vs NVIDIA CUDA 실행 경로 비교",
+      "summary": "동일 모델 및 동일 양자화 포맷에 대해 Apple Silicon Metal(통합 메모리 경로)과 NVIDIA CUDA(PCIe 분리 메모리 경로)의 성능, 전력 효율(Tokens/Watt), 초기 로딩 시간을 대조 분석합니다.",
+      "principle": "Apple Silicon은 CPU와 GPU가 하나의 통합 메모리 풀을 공유하고, CUDA는 호스트 RAM과 장치 VRAM이 분리되어 있다는 구조 차이가 있습니다. 모델 로딩·전송 비용과 연산 성능 차이는 실측으로만 비교할 수 있으며 이 항목은 가설 단계입니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "llm"
+      ],
+      "layers": [
+        "hardware",
+        "runtime",
+        "memory"
+      ],
+      "goals": [
+        "speed",
+        "energy",
+        "cost",
+        "latency"
+      ],
+      "interventions": [
+        "model_replacement",
+        "kernel_optimization"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement",
+        "profiling"
+      ],
+      "parameters": [
+        {
+          "key": "benchmark_iterations",
+          "label": "반복 벤치마크 횟수",
+          "type": "integer",
+          "default": 5,
+          "min": 1,
+          "max": 20,
+          "step": 1,
+          "description": "평균 및 편차 계측을 위한 실행 반복 수",
+          "advanced": false,
+          "required": false,
+          "sweepable": false
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "dual_environment_access"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "pytorch"
+        ],
+        "notes": "이 호스트(Apple Silicon Metal)와 외부 CUDA 워커 양쪽 결과를 외부 보고 경로로 등록해 비교하는 설계이며 CUDA 쪽 실행기는 연결되어 있지 않음."
+      },
+      "metrics": [
+        "tokens_per_sec",
+        "ttft_ms",
+        "energy",
+        "peak_memory_mb"
+      ],
+      "expected_effects": "같은 모델·양자화 포맷에서 성능, 전력 효율, 로딩 시간을 대조 측정하는 설계(결과는 검증 전)",
+      "side_effects": "두 환경 간 드라이버 버전 및 플랫폼 종속 차이로 인한 변수 통제 필요",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_power_thermal_throttling_analysis",
+          "note": "두 하드웨어 경로의 전력 소모 및 발열 안정성 비교"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "llm_inference",
+        "external_report"
+      ],
+      "tags": [
+        "metal",
+        "cuda",
+        "hardware_comparison",
+        "apple_silicon"
+      ]
+    },
+    {
+      "slug": "system_memory_allocation_tuning",
+      "name": "Memory Allocation & Page Locking Tuning (--mlock)",
+      "name_ko": "메모리 할당자 및 페이지 고정 튜닝",
+      "summary": "대형 모델 실행 시 mlock 옵션으로 가중치 페이지가 스왑으로 내려가는 지연을 줄이고 mmap 로딩 방식을 비교합니다.",
+      "principle": "OS 가상 메모리는 메모리 압박 시 오래 쓰지 않은 페이지를 스왑으로 내릴 수 있고, 가중치 페이지가 스왑되면 다음 추론에서 디스크 읽기로 지연이 생길 수 있습니다. mlock은 페이지를 RAM에 고정하려는 옵션이며 메모리 압박 상황에서만 차이가 납니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "llm",
+        "serving_infra"
+      ],
+      "layers": [
+        "memory",
+        "runtime"
+      ],
+      "goals": [
+        "stability",
+        "latency",
+        "speed"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "use_mlock",
+          "label": "--mlock (페이지 메모리 잠금)",
+          "type": "boolean",
+          "default": true,
+          "description": "OS가 모델 가중치 메모리를 디스크 스왑으로 내리지 못하도록 RAM에 락",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "use_mmap",
+          "label": "--mmap (메모리 맵 로딩)",
+          "type": "boolean",
+          "default": true,
+          "description": "mmap을 통해 가중치 파일을 즉시 가상 메모리 공간에 매핑하여 로딩 시간 단축",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "os_memory_lock_permission"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp"
+        ],
+        "notes": "llama.cpp --load-mode 또는 구 빌드의 --mlock/--no-mmap으로 지정(빌드별 플래그명 확인 필요). macOS의 mlock 한도·권한 동작은 확인 필요. jemalloc/mimalloc 연동은 근거를 확인하지 못해 이 항목 범위에서 제외함."
+      },
+      "metrics": [
+        "latency",
+        "ttft_ms",
+        "stability"
+      ],
+      "expected_effects": [
+        "장시간 서빙에서 페이지 폴트·스왑 아웃으로 인한 지연 스파이크 발생 여부를 비교(영향 크기는 메모리 압박 정도별 실측 필요)"
+      ],
+      "side_effects": "물리 RAM에 비해 모델이 너무 크면 mlock이 시스템 전체 메모리 압박을 키울 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_data_transfer_overhead_minimization",
+          "note": "메모리 잠금과 Zero-Copy 구조를 결합하여 입출력 병목 차단"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "llama.cpp server README (--load-mode: mmap, mlock)",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+          "year": 2025,
+          "claim": "공식 문서: --load-mode(auto, none, mmap, mlock, mmap+mlock)와 환경변수 LLAMA_ARG_LOAD_MODE로 mmap 로딩과 RAM 고정(mlock)을 지정. 성능 수치는 포함하지 않음. 이전 빌드의 --mlock/--no-mmap 플래그와 이름이 다를 수 있음. llama.cpp 서버 README(master, 2026-10-25 조회) 기준이며 플래그명·지원 값은 빌드 버전마다 달라 호스트 llama-server 빌드에서 확인 필요."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "mlock",
+        "mmap",
+        "memory_allocator",
+        "swap_prevention"
+      ]
+    },
+    {
+      "slug": "system_data_transfer_overhead_minimization",
+      "name": "Host-Device Zero-Copy & Unified Memory Optimization",
+      "name_ko": "통합 메모리 제로카피 최적화",
+      "summary": "Apple Silicon의 통합 메모리 구조를 활용해 CPU와 GPU 사이의 불필요한 텐서 복사를 줄이는 방법을 비교합니다.",
+      "principle": "일반 PC는 CPU RAM과 GPU VRAM이 분리되어 PCIe로 복사가 필요합니다. Apple Silicon은 같은 물리 메모리를 공유하므로 Metal 공유 스토리지 모드 버퍼로 복사를 줄일 수 있다고 알려져 있으나, 어느 경로에서 실제 복사가 사라지는지는 런타임별 확인이 필요합니다(확인 필요).",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "slm_on_device",
+        "llm"
+      ],
+      "layers": [
+        "memory",
+        "hardware",
+        "runtime"
+      ],
+      "goals": [
+        "speed",
+        "latency",
+        "memory",
+        "energy"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
+      "parameters": [
+        {
+          "key": "zero_copy_enabled",
+          "label": "Zero-Copy 버퍼 모드",
+          "type": "boolean",
+          "default": true,
+          "description": "CPU-GPU 간 명시적 복사 없이 공유 메모리 포인터 직접 전달",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "unified_memory_architecture"
+        ],
+        "hardware": [
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "mlx"
+        ],
+        "notes": "Apple Silicon Mac 환경에서만 유효한 하드웨어 특권적 최적화."
+      },
+      "metrics": [
+        "ttft_ms",
+        "tokens_per_sec",
+        "peak_memory_mb"
+      ],
+      "expected_effects": [
+        "통합 메모리 구조에서 명시적 복사 비용을 줄일 가능성을 측정(가설, 검증 전)"
+      ],
+      "side_effects": "캐시 일관성(coherency)을 위해 동기화 비용이 남을 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_memory_allocation_tuning",
+          "note": "페이지 락과 결합하여 통합 메모리 전 구간을 안정적으로 관리"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "zero_copy",
+        "unified_memory",
+        "apple_silicon",
+        "uma"
+      ]
+    },
+    {
+      "slug": "system_compiler_optimization_flags",
+      "name": "Compiler Optimization Flags (-O3, NEON, AVX-512)",
+      "name_ko": "C/C++ 컴파일러 최적화 플래그",
+      "summary": "추론 엔진 바이너리를 빌드할 때 Clang/GCC의 -O3, -march=native, 하드웨어 벡터 확장(ARM NEON / x86 AVX-512), 링크 타임 최적화(LTO)를 활성화하여 실행 코드를 하드웨어에 맞게 최적화합니다.",
+      "principle": "범용 컴파일된 바이너리는 구형 프로세서와의 호환성을 위해 최신 SIMD 명령어(NEON 점적 연산, Dotprod 등)를 쓰지 않습니다. 타깃 CPU 아키텍처에 맞는 전용 벡터화 명령어를 컴파일러가 자동 생성하도록 유도합니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "slm_on_device"
+      ],
+      "layers": [
+        "compiler",
+        "runtime"
+      ],
+      "goals": [
+        "speed",
+        "cpu_utilization"
+      ],
+      "interventions": [
+        "compiler_optimization"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "opt_level",
+          "label": "최적화 레벨",
+          "type": "enum",
+          "default": "O3",
+          "options": [
+            {
+              "value": "O3",
+              "label": "-O3 (최대 속도 최적화)"
+            },
+            {
+              "value": "O2",
+              "label": "-O2 (표준 최적화)"
+            },
+            {
+              "value": "Ofast",
+              "label": "-Ofast (부동소수점 엄격성 완화 고속)"
+            }
+          ],
+          "description": "컴파일러 코드 최적화 단계",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        },
+        {
+          "key": "lto_enabled",
+          "label": "링크 타임 최적화 (LTO)",
+          "type": "boolean",
+          "default": true,
+          "description": "오브젝트 파일 간 인라인 확장을 위한 Link-Time Optimization 활성화",
+          "advanced": true,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "c_compiler_toolchain"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "whisper.cpp"
+        ],
+        "notes": "Apple Silicon에서는 NEON 계열 명령어가 기본이며 dotprod/i8mm 활용 여부는 빌드·칩별 확인 필요. -Ofast 사용 시 엄격한 IEEE 754 동작이 달라질 수 있음."
+      },
+      "metrics": [
+        "tokens_per_sec",
+        "speed"
+      ],
+      "expected_effects": [
+        "빌드 옵션 차이에 따른 CPU 추론 처리량 변화를 비교함(효과는 명령어 세트·빌드별 실측 필요)"
+      ],
+      "side_effects": "-Ofast 사용 시 엄격한 IEEE 754 부동소수점 예외가 무시될 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_cpu_thread_binding",
+          "note": "하드웨어 최적화 바이너리를 전용 성능 코어에 바인딩"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "llama.cpp build documentation",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md",
+          "year": 2025,
+          "claim": "공식 문서: CMake 빌드 옵션(CPU/Metal/CUDA 백엔드 선택, GGML_NATIVE 등 최적화 관련 옵션)과 플랫폼별 빌드 방법. 성능 수치는 포함하지 않음. 정확한 옵션명은 빌드 버전별 확인 필요."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "compiler_flags",
+        "neon",
+        "avx512",
+        "lto",
+        "optimization"
+      ]
+    },
+    {
+      "slug": "system_workload_engine_routing",
+      "name": "Workload-Specific Engine Selection",
+      "name_ko": "워크로드별 최적 실행 엔진 동적 라우팅",
+      "summary": "유입되는 작업 유형(단일 긴 추론, 짧은 챗봇 응답, 배치 임베딩, 오디오 전사)에 따라 가장 유리한 엔진(llama-server, Python CoreML, C++ 바이너리)으로 요청을 동적 라우팅합니다.",
+      "principle": "단일 저지연 요청, 대량 동시 요청, 임베딩·음성 처리 등 작업 유형에 따라 유리한 엔진이 다를 수 있다는 가정 아래 요청을 라우팅합니다. 엔진별 성능 차이는 워크로드 프로파일링 없이는 알 수 없는 가설입니다.",
+      "category": "systems",
+      "targets": [
+        "serving_infra",
+        "systems"
+      ],
+      "layers": [
+        "serving",
+        "scheduler",
+        "system_architecture"
+      ],
+      "goals": [
+        "throughput",
+        "latency",
+        "cost",
+        "energy"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "model_replacement"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
+      "parameters": [
+        {
+          "key": "routing_policy",
+          "label": "라우팅 정책",
+          "type": "enum",
+          "default": "latency_first",
+          "options": [
+            {
+              "value": "latency_first",
+              "label": "지연시간 우선 (단일 스트림 최적화)"
+            },
+            {
+              "value": "throughput_first",
+              "label": "처리량 우선 (배치 큐잉 최적화)"
+            },
+            {
+              "value": "energy_first",
+              "label": "에너지 절감 우선 (E-코어/NPU 분담)"
+            }
+          ],
+          "description": "실행 엔진 결정 휴리스틱 규칙",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "multi_engine_adapters_ready"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm",
+          "supertonic",
+          "whisper.cpp"
+        ],
+        "notes": "현재 따까리 운영 TTS 엔진은 Supertonic 3(ONNX CPU)이며 라우팅 대상 엔진 연결은 구현되어 있지 않음(가설 항목)."
+      },
+      "metrics": [
+        "throughput",
+        "latency",
+        "cost"
+      ],
+      "expected_effects": [
+        "복합 워크로드에서 엔진을 구분해 쓸 때의 처리 지연과 자원 경합 변화를 측정(가설, 워크로드 프로파일링 필요)"
+      ],
+      "side_effects": "이종 엔진 간 모델 중복 로딩 시 순간적인 메모리 경합 발생 가능",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_metal_vs_cuda_path_comparison",
+          "note": "환경별 가용 엔진 프로파일을 라우팅 테이블에 반영"
+        }
+      ],
+      "evidence": [],
+      "evidence_status": "unverified",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "engine_routing",
+        "orchestration",
+        "workload_management"
+      ]
+    },
+    {
+      "slug": "system_tensor_parallelism",
+      "name": "Tensor Parallelism across Multi-GPU",
+      "name_ko": "다중 GPU 텐서 병렬화",
+      "summary": "단일 트랜스포머 레이어의 가중치 행렬을 행(Row) 또는 열(Column) 단위로 여러 GPU에 분할하여, 개별 GPU 메모리 한계를 극복하고 병렬 연산으로 추론을 가속합니다.",
+      "principle": "Megatron-LM 스타일의 텐서 병렬 분할로 자기회귀 어텐션 행렬곱과 MLP 블록을 GPU 개수 N개로 나누고, 순전파 중간에 All-Reduce(NCCL 통신)를 수행하여 은닉 상태를 동기화합니다.",
+      "category": "systems",
+      "targets": [
+        "serving_infra",
+        "llm"
+      ],
+      "layers": [
+        "network",
+        "hardware",
+        "serving"
+      ],
+      "goals": [
+        "speed",
+        "memory",
+        "scalability"
+      ],
+      "interventions": [
+        "parallelization",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
+      "parameters": [
+        {
+          "key": "tp_degree",
+          "label": "텐서 병렬화 수 (TP)",
+          "type": "integer",
+          "default": 2,
+          "min": 1,
+          "max": 8,
+          "step": 1,
+          "description": "모델 가중치를 분할 적재할 GPU 장치 수",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "high_speed_gpu_interconnect"
+        ],
+        "hardware": [
+          "cuda"
+        ],
+        "runtimes": [
+          "vllm",
+          "pytorch"
+        ],
+        "notes": "GPU 간 NVLink 또는 고속 PCIe 대역폭이 갖춰진 다중 GPU 머신 필요."
+      },
+      "metrics": [
+        "tokens_per_sec",
+        "latency",
+        "peak_memory_mb"
+      ],
+      "expected_effects": [
+        "단일 가속기에 담기 어려운 대형 모델을 여러 GPU로 분산 적재할 수 있음(지연·처리량 효과는 인터커넥트·모델별 실측 필요)"
+      ],
+      "side_effects": "NVLink가 없는 일반 PCIe 환경에서는 GPU 간 통신 병목으로 인해 오히려 속도가 느려질 수 있음",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_batch_size_throughput_tuning",
+          "note": "텐서 병렬 환경에서 대규모 배치 처리량 개선"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism",
+          "url": "https://arxiv.org/abs/1909.08053",
+          "year": 2019,
+          "claim": "논문: 트랜스포머 레이어 내부 행렬을 여러 GPU에 나누는 intra-layer 모델 병렬(학습). 8.3B 파라미터 모델을 512 GPU로 학습하고 단일 GPU 기준선 대비 76% 스케일링 효율을 보고(조건: 논문 학습 환경, 서빙 아님)."
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "tensor_parallelism",
+        "multi_gpu",
+        "megatron",
+        "distributed"
+      ]
+    },
+    {
+      "slug": "system_power_thermal_throttling_analysis",
+      "name": "Power Consumption & Thermal Throttling Analysis",
+      "name_ko": "전력 소비 및 써멀 스로틀링 거동 분석",
+      "summary": "장시간 고부하 추론 및 학습 실험 시 프로세서 소비 전력(Watt)과 온도 상승에 따른 클록 주파수 강하(써멀 스로틀링) 거동을 추적하여 장기 지속 안정성을 평가합니다.",
+      "principle": "SoC 온도나 전력이 한계에 가까워지면 하드웨어가 클록을 낮춰 성능이 떨어질 수 있습니다. 장시간 부하에서 전력과 온도, 처리량의 시간 추이를 함께 기록해 스로틀링 구간 여부를 확인합니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "slm_on_device"
+      ],
+      "layers": [
+        "hardware",
+        "runtime"
+      ],
+      "goals": [
+        "energy",
+        "stability",
+        "consistency"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "profiling",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "test_duration_minutes",
+          "label": "부하 지속 시간 (분)",
+          "type": "integer",
+          "default": 15,
+          "min": 1,
+          "max": 120,
+          "step": 5,
+          "unit": "min",
+          "description": "연속 풀로드 상태를 유지할 계측 시간",
+          "advanced": false,
+          "required": false,
+          "sweepable": false
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "powermetrics_or_smi"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "pytorch"
+        ],
+        "notes": "macOS는 powermetrics 등으로 전력·열 상태를 확인할 수 있고, CUDA는 nvidia-smi 계열 도구를 사용. 이 호스트의 스로틀링 발생 여부는 장시간 실측이 필요함."
+      },
+      "metrics": [
+        "energy",
+        "tokens_per_sec",
+        "stability"
+      ],
+      "expected_effects": "장시간 부하에서 처리량이 시간에 따라 떨어지는지 기록해 지속 성능을 평가함",
+      "side_effects": "장시간 고온 부하로 인한 하드웨어 발열 주의",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_cpu_thread_binding",
+          "note": "적정 스레드 수 제한을 통한 발열 및 전력 제어"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "Apple: Respond to thermal state changes",
+          "url": "https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/RespondToThermalStateChanges.html",
+          "year": 2018,
+          "claim": "공식 문서(아카이브): macOS에서 시스템 열 상태 변화에 따라 성능이 제한될 수 있고 앱이 이를 감지·대응하는 방법. 성능 저하 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "thermal_throttling",
+        "power_metrics",
+        "stability",
+        "hardware"
+      ]
+    },
+    {
+      "slug": "system_numa_memory_interleaving",
+      "name": "NUMA Node Memory Interleaving & Binding",
+      "name_ko": "NUMA 노드 메모리 인터리빙 및 바인딩",
+      "summary": "다중 소켓 CPU 서버에서 메모리 대역폭 활용을 위해 numactl 인터리빙 정책이나 로컬 노드 바인딩을 적용하고 llama.cpp --numa 옵션과 비교합니다.",
+      "principle": "NUMA 구조에서는 원격 소켓 메모리 접근이 로컬 접근보다 느릴 수 있습니다. 대역폭 중심 워크로드는 인터리빙, 지연 중심 워크로드는 단일 노드 바인딩이 유리할 수 있다는 가정이며 실제 효과는 하드웨어 토폴로지별 실측이 필요합니다.",
+      "category": "systems",
+      "targets": [
+        "systems",
+        "serving_infra"
+      ],
+      "layers": [
+        "memory",
+        "hardware",
+        "scheduler"
+      ],
+      "goals": [
+        "throughput",
+        "speed",
+        "latency"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
+      "parameters": [
+        {
+          "key": "numa_policy",
+          "label": "NUMA 할당 정책",
+          "type": "enum",
+          "default": "interleave_all",
+          "options": [
+            {
+              "value": "interleave_all",
+              "label": "인터리빙 (모든 노드 균등 분산 - 대역폭 최대화)"
+            },
+            {
+              "value": "local_node_bind",
+              "label": "로컬 바인딩 (단일 소켓 고정 - 최저 지연)"
+            },
+            {
+              "value": "os_default",
+              "label": "OS 기본 정책"
+            }
+          ],
+          "description": "numactl 메모리 및 코어 할당 규칙",
+          "advanced": false,
+          "required": false,
+          "sweepable": true
+        }
+      ],
+      "compatibility": {
+        "requires": [
+          "multi_socket_numa_server"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp"
+        ],
+        "notes": "다중 소켓 x86-64 서버(Linux) 대상입니다. Apple Silicon 등 단일 통합 메모리 머신에는 해당하지 않아 이 Mac Studio에서는 실행 대상이 아닙니다."
+      },
+      "metrics": [
+        "throughput",
+        "tokens_per_sec",
+        "latency"
+      ],
+      "expected_effects": [
+        "다중 소켓 서버에서 LLM CPU 추론 시 메모리 대역폭 병목을 완화하여 토큰 생성 처리량 개선 기대 (하드웨어 NUMA 토폴로지에 따라 실측 필요)"
+      ],
+      "side_effects": "Apple Silicon 등 단일 UMA 머신에서는 지원되지 않는 플랫폼 종속 기법",
+      "relations": [
+        {
+          "type": "combines_with",
+          "target": "system_cpu_thread_binding",
+          "note": "NUMA 노드 바인딩과 스레드 어피니티 동시 적용"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "numactl(8) man page",
+          "url": "https://man7.org/linux/man-pages/man8/numactl.8.html",
+          "year": 2024,
+          "claim": "공식 man page: --interleave, --cpunodebind, --membind 등 NUMA 메모리 정책 옵션."
+        },
+        {
+          "kind": "doc",
+          "title": "llama.cpp server README (--numa)",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+          "year": 2025,
+          "claim": "공식 문서: --numa(distribute, isolate, numactl) 옵션이 일부 NUMA 시스템에서 도움이 될 수 있는 최적화를 시도한다고 설명. 성능 수치는 포함하지 않음."
+        }
+      ],
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "numa",
+        "interleave",
+        "cpu_inference",
+        "memory_bandwidth"
+      ]
+    }
+  ]
+}

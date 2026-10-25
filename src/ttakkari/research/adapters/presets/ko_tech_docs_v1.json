@@ -1,0 +1,265 @@
+{
+  "id": "ko_tech_docs_v1",
+  "name": "따까리 시스템 아키텍처 및 AI 연구실 한국어 기술문서 평가셋 v1",
+  "description": "실제 따까리 시스템 아키텍처, ADR, AI Research Lab v2 명세 기반 32개 문서와 16개 질의 qrels 세트",
+  "corpus": [
+    {
+      "id": "doc-01",
+      "title": "호스트 GPU 실행기 및 llama-server 관리",
+      "text": "호스트 GPU 실행기는 llama-server 인스턴스를 관리하며 Metal 가속과 CPU MoE 오프로드를 지원합니다. StartRequest 검증을 통해 허용된 모델 별칭만 실행하며 파일 락으로 단일 인스턴스 독점을 보장합니다."
+    },
+    {
+      "id": "doc-02",
+      "title": "리소스 리스 관리자 및 프로세스 보호",
+      "text": "ResourceLeaseManager는 host-gpu lock을 관리하여 경쟁 상태를 차단합니다. 비정상 종료 시 reap_lost 메커니즘을 통해 고아 프로세스를 정리하고 안전하게 리스를 회수합니다."
+    },
+    {
+      "id": "doc-03",
+      "title": "LLM KV 캐시 양자화 및 메모리 절감",
+      "text": "KV 캐시 양자화는 cache_type_k와 cache_type_v를 f16에서 q8_0 또는 q4_0으로 축소하여 긴 컨텍스트 추론 시 VRAM 사용량을 대폭 절감하는 최적화 기법입니다."
+    },
+    {
+      "id": "doc-04",
+      "title": "Flash Attention과 긴 컨텍스트 가속",
+      "text": "Flash Attention 커널은 어텐션 계산 시 HBM 메모리 접근을 최소화하여 SRAM 내 타일링 연산을 수행합니다. 긴 프롬프트 프리필 단계에서 처리 속도 향상과 메모리 절감을 동시에 제공합니다."
+    },
+    {
+      "id": "doc-05",
+      "title": "투기적 디코딩 Speculative Decoding 개요",
+      "text": "Speculative Decoding은 작은 draft 모델이나 ngram 캐시로 후보 토큰들을 빠르게 생성한 뒤 타깃 모델이 단일 순전파에서 병렬 검증함으로써 디코딩 지연 시간을 줄입니다."
+    },
+    {
+      "id": "doc-06",
+      "title": "로컬 TTS 아키텍처 및 Supertonic 3 엔진",
+      "text": "따까리의 로컬 TTS는 Supertonic 3 ONNX CPU 엔진을 채택하였습니다. Kokoro TTS는 한국어 지원 부재로 폐기되었으며 Supertonic은 빠른 합성 속도와 안정적인 한글 발음을 제공합니다."
+    },
+    {
+      "id": "doc-07",
+      "title": "TTS 텍스트 정규화 파이프라인",
+      "text": "tts normalize 모듈은 숫자, 날짜, 금액, 단위, 영문 약어를 한글 발음으로 변환합니다. convert_numbers와 read_latin 단계를 거쳐 음성 합성 엔진이 정확한 한국어 음소를 생성하도록 돕습니다."
+    },
+    {
+      "id": "doc-08",
+      "title": "사용자 발음사전 custom_pronunciation_dict 적용",
+      "text": "전문 용어나 도메인 고유명사는 custom_pronunciation_dict 사용자 발음사전 매핑을 통해 정규화 파이프라인에서 우선 치환되어 잘못된 발음 생성을 사전에 방지합니다."
+    },
+    {
+      "id": "doc-09",
+      "title": "로컬 Whisper STT 음성 인식 파이프라인",
+      "text": "faster-whisper large-v3 모델과 Silero VAD를 결합하여 로컬 회의 음성을 텍스트로 전사합니다. baseline, improved, robust 프로파일을 제공하여 음질과 속도를 조절합니다."
+    },
+    {
+      "id": "doc-10",
+      "title": "음성 인식 평가 지표 CER 및 WER 계산",
+      "text": "STT 품질 평가를 위해 원문 대비 음절 오류율 CER과 어절 오류율 WER을 계산합니다. 공백 제거 정규화와 레벤슈타인 편집 거리를 기반으로 정확도를 산출합니다."
+    },
+    {
+      "id": "doc-11",
+      "title": "지식 베이스 BM25 어휘 검색 알고리즘",
+      "text": "BM25는 질의 단어의 문서 빈도 TF와 역문서 빈도 IDF를 결합하고 문서 길이를 정규화하여 관련 단락을 검색합니다. k1과 b 파라미터로 단어 포화도와 길이 페널티를 조절합니다."
+    },
+    {
+      "id": "doc-12",
+      "title": "Dense 임베딩 및 E5 벡터 검색",
+      "text": "intfloat multilingual-e5-large 임베딩 모델을 활용하여 의미론적 유사도 벡터 검색을 수행합니다. 모델 캐시가 없는 환경에서는 글자 2-gram 기반 HashEmbedder를 대체재로 사용합니다."
+    },
+    {
+      "id": "doc-13",
+      "title": "하이브리드 검색 및 상호 순위 결합 RRF",
+      "text": "Reciprocal Rank Fusion RRF는 BM25 어휘 순위와 Dense 벡터 순위를 결합하여 단일 검색기의 취약점을 보완합니다. rrf_k 파라미터를 통해 상위 랭킹의 가중치를 제어합니다."
+    },
+    {
+      "id": "doc-14",
+      "title": "검색 결과 재정렬 Reranker 최적화",
+      "text": "1차 검색된 상위 k개 후보군에 대해 Cross-Encoder 또는 토큰 오버랩 기반 리랭킹을 수행하여 최종 관련도 순위를 재조정합니다. 검색 정밀도와 NDCG 지표를 유의미하게 개선합니다."
+    },
+    {
+      "id": "doc-15",
+      "title": "텍스트 청킹 전략과 청크 오버랩",
+      "text": "긴 문서를 검색 가능한 작은 단위로 분할할 때 문단 기준 paragraph 청킹이나 고정 길이 fixed_window 방식을 적용합니다. 문맥 단절을 방지하기 위해 일정 비율의 청크 오버랩을 유지합니다."
+    },
+    {
+      "id": "doc-16",
+      "title": "아티팩트 서비스 및 파일 보관함 연동",
+      "text": "연구 실험에서 생성된 오디오 WAV 파일과 벤치마크 결과 리포트는 artifacts service의 register_file 함수를 통해 안전하게 등록되며 고유 식별자로 다운로드 및 조회가 가능합니다."
+    },
+    {
+      "id": "doc-17",
+      "title": "백엔드 무중단 3슬롯 세대 배포 아키텍처",
+      "text": "따까리 백엔드는 3슬롯 generation 배포 구조를 취하여 신규 버전 기동 중에도 기존 런과 요청을 안전하게 드레이닝합니다. Caddy 프록시와 결합하여 무중단 전환을 지원합니다."
+    },
+    {
+      "id": "doc-18",
+      "title": "스코프 격리 personal 및 work 정책",
+      "text": "모든 연구 데이터와 호스트 리소스는 personal과 work 스코프로 엄격히 격리됩니다. 호스트 GPU 직접 실행과 같은 고부하 작업은 개인 personal 스코프에서만 허용됩니다."
+    },
+    {
+      "id": "doc-19",
+      "title": "실행 가능 상태 F축 readiness 판정 규칙",
+      "text": "방법론 카탈로그의 execution_status는 즉시 실행 가능, 도구 연동, 일부 지원, 어댑터 필요, 환경 불가, 가설 단계의 6가지 상태로 런타임에 결정론적으로 계산됩니다."
+    },
+    {
+      "id": "doc-20",
+      "title": "실행 어댑터 ExecutionAdapter 프로토콜 계약",
+      "text": "모든 실행기는 base.py의 ExecutionAdapter 프로토콜을 구현합니다. check_environment, validate_config, estimate_resources, execute_run, to_measurements 계약을 준수해야 합니다."
+    },
+    {
+      "id": "doc-21",
+      "title": "외부 벤치마크 반입 external_report 어댑터",
+      "text": "로컬에서 직접 실행하기 어려운 대규모 분산 학습이나 외부 클러스터 실험 결과는 provenance 출처 정보와 함께 external_report 어댑터를 통해 동일한 스키마로 저장됩니다."
+    },
+    {
+      "id": "doc-22",
+      "title": "비스트리밍 LLM의 근사 Prefill 지연 시간 산출",
+      "text": "llama-server 비스트리밍 호출에서는 순수 TTFT 측정이 불가능하므로 prompt_tokens를 prompt_per_second로 나눈 값을 is_proxy=True 근사 지표 approx_prefill_ms로 기록합니다."
+    },
+    {
+      "id": "doc-23",
+      "title": "시스템 메모리 스왑 추적과 Watchdog 보호",
+      "text": "macOS 환경에서 Metal VRAM 전용 피크 측정이 어려우므로 호스트 전체 swap_growth_bytes를 계측합니다. 스왑 증가량이 임계치를 초과하면 watchdog이 프로세스를 보호 종료합니다."
+    },
+    {
+      "id": "doc-24",
+      "title": "한국어 불용어 처리와 형태소 정규화",
+      "text": "한국어 검색 시 프로젝트, 관련, 알려줘 등의 빈출 불용어를 제거하고 NFKC 유니코드 정규화를 적용하여 검색 색인의 노이즈를 줄이고 어휘 일치도를 향상시킵니다."
+    },
+    {
+      "id": "doc-25",
+      "title": "등급형 관련도 평가 지표 NDCG@k 원리",
+      "text": "Normalized Discounted Cumulative Gain은 검색 결과의 순위에 따른 감쇠 할인 요소를 적용하여 가장 관련성 높은 문서가 상위에 노출되었는지를 0과 1 사이 값으로 정밀 평가합니다."
+    },
+    {
+      "id": "doc-26",
+      "title": "상호 역순위 MRR 및 재현율 Recall 지표",
+      "text": "MRR은 첫 번째 정답 문서가 위치한 등수의 역수이며, Recall@k는 정답 문서 전체 중 상위 k위 안에 포함된 비율을 나타냅니다. 검색 시스템의 기초 회수율 검증에 필수적입니다."
+    },
+    {
+      "id": "doc-27",
+      "title": "실험 정의 Definition과 실행 Run의 분리",
+      "text": "연구실 v2에서는 동일한 하이퍼파라미터 조합의 실험 정의 Definition과 여러 번 반복 실행된 Run을 명확히 분리하여 파레토 프론티어와 통계적 분산 분석을 가능케 합니다."
+    },
+    {
+      "id": "doc-28",
+      "title": "연구실 지식 원장과 불변 감사 타임라인",
+      "text": "연구 판단 근거와 노드는 research_immutable_row 트리거를 통해 수정이 방지되며, research_events 타임라인을 통해 모든 가설 수립 및 실험 채택 과정이 감사 기록으로 보존됩니다."
+    },
+    {
+      "id": "doc-29",
+      "title": "방법론 카탈로그 승격 Promote 경로",
+      "text": "가설 단계로 등록된 새 방법은 로컬 실행 어댑터의 실측 Run과 대조군 비교 분석이 검증되면 validated 정식 카탈로그 항목으로 승격되어 후속 연구에서 재사용됩니다."
+    },
+    {
+      "id": "doc-30",
+      "title": "모바일 친화적 웹 UI와 대시보드 6대 화면",
+      "text": "프론트엔드는 원격 모바일 접속 사용자를 위해 대시보드, 방법론 라이브러리, 실험 설계실, 실험 모니터, 결과 비교 분석, 연구 기록의 6개 핵심 모듈로 개편되었습니다."
+    },
+    {
+      "id": "doc-31",
+      "title": "Optuna 연계 하이퍼파라미터 최적화",
+      "text": "다차원 파라미터 튜닝 시 Grid Search뿐만 아니라 Bayesian Optimization 기반의 Optuna 스케줄러를 온디맨드로 연계하여 최소 실행 횟수로 최적 파라미터를 탐색합니다."
+    },
+    {
+      "id": "doc-32",
+      "title": "AI 작업 산출물 outbox 수집 및 공유 정책",
+      "text": "에이전트가 생성한 최종 보고서와 파일은 전용 outbox 디렉토리에 저장된 후 share_file 도구를 통해 원격 사용자 웹 화면에 안전하게 노출되고 다운로드됩니다."
+    }
+  ],
+  "queries": [
+    {
+      "id": "q-01",
+      "query": "호스트 GPU에서 llama-server 실행과 모델 별칭 검증 방식은?",
+      "relevant_ids": ["doc-01", "doc-02"],
+      "relevance_grades": { "doc-01": 3, "doc-02": 1 }
+    },
+    {
+      "id": "q-02",
+      "query": "KV 캐시 양자화(q8_0, q4_0)의 메모리 절감 효과는?",
+      "relevant_ids": ["doc-03"],
+      "relevance_grades": { "doc-03": 3 }
+    },
+    {
+      "id": "q-03",
+      "query": "Flash Attention의 긴 컨텍스트 가속 원리와 HBM 타일링",
+      "relevant_ids": ["doc-04"],
+      "relevance_grades": { "doc-04": 3 }
+    },
+    {
+      "id": "q-04",
+      "query": "따까리 로컬 TTS가 Kokoro 대신 Supertonic 3를 선택한 이유는?",
+      "relevant_ids": ["doc-06"],
+      "relevance_grades": { "doc-06": 3 }
+    },
+    {
+      "id": "q-05",
+      "query": "TTS 텍스트 정규화에서 숫자와 영문 약어 변환 절차",
+      "relevant_ids": ["doc-07"],
+      "relevance_grades": { "doc-07": 3 }
+    },
+    {
+      "id": "q-06",
+      "query": "로컬 Whisper 음성 인식의 CER 및 WER 계산 방법",
+      "relevant_ids": ["doc-10", "doc-09"],
+      "relevance_grades": { "doc-10": 3, "doc-09": 2 }
+    },
+    {
+      "id": "q-07",
+      "query": "BM25 어휘 검색과 k1, b 하이퍼파라미터의 역할",
+      "relevant_ids": ["doc-11", "doc-13"],
+      "relevance_grades": { "doc-11": 3, "doc-13": 1 }
+    },
+    {
+      "id": "q-08",
+      "query": "Dense 임베딩 모델 부재 시 대체하는 HashEmbedder 방식",
+      "relevant_ids": ["doc-12", "doc-13"],
+      "relevance_grades": { "doc-12": 3, "doc-13": 1 }
+    },
+    {
+      "id": "q-09",
+      "query": "어휘 검색과 벡터 검색을 결합하는 하이브리드 RRF 원리",
+      "relevant_ids": ["doc-13", "doc-11", "doc-12"],
+      "relevance_grades": { "doc-13": 3, "doc-11": 2, "doc-12": 2 }
+    },
+    {
+      "id": "q-10",
+      "query": "검색 결과 재정렬 Reranker를 통한 NDCG 정밀도 개선",
+      "relevant_ids": ["doc-14", "doc-25"],
+      "relevance_grades": { "doc-14": 3, "doc-25": 2 }
+    },
+    {
+      "id": "q-11",
+      "query": "텍스트 청킹 전략에서 문단 분할과 고정 길이 윈도우 오버랩",
+      "relevant_ids": ["doc-15", "doc-11"],
+      "relevance_grades": { "doc-15": 3, "doc-11": 1 }
+    },
+    {
+      "id": "q-12",
+      "query": "백엔드 무중단 3슬롯 세대 배포 및 드레이닝 메커니즘",
+      "relevant_ids": ["doc-17", "doc-02"],
+      "relevance_grades": { "doc-17": 3, "doc-02": 1 }
+    },
+    {
+      "id": "q-13",
+      "query": "연구실 v2의 execution_status F축 6단계 판정 기준",
+      "relevant_ids": ["doc-19", "doc-20"],
+      "relevance_grades": { "doc-19": 3, "doc-20": 1 }
+    },
+    {
+      "id": "q-14",
+      "query": "비스트리밍 LLM 추론에서 approx_prefill_ms 근사치 역산 공식",
+      "relevant_ids": ["doc-22", "doc-01"],
+      "relevance_grades": { "doc-22": 3, "doc-01": 2 }
+    },
+    {
+      "id": "q-15",
+      "query": "NDCG, MRR, Recall 검색 성능 평가 지표의 수식과 해석",
+      "relevant_ids": ["doc-25", "doc-26"],
+      "relevance_grades": { "doc-25": 3, "doc-26": 3 }
+    },
+    {
+      "id": "q-16",
+      "query": "신규 가설 방법론을 실측 후 정식 카탈로그로 승격하는 절차",
+      "relevant_ids": ["doc-29", "doc-27", "doc-28"],
+      "relevance_grades": { "doc-29": 3, "doc-27": 1, "doc-28": 1 }
+    }
+  ]
+}

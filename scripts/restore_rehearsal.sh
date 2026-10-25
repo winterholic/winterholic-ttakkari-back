@@ -55,12 +55,21 @@ fi
 command -v pg_restore >/dev/null || { echo "pg_restore 없음." >&2; exit 3; }
 command -v psql >/dev/null || { echo "psql 없음." >&2; exit 3; }
 
+if [[ -z "${TMPDIR:-}" ]]; then
+  DEFAULT_OPS_TMP="$HOME/.ttakkari/operations/tmp"
+  if [[ -d "$DEFAULT_OPS_TMP" ]]; then
+    TMPDIR="$DEFAULT_OPS_TMP"
+  fi
+fi
+
 # SQLAlchemy식 URL은 libpq 도구가 못 읽으므로 driver 부분을 걷어낸다.
 LIBPQ_URL="$(printf '%s' "$DB_URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9.-]*)(\+[a-zA-Z0-9_.-]+)?://#\1://#')"
 # 리허설은 로컬 PostgreSQL만 허용한다. 원격 운영 URL로 격리 DB를 만들거나
 # 실수로 그 클러스터의 DB를 삭제할 경로를 닫는다.
 TARGET_URL="$("$PYTHON" - "$LIBPQ_URL" "$TARGET_DB" <<'EOF'
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
+import ipaddress
+import os
 import sys
 
 url, target = sys.argv[1:]
@@ -71,12 +80,34 @@ p = urlsplit(url)
 if p.scheme not in ("postgres", "postgresql") or p.fragment:
     print("오류: 로컬 PostgreSQL URL만 허용", file=sys.stderr)
     raise SystemExit(2)
-host = (p.hostname or "").lower()
-if host not in ("localhost", "127.0.0.1", "::1"):
-    socket_hosts = parse_qs(p.query).get("host", [])
-    if host or not socket_hosts or not all(h.startswith("/") for h in socket_hosts):
-        print("오류: 복원 리허설은 localhost/loopback PostgreSQL만 허용", file=sys.stderr)
-        raise SystemExit(2)
+
+def is_local_host(val: str) -> bool:
+    v = val.strip().strip("[]").lower()
+    if v.startswith("/") or v == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(v).is_loopback
+    except ValueError:
+        return False
+
+def hosts_list(raw) -> list[str]:
+    items = [raw] if isinstance(raw, str) else list(raw or ())
+    return [h for item in items for h in item.split(",") if h]
+
+query = parse_qs(p.query)
+if "service" in query or os.environ.get("PGSERVICE"):
+    print("오류: 복원 리허설은 서비스 파일(원격 가능성)을 허용하지 않음", file=sys.stderr)
+    raise SystemExit(2)
+
+hosts = ([p.hostname] if p.hostname else []) + hosts_list(query.get("host"))
+if not hosts and os.environ.get("PGHOST"):
+    hosts = hosts_list(os.environ["PGHOST"])
+addrs = hosts_list(query.get("hostaddr")) or hosts_list(os.environ.get("PGHOSTADDR"))
+
+all_endpoints = [h for h in (*hosts, *addrs) if h]
+if not all(is_local_host(h) for h in all_endpoints):
+    print("오류: 복원 리허설은 localhost/loopback PostgreSQL만 허용", file=sys.stderr)
+    raise SystemExit(2)
 print(urlunsplit((p.scheme, p.netloc, "/" + quote(target, safe=""), p.query, "")))
 EOF
 )"

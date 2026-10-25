@@ -1,0 +1,7 @@
+COMMAND: .venv/bin/python -m pytest -q --noconftest unit_tests/test_collection_adapters.py unit_tests/test_collection_mission_triage_unhold.py unit_tests/test_collection_plan.py unit_tests/test_collection_precise_eval.py unit_tests/test_collection_research.py unit_tests/test_collection_research_migration_merge.py unit_tests/test_collection_triage.py unit_tests/test_collection_triage_eval.py unit_tests/test_collection_triage_ml.py unit_tests/test_collector_blob_store.py unit_tests/test_collector_contracts.py unit_tests/test_collector_migration_chain.py unit_tests/test_collector_parser.py unit_tests/test_collector_policy.py unit_tests/test_collector_quality_learning.py unit_tests/test_executor_migration_contract.py unit_tests/test_generation_hardening.py unit_tests/test_migration_logging.py unit_tests/test_research_benchmark.py unit_tests/test_research_rules.py unit_tests/test_schema_head_admission.py
+........................................................................ [ 29%]
+............................................................................................................................................................... [ 94%]
+.............                                                            [100%]
+244 passed, 4953 subtests passed in 8.16s
+
+EXIT_CODE=0

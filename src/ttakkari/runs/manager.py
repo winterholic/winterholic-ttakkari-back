@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import random
 import signal
 import tempfile
 import time
@@ -19,6 +20,7 @@ from pathlib import Path
 
 import psutil
 from sqlalchemy import func, select
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari import artcraft_tasks, generation
@@ -94,6 +96,11 @@ HANDOFF_CHARS = 1500
 WAIT_HANDOFF_CHARS = 6000
 MAX_RESTART_RESUME_ATTEMPTS = 3
 RESTART_RESUME_BACKOFF_SECONDS = 30
+# DB 풀 고갈(QueuePool timeout)은 Run 의 잘못이 아니다. 엔진 프로세스가 뜨기 전이면 실패 대신 지터 있는 백오프로 다시 줄 세운다.
+MAX_POOL_TIMEOUT_RETRIES = 3
+POOL_TIMEOUT_BACKOFF_SECONDS = 5
+# 풀에서 Run 시작과 무관한 일(API 요청, heartbeat, 백그라운드)에 남겨 두는 연결 수.
+POOL_RESERVED_CONNECTIONS = 2
 RUN_HEARTBEAT_SECONDS = 15
 REPORT_CHARS = 3000
 # 부모 프로세스가 Claude Code·Orca 안에서 떴을 때 자식 에이전트가 중첩 세션으로 오인하지 않게 지운다.
@@ -133,6 +140,29 @@ class _Handle:
     owner: generation.GenerationRuntime | None = None
     token: uuid.UUID | None = None
     process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID, int]] = field(default_factory=list)
+    start_slot: asyncio.Semaphore | None = None
+    # 이 시도가 별도 커밋·dispatch 로 외부에 확정된 부수효과(예: 접수가 넘긴 기획 Run)를 이미 냈다. 있으면 다시 줄 세우지 않는다.
+    side_effect_committed: bool = False
+
+    def mark_side_effect(self) -> None:
+        self.side_effect_committed = True
+
+    def release_start_slot(self) -> None:
+        """엔진 프로세스가 뜨고 첫 커밋으로 연결을 돌려준 뒤 시작 슬롯을 반납한다. 여러 번 불러도 한 번만 반납한다."""
+        slot, self.start_slot = self.start_slot, None
+        if slot is not None:
+            slot.release()
+
+
+def routing_slots() -> int:
+    """동시에 시작 단계(라우팅·프롬프트 준비)에 들어갈 수 있는 Run 수.
+
+    시작 단계의 Run 은 자기 세션의 연결 하나를 쥔 채 안에서 두 번째 연결(choose_profile 등)을 또 얻는다.
+    시작하는 Run 이 풀 크기보다 많으면 모든 연결을 바깥 세션이 쥐고 안쪽 연결을 기다려 풀 timeout 까지 서로 막힌다.
+    Run 당 2개씩 쓰고 나머지 POOL_RESERVED_CONNECTIONS 개는 비워 두면 이 교착은 구조적으로 생기지 않는다.
+    """
+    s = get_settings()
+    return max(1, (s.database_pool_size + s.database_pool_overflow - POOL_RESERVED_CONNECTIONS) // 2)
 
 
 class QwenSlotBusy(RuntimeError):
@@ -156,6 +186,9 @@ class RunManager:
         # 실행 중에 새 대화로 바꾸라고 한 세션. 실행이 끝날 때 적용해야 그 Run 이 엔진 대화 id 를 다시 덮어쓰지 않는다.
         self._reset_requests: set[uuid.UUID] = set()
         self._qwen_local_slot = asyncio.Semaphore(1)
+        # 한도 대기 Run 여럿이 같은 초기화 시각에 한꺼번에 깨어나도 시작 단계는 풀 크기에 맞춰 줄 세운다.
+        self._routing: asyncio.Semaphore | None = None
+        self._pool_retries: dict[uuid.UUID, int] = {}
 
     def sem(self, lane: str) -> asyncio.Semaphore:
         if lane not in self._sems:
@@ -726,6 +759,69 @@ class RunManager:
                 return
         await runtime.release(run_id, token)
 
+    async def _release_connection(self, db: AsyncSession, run: Run) -> None:
+        """안쪽 연결(choose_profile 등)을 얻기 전에 바깥 세션의 트랜잭션을 끝내 풀 연결을 돌려준다.
+
+        한도·슬롯 폴백의 재선택은 시작 슬롯 밖에서 일어난다. 바깥 세션이 available_profiles() 조회로 연결을 쥔 채
+        안쪽 연결을 기다리면, 여러 Run 이 같은 순간 폴백할 때 풀이 말라 서로 기다린다."""
+        await self._commit(db, run)
+
+    @contextlib.asynccontextmanager
+    async def _start_slot(self, run_id: uuid.UUID):
+        """시작 단계 동시 상한. 슬롯을 기다리는 동안은 DB 연결을 쥐지 않는다.
+
+        _attempt 가 엔진 프로세스를 띄우고 첫 커밋을 마치면 슬롯을 먼저 돌려준다. 그 뒤 긴 실행 구간은
+        이벤트마다 커밋해 연결을 바로 반납하므로 상한을 쓰지 않는다."""
+        if self._routing is None:
+            self._routing = asyncio.Semaphore(routing_slots())
+        slot = self._routing
+        await slot.acquire()
+        h = self._handles.get(run_id)
+        if h is not None:
+            h.start_slot = slot
+        try:
+            yield
+        finally:
+            if h is not None:
+                h.release_start_slot()
+            else:
+                slot.release()
+
+    async def _requeue_after_pool_timeout(self, run_id: uuid.UUID, *, authorized: bool) -> bool:
+        """풀 고갈로 죽은 Run 을 실패시키지 않고 지터 있는 백오프 뒤로 다시 줄 세운다. 다시 세웠으면 True.
+
+        엔진 프로세스가 이미 떴거나(h.proc) 별도 커밋으로 부수효과가 확정됐으면(h.side_effect_committed) 하지 않는다.
+        그 경우는 기존 실패 처리로 간다. 다시 돌리면 같은 일을 두 번 하기 때문이다.
+        authorized=False 는 claim 에서 죽어 이 Run 에 쓸 권한이 없다는 뜻이라 DB 는 건드리지 않고 깨우기만 건다."""
+        attempt = self._pool_retries.get(run_id, 0) + 1
+        h = self._handles.get(run_id)
+        if attempt > MAX_POOL_TIMEOUT_RETRIES or (h is not None and (h.proc is not None or h.side_effect_committed)):
+            return False
+        delay = POOL_TIMEOUT_BACKOFF_SECONDS * attempt + random.uniform(0, POOL_TIMEOUT_BACKOFF_SECONDS)
+        until = time.time() + delay
+        try:
+            async with sessionmaker()() as db:
+                run = await db.get(Run, run_id)
+                if run is None or run.status not in (RunStatus.queued, RunStatus.running):
+                    return False
+                if authorized:
+                    if run.status == RunStatus.running:
+                        run.status = RunStatus.queued
+                        run.pid = None
+                    run.resume_after = datetime.fromtimestamp(until, UTC)
+                    events.append(db, run, "run.status", {
+                        "status": RunStatus.queued, "pool_timeout_retry": True, "attempt": attempt,
+                        "resume_after": _iso(until)})
+                    await self._commit(db, run)
+                session_id = run.session_id
+        except Exception:  # 풀이 아직 비어 있지 않다. 호출자가 기존대로 실패 처리한다
+            log.warning("could not requeue run %s after a DB pool timeout", run_id, exc_info=True)
+            return False
+        self._pool_retries[run_id] = attempt
+        log.warning("run %s requeued after DB pool timeout (attempt %d, retry in %.0fs)", run_id, attempt, delay)
+        self._arm(run_id, session_id, until)
+        return True
+
     async def _execute(self, run_id: uuid.UUID, lane: str = "workers") -> None:
         sm = sessionmaker()
         runtime, token = self.runtime, None
@@ -743,10 +839,11 @@ class RunManager:
                     return
                 if h := self._handles.get(run_id):
                     h.owner, h.token = runtime, token
-            async with self.sem(lane), sm() as db:
+            async with self.sem(lane), self._start_slot(run_id), sm() as db:
                 if runtime and token:
                     db.info["runtime_lease"] = (runtime, run_id, token)
                 await self._run(db, run_id)
+            self._pool_retries.pop(run_id, None)
         except generation.OwnershipLost:
             log.error("discarded stale writes for run %s", run_id)
         except asyncio.CancelledError:
@@ -763,6 +860,10 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("run %s crashed", run_id)
+            if isinstance(e, PoolTimeoutError) and await self._requeue_after_pool_timeout(
+                    run_id, authorized=runtime is None or token is not None):
+                return
+            self._pool_retries.pop(run_id, None)
             if runtime is not None and token is None:
                 return  # A failed claim did not authorize any writes to this Run.
             async with sm() as db:
@@ -808,6 +909,7 @@ class RunManager:
                 await self._commit(db, run)
                 await desk.handle(db, run, sess)
                 await self._finish(db, run, RunStatus.succeeded)
+            self._pool_retries.pop(run_id, None)
         except generation.OwnershipLost:
             log.error("discarded stale writes for desk run %s", run_id)
         except asyncio.CancelledError:
@@ -824,6 +926,12 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("desk run %s crashed", run_id)
+            # 접수의 답·이벤트는 _finish 의 커밋으로 확정된다. 하지만 기획으로 넘기는 desk._delegate 는 queue_run 이
+            # 별도로 커밋하고 dispatch 까지 하므로 그 뒤에는 side_effect_committed 로 막아 기획 Run 이 둘 생기지 않게 한다.
+            if isinstance(e, PoolTimeoutError) and await self._requeue_after_pool_timeout(
+                    run_id, authorized=runtime is None or token is not None):
+                return
+            self._pool_retries.pop(run_id, None)
             if runtime is not None and token is None:
                 return
             async with sm() as db:
@@ -965,6 +1073,8 @@ class RunManager:
         choose_account = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
 
         async def choose(candidates, run_id, **kwargs):
+            if run.status == RunStatus.running:  # 첫 선택은 시작 슬롯이 보호한다. 폴백 재선택만 여기서 연결을 푼다.
+                await self._release_connection(db, run)
             if is_meeting:
                 candidates = meeting_routing.first_stage(candidates)
             elif task_type:
@@ -1101,7 +1211,8 @@ class RunManager:
         self._disarm(run.id)
         run.status = RunStatus.running
         run.error = None
-        run.resume_handoff = None
+        # NOTE: resume_handoff 는 엔진 프로세스가 안내문을 받아 뜬 뒤(_attempt) 지운다. 여기서 지우면 시작 전 풀 timeout 재큐잉이
+        # 재시작 재개 안내문(이미 반영된 변경 확인·완료 작업 반복 금지)을 잃은 채 다시 돈다.
         run.resume_after = None
         run.started_at = run.started_at or utcnow()
         events.append(db, run, "run.status", {"status": RunStatus.running})
@@ -1656,7 +1767,10 @@ class RunManager:
         heartbeat_task: asyncio.Task | None = None
         timed_out = False
         try:
+            run.resume_handoff = None  # 안내문은 이 프로세스의 프롬프트에 실렸다
             await self._commit(db, run)
+            if h:
+                h.release_start_slot()
             heartbeat_task = asyncio.create_task(
                 _heartbeat(run.id, owner=h.owner if h else None, token=h.token if h else None),
                 name=f"heartbeat-{run.id}")
@@ -1817,6 +1931,7 @@ class RunManager:
             db.info["runtime_lease"] = (h.owner, run.id, h.token)
             await h.owner.fence(db, run.id, h.token)
         self._disarm(run.id)
+        self._pool_retries.pop(run.id, None)
         run.status = status
         run.finished_at = utcnow()
         if error:

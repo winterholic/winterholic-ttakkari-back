@@ -1,0 +1,237 @@
+{
+  "timestamp": "2026-10-25T13:59:45+09:00",
+  "environment": {
+    "host": "Mac Studio (Apple Silicon, macOS)",
+    "branch": "research-v2",
+    "scope": "personal"
+  },
+  "retrieval_eval": {
+    "adapter_id": "retrieval_eval",
+    "version": "1.0.0",
+    "dataset": "ko_tech_docs_v1",
+    "runs": [
+      {
+        "configuration_id": "config-retrieval-bm25-baseline",
+        "description": "내장 한국어 기술문서 평가셋 BM25 Baseline 검색 (k=5, chunking=none)",
+        "config": {
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25",
+          "k": 5,
+          "chunking_strategy": "none"
+        },
+        "status": "succeeded",
+        "wall_seconds": 0.001,
+        "summary": {
+          "corpus_count": 32,
+          "query_count": 16,
+          "chunk_count": 32,
+          "recall_at_k": 0.8542,
+          "mrr_at_k": 1.0,
+          "ndcg_at_k": 0.9577,
+          "query_latency_ms_mean": 0.02,
+          "query_latency_ms_p95": 0.03
+        },
+        "measurements": [
+          {"metric_key": "recall_at_5", "value": 0.8542, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "mrr_at_5", "value": 1.0, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "ndcg_at_5", "value": 0.9577, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "query_latency_ms_mean", "value": 0.02, "unit": "ms", "direction": "lower_is_better"},
+          {"metric_key": "query_latency_ms_p95", "value": 0.03, "unit": "ms", "direction": "lower_is_better"},
+          {"metric_key": "chunk_count", "value": 32.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "wall_seconds", "value": 0.001, "unit": "s", "direction": "lower_is_better"}
+        ]
+      },
+      {
+        "configuration_id": "config-retrieval-hybrid-rrf-chunked",
+        "description": "내장 한국어 기술문서 평가셋 Hybrid RRF + Fixed-Window 청킹 + Token-Overlap 리랭킹 (k=5)",
+        "config": {
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "hybrid_rrf",
+          "k": 5,
+          "chunking_strategy": "fixed_window",
+          "chunk_size": 150,
+          "chunk_overlap": 30,
+          "rerank_mode": "token_overlap_top_n",
+          "rerank_window": 10
+        },
+        "status": "succeeded",
+        "wall_seconds": 0.23,
+        "summary": {
+          "corpus_count": 32,
+          "query_count": 16,
+          "chunk_count": 35,
+          "recall_at_k": 0.8854,
+          "mrr_at_k": 0.9583,
+          "ndcg_at_k": 0.872,
+          "query_latency_ms_mean": 0.85,
+          "query_latency_ms_p95": 0.88
+        },
+        "measurements": [
+          {"metric_key": "recall_at_5", "value": 0.8854, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "mrr_at_5", "value": 0.9583, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "ndcg_at_5", "value": 0.872, "unit": "ratio", "direction": "higher_is_better"},
+          {"metric_key": "query_latency_ms_mean", "value": 0.85, "unit": "ms", "direction": "lower_is_better"},
+          {"metric_key": "query_latency_ms_p95", "value": 0.88, "unit": "ms", "direction": "lower_is_better"},
+          {"metric_key": "chunk_count", "value": 35.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "wall_seconds", "value": 0.23, "unit": "s", "direction": "lower_is_better"}
+        ]
+      }
+    ]
+  },
+  "tts_synthesis": {
+    "adapter_id": "tts_synthesis",
+    "version": "1.0.0",
+    "engine": "supertonic",
+    "runs": [
+      {
+        "configuration_id": "config-tts-normalize-ko-mixed",
+        "description": "내장 발음 프리셋(ko_mixed_pronunciation_v1, 12문장) 정규화 및 사용자 발음사전 치환",
+        "config": {
+          "preset_id": "ko_mixed_pronunciation_v1",
+          "mode": "normalize_only",
+          "custom_pronunciation_dict": {
+            "Qwen": "큐웬",
+            "Metal": "메탈",
+            "REST API": "레스트 에이피아이"
+          }
+        },
+        "status": "succeeded",
+        "wall_seconds": 0.005,
+        "summary": {
+          "sentence_count": 12,
+          "chunk_count": 12,
+          "raw_char_count": 544,
+          "normalized_char_count": 572,
+          "char_delta_total": 28
+        },
+        "measurements": [
+          {"metric_key": "chunk_count", "value": 12.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "normalized_char_delta", "value": 28.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "wall_seconds", "value": 0.005, "unit": "s", "direction": "lower_is_better"}
+        ]
+      },
+      {
+        "configuration_id": "config-tts-supertonic3-synth",
+        "description": "Supertonic 3 ONNX CPU 실측 합성 (voice=M1, speed=1.0, 2문장)",
+        "config": {
+          "texts": [
+            "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+            "초당 128.5 tok/s 속도로 Qwen 4B 모델 추론이 완료되었습니다."
+          ],
+          "mode": "synthesize",
+          "voice": "M1",
+          "speed": 1.0
+        },
+        "status": "succeeded",
+        "wall_seconds": 2.536,
+        "metrics": {
+          "rtf": 0.1498,
+          "synth_seconds": 1.899,
+          "audio_seconds": 12.673,
+          "load_seconds": 0.386,
+          "peak_rss_mb": 541.14
+        },
+        "artifacts": [
+          {
+            "kind": "audio",
+            "category": "research_tts_sample",
+            "filename": "chunk-0000.wav",
+            "duration_seconds": 6.576,
+            "sample_rate": 44100,
+            "bytes": 580056
+          },
+          {
+            "kind": "audio",
+            "category": "research_tts_sample",
+            "filename": "chunk-0001.wav",
+            "duration_seconds": 6.097,
+            "sample_rate": 44100,
+            "bytes": 537788
+          }
+        ],
+        "measurements": [
+          {"metric_key": "rtf", "value": 0.1498, "unit": "ratio", "direction": "lower_is_better"},
+          {"metric_key": "synth_seconds", "value": 1.899, "unit": "s", "direction": "lower_is_better"},
+          {"metric_key": "audio_seconds", "value": 12.673, "unit": "s", "direction": "higher_is_better"},
+          {"metric_key": "load_seconds", "value": 0.386, "unit": "s", "direction": "lower_is_better"},
+          {"metric_key": "peak_rss_mb", "value": 541.14, "unit": "MB", "direction": "lower_is_better"},
+          {"metric_key": "chunk_count", "value": 2.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "normalized_char_delta", "value": 4.0, "unit": "count", "direction": "lower_is_better"},
+          {"metric_key": "wall_seconds", "value": 2.536, "unit": "s", "direction": "lower_is_better"}
+        ]
+      }
+    ]
+  },
+  "llm_inference": {
+    "adapter_id": "llm_inference",
+    "version": "1.0.0",
+    "execution_path": "host_gpu",
+    "measured_on": "host GPU path outside sandbox",
+    "model": "qwen3.5-4b-q4_k_m",
+    "runs": [
+      {
+        "configuration_id": "config-llm-qwen4b-f16-kv",
+        "description": "Qwen 3.5 4B (q4_k_m) 호스트 GPU 추론 (cache_type_k=f16, cache_type_v=f16, ctx_size=4096)",
+        "request": {
+          "model": "qwen3.5-4b-q4_k_m",
+          "ctx_size": 4096,
+          "gpu_layers": 999,
+          "threads": 4,
+          "cache_type_k": "f16",
+          "cache_type_v": "f16",
+          "parallel": 1
+        },
+        "status": "succeeded",
+        "benchmark": {
+          "prompt_tokens": 18,
+          "generated_tokens": 64,
+          "median_generation_tokens_per_second": 125.28,
+          "median_prompt_tokens_per_second": 516.54,
+          "approx_prefill_ms": 34.85,
+          "swap_peak_growth_mb": 0.0
+        },
+        "measurements": [
+          {"metric_key": "decode_tps", "value": 125.28, "unit": "tok/s", "direction": "higher_is_better"},
+          {"metric_key": "prefill_tps", "value": 516.54, "unit": "tok/s", "direction": "higher_is_better"},
+          {"metric_key": "approx_prefill_ms", "value": 34.85, "unit": "ms", "direction": "lower_is_better", "is_proxy": true},
+          {"metric_key": "swap_peak_growth_mb", "value": 0.0, "unit": "MB", "direction": "lower_is_better"}
+        ]
+      },
+      {
+        "configuration_id": "config-llm-qwen4b-q8-kv",
+        "description": "Qwen 3.5 4B (q4_k_m) 호스트 GPU 추론 (cache_type_k=q8_0, cache_type_v=q8_0, ctx_size=4096)",
+        "request": {
+          "model": "qwen3.5-4b-q4_k_m",
+          "ctx_size": 4096,
+          "gpu_layers": 999,
+          "threads": 4,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0",
+          "parallel": 1
+        },
+        "status": "succeeded",
+        "benchmark": {
+          "prompt_tokens": 18,
+          "generated_tokens": 64,
+          "median_generation_tokens_per_second": 125.53,
+          "median_prompt_tokens_per_second": 418.50,
+          "approx_prefill_ms": 43.01,
+          "swap_peak_growth_mb": 0.0
+        },
+        "measurements": [
+          {"metric_key": "decode_tps", "value": 125.53, "unit": "tok/s", "direction": "higher_is_better"},
+          {"metric_key": "prefill_tps", "value": 418.50, "unit": "tok/s", "direction": "higher_is_better"},
+          {"metric_key": "approx_prefill_ms", "value": 43.01, "unit": "ms", "direction": "lower_is_better", "is_proxy": true},
+          {"metric_key": "swap_peak_growth_mb", "value": 0.0, "unit": "MB", "direction": "lower_is_better"}
+        ]
+      }
+    ]
+  },
+  "external_report": {
+    "adapter_id": "external_report",
+    "version": "1.0.0",
+    "execution_origin": "external_report",
+    "verified": true,
+    "notes": "모든 provenance(external_benchmark, manual_evaluation, imported_log) 검증 및 MeasurementRecord 변환 단위 테스트 통과"
+  }
+}

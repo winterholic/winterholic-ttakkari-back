@@ -108,16 +108,35 @@ async function run(mobile) {
     const inputs = mobile
       ? [...TAPS.map(([x, y]) => ({ name: 'tap@' + x + ',' + y, run: async () => { await s.tap(x, y); await s.page.waitForTimeout(250); } })),
          { name: 'swipe-right', run: async () => { await s.touchDown(0.3, 0.5); await s.touchMove(0.7, 0.5); await s.page.waitForTimeout(200); await s.touchUp(); } }]
-      : KEYS.map((k) => ({ name: k, run: async () => { await s.page.keyboard.down(k); await s.page.waitForTimeout(350); await s.page.keyboard.up(k); await s.page.waitForTimeout(150); } }));
+      : KEYS.map((k) => ({ name: k, run: async (observedEffect) => {
+          await s.page.keyboard.down(k);
+          try {
+            // 350ms 누르기/150ms 떼기가 느린 프레임과 맞물리면 모든 입력을 프레임 사이에서 놓친다.
+            // 반응을 관측할 때까지 누른 채로 두되, 정적인 게임도 정해진 상한 안에서 실패시킨다.
+            const deadline = Date.now() + 2000;
+            do {
+              await s.page.waitForTimeout(100);
+              if (await observedEffect()) break;
+            } while (Date.now() < deadline);
+          } finally {
+            await s.page.keyboard.up(k);
+          }
+        } }));
     if (!mobile) await s.focusGame();
     for (const input of inputs) {
       const beforeState = await safeState(s);
       const beforeShot = await snapshot(s);
-      await input.run();
+      await input.run(async () => {
+        const current = await safeState(s);
+        if (changedKeys(beforeState, current).some((k) => !noisyKeys.has(k))) return true;
+        return !idleAnimated && beforeShot.sha !== (await snapshot(s)).sha;
+      });
       const afterState = await safeState(s);
       const afterShot = await snapshot(s);
       const keys = changedKeys(beforeState, afterState).filter((k) => !noisyKeys.has(k));
       r.probes.push({ input: input.name, stateKeysChanged: keys, pixelsChanged: beforeShot.sha !== afterShot.sha });
+      // 입력 반응 한 건이면 이 검사의 목적을 충족한다. 이후 입력으로 게임 상태를 더 바꾸지 않는다.
+      if (keys.length || (!idleAnimated && beforeShot.sha !== afterShot.sha)) break;
     }
     const anyState = r.probes.some((p) => p.stateKeysChanged.length > 0);
     const anyPixels = r.probes.some((p) => p.pixelsChanged);

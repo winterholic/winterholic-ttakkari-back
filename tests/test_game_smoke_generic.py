@@ -100,7 +100,8 @@ async def test_generic_smoke_passes_working_games_and_flags_broken_ones(client, 
         res = results[source]
         for mode in ("desktop", "mobile"):
             r = res[mode]
-            assert r["verdict"]["ok"], (source, mode, r["verdict"], r.get("error"), r["console"])
+            assert r["verdict"]["ok"], json.dumps(
+                {"source": source, "mode": mode, "result": r}, ensure_ascii=False, indent=2)
             assert r["boot"]["bridge"] and r["renders"]["blank"] is False and r["renders"]["buckets"] >= 3, (source, mode, r["renders"])
             assert r["inputEffect"] in {"state", "pixels"}, (source, mode, r["inputEffect"], r["probes"])
             assert r["pause"]["supported"] is True and r["save"]["exportOk"] is True, (source, mode)
@@ -111,7 +112,8 @@ async def test_generic_smoke_passes_working_games_and_flags_broken_ones(client, 
     late = results["late"]
     for mode in ("desktop", "mobile"):
         r = late[mode]
-        assert r["verdict"]["ok"], (mode, r["verdict"], r.get("error"), r["console"])
+        assert r["verdict"]["ok"], json.dumps(
+            {"source": "late", "mode": mode, "result": r}, ensure_ascii=False, indent=2)
         assert r["renders"]["firstCaptureBlank"] is True and r["renders"]["blank"] is False and r["renders"]["buckets"] >= 3, (mode, r["renders"])
     assert late["ok"] is True
 

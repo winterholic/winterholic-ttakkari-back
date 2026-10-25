@@ -69,6 +69,11 @@ class Disabled(GpuError):
     status_code = 503
 
 
+class LaunchMismatch(GpuError):
+    """stop(expected_launch_id=...) found a launch other than the one the caller started."""
+    status_code = 409
+
+
 class StartRequest(BaseModel):
     """시험 인스턴스에 허용하는 인자 전부. 여기 없는 llama-server 플래그는 지정할 수 없다."""
     model_config = ConfigDict(extra="forbid")
@@ -115,7 +120,9 @@ class StartRequest(BaseModel):
 def build_args(server: Path, model: Path, port: int, req: StartRequest) -> list[str]:
     """argv 는 이 함수만 만든다. 값은 검증된 정수·열거형뿐이라 요청 문자열이 셸이나 플래그로 해석될 길이 없다."""
     args = [str(server), "--model", str(model), "--alias", ALIAS, "--host", "127.0.0.1", "--port", str(port),
-            "--parallel", str(req.parallel), "--no-webui", "--metrics",
+            # GGML INFO backend-placement messages map to verbosity 4 in current llama.cpp.
+            # The default 3 leaves device_evidence empty even when model loading succeeds.
+            "--parallel", str(req.parallel), "--no-webui", "--metrics", "--log-verbosity", "4",
             "--ctx-size", str(req.ctx_size), "--threads", str(req.threads), "--threads-batch", str(req.threads)]
     if req.device == "none":
         args += ["--device", "none"]
@@ -828,8 +835,17 @@ class HostGpu:
         finally:
             _BENCH_LOCK.release()
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, expected_launch_id: str | None = None) -> dict[str, Any]:
+        """Stop the live instance. With expected_launch_id, refuse unless the single state read here is that launch.
+
+        The check and everything after it (lease cancel, supervisor signal) use the same `state`,
+        so a caller that started its own launch cannot stop one started by someone else.
+        """
         state = self._current()
+        if expected_launch_id is not None and (state or {}).get("launch_id") != expected_launch_id:
+            raise LaunchMismatch(
+                f"current host GPU launch {(state or {}).get('launch_id')!r} is not the expected launch "
+                f"{expected_launch_id!r}; refusing to stop it")
         if not state or state.get("phase") not in _PHASES_LIVE:
             return {**self.status(), "stopped_now": False}
         if state.get("lease_id") and state.get("lease_generation_token"):

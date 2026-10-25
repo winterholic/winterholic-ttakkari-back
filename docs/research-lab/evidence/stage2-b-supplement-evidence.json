@@ -1,0 +1,2173 @@
+{
+  "metadata": {
+    "verification_task": "Research Lab v2 Stage 2 Scenario B Supplement",
+    "execution_time_utc": "2026-10-25T12:12:00Z",
+    "database_target": "ttakkari_test (isolated test DB)",
+    "tts_engine": "Supertonic 3 (local ONNX, CPU)",
+    "stt_engine": "Whisper (local worker, CPU, proxy evaluation)",
+    "proxy_disclaimer": "STT 재인식 CER/WER는 발음 명료도의 간접 대리 지표(proxy)이며 사람 청취 품질(MOS)이 아닙니다."
+  },
+  "study": {
+    "id": "2681dfb0-1309-4935-ab8d-cdb15eca1af6",
+    "title": "로컬 TTS 발음 정확도 및 생성 속도 평가 (Supertonic 3 + Whisper proxy)",
+    "goal": "한국어 텍스트 정규화 및 커스텀 발음 사전 적용 여부에 따른 합성 음성의 발음 명료도(Whisper STT 대리 지표 CER/WER) 및 실시간 계수(RTF) 정밀 비교"
+  },
+  "experiment": {
+    "id": "acba4bd7-f59f-4177-b8b9-124864255a07",
+    "title": "정규화 미적용(Baseline) vs 정규화+발음사전(Candidate) 음성 합성 및 재인식 비교",
+    "hypothesis": "한국어 숫자·단위 정규화와 영문 약어 발음 사전을 적용한 Candidate 설정이 미정규화 Baseline 대비 Whisper 재인식 CER/WER를 대폭 낮추고 고품질 발음을 생성할 것이다 (단, STT는 발음 proxy 지표임).",
+    "rationale": "Supertonic 3는 한국어 텍스트 입력 시 숫자와 영문 약어가 정규화되지 않으면 철자 단위 발음 왜곡이 발생하므로, 사전 전처리 파이프라인의 효과를 실측 검증한다.",
+    "state": "completed",
+    "primary_metric": "stt_cer_vs_normalized",
+    "sample_inputs": [
+      "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+      "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다."
+    ],
+    "custom_pronunciation_dict": {
+      "JSON": "제이슨",
+      "HTTP": "에이치티티피"
+    }
+  },
+  "runs": [
+    {
+      "run_id": "4e6a9bfa-8ee3-4603-9357-bf403b02ce6d",
+      "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+      "configuration_label": "Baseline (정규화 미적용: 원문 유지)",
+      "status": "succeeded",
+      "wall_seconds": 20.658,
+      "measurements": {
+        "chunk_count": 2.0,
+        "normalized_char_delta": 0.0,
+        "rtf": 0.1361,
+        "synth_seconds": 2.195,
+        "audio_seconds": 16.133,
+        "load_seconds": 0.254,
+        "peak_rss_mb": 554.08,
+        "stt_cer_vs_normalized": 0.464,
+        "stt_cer_vs_raw": 0.0238,
+        "stt_wer_vs_normalized": 0.5909,
+        "stt_wer_vs_raw": 0.1,
+        "wall_seconds": 20.658
+      },
+      "stt_eval": [
+        {
+          "cer_vs_raw": 0.0,
+          "wer_vs_raw": 0.0,
+          "chunk_index": 0,
+          "raw_reference": "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+          "recognized_text": "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+          "cer_vs_normalized": 0.40625,
+          "wer_vs_normalized": 0.6363636363636364,
+          "normalized_reference": "이천이십육년 시월 이십오일 오후 두 시 삼십 분에 연구실 회의가 시작됩니다."
+        },
+        {
+          "cer_vs_raw": 0.047619047619047616,
+          "wer_vs_raw": 0.2,
+          "chunk_index": 1,
+          "raw_reference": "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다.",
+          "recognized_text": "HTTP 205K 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다.",
+          "cer_vs_normalized": 0.5217391304347826,
+          "wer_vs_normalized": 0.5454545454545454,
+          "normalized_reference": "에이치티티피 이백 오케이 응답과 함께 십오점오 메가바이트의 제이슨 데이터가 성공적으로 반환되었습니다."
+        }
+      ],
+      "artifacts_count": 2
+    },
+    {
+      "run_id": "df895810-b52b-45a4-9e71-7a5f84f82406",
+      "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+      "configuration_label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+      "status": "succeeded",
+      "wall_seconds": 20.394,
+      "measurements": {
+        "chunk_count": 2.0,
+        "normalized_char_delta": 8.0,
+        "rtf": 0.1368,
+        "synth_seconds": 2.207,
+        "audio_seconds": 16.133,
+        "load_seconds": 0.342,
+        "peak_rss_mb": 552.52,
+        "stt_cer_vs_normalized": 0.464,
+        "stt_cer_vs_raw": 0.0238,
+        "stt_wer_vs_normalized": 0.5909,
+        "stt_wer_vs_raw": 0.1,
+        "wall_seconds": 20.394
+      },
+      "stt_eval": [
+        {
+          "cer_vs_raw": 0.0,
+          "wer_vs_raw": 0.0,
+          "chunk_index": 0,
+          "raw_reference": "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+          "recognized_text": "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+          "cer_vs_normalized": 0.40625,
+          "wer_vs_normalized": 0.6363636363636364,
+          "normalized_reference": "이천이십육년 시월 이십오일 오후 두 시 삼십 분에 연구실 회의가 시작됩니다."
+        },
+        {
+          "cer_vs_raw": 0.047619047619047616,
+          "wer_vs_raw": 0.2,
+          "chunk_index": 1,
+          "raw_reference": "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다.",
+          "recognized_text": "HTTP 205K 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다.",
+          "cer_vs_normalized": 0.5217391304347826,
+          "wer_vs_normalized": 0.5454545454545454,
+          "normalized_reference": "에이치티티피 이백 오케이 응답과 함께 십오점오 메가바이트의 제이슨 데이터가 성공적으로 반환되었습니다."
+        }
+      ],
+      "artifacts_count": 2
+    }
+  ],
+  "verified_artifacts": [
+    {
+      "run_id": "4e6a9bfa-8ee3-4603-9357-bf403b02ce6d",
+      "research_artifact_id": "5274f149-e32d-4d72-b642-a8f5b9b287d7",
+      "artifact_id": "7b566d18-45ec-48db-ad3c-b8bea6e3389f",
+      "role": "audio_sample",
+      "filename": "chunk-0000.wav",
+      "outbox_path": "/Users/winterholic/.ttakkari/data/outbox/477d3196-001d-4e7f-b992-7b13dab8f262/scenario_b_baseline_chunk-0000.wav",
+      "outbox_filename": "scenario_b_baseline_chunk-0000.wav",
+      "size_bytes": 579648,
+      "sha256": "027ee2699d5235e0b0dbde8bb3d2151a795d2bb74b0c7fa7679cb288fa1562e3",
+      "mime_type": "audio/wav",
+      "content_api_status": 200,
+      "wav_magic": "RIFF/WAVE verified"
+    },
+    {
+      "run_id": "4e6a9bfa-8ee3-4603-9357-bf403b02ce6d",
+      "research_artifact_id": "df87dc68-5755-4323-91cb-71dfd34a7a97",
+      "artifact_id": "a6d99c08-17a2-4b90-97c5-80466e1c8266",
+      "role": "audio_sample",
+      "filename": "chunk-0001.wav",
+      "outbox_path": "/Users/winterholic/.ttakkari/data/outbox/477d3196-001d-4e7f-b992-7b13dab8f262/scenario_b_baseline_chunk-0001.wav",
+      "outbox_filename": "scenario_b_baseline_chunk-0001.wav",
+      "size_bytes": 843356,
+      "sha256": "1e044490bb2267d86d14819fa285b5668d8ee5d5a8aca7e162c3a800177536d7",
+      "mime_type": "audio/wav",
+      "content_api_status": 200,
+      "wav_magic": "RIFF/WAVE verified"
+    },
+    {
+      "run_id": "df895810-b52b-45a4-9e71-7a5f84f82406",
+      "research_artifact_id": "00ac3607-e15a-4698-b214-41a28fd80fd4",
+      "artifact_id": "6d2f149b-3f60-4f4f-aa30-8830f22def32",
+      "role": "audio_sample",
+      "filename": "chunk-0000.wav",
+      "outbox_path": "/Users/winterholic/.ttakkari/data/outbox/477d3196-001d-4e7f-b992-7b13dab8f262/scenario_b_candidate_chunk-0000.wav",
+      "outbox_filename": "scenario_b_candidate_chunk-0000.wav",
+      "size_bytes": 579648,
+      "sha256": "027ee2699d5235e0b0dbde8bb3d2151a795d2bb74b0c7fa7679cb288fa1562e3",
+      "mime_type": "audio/wav",
+      "content_api_status": 200,
+      "wav_magic": "RIFF/WAVE verified"
+    },
+    {
+      "run_id": "df895810-b52b-45a4-9e71-7a5f84f82406",
+      "research_artifact_id": "1ba6cabe-a5bc-40ea-b11c-b0ecfa53cccf",
+      "artifact_id": "a6c58f3b-df6c-4c6b-9edc-2f15bac3ed17",
+      "role": "audio_sample",
+      "filename": "chunk-0001.wav",
+      "outbox_path": "/Users/winterholic/.ttakkari/data/outbox/477d3196-001d-4e7f-b992-7b13dab8f262/scenario_b_candidate_chunk-0001.wav",
+      "outbox_filename": "scenario_b_candidate_chunk-0001.wav",
+      "size_bytes": 843356,
+      "sha256": "1e044490bb2267d86d14819fa285b5668d8ee5d5a8aca7e162c3a800177536d7",
+      "mime_type": "audio/wav",
+      "content_api_status": 200,
+      "wav_magic": "RIFF/WAVE verified"
+    }
+  ],
+  "analysis": {
+    "id": "2590186a-ce69-4734-bd06-d829096af7bd",
+    "summary": {
+      "pareto": {
+        "points": [
+          {
+            "x": 0.5909,
+            "y": 0.464,
+            "role": "baseline",
+            "label": "Baseline (정규화 미적용: 원문 유지)",
+            "metrics": {
+              "rtf": 0.1361,
+              "chunk_count": 2.0,
+              "peak_rss_mb": 554.08,
+              "load_seconds": 0.254,
+              "wall_seconds": 20.658,
+              "audio_seconds": 16.133,
+              "synth_seconds": 2.195,
+              "stt_cer_vs_raw": 0.0238,
+              "stt_wer_vs_raw": 0.1,
+              "normalized_char_delta": 0.0,
+              "stt_cer_vs_normalized": 0.464,
+              "stt_wer_vs_normalized": 0.5909
+            },
+            "x_metric": "stt_wer_vs_normalized",
+            "y_metric": "stt_cer_vs_normalized",
+            "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+            "is_pareto": true,
+            "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+            "is_pareto_optimal": true
+          },
+          {
+            "x": 0.5909,
+            "y": 0.464,
+            "role": "treatment",
+            "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+            "metrics": {
+              "rtf": 0.1368,
+              "chunk_count": 2.0,
+              "peak_rss_mb": 552.52,
+              "load_seconds": 0.342,
+              "wall_seconds": 20.394,
+              "audio_seconds": 16.133,
+              "synth_seconds": 2.207,
+              "stt_cer_vs_raw": 0.0238,
+              "stt_wer_vs_raw": 0.1,
+              "normalized_char_delta": 8.0,
+              "stt_cer_vs_normalized": 0.464,
+              "stt_wer_vs_normalized": 0.5909
+            },
+            "x_metric": "stt_wer_vs_normalized",
+            "y_metric": "stt_cer_vs_normalized",
+            "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+            "is_pareto": true,
+            "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+            "is_pareto_optimal": true
+          }
+        ],
+        "status": "available",
+        "x_unit": "ratio",
+        "y_unit": "ratio",
+        "x_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+        "y_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+        "x_metric": "stt_wer_vs_normalized",
+        "y_metric": "stt_cer_vs_normalized",
+        "x_direction": "lower_is_better",
+        "y_direction": "lower_is_better",
+        "unavailable_reason": null
+      },
+      "metrics": [
+        {
+          "unit": "ratio",
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)"
+        },
+        {
+          "unit": "count",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "metric_label": "분할된 총 청크 수"
+        },
+        {
+          "unit": "count",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "metric_label": "정규화 후 글자 수 증감"
+        },
+        {
+          "unit": "ratio",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "metric_label": "실시간 계수 (RTF)"
+        },
+        {
+          "unit": "s",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "metric_label": "음성 합성 소요 시간"
+        },
+        {
+          "unit": "s",
+          "is_proxy": false,
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "metric_label": "생성된 오디오 총 길이"
+        },
+        {
+          "unit": "s",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "metric_label": "모델 로드 시간"
+        },
+        {
+          "unit": "MB",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "metric_label": "최대 RSS 메모리"
+        },
+        {
+          "unit": "ratio",
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)"
+        },
+        {
+          "unit": "ratio",
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)"
+        },
+        {
+          "unit": "ratio",
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)"
+        },
+        {
+          "unit": "s",
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "metric_label": "전체 소요 시간"
+        }
+      ],
+      "delta_bars": [
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.464,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "is_baseline": true,
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.464,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.464,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "is_baseline": false,
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.464,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "count",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 2.0,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "is_baseline": true,
+          "metric_label": "분할된 총 청크 수",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 2.0,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "count",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 2.0,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "is_baseline": false,
+          "metric_label": "분할된 총 청크 수",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 2.0,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "count",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.0,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "is_baseline": true,
+          "metric_label": "정규화 후 글자 수 증감",
+          "rel_delta_pct": null,
+          "baseline_value": 0.0,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "count",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 8.0,
+          "is_proxy": false,
+          "abs_delta": 8.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "is_baseline": false,
+          "metric_label": "정규화 후 글자 수 증감",
+          "rel_delta_pct": null,
+          "baseline_value": 0.0,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.1361,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "is_baseline": true,
+          "metric_label": "실시간 계수 (RTF)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.1361,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.1368,
+          "is_proxy": false,
+          "abs_delta": 0.0007000000000000062,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "is_baseline": false,
+          "metric_label": "실시간 계수 (RTF)",
+          "rel_delta_pct": 0.5143277002204307,
+          "baseline_value": 0.1361,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 2.195,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "is_baseline": true,
+          "metric_label": "음성 합성 소요 시간",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 2.195,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 2.207,
+          "is_proxy": false,
+          "abs_delta": 0.01200000000000001,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "is_baseline": false,
+          "metric_label": "음성 합성 소요 시간",
+          "rel_delta_pct": 0.5466970387243741,
+          "baseline_value": 2.195,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 16.133,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "is_baseline": true,
+          "metric_label": "생성된 오디오 총 길이",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 16.133,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 16.133,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "is_baseline": false,
+          "metric_label": "생성된 오디오 총 길이",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 16.133,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.254,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "is_baseline": true,
+          "metric_label": "모델 로드 시간",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.254,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.342,
+          "is_proxy": false,
+          "abs_delta": 0.08800000000000002,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "is_baseline": false,
+          "metric_label": "모델 로드 시간",
+          "rel_delta_pct": 34.64566929133859,
+          "baseline_value": 0.254,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "MB",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 554.08,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "is_baseline": true,
+          "metric_label": "최대 RSS 메모리",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 554.08,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "MB",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 552.52,
+          "is_proxy": false,
+          "abs_delta": -1.5600000000000591,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "is_baseline": false,
+          "metric_label": "최대 RSS 메모리",
+          "rel_delta_pct": -0.28154779093272797,
+          "baseline_value": 554.08,
+          "is_improvement": true,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.0238,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "is_baseline": true,
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.0238,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.0238,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "is_baseline": false,
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.0238,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.5909,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "is_baseline": true,
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.5909,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.5909,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "is_baseline": false,
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.5909,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 0.1,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "is_baseline": true,
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.1,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 0.1,
+          "is_proxy": true,
+          "abs_delta": 0.0,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "is_baseline": false,
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 0.1,
+          "is_improvement": false,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "value": 20.658,
+          "is_proxy": false,
+          "abs_delta": 0.0,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "is_baseline": true,
+          "metric_label": "전체 소요 시간",
+          "rel_delta_pct": 0.0,
+          "baseline_value": 20.658,
+          "is_improvement": null,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "value": 20.394,
+          "is_proxy": false,
+          "abs_delta": -0.2640000000000029,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "is_baseline": false,
+          "metric_label": "전체 소요 시간",
+          "rel_delta_pct": -1.2779552715655091,
+          "baseline_value": 20.658,
+          "is_improvement": true,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        }
+      ],
+      "metric_bars": [
+        {
+          "unit": "ratio",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.464,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.464,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)"
+        },
+        {
+          "unit": "count",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 2.0,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 2.0,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "metric_label": "분할된 총 청크 수"
+        },
+        {
+          "unit": "count",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.0,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 8.0,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "metric_label": "정규화 후 글자 수 증감"
+        },
+        {
+          "unit": "ratio",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.1361,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.1368,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "metric_label": "실시간 계수 (RTF)"
+        },
+        {
+          "unit": "s",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 2.195,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 2.207,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "metric_label": "음성 합성 소요 시간"
+        },
+        {
+          "unit": "s",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 16.133,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 16.133,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "metric_label": "생성된 오디오 총 길이"
+        },
+        {
+          "unit": "s",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.254,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.342,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "metric_label": "모델 로드 시간"
+        },
+        {
+          "unit": "MB",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 554.08,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 552.52,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "metric_label": "최대 RSS 메모리"
+        },
+        {
+          "unit": "ratio",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.0238,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.0238,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)"
+        },
+        {
+          "unit": "ratio",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.5909,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.5909,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)"
+        },
+        {
+          "unit": "ratio",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 0.1,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 0.1,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": true,
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)"
+        },
+        {
+          "unit": "s",
+          "values": [
+            {
+              "n": 1,
+              "role": "baseline",
+              "label": "Baseline (정규화 미적용: 원문 유지)",
+              "value": 20.658,
+              "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+              "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+            },
+            {
+              "n": 1,
+              "role": "treatment",
+              "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+              "value": 20.394,
+              "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+              "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+            }
+          ],
+          "is_proxy": false,
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "metric_label": "전체 소요 시간"
+        }
+      ],
+      "sweep_lines": [],
+      "experiment_id": "acba4bd7-f59f-4177-b8b9-124864255a07",
+      "pareto_points": [
+        {
+          "x": 0.5909,
+          "y": 0.464,
+          "role": "baseline",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "metrics": {
+            "rtf": 0.1361,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 554.08,
+            "load_seconds": 0.254,
+            "wall_seconds": 20.658,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.195,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 0.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "x_metric": "stt_wer_vs_normalized",
+          "y_metric": "stt_cer_vs_normalized",
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "is_pareto": true,
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "is_pareto_optimal": true
+        },
+        {
+          "x": 0.5909,
+          "y": 0.464,
+          "role": "treatment",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "metrics": {
+            "rtf": 0.1368,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 552.52,
+            "load_seconds": 0.342,
+            "wall_seconds": 20.394,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.207,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 8.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "x_metric": "stt_wer_vs_normalized",
+          "y_metric": "stt_cer_vs_normalized",
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "is_pareto": true,
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "is_pareto_optimal": true
+        }
+      ],
+      "pareto_status": "available",
+      "primary_metric": "stt_cer_vs_normalized",
+      "metrics_catalog": {
+        "rtf": {
+          "unit": "ratio",
+          "label": "실시간 계수 (RTF)",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "chunk_count": {
+          "unit": "count",
+          "label": "분할된 총 청크 수",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "peak_rss_mb": {
+          "unit": "MB",
+          "label": "최대 RSS 메모리",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "load_seconds": {
+          "unit": "s",
+          "label": "모델 로드 시간",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "wall_seconds": {
+          "unit": "s",
+          "label": "전체 소요 시간",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "audio_seconds": {
+          "unit": "s",
+          "label": "생성된 오디오 총 길이",
+          "is_proxy": false,
+          "direction": "higher_is_better"
+        },
+        "synth_seconds": {
+          "unit": "s",
+          "label": "음성 합성 소요 시간",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "stt_cer_vs_raw": {
+          "unit": "ratio",
+          "label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+          "is_proxy": true,
+          "direction": "lower_is_better"
+        },
+        "stt_wer_vs_raw": {
+          "unit": "ratio",
+          "label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+          "is_proxy": true,
+          "direction": "lower_is_better"
+        },
+        "normalized_char_delta": {
+          "unit": "count",
+          "label": "정규화 후 글자 수 증감",
+          "is_proxy": false,
+          "direction": "lower_is_better"
+        },
+        "stt_cer_vs_normalized": {
+          "unit": "ratio",
+          "label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+          "is_proxy": true,
+          "direction": "lower_is_better"
+        },
+        "stt_wer_vs_normalized": {
+          "unit": "ratio",
+          "label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+          "is_proxy": true,
+          "direction": "lower_is_better"
+        }
+      },
+      "pareto_frontier": [
+        {
+          "x": 0.5909,
+          "y": 0.464,
+          "role": "baseline",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "metrics": {
+            "rtf": 0.1361,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 554.08,
+            "load_seconds": 0.254,
+            "wall_seconds": 20.658,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.195,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 0.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "x_metric": "stt_wer_vs_normalized",
+          "y_metric": "stt_cer_vs_normalized",
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "is_pareto_optimal": true
+        },
+        {
+          "x": 0.5909,
+          "y": 0.464,
+          "role": "treatment",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "metrics": {
+            "rtf": 0.1368,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 552.52,
+            "load_seconds": 0.342,
+            "wall_seconds": 20.394,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.207,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 8.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "x_metric": "stt_wer_vs_normalized",
+          "y_metric": "stt_cer_vs_normalized",
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "is_pareto_optimal": true
+        }
+      ],
+      "ablation_impacts": [],
+      "config_diff_rows": [
+        {
+          "role": "baseline",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "values": {
+            "mode": "synthesize_and_stt",
+            "texts": [
+              "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+              "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다."
+            ],
+            "engine": "supertonic",
+            "preset_id": "ko_mixed_pronunciation_v1",
+            "plain_text": true,
+            "read_latin": false,
+            "speed_ratio": 1.0,
+            "voice_preset": "ko_female_1",
+            "convert_numbers": false,
+            "english_acronym_mode": "raw",
+            "handle_measure_units": false,
+            "custom_pronunciation_dict": {}
+          },
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "varying_parameters": {
+            "read_latin": false,
+            "convert_numbers": false,
+            "english_acronym_mode": "raw",
+            "handle_measure_units": false,
+            "custom_pronunciation_dict": {}
+          }
+        },
+        {
+          "role": "treatment",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "values": {
+            "mode": "synthesize_and_stt",
+            "texts": [
+              "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+              "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다."
+            ],
+            "engine": "supertonic",
+            "preset_id": "ko_mixed_pronunciation_v1",
+            "plain_text": true,
+            "read_latin": true,
+            "speed_ratio": 1.0,
+            "voice_preset": "ko_female_1",
+            "convert_numbers": true,
+            "english_acronym_mode": "korean_alphabet",
+            "handle_measure_units": true,
+            "custom_pronunciation_dict": {
+              "HTTP": "에이치티티피",
+              "JSON": "제이슨"
+            }
+          },
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "varying_parameters": {
+            "read_latin": true,
+            "convert_numbers": true,
+            "english_acronym_mode": "korean_alphabet",
+            "handle_measure_units": true,
+            "custom_pronunciation_dict": {
+              "HTTP": "에이치티티피",
+              "JSON": "제이슨"
+            }
+          }
+        }
+      ],
+      "secondary_metric": "stt_wer_vs_normalized",
+      "config_diff_table": {
+        "keys": [
+          "convert_numbers",
+          "custom_pronunciation_dict",
+          "engine",
+          "english_acronym_mode",
+          "handle_measure_units",
+          "mode",
+          "plain_text",
+          "preset_id",
+          "read_latin",
+          "speed_ratio",
+          "texts",
+          "voice_preset"
+        ],
+        "rows": [
+          {
+            "role": "baseline",
+            "label": "Baseline (정규화 미적용: 원문 유지)",
+            "values": {
+              "mode": "synthesize_and_stt",
+              "texts": [
+                "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+                "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다."
+              ],
+              "engine": "supertonic",
+              "preset_id": "ko_mixed_pronunciation_v1",
+              "plain_text": true,
+              "read_latin": false,
+              "speed_ratio": 1.0,
+              "voice_preset": "ko_female_1",
+              "convert_numbers": false,
+              "english_acronym_mode": "raw",
+              "handle_measure_units": false,
+              "custom_pronunciation_dict": {}
+            },
+            "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+            "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+            "varying_parameters": {
+              "read_latin": false,
+              "convert_numbers": false,
+              "english_acronym_mode": "raw",
+              "handle_measure_units": false,
+              "custom_pronunciation_dict": {}
+            }
+          },
+          {
+            "role": "treatment",
+            "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+            "values": {
+              "mode": "synthesize_and_stt",
+              "texts": [
+                "2026년 10월 25일 오후 2시 30분에 연구실 회의가 시작됩니다.",
+                "HTTP 200 OK 응답과 함께 15.5MB의 JSON 데이터가 성공적으로 반환되었습니다."
+              ],
+              "engine": "supertonic",
+              "preset_id": "ko_mixed_pronunciation_v1",
+              "plain_text": true,
+              "read_latin": true,
+              "speed_ratio": 1.0,
+              "voice_preset": "ko_female_1",
+              "convert_numbers": true,
+              "english_acronym_mode": "korean_alphabet",
+              "handle_measure_units": true,
+              "custom_pronunciation_dict": {
+                "HTTP": "에이치티티피",
+                "JSON": "제이슨"
+              }
+            },
+            "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+            "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+            "varying_parameters": {
+              "read_latin": true,
+              "convert_numbers": true,
+              "english_acronym_mode": "korean_alphabet",
+              "handle_measure_units": true,
+              "custom_pronunciation_dict": {
+                "HTTP": "에이치티티피",
+                "JSON": "제이슨"
+              }
+            }
+          }
+        ],
+        "changed_keys": [
+          "convert_numbers",
+          "custom_pronunciation_dict",
+          "english_acronym_mode",
+          "handle_measure_units",
+          "read_latin"
+        ]
+      },
+      "primary_metric_meta": {
+        "unit": "ratio",
+        "label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+        "is_proxy": true,
+        "direction": "lower_is_better"
+      },
+      "repeat_distributions": [
+        {
+          "n": 1,
+          "max": 0.464,
+          "min": 0.464,
+          "std": null,
+          "mean": 0.464,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.464,
+          "values": [
+            0.464
+          ],
+          "is_proxy": true,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "distribution": {
+            "n": 1,
+            "max": 0.464,
+            "min": 0.464,
+            "std": null,
+            "mean": 0.464,
+            "median": 0.464,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.464,
+          "min": 0.464,
+          "std": null,
+          "mean": 0.464,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.464,
+          "values": [
+            0.464
+          ],
+          "is_proxy": true,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_normalized",
+          "distribution": {
+            "n": 1,
+            "max": 0.464,
+            "min": 0.464,
+            "std": null,
+            "mean": 0.464,
+            "median": 0.464,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 2.0,
+          "min": 2.0,
+          "std": null,
+          "mean": 2.0,
+          "role": "baseline",
+          "unit": "count",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 2.0,
+          "values": [
+            2.0
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "distribution": {
+            "n": 1,
+            "max": 2.0,
+            "min": 2.0,
+            "std": null,
+            "mean": 2.0,
+            "median": 2.0,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "분할된 총 청크 수",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 2.0,
+          "min": 2.0,
+          "std": null,
+          "mean": 2.0,
+          "role": "treatment",
+          "unit": "count",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 2.0,
+          "values": [
+            2.0
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "chunk_count",
+          "distribution": {
+            "n": 1,
+            "max": 2.0,
+            "min": 2.0,
+            "std": null,
+            "mean": 2.0,
+            "median": 2.0,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "분할된 총 청크 수",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.0,
+          "min": 0.0,
+          "std": null,
+          "mean": 0.0,
+          "role": "baseline",
+          "unit": "count",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.0,
+          "values": [
+            0.0
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "distribution": {
+            "n": 1,
+            "max": 0.0,
+            "min": 0.0,
+            "std": null,
+            "mean": 0.0,
+            "median": 0.0,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "정규화 후 글자 수 증감",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 8.0,
+          "min": 8.0,
+          "std": null,
+          "mean": 8.0,
+          "role": "treatment",
+          "unit": "count",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 8.0,
+          "values": [
+            8.0
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "normalized_char_delta",
+          "distribution": {
+            "n": 1,
+            "max": 8.0,
+            "min": 8.0,
+            "std": null,
+            "mean": 8.0,
+            "median": 8.0,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "정규화 후 글자 수 증감",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.1361,
+          "min": 0.1361,
+          "std": null,
+          "mean": 0.1361,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.1361,
+          "values": [
+            0.1361
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "distribution": {
+            "n": 1,
+            "max": 0.1361,
+            "min": 0.1361,
+            "std": null,
+            "mean": 0.1361,
+            "median": 0.1361,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "실시간 계수 (RTF)",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.1368,
+          "min": 0.1368,
+          "std": null,
+          "mean": 0.1368,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.1368,
+          "values": [
+            0.1368
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "rtf",
+          "distribution": {
+            "n": 1,
+            "max": 0.1368,
+            "min": 0.1368,
+            "std": null,
+            "mean": 0.1368,
+            "median": 0.1368,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "실시간 계수 (RTF)",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 2.195,
+          "min": 2.195,
+          "std": null,
+          "mean": 2.195,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 2.195,
+          "values": [
+            2.195
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 2.195,
+            "min": 2.195,
+            "std": null,
+            "mean": 2.195,
+            "median": 2.195,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "음성 합성 소요 시간",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 2.207,
+          "min": 2.207,
+          "std": null,
+          "mean": 2.207,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 2.207,
+          "values": [
+            2.207
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "synth_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 2.207,
+            "min": 2.207,
+            "std": null,
+            "mean": 2.207,
+            "median": 2.207,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "음성 합성 소요 시간",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 16.133,
+          "min": 16.133,
+          "std": null,
+          "mean": 16.133,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 16.133,
+          "values": [
+            16.133
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 16.133,
+            "min": 16.133,
+            "std": null,
+            "mean": 16.133,
+            "median": 16.133,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "생성된 오디오 총 길이",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 16.133,
+          "min": 16.133,
+          "std": null,
+          "mean": 16.133,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 16.133,
+          "values": [
+            16.133
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "higher_is_better",
+          "metric_key": "audio_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 16.133,
+            "min": 16.133,
+            "std": null,
+            "mean": 16.133,
+            "median": 16.133,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "생성된 오디오 총 길이",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.254,
+          "min": 0.254,
+          "std": null,
+          "mean": 0.254,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.254,
+          "values": [
+            0.254
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 0.254,
+            "min": 0.254,
+            "std": null,
+            "mean": 0.254,
+            "median": 0.254,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "모델 로드 시간",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.342,
+          "min": 0.342,
+          "std": null,
+          "mean": 0.342,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.342,
+          "values": [
+            0.342
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "load_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 0.342,
+            "min": 0.342,
+            "std": null,
+            "mean": 0.342,
+            "median": 0.342,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "모델 로드 시간",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 554.08,
+          "min": 554.08,
+          "std": null,
+          "mean": 554.08,
+          "role": "baseline",
+          "unit": "MB",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 554.08,
+          "values": [
+            554.08
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "distribution": {
+            "n": 1,
+            "max": 554.08,
+            "min": 554.08,
+            "std": null,
+            "mean": 554.08,
+            "median": 554.08,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "최대 RSS 메모리",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 552.52,
+          "min": 552.52,
+          "std": null,
+          "mean": 552.52,
+          "role": "treatment",
+          "unit": "MB",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 552.52,
+          "values": [
+            552.52
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "peak_rss_mb",
+          "distribution": {
+            "n": 1,
+            "max": 552.52,
+            "min": 552.52,
+            "std": null,
+            "mean": 552.52,
+            "median": 552.52,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "최대 RSS 메모리",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.0238,
+          "min": 0.0238,
+          "std": null,
+          "mean": 0.0238,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.0238,
+          "values": [
+            0.0238
+          ],
+          "is_proxy": true,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "distribution": {
+            "n": 1,
+            "max": 0.0238,
+            "min": 0.0238,
+            "std": null,
+            "mean": 0.0238,
+            "median": 0.0238,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.0238,
+          "min": 0.0238,
+          "std": null,
+          "mean": 0.0238,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.0238,
+          "values": [
+            0.0238
+          ],
+          "is_proxy": true,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_cer_vs_raw",
+          "distribution": {
+            "n": 1,
+            "max": 0.0238,
+            "min": 0.0238,
+            "std": null,
+            "mean": 0.0238,
+            "median": 0.0238,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.5909,
+          "min": 0.5909,
+          "std": null,
+          "mean": 0.5909,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.5909,
+          "values": [
+            0.5909
+          ],
+          "is_proxy": true,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "distribution": {
+            "n": 1,
+            "max": 0.5909,
+            "min": 0.5909,
+            "std": null,
+            "mean": 0.5909,
+            "median": 0.5909,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.5909,
+          "min": 0.5909,
+          "std": null,
+          "mean": 0.5909,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.5909,
+          "values": [
+            0.5909
+          ],
+          "is_proxy": true,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_normalized",
+          "distribution": {
+            "n": 1,
+            "max": 0.5909,
+            "min": 0.5909,
+            "std": null,
+            "mean": 0.5909,
+            "median": 0.5909,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 0.1,
+          "min": 0.1,
+          "std": null,
+          "mean": 0.1,
+          "role": "baseline",
+          "unit": "ratio",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 0.1,
+          "values": [
+            0.1
+          ],
+          "is_proxy": true,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "distribution": {
+            "n": 1,
+            "max": 0.1,
+            "min": 0.1,
+            "std": null,
+            "mean": 0.1,
+            "median": 0.1,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 0.1,
+          "min": 0.1,
+          "std": null,
+          "mean": 0.1,
+          "role": "treatment",
+          "unit": "ratio",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 0.1,
+          "values": [
+            0.1
+          ],
+          "is_proxy": true,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "stt_wer_vs_raw",
+          "distribution": {
+            "n": 1,
+            "max": 0.1,
+            "min": 0.1,
+            "std": null,
+            "mean": 0.1,
+            "median": 0.1,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        },
+        {
+          "n": 1,
+          "max": 20.658,
+          "min": 20.658,
+          "std": null,
+          "mean": 20.658,
+          "role": "baseline",
+          "unit": "s",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "median": 20.658,
+          "values": [
+            20.658
+          ],
+          "is_proxy": false,
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 20.658,
+            "min": 20.658,
+            "std": null,
+            "mean": 20.658,
+            "median": 20.658,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "전체 소요 시간",
+          "configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "n": 1,
+          "max": 20.394,
+          "min": 20.394,
+          "std": null,
+          "mean": 20.394,
+          "role": "treatment",
+          "unit": "s",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "median": 20.394,
+          "values": [
+            20.394
+          ],
+          "is_proxy": false,
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415",
+          "direction": "lower_is_better",
+          "metric_key": "wall_seconds",
+          "distribution": {
+            "n": 1,
+            "max": 20.394,
+            "min": 20.394,
+            "std": null,
+            "mean": 20.394,
+            "median": 20.394,
+            "variability_status": "변동성 미상 (n < 2)"
+          },
+          "metric_label": "전체 소요 시간",
+          "configuration_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        }
+      ],
+      "best_configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+      "metric_bars_by_config": [
+        {
+          "role": "baseline",
+          "label": "Baseline (정규화 미적용: 원문 유지)",
+          "metrics": {
+            "rtf": 0.1361,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 554.08,
+            "load_seconds": 0.254,
+            "wall_seconds": 20.658,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.195,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 0.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "config_id": "909f0ab3-2713-4332-89ab-18f73f60e568"
+        },
+        {
+          "role": "treatment",
+          "label": "Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전)",
+          "metrics": {
+            "rtf": 0.1368,
+            "chunk_count": 2.0,
+            "peak_rss_mb": 552.52,
+            "load_seconds": 0.342,
+            "wall_seconds": 20.394,
+            "audio_seconds": 16.133,
+            "synth_seconds": 2.207,
+            "stt_cer_vs_raw": 0.0238,
+            "stt_wer_vs_raw": 0.1,
+            "normalized_char_delta": 8.0,
+            "stt_cer_vs_normalized": 0.464,
+            "stt_wer_vs_normalized": 0.5909
+          },
+          "config_id": "ce417a77-e448-4a39-a8e7-5239e1d8a415"
+        }
+      ],
+      "secondary_metric_meta": {
+        "unit": "ratio",
+        "label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+        "is_proxy": true,
+        "direction": "lower_is_better"
+      },
+      "baseline_configuration_id": "909f0ab3-2713-4332-89ab-18f73f60e568",
+      "pareto_unavailable_reason": null
+    },
+    "recommendation_ko": "주요 지표(STT 재인식 음절 오류율 (정규화문 대리 지표)) 기준, 최적 설정은 'Baseline (정규화 미적용: 원문 유지)'(0.464 ratio)입니다. Baseline 대비 상대 변화율은 +0.0%입니다. (파레토 최적 후보: Baseline (정규화 미적용: 원문 유지), Candidate (한국어 숫자·단위 정규화 + 영문약어 발음사전))",
+    "created_at": "2026-10-25T12:14:12.110937+00:00"
+  },
+  "best_result": null
+}

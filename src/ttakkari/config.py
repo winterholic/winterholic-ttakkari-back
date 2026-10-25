@@ -577,6 +577,10 @@ class Settings(BaseSettings):
     def outbox_root(self) -> Path:
         return self.data_dir / "outbox"
 
+    # 호스트 운영 작업(operations)의 백업 암호 파일. 비우면 home/backup.key 를 첫 사용 때 앱이 0600으로 만든다.
+    # 값은 어디에도 출력하지 않는다. 경로만 설정으로 주입한다.
+    backup_passphrase_file: Path | None = None
+
     # 리버스 엔지니어링 원격 수집 허용 호스트(기본 github.com). https 전용이다.
     reverse_allowed_hosts: list[str] = []
     # 리버스 엔지니어링에서 개인 계정 모델로 보내지 않는 회사 범위(간단히 거부한다).

@@ -6,7 +6,7 @@
 #   끝나면 복호화 임시 파일은 지운다.
 #
 # 운영 데이터를 건드리지 않는다. tar와 해시 읽기는 읽기 전용이다.
-# 스냅샷 대상에 소켓·pid 파일(*.sock, *.pid)은 넣지 않는다.
+# 스냅샷 대상에 소켓·pid 파일(*.sock, *.pid)과 심볼릭 링크는 넣지 않는다.
 # 암호화는 backup_db.sh와 같은 방식(openssl enc -aes-256-cbc -pbkdf2,
 #   0600 암호 파일)이며, 암호화하면 평문 tar.gz는 디스크에서 지운다.
 #
@@ -63,6 +63,13 @@ secure_delete() {
 }
 
 ENCRYPT=0
+if [[ -z "${TMPDIR:-}" ]]; then
+  DEFAULT_OPS_TMP="$HOME/.ttakkari/operations/tmp"
+  if [[ -d "$DEFAULT_OPS_TMP" ]]; then
+    TMPDIR="$DEFAULT_OPS_TMP"
+  fi
+fi
+
 if [[ -n "$PASSPHRASE_FILE" ]]; then
   check_passphrase_file "$PASSPHRASE_FILE"
   command -v openssl >/dev/null || { echo "openssl 없음. 암호화 스냅샷을 만들 수 없다." >&2; exit 3; }
@@ -126,7 +133,15 @@ print(os.path.realpath(sys.argv[1]))
 EOF
 )"
   [[ "$TGT_REAL" != "$SRC_REAL" ]] || { echo "오류: 검증 대상이 원본과 같다: $TARGET" >&2; exit 2; }
-  tar -xzf "$WORK" -C "$TARGET"
+  # 검증본은 폐기할 평문이다. 원본의 0444/0555를 복원하면 정리가 실패하므로
+  # data 필터로 소유자 쓰기 권한·디렉터리 기본 권한을 확보하고 경로 이탈도 막는다.
+  "$PYTHON" - "$WORK" "$TARGET" <<'EOF'
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    archive.extractall(sys.argv[2], filter="data")
+EOF
   "$PYTHON" - "$VERIFY" "$TARGET" <<'EOF'
 import hashlib
 import json
@@ -180,31 +195,40 @@ MANIFEST_TMP="$MANIFEST.partial.$$"
 cleanup_partial() { rm -f "$ARCH_TMP" "$MANIFEST_TMP" "${ENC_TMP:-}"; }
 trap cleanup_partial EXIT
 
-tar -czf "$ARCH_TMP" --exclude='*.sock' --exclude='*.pid' -C "$SOURCE" .
 "$PYTHON" - "$SOURCE" "$ARCH_TMP" "$ARCH" "$MANIFEST_TMP" "$TS" <<'EOF'
 import hashlib
 import json
 import os
+import stat
 import sys
+import tarfile
 
 source, arch_tmp, arch_path, manifest_tmp, timestamp = sys.argv[1:]
 entries = []
 total = 0
-for root, _dirs, names in os.walk(source):
-    for name in names:
-        if name.endswith((".sock", ".pid")):
-            continue
-        disk = os.path.join(root, name)
-        if not os.path.isfile(disk) or os.path.islink(disk) and not os.path.isfile(disk):
-            continue
-        if os.path.islink(disk):
-            continue
-        with open(disk, "rb") as f:
-            digest = hashlib.file_digest(f, "sha256").hexdigest()
-        rel = os.path.relpath(disk, source)
-        size = os.path.getsize(disk)
-        entries.append({"path": rel, "size": size, "sha256": digest})
-        total += size
+# 아카이브와 manifest 가 같은 범위를 담도록 링크·특수 파일을 양쪽에서 제외한다.
+with tarfile.open(arch_tmp, "w:gz", dereference=True) as archive:
+    for root, dirs, names in os.walk(source):
+        dirs[:] = sorted(d for d in dirs if not d.endswith((".sock", ".pid"))
+                         and not os.path.islink(os.path.join(root, d)))
+        for name in dirs:
+            disk = os.path.join(root, name)
+            archive.add(disk, arcname=os.path.relpath(disk, source), recursive=False)
+        for name in sorted(names):
+            disk = os.path.join(root, name)
+            if name.endswith((".sock", ".pid")) or not stat.S_ISREG(os.lstat(disk).st_mode):
+                continue
+            with open(disk, "rb", opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW)) as f:
+                member = archive.gettarinfo(fileobj=f, arcname=os.path.relpath(disk, source))
+                archive.addfile(member, f)
+# 캡처 뒤 원본이 바뀌어도 manifest 는 실제 보관한 바이트의 해시여야 한다.
+with tarfile.open(arch_tmp, "r:gz") as archive:
+    for member in archive:
+        if member.isfile():
+            with archive.extractfile(member) as f:
+                digest = hashlib.file_digest(f, "sha256").hexdigest()
+            entries.append({"path": member.name, "size": member.size, "sha256": digest})
+            total += member.size
 entries.sort(key=lambda e: e["path"])
 with open(arch_tmp, "rb") as f:
     arch_digest = hashlib.file_digest(f, "sha256").hexdigest()
@@ -227,12 +251,12 @@ if [[ "$ENCRYPT" -eq 1 ]]; then
   ENC_TMP="$ENC.partial.$$"
   openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
     -in "$ARCH" -out "$ENC_TMP" -pass "file:$PASSPHRASE_FILE"
-  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" <<'EOF'
+  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" "$PASSPHRASE_FILE" <<'EOF'
 import hashlib
 import json
 import sys
 
-manifest_path, enc_tmp, enc_path = sys.argv[1:]
+manifest_path, enc_tmp, enc_path, passfile = sys.argv[1:]
 with open(enc_tmp, "rb") as f:
     enc_digest = hashlib.file_digest(f, "sha256").hexdigest()
 with open(manifest_path, encoding="utf-8") as f:
@@ -241,6 +265,8 @@ m["plaintext_sha256"] = m["sha256"]
 m["sha256"] = enc_digest
 m["archive"] = enc_path
 m["encrypted"] = True
+with open(passfile, "rb") as f:
+    m["key_fingerprint"] = hashlib.pbkdf2_hmac("sha256", f.read().strip(), b"ttakkari-backup-key-fp-v1", 200_000).hex()[:16]
 with open(manifest_path, "w", encoding="utf-8") as f:
     json.dump(m, f, indent=2, sort_keys=True)
     f.write("\n")
@@ -265,6 +291,7 @@ latest = {
     "archive": m["archive"],
     "sha256": m["sha256"],
     "encrypted": bool(m.get("encrypted", False)),
+    "key_fingerprint": m.get("key_fingerprint"),
     "file_count": m["file_count"],
     "total_bytes": m["total_bytes"],
 }

@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import psutil
 import pytest
@@ -23,6 +24,7 @@ from ttakkari.host_gpu import (
     GpuError,
     HostGpu,
     Invalid,
+    LaunchMismatch,
     StartRequest,
     Supervisor,
     build_args,
@@ -645,3 +647,62 @@ async def test_host_gpu_is_personal_scope_only(client, auth, make_dir):
     h = _orch(issue_token(session["id"]))
     assert (await client.get("/api/agent/host-gpu/status", headers=h)).status_code == 403
     assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny"}, headers=h)).status_code == 403
+
+
+# ---- stop(expected_launch_id): 다른 launch 를 종료하지 않는다 (원자적 소유권 검사)
+
+def _live_state(launch_id: str) -> dict:
+    return {"launch_id": launch_id, "phase": "ready", "supervisor_pid": 4242, "supervisor_start": 1.0,
+            "lease_id": f"lease-{launch_id}", "lease_generation_token": f"gen-{launch_id}"}
+
+
+@pytest.fixture
+def stop_env(env):
+    """No process is spawned: state, lease manager and signalling are autospec'd stand-ins."""
+    states = {"current": _live_state("A")}
+    with patch.object(HostGpu, "_current", autospec=True, side_effect=lambda self: states["current"]), \
+         patch.object(HostGpu, "status", autospec=True, return_value={"phase": "stopped", "running": False}), \
+         patch.object(ResourceLeaseManager, "request_cancel", autospec=True) as request_cancel, \
+         patch("ttakkari.host_gpu._same_process", autospec=True, return_value=True), \
+         patch("ttakkari.host_gpu._cmdline", autospec=True, return_value=["python", "-m", "ttakkari.host_gpu"]), \
+         patch("ttakkari.host_gpu._lock_held", autospec=True, return_value=False), \
+         patch("ttakkari.host_gpu.os.kill", autospec=True) as kill:
+        yield SimpleNamespace(env=env, states=states, request_cancel=request_cancel, kill=kill)
+
+
+def test_stop_refuses_a_different_launch_without_touching_its_lease_or_process(stop_env):
+    stop_env.states["current"] = _live_state("B")  # another run's launch is now the live one
+
+    with pytest.raises(LaunchMismatch):
+        stop_env.env.gpu.stop(expected_launch_id="A")
+
+    assert stop_env.request_cancel.call_count == 0
+    assert stop_env.kill.call_count == 0
+
+
+def test_stop_refuses_when_no_state_exists_for_the_expected_launch(stop_env):
+    stop_env.states["current"] = None
+
+    with pytest.raises(LaunchMismatch):
+        stop_env.env.gpu.stop(expected_launch_id="A")
+
+    assert stop_env.kill.call_count == 0
+
+
+def test_stop_with_matching_launch_signals_only_that_states_lease_and_supervisor(stop_env):
+    result = stop_env.env.gpu.stop(expected_launch_id="A")
+
+    assert result["stopped_now"] is True
+    stop_env.request_cancel.assert_called_once()
+    assert stop_env.request_cancel.call_args.args[1:] == ("lease-A", "gen-A")
+    stop_env.kill.assert_called_once_with(4242, host_gpu.signal.SIGTERM)
+
+
+def test_stop_without_expected_launch_id_keeps_the_old_contract(stop_env):
+    stop_env.states["current"] = _live_state("B")
+
+    result = stop_env.env.gpu.stop()
+
+    assert result["stopped_now"] is True
+    assert stop_env.request_cancel.call_args.args[1:] == ("lease-B", "gen-B")
+    assert list(__import__("inspect").signature(HostGpu.stop).parameters) == ["self", "expected_launch_id"]

@@ -1,0 +1,1006 @@
+{
+  "review_date": "2026-10-26",
+  "revisions": {
+    "backend_worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2",
+    "backend_head": "ac33d5c5c32e1b6f355ea1b1b1e7e01b596a5497",
+    "frontend_worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/front-research-v2",
+    "frontend_head": "5a2650fde8d5c46f50c9f08ce67f14917f14da98",
+    "product_files_changed": false
+  },
+  "runtime": {
+    "backend_command": "back-research-v2/.venv/bin/python -m uvicorn research_lab_testapp:app --host 127.0.0.1 --port 56998 --lifespan off --log-level warning (custom wrapper imports actual app and calls init_engine(settings.database_url))",
+    "frontend_command": "TTAKKARI_NO_ENV_FILE=1 VITE_API_BASE=http://127.0.0.1:56998 front-research-v2/node_modules/.bin/vite --host 127.0.0.1 --port 56999 --strictPort",
+    "database_identity": {
+      "database": "ttakkari_test",
+      "user": "ttk_test",
+      "server_address": "127.0.0.1",
+      "password_or_dsn_emitted": false
+    },
+    "backend_health_http": 200,
+    "frontend_http": 200,
+    "cors_preflight_http": 200,
+    "cors_preflight_origin": "http://127.0.0.1:56999",
+    "browser_login": "Password field and login button were present; ordinary password login redirected to authenticated /research; authenticated refresh POST returned 200. Credential values and cookie/JWT values omitted.",
+    "authenticated_routes_seen": [
+      "GET /api/research/studies/{study_id}/resume => 200",
+      "GET /api/research/experiments/{experiment_id} => 200",
+      "GET /api/research/experiments/{experiment_id}/compare-series => 200"
+    ],
+    "mutations_seen": [
+      "POST /api/research/studies/{study_id}/nodes => 201 (success interpretation)",
+      "POST /api/research/studies/{study_id}/nodes => 201 (failure interpretation)",
+      "POST /api/research/studies/{study_id}/best-results => 201"
+    ],
+    "browser_console": "Vite dev server /sw.js returned HTML with unsupported service-worker MIME; UI/API flows remained functional. A pre-login refresh 401 and a manual top-level API request from the separate frontend origin returned 401; these are not used as Research Lab UI failure evidence.",
+    "test_database_migrations": "Earlier verified in this run: extension vector, pg_trgm and migration head 0073_research_reuse_source in only the injected RunDB."
+  },
+  "study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+  "source_experiment_api_seed": {
+    "request": {
+      "title": "CPU retrieval 원본 설정 k=5",
+      "hypothesis": "원본 k=5 설정을 UI 후속 실험에서 의미 그대로 재사용할 수 있다.",
+      "rationale": "사용자 지정 기준 설정. 결과는 bounded fixture 실행이며 성능 향상을 주장하지 않는다.",
+      "method_id": "fbb86f2e-479a-4074-95f6-c2d7686bd79c",
+      "adapter_id": "retrieval_eval",
+      "strategy": "single",
+      "fixed_inputs": {
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25",
+        "k": 5
+      },
+      "search_space": {},
+      "primary_metric": "recall_at_5",
+      "secondary_metrics": [
+        "mrr_at_5"
+      ],
+      "budget": {
+        "max_runs": 1,
+        "max_total_seconds": 60
+      },
+      "auto_start": false
+    },
+    "http_status": 201,
+    "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+    "configurations": [
+      {
+        "id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+        "experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "label": "Baseline",
+        "role": "baseline",
+        "order_index": 0,
+        "parameters": {
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25",
+          "k": 5
+        },
+        "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5",
+        "ablation_factor": null,
+        "created_at": "2026-10-25T16:29:46.446542+00:00"
+      }
+    ],
+    "run_statuses": [
+      "succeeded"
+    ],
+    "metric_keys": [
+      "chunk_count",
+      "mrr_at_5",
+      "ndcg_at_5",
+      "query_latency_ms_mean",
+      "query_latency_ms_p95",
+      "recall_at_5",
+      "wall_seconds"
+    ],
+    "run_receipt": null
+  },
+  "ui_untouched_reuse_k5": {
+    "source": {
+      "id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+      "configuration": {
+        "id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+        "parameters": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5"
+      }
+    },
+    "child": {
+      "id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+      "source_study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+      "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+      "source_configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+      "configurations": [
+        {
+          "id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+          "parameters": {
+            "k": 5,
+            "preset_id": "ko_tech_docs_v1",
+            "retriever_mode": "bm25"
+          },
+          "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5"
+        }
+      ],
+      "runs": [
+        {
+          "id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+          "status": "succeeded",
+          "execution_origin": "local_measured",
+          "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55"
+        }
+      ]
+    },
+    "child_saved_payload": {
+      "title": "CPU retrieval 원본 설정 k=5 (후속)",
+      "hypothesis": "",
+      "rationale": "",
+      "method_id": "fbb86f2e-479a-4074-95f6-c2d7686bd79c",
+      "adapter_id": "retrieval_eval",
+      "strategy": "single",
+      "search_space": {
+        "k": 5,
+        "retriever_mode": "bm25"
+      },
+      "fixed_inputs": {
+        "k": 5,
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25"
+      },
+      "primary_metric": "recall_at_5",
+      "secondary_metrics": [],
+      "source_study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+      "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+      "source_configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553"
+    },
+    "run_detail": {
+      "status": "succeeded",
+      "execution_origin": "local_measured",
+      "raw_output": {
+        "k": 5,
+        "queries": [
+          {
+            "query": "호스트 GPU에서 llama-server 실행과 모델 별칭 검증 방식은?",
+            "mrr_at_k": 1.0,
+            "query_id": "q-01",
+            "ndcg_at_k": 0.9173,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-01",
+              "doc-18",
+              "doc-22",
+              "doc-12",
+              "doc-23"
+            ],
+            "recall_at_k": 0.5,
+            "relevant_ids": [
+              "doc-01",
+              "doc-02"
+            ]
+          },
+          {
+            "query": "KV 캐시 양자화(q8_0, q4_0)의 메모리 절감 효과는?",
+            "mrr_at_k": 1.0,
+            "query_id": "q-02",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-03",
+              "doc-04",
+              "doc-23",
+              "doc-01",
+              "doc-02"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-03"
+            ]
+          },
+          {
+            "query": "Flash Attention의 긴 컨텍스트 가속 원리와 HBM 타일링",
+            "mrr_at_k": 1.0,
+            "query_id": "q-03",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-04",
+              "doc-03",
+              "doc-01",
+              "doc-02",
+              "doc-05"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-04"
+            ]
+          },
+          {
+            "query": "따까리 로컬 TTS가 Kokoro 대신 Supertonic 3를 선택한 이유는?",
+            "mrr_at_k": 1.0,
+            "query_id": "q-04",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-06",
+              "doc-09",
+              "doc-17",
+              "doc-29",
+              "doc-01"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-06"
+            ]
+          },
+          {
+            "query": "TTS 텍스트 정규화에서 숫자와 영문 약어 변환 절차",
+            "mrr_at_k": 1.0,
+            "query_id": "q-05",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-07",
+              "doc-06",
+              "doc-15",
+              "doc-01",
+              "doc-02"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-07"
+            ]
+          },
+          {
+            "query": "로컬 Whisper 음성 인식의 CER 및 WER 계산 방법",
+            "mrr_at_k": 1.0,
+            "query_id": "q-06",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-10",
+              "doc-09",
+              "doc-06",
+              "doc-04",
+              "doc-29"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-09",
+              "doc-10"
+            ]
+          },
+          {
+            "query": "BM25 어휘 검색과 k1, b 하이퍼파라미터의 역할",
+            "mrr_at_k": 1.0,
+            "query_id": "q-07",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.01,
+            "ranked_hits": [
+              "doc-11",
+              "doc-13",
+              "doc-24",
+              "doc-01",
+              "doc-02"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-11",
+              "doc-13"
+            ]
+          },
+          {
+            "query": "Dense 임베딩 모델 부재 시 대체하는 HashEmbedder 방식",
+            "mrr_at_k": 1.0,
+            "query_id": "q-08",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-12",
+              "doc-13",
+              "doc-01",
+              "doc-02",
+              "doc-03"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-12",
+              "doc-13"
+            ]
+          },
+          {
+            "query": "어휘 검색과 벡터 검색을 결합하는 하이브리드 RRF 원리",
+            "mrr_at_k": 1.0,
+            "query_id": "q-09",
+            "ndcg_at_k": 0.9673,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-13",
+              "doc-12",
+              "doc-25",
+              "doc-24",
+              "doc-11"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-11",
+              "doc-12",
+              "doc-13"
+            ]
+          },
+          {
+            "query": "검색 결과 재정렬 Reranker를 통한 NDCG 정밀도 개선",
+            "mrr_at_k": 1.0,
+            "query_id": "q-10",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-14",
+              "doc-25",
+              "doc-16",
+              "doc-30",
+              "doc-24"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-14",
+              "doc-25"
+            ]
+          },
+          {
+            "query": "텍스트 청킹 전략에서 문단 분할과 고정 길이 윈도우 오버랩",
+            "mrr_at_k": 1.0,
+            "query_id": "q-11",
+            "ndcg_at_k": 0.9828,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-15",
+              "doc-07",
+              "doc-11",
+              "doc-14",
+              "doc-01"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-11",
+              "doc-15"
+            ]
+          },
+          {
+            "query": "백엔드 무중단 3슬롯 세대 배포 및 드레이닝 메커니즘",
+            "mrr_at_k": 1.0,
+            "query_id": "q-12",
+            "ndcg_at_k": 0.9828,
+            "latency_ms": 0.01,
+            "ranked_hits": [
+              "doc-17",
+              "doc-01",
+              "doc-02",
+              "doc-03",
+              "doc-04"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-02",
+              "doc-17"
+            ]
+          },
+          {
+            "query": "연구실 v2의 execution_status F축 6단계 판정 기준",
+            "mrr_at_k": 1.0,
+            "query_id": "q-13",
+            "ndcg_at_k": 0.9173,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-19",
+              "doc-15",
+              "doc-27",
+              "doc-28",
+              "doc-01"
+            ],
+            "recall_at_k": 0.5,
+            "relevant_ids": [
+              "doc-19",
+              "doc-20"
+            ]
+          },
+          {
+            "query": "비스트리밍 LLM 추론에서 approx_prefill_ms 근사치 역산 공식",
+            "mrr_at_k": 1.0,
+            "query_id": "q-14",
+            "ndcg_at_k": 0.9558,
+            "latency_ms": 0.01,
+            "ranked_hits": [
+              "doc-22",
+              "doc-03",
+              "doc-01",
+              "doc-02",
+              "doc-04"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-01",
+              "doc-22"
+            ]
+          },
+          {
+            "query": "NDCG, MRR, Recall 검색 성능 평가 지표의 수식과 해석",
+            "mrr_at_k": 1.0,
+            "query_id": "q-15",
+            "ndcg_at_k": 1.0,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-26",
+              "doc-25",
+              "doc-14",
+              "doc-10",
+              "doc-24"
+            ],
+            "recall_at_k": 1.0,
+            "relevant_ids": [
+              "doc-25",
+              "doc-26"
+            ]
+          },
+          {
+            "query": "신규 가설 방법론을 실측 후 정식 카탈로그로 승격하는 절차",
+            "mrr_at_k": 1.0,
+            "query_id": "q-16",
+            "ndcg_at_k": 0.9224,
+            "latency_ms": 0.02,
+            "ranked_hits": [
+              "doc-29",
+              "doc-17",
+              "doc-28",
+              "doc-19",
+              "doc-01"
+            ],
+            "recall_at_k": 0.6667,
+            "relevant_ids": [
+              "doc-27",
+              "doc-28",
+              "doc-29"
+            ]
+          }
+        ],
+        "summary": {
+          "mrr_at_k": 1.0,
+          "ndcg_at_k": 0.9779,
+          "recall_at_k": 0.9167,
+          "wall_seconds": 0.001,
+          "query_latency_ms_p95": 0.02,
+          "query_latency_ms_mean": 0.02
+        },
+        "chunk_count": 32,
+        "query_count": 16,
+        "rerank_mode": "none",
+        "corpus_count": 32,
+        "dataset_name": "따까리 시스템 아키텍처 및 AI 연구실 한국어 기술문서 평가셋 v1",
+        "dense_weight": null,
+        "hybrid_alpha": 0.5,
+        "retriever_mode": "bm25",
+        "chunking_strategy": "none",
+        "normalize_embeddings": true
+      },
+      "measurement_keys": [
+        "chunk_count",
+        "mrr_at_5",
+        "ndcg_at_5",
+        "query_latency_ms_mean",
+        "query_latency_ms_p95",
+        "recall_at_5",
+        "wall_seconds"
+      ]
+    }
+  },
+  "ui_explicit_reuse_k7": {
+    "source_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+    "source_configuration": {
+      "id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+      "experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+      "label": "Baseline",
+      "role": "baseline",
+      "order_index": 0,
+      "parameters": {
+        "k": 5,
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25"
+      },
+      "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5",
+      "ablation_factor": null,
+      "created_at": "2026-10-25T16:29:46.446542+00:00"
+    },
+    "k5_child_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+    "k5_child_configuration": {
+      "id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+      "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+      "label": "Baseline",
+      "role": "baseline",
+      "order_index": 0,
+      "parameters": {
+        "k": 5,
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25"
+      },
+      "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5",
+      "ablation_factor": null,
+      "created_at": "2026-10-25T16:31:08.855536+00:00"
+    },
+    "k7_child_id": "82628333-8f7a-4ebc-baca-b4677a6233f9",
+    "k7_saved_payload": {
+      "title": "CPU retrieval 원본 설정 k=5 (후속)",
+      "method_id": "fbb86f2e-479a-4074-95f6-c2d7686bd79c",
+      "adapter_id": "retrieval_eval",
+      "strategy": "single",
+      "fixed_inputs": {
+        "k": 5,
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25"
+      },
+      "search_space": {
+        "k": 7,
+        "retriever_mode": "bm25"
+      },
+      "primary_metric": "recall_at_7",
+      "source_study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+      "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+      "source_configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553"
+    },
+    "k7_configuration": {
+      "id": "cad4028d-4d6c-4e04-9fae-48e4a0b96bec",
+      "experiment_id": "82628333-8f7a-4ebc-baca-b4677a6233f9",
+      "label": "Baseline",
+      "role": "baseline",
+      "order_index": 0,
+      "parameters": {
+        "k": 7,
+        "preset_id": "ko_tech_docs_v1",
+        "retriever_mode": "bm25"
+      },
+      "config_hash": "695eec69bbe7ed40a2ca062de09cc61ec5feaa964d83cd823a7caa3fda8d55ed",
+      "ablation_factor": null,
+      "created_at": "2026-10-25T16:32:32.396549+00:00"
+    },
+    "k7_run": {
+      "id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+      "status": "succeeded"
+    },
+    "k7_metric_keys": [
+      "chunk_count",
+      "mrr_at_7",
+      "ndcg_at_7",
+      "query_latency_ms_mean",
+      "query_latency_ms_p95",
+      "recall_at_7",
+      "wall_seconds"
+    ]
+  },
+  "database_snapshot_after_ui": {
+    "identity": {
+      "database": "ttakkari_test",
+      "user": "ttk_test",
+      "server_address": "127.0.0.1",
+      "password_or_dsn_emitted": false
+    },
+    "study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+    "experiments": [
+      {
+        "id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "title": "CPU retrieval 원본 설정 k=5",
+        "adapter_id": "retrieval_eval",
+        "primary_metric": "recall_at_5",
+        "fixed_inputs": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null
+      },
+      {
+        "id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+        "title": "CPU retrieval 원본 설정 k=5 (후속)",
+        "adapter_id": "retrieval_eval",
+        "primary_metric": "recall_at_5",
+        "fixed_inputs": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "source_study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+        "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "source_configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553"
+      },
+      {
+        "id": "82628333-8f7a-4ebc-baca-b4677a6233f9",
+        "title": "CPU retrieval 원본 설정 k=5 (후속)",
+        "adapter_id": "retrieval_eval",
+        "primary_metric": "recall_at_7",
+        "fixed_inputs": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "source_study_id": "bfa7a763-3e8d-4179-9e59-50655b9df500",
+        "source_experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "source_configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553"
+      }
+    ],
+    "configurations": [
+      {
+        "id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+        "experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "parameters": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5"
+      },
+      {
+        "id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+        "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+        "parameters": {
+          "k": 5,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "config_hash": "645f5195afc68b31fedf04888944d109797b6154f509ac03e93068b8d482d4e5"
+      },
+      {
+        "id": "cad4028d-4d6c-4e04-9fae-48e4a0b96bec",
+        "experiment_id": "82628333-8f7a-4ebc-baca-b4677a6233f9",
+        "parameters": {
+          "k": 7,
+          "preset_id": "ko_tech_docs_v1",
+          "retriever_mode": "bm25"
+        },
+        "config_hash": "695eec69bbe7ed40a2ca062de09cc61ec5feaa964d83cd823a7caa3fda8d55ed"
+      }
+    ],
+    "runs": [
+      {
+        "id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "experiment_id": "c9c882c9-8165-4d1c-8145-2bb262c38a9d",
+        "configuration_id": "c84235c5-1b86-4bfc-95d2-f219971ab553",
+        "status": "succeeded",
+        "execution_origin": "local_measured",
+        "error_code": null,
+        "error_message": null,
+        "environment_snapshot": {
+          "scope": "personal",
+          "corpus_size": 32,
+          "dataset_name": "따까리 시스템 아키텍처 및 AI 연구실 한국어 기술문서 평가셋 v1",
+          "retriever_mode": "bm25"
+        },
+        "has_measured_result": true
+      },
+      {
+        "id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+        "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+        "status": "succeeded",
+        "execution_origin": "local_measured",
+        "error_code": null,
+        "error_message": null,
+        "environment_snapshot": {
+          "scope": "personal",
+          "corpus_size": 32,
+          "dataset_name": "따까리 시스템 아키텍처 및 AI 연구실 한국어 기술문서 평가셋 v1",
+          "retriever_mode": "bm25"
+        },
+        "has_measured_result": true
+      },
+      {
+        "id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "experiment_id": "82628333-8f7a-4ebc-baca-b4677a6233f9",
+        "configuration_id": "cad4028d-4d6c-4e04-9fae-48e4a0b96bec",
+        "status": "succeeded",
+        "execution_origin": "local_measured",
+        "error_code": null,
+        "error_message": null,
+        "environment_snapshot": {
+          "scope": "personal",
+          "corpus_size": 32,
+          "dataset_name": "따까리 시스템 아키텍처 및 AI 연구실 한국어 기술문서 평가셋 v1",
+          "retriever_mode": "bm25"
+        },
+        "has_measured_result": true
+      },
+      {
+        "id": "eb7ab829-f368-4850-8c76-36ec80a42509",
+        "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+        "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+        "status": "failed",
+        "execution_origin": "test_fixture",
+        "error_code": "fixture_execution_failure",
+        "error_message": "Synthetic permitted failure-row fixture; no retrieval adapter execution or measured result.",
+        "environment_snapshot": {
+          "fixture": "permitted_failure_record",
+          "measured": false
+        },
+        "has_measured_result": false
+      }
+    ],
+    "measurements": [
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "chunk_count",
+        "value": 32.0,
+        "unit": "count",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "mrr_at_7",
+        "value": 1.0,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "ndcg_at_7",
+        "value": 0.9808,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "query_latency_ms_mean",
+        "value": 0.02,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "query_latency_ms_p95",
+        "value": 0.04,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "recall_at_7",
+        "value": 0.9479,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "3cc734c7-4813-4217-bdca-22601b7bc1a2",
+        "metric_key": "wall_seconds",
+        "value": 0.001,
+        "unit": "s",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "chunk_count",
+        "value": 32.0,
+        "unit": "count",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "mrr_at_5",
+        "value": 1.0,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "ndcg_at_5",
+        "value": 0.9779,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "query_latency_ms_mean",
+        "value": 0.02,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "query_latency_ms_p95",
+        "value": 0.03,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "recall_at_5",
+        "value": 0.9167,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "ce175fd4-363b-4b65-a86d-ec0008e3b953",
+        "metric_key": "wall_seconds",
+        "value": 0.001,
+        "unit": "s",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "chunk_count",
+        "value": 32.0,
+        "unit": "count",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "mrr_at_5",
+        "value": 1.0,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "ndcg_at_5",
+        "value": 0.9779,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "query_latency_ms_mean",
+        "value": 0.02,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "query_latency_ms_p95",
+        "value": 0.02,
+        "unit": "ms",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "recall_at_5",
+        "value": 0.9167,
+        "unit": "ratio",
+        "is_proxy": false
+      },
+      {
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "metric_key": "wall_seconds",
+        "value": 0.001,
+        "unit": "s",
+        "is_proxy": false
+      }
+    ],
+    "nodes": [
+      {
+        "id": "f3a574d6-8b40-4db5-b180-b834579221d5",
+        "kind": "interpretation",
+        "title": "k=5 bounded CPU 검색 실행의 관측",
+        "summary": "ko_tech_docs_v1, BM25, k=5의 단일 local_measured 실행에서 recall@5=0.917을 관측했다. 이는 재사용 경로와 기록을 확인한 한 번의 fixture 관측이며 성능 향상이나 인과를 뜻하지 않는다. 다음에는 동일 데이터셋에서 여러 반복과 검색 모드별 비교를 수행한다.",
+        "conditions": {
+          "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+          "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9"
+        },
+        "details": {
+          "hypothesis": "ko_tech_docs_v1, BM25, k=5의 단일 local_measured 실행에서 recall@5=0.917을 관측했다. 이는 재사용 경로와 기록을 확인한 한 번의 fixture 관측이며 성능 향상이나 인과를 뜻하지 않는다. 다음에는 동일 데이터셋에서 여러 반복과 검색 모드별 비교를 수행한다.",
+          "interpretation_type": "success"
+        },
+        "epistemic_status": "unverified"
+      },
+      {
+        "id": "57ac6807-0f53-426b-902b-5f49db2de548",
+        "kind": "interpretation",
+        "title": "허용된 실패 표시 fixture의 범위",
+        "summary": "이 행은 test_fixture origin의 합성 실패 레코드(fixture_execution_failure)다. 실제 retrieval adapter 실패나 측정 결과가 아니며 error_message에도 그 경계가 명시돼 있다. UI는 실패 상태와 메시지를 보존하고 평균에서 제외했다. 다음에는 별도 허용된 adapter 실패 재현을 실행해 실제 실행 실패 경로를 확인한다.",
+        "conditions": {
+          "run_id": "eb7ab829-f368-4850-8c76-36ec80a42509",
+          "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+          "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55"
+        },
+        "details": {
+          "hypothesis": "이 행은 test_fixture origin의 합성 실패 레코드(fixture_execution_failure)다. 실제 retrieval adapter 실패나 측정 결과가 아니며 error_message에도 그 경계가 명시돼 있다. UI는 실패 상태와 메시지를 보존하고 평균에서 제외했다. 다음에는 별도 허용된 adapter 실패 재현을 실행해 실제 실행 실패 경로를 확인한다.",
+          "interpretation_type": "failure"
+        },
+        "epistemic_status": "unverified"
+      },
+      {
+        "id": "bd91d2ba-f149-4d04-83fb-90494141af91",
+        "kind": "decision",
+        "title": "최적 결과물 채택: Baseline",
+        "summary": "이 기록은 source 설정(k=5)과 후속 설정의 충실한 재사용 및 이 UI의 저장·재진입 경로를 채택 기록으로 남기는 검증용이다. recall@5=0.917은 단일 fixture 관측치일 뿐 성능 비교 근거가 아니다. 재현/일반화에는 동일 조건 반복이 필요하다.",
+        "conditions": {
+          "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+          "decision": "adopted",
+          "objective": "CPU retrieval 설정의 cutoff 재사용 충실도와 연구 기록의 저장·재진입을 확인한다. 성능 향상을 주장하지 않는다.",
+          "constraints": {
+            "value": 0.9167,
+            "origin": "local_measured",
+            "direction": "higher_is_better",
+            "description": "단일 local_measured CPU fixture 실행, preset=ko_tech_docs_v1, retriever_mode=bm25, k=5. 변동성 미상; test_fixture 실패행은 실제 측정이 아니며 제외. 성능 우월성이나 일반화 주장 없음."
+          },
+          "primary_metric": "recall_at_5",
+          "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+          "method_promotion": {
+            "status": "not_requested",
+            "requested": false
+          }
+        },
+        "details": {
+          "parameters": {
+            "k": 5,
+            "preset_id": "ko_tech_docs_v1",
+            "retriever_mode": "bm25"
+          }
+        },
+        "epistemic_status": "validated"
+      }
+    ],
+    "best_results": [
+      {
+        "id": "7aad1f6e-ce3f-4d7d-b575-3119254f8d58",
+        "experiment_id": "69ad94e6-baf6-492e-9bf9-10de108da1e9",
+        "configuration_id": "993d1ea3-fbea-44d9-bd63-40bebcdfcc55",
+        "run_id": "f7061e65-74a3-4c5d-8a3e-0e31a211974c",
+        "status": "adopted",
+        "objective": "CPU retrieval 설정의 cutoff 재사용 충실도와 연구 기록의 저장·재진입을 확인한다. 성능 향상을 주장하지 않는다.",
+        "primary_metric": "recall_at_5",
+        "constraints": {
+          "value": 0.9167,
+          "origin": "local_measured",
+          "direction": "higher_is_better",
+          "description": "단일 local_measured CPU fixture 실행, preset=ko_tech_docs_v1, retriever_mode=bm25, k=5. 변동성 미상; test_fixture 실패행은 실제 측정이 아니며 제외. 성능 우월성이나 일반화 주장 없음."
+        },
+        "rationale": "이 기록은 source 설정(k=5)과 후속 설정의 충실한 재사용 및 이 UI의 저장·재진입 경로를 채택 기록으로 남기는 검증용이다. recall@5=0.917은 단일 fixture 관측치일 뿐 성능 비교 근거가 아니다. 재현/일반화에는 동일 조건 반복이 필요하다."
+      }
+    ],
+    "research_artifacts": []
+  },
+  "interpretation_payload_shape_from_pinned_frontend_source": {
+    "file": "src/pages/research/views/ResultAnalysisView.tsx",
+    "fields": [
+      "kind",
+      "title",
+      "summary",
+      "conditions.experiment_id",
+      "conditions.run_id",
+      "conditions.configuration_id",
+      "details.interpretation_type",
+      "details.hypothesis"
+    ],
+    "epistemic_status_sent_by_frontend": false,
+    "evidence_limit": "Network tool exposes method/status/URL, not request body. Pinned source constructs the request without epistemic_status; actual browser requests returned 201 and DB resume/ORM stored unverified."
+  },
+  "failed_run_fixture": {
+    "id": "eb7ab829-f368-4850-8c76-36ec80a42509",
+    "origin": "test_fixture",
+    "status": "failed",
+    "error_code": "fixture_execution_failure",
+    "measured": false,
+    "meaning": "Synthetic permitted persisted failure-row display fixture. It did not execute retrieval adapter; not evidence of a real execution failure."
+  },
+  "artifact_review": {
+    "research_artifacts_in_study": 0,
+    "ui_state": "기록·결과물 tab showed 연결된 결과물이 없습니다.",
+    "fake_artifact_created": false,
+    "scope": "No run in this test had an attached output file; so file metadata/content/sha API comparison and opening an artifact link were not applicable.",
+    "run_measurements_present_for_selected_reuse_run": true,
+    "run_artifacts_present_for_selected_reuse_run": false
+  },
+  "screenshots": [
+    "browser/page-2026-10-25T16-35-08-199Z.png (desktop analysis viewport after save)",
+    "browser/page-2026-10-25T16-35-17-143Z.png (mobile 390px analysis viewport after reload)",
+    "browser/page-2026-10-25T16-35-22-119Z.png (desktop analysis viewport)",
+    "browser/page-2026-10-25T16-37-17-838Z.png (mobile 390px full-page analysis after reload)",
+    "browser/page-2026-10-25T16-37-37-504Z.png (desktop full-page analysis after reload)"
+  ],
+  "prior_evidence_reused_without_repetition": [
+    "c-reuse-review-763dc03-e1158f0.md: UX8 failed-run rerun PASS; migration/source-ID/API boundary; existing source provenance UI; not rerun.",
+    "c-contract-ux-acceptance-review-1bd67e8.md: previous C API/PG acceptance scope; previous UI failures not treated as passing.",
+    "c-reuse-contract-fix.md: pinned source contract correction context; implementer test counts not used as new acceptance evidence.",
+    "No repeat of prior API suite, existing source FK/migration boundary, runner-registration failure, or UX8 path."
+  ],
+  "own_helper_diagnostic": {
+    "initial_result": "The first standalone ORM helper used get_settings() without mapping TTAKKARI_TEST_DB to TTAKKARI_DATABASE_URL and attempted the fallback local configuration; authentication failed for its configured DB user.",
+    "corrected_command": "TTAKKARI_NO_ENV_FILE=1 TTAKKARI_HOME=<run-outbox>/testhome TTAKKARI_DATABASE_URL=\"$TTAKKARI_TEST_DB\" back-research-v2/.venv/bin/python <run-outbox>/research_lab_db_evidence.py",
+    "corrected_result": "PASS; identity asserted ttakkari_test / ttk_test / 127.0.0.1 and ORM snapshot written. DSN/password values never printed."
+  }
+}

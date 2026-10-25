@@ -19,12 +19,14 @@ from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.common.entity_norm import norm_name
 from ttakkari.common.lexical import strip_korean_suffix
 from ttakkari.kb_access import (
     KbAccessContext,
+    assertion_access_filter,
     entity_access_filter,
     entity_alias_access_filter,
     passage_access_filter,
@@ -32,6 +34,8 @@ from ttakkari.kb_access import (
 )
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage
 from ttakkari.kb_ontology_models import (
+    KbAssertion,
+    KbConflict,
     KbDocumentEntity,
     KbEntity,
     KbEntityAlias,
@@ -311,6 +315,22 @@ async def fetch_canonical_cards(
         )
     )
     rows = (await db.execute(stmt)).all()
+    conflict_a = aliased(KbAssertion)
+    conflict_b = aliased(KbAssertion)
+    visible_conflict_entities = set(
+        await db.scalars(
+            select(KbConflict.entity_id)
+            .join(conflict_a, conflict_a.id == KbConflict.assertion_a_id)
+            .join(conflict_b, conflict_b.id == KbConflict.assertion_b_id)
+            .where(
+                KbConflict.entity_id.in_(entity_ids),
+                KbConflict.status == "open",
+                KbConflict.visibility.in_(ctx.allowed_visibilities),
+                assertion_access_filter(ctx, conflict_a),
+                assertion_access_filter(ctx, conflict_b),
+            )
+        )
+    )
     declared_evidence_ids = {
         uuid.UUID(str(item))
         for canonical, _ in rows
@@ -358,7 +378,7 @@ async def fetch_canonical_cards(
             "domain": ent.domain,
             "canonical_definition": canonical.canonical_definition,
             "key_facts": canonical.key_facts or [],
-            "has_open_conflict": canonical.has_open_conflict,
+            "has_open_conflict": ent.id in visible_conflict_entities,
             "version_no": canonical.version_no,
             "supporting_evidence_ids": provenance["supporting_evidence_ids"],
             "source_document_ids": provenance["source_document_ids"],

@@ -128,6 +128,7 @@ async def test_entity_alias_graph_and_canonical_paths_use_source_evidence(client
                 canonical_definition="Aurora manages Nimbus",
                 source_document_ids=[str(document.id)],
                 supporting_evidence_ids=[str(evidence.id)],
+                has_open_conflict=True,
             ),
         ])
         work_document = await db.get(KbDocument, work_registered["document_id"])
@@ -165,6 +166,7 @@ async def test_entity_alias_graph_and_canonical_paths_use_source_evidence(client
     assert card["canonical_name"] == "Aurora"
     assert card["source_document_ids"] == [registered["document_id"]]
     assert card["supporting_evidence_ids"]
+    assert card["has_open_conflict"] is False
     assert card["relations"][0]["target_entity"]["canonical_name"] == "Nimbus"
     assert personal_result_for_work_alias["matched_entities"] == []
 

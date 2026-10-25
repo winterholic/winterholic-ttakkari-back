@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 from ttakkari.db import sessionmaker
 from ttakkari.research import runner
@@ -15,7 +16,11 @@ from ttakkari.research import runner
 async def test_chunking_hybrid_grid_and_combined_repeat_roundtrip(client, auth):
     async with sessionmaker()() as db:
         identity = (await db.execute(text("select current_database(), current_user"))).one()
-        assert tuple(identity) == ("ttakkari_test", "ttk_test")
+        expected = make_url(os.environ["TTAKKARI_TEST_DB"])
+        assert expected.database != "ttakkari"
+        assert identity[0] == expected.database
+        if expected.username is not None:
+            assert identity[1] == expected.username
 
     response = await client.post("/api/research/catalog/sync", headers=auth)
     assert response.status_code == 200, response.text

@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbRevision, KbSource
@@ -15,7 +16,11 @@ from ttakkari.kb_models import KbRevision, KbSource
 async def test_source_refresh_retains_old_quotes_and_uncertain_method_conditions(client, auth):
     async with sessionmaker()() as db:
         identity = (await db.execute(text("select current_database(), current_user"))).one()
-        assert tuple(identity) == ("ttakkari_test", "ttk_test")
+        expected = make_url(os.environ["TTAKKARI_TEST_DB"])
+        assert expected.database != "ttakkari"
+        assert identity[0] == expected.database
+        if expected.username is not None:
+            assert identity[1] == expected.username
 
     async def post(path, body, expected=201):
         response = await client.post(path, headers=auth, json=body)

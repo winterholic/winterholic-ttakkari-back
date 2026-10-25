@@ -1,0 +1,1209 @@
+{
+  "scope": "isolated Codex command / real ASGI / injected RunPG / synthetic input only",
+  "backend_revision": "12aaf56d30e04d0e6bfc52523963e05663759297",
+  "method": {
+    "id": "df995058-2223-438b-b807-af429cfe8bcc",
+    "scope": "personal",
+    "slug": "d-ui-memory-access-hypothesis",
+    "version": 1,
+    "supersedes_id": null,
+    "origin": "user_registered",
+    "lifecycle_status": "candidate",
+    "name": "D UI memory access hypothesis",
+    "name_ko": "D UI 커널 메모리 접근 가설",
+    "summary": "타일 순서 변경이 디코드 속도에 영향을 주는지 탐색 (미측정 가설)",
+    "principle": "메모리 접근을 묶으면 속도가 달라질 수 있다. 직접 실행 어댑터 없음. 합성 수동 보고로 UI만 검증.",
+    "category": "general",
+    "targets": [
+      "llm"
+    ],
+    "layers": [
+      "gpu_kernel"
+    ],
+    "goals": [
+      "speed"
+    ],
+    "interventions": [
+      "kernel_optimization"
+    ],
+    "research_methods": [
+      "profiling"
+    ],
+    "parameters": [],
+    "compatibility": {
+      "notes": "",
+      "hardware": []
+    },
+    "metrics": [
+      "decode_tps"
+    ],
+    "expected_effects": [],
+    "side_effects": [],
+    "evidence": [],
+    "evidence_status": "unverified",
+    "adapter_hints": [],
+    "tags": [],
+    "source_study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+    "source_node_id": null,
+    "promoted_from_run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+    "created_at": "2026-10-25T21:52:56.411920+00:00",
+    "updated_at": "2026-10-25T21:55:26.272157+00:00",
+    "execution_status": "adapter_required",
+    "execution_status_label_ko": "어댑터 필요",
+    "is_executable": false,
+    "unavailable_reason": "연결 가능한 어댑터 힌트가 지정되지 않았습니다.",
+    "unsupported_params": [],
+    "relations": [],
+    "local_measurements": {
+      "total_runs": 2,
+      "succeeded_runs": 2,
+      "failed_runs": 0,
+      "measured_run_count": 0,
+      "locally_measured": false,
+      "best_improvement_summary": null
+    },
+    "related_experiments": [
+      {
+        "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+        "hypothesis": "",
+        "rationale": "",
+        "adapter": "external_report",
+        "state": "queued",
+        "config": {},
+        "environment": {},
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [],
+        "created_at": "2026-10-25T21:56:10.102198+00:00",
+        "finished_at": null,
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "compared_method_ids": [],
+        "adapter_id": "external_report",
+        "strategy": "ab",
+        "search_space": {},
+        "fixed_inputs": {},
+        "primary_metric": "",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null,
+        "name": "D 후속 외부 보고: 출처 입력·복원 인수"
+      },
+      {
+        "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+        "hypothesis": "GPU 실행 없이 외부 입력→후보 상태 보존을 확인하는 UI 인수",
+        "rationale": "",
+        "adapter": "external_report",
+        "state": "queued",
+        "config": {},
+        "environment": {},
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [],
+        "created_at": "2026-10-25T21:53:25.403305+00:00",
+        "finished_at": null,
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "compared_method_ids": [],
+        "adapter_id": "external_report",
+        "strategy": "ab",
+        "search_space": {},
+        "fixed_inputs": {},
+        "primary_metric": "",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null,
+        "name": "D 수동 합성 보고: 1 tok/s (실측 아님)"
+      }
+    ]
+  },
+  "new_method": {
+    "id": "5e24001a-16da-42ab-b1db-6c349e82fbae",
+    "scope": "personal",
+    "slug": "d-readiness-readback",
+    "version": 1,
+    "supersedes_id": null,
+    "origin": "user_registered",
+    "lifecycle_status": "hypothesis",
+    "name": "D readiness readback",
+    "name_ko": "D 상태 복원 확인 가설",
+    "summary": "등록 직후 가설 단계와 미지원 사유 확인 (UI fixture)",
+    "principle": "",
+    "category": "general",
+    "targets": [
+      "llm"
+    ],
+    "layers": [
+      "gpu_kernel"
+    ],
+    "goals": [
+      "speed"
+    ],
+    "interventions": [],
+    "research_methods": [],
+    "parameters": [],
+    "compatibility": {
+      "notes": "",
+      "hardware": []
+    },
+    "metrics": [],
+    "expected_effects": [],
+    "side_effects": [],
+    "evidence": [],
+    "evidence_status": "unverified",
+    "adapter_hints": [],
+    "tags": [],
+    "source_study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+    "source_node_id": null,
+    "promoted_from_run_id": null,
+    "created_at": "2026-10-25T21:57:08.293713+00:00",
+    "updated_at": "2026-10-25T21:57:08.293714+00:00",
+    "execution_status": "hypothesis_stage",
+    "execution_status_label_ko": "가설 단계",
+    "is_executable": false,
+    "unavailable_reason": "실험 프로토콜 구체화 필요 (가설 편집 또는 외부 결과 기록만 가능)",
+    "unsupported_params": [],
+    "relations": [],
+    "local_measurements": {
+      "total_runs": 0,
+      "succeeded_runs": 0,
+      "failed_runs": 0,
+      "measured_run_count": 0,
+      "locally_measured": false,
+      "best_improvement_summary": null
+    },
+    "related_experiments": []
+  },
+  "original_experiment": {
+    "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+    "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+    "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+    "hypothesis": "GPU 실행 없이 외부 입력→후보 상태 보존을 확인하는 UI 인수",
+    "rationale": "",
+    "adapter": "external_report",
+    "state": "queued",
+    "config": {},
+    "environment": {},
+    "budget": {
+      "seconds": 30,
+      "max_runs": 20,
+      "memory_mb": 256,
+      "max_memory_mb": 4096,
+      "max_total_seconds": 300
+    },
+    "receipt": {},
+    "method_ids": [],
+    "created_at": "2026-10-25T21:53:25.403305+00:00",
+    "finished_at": null,
+    "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+    "compared_method_ids": [],
+    "adapter_id": "external_report",
+    "strategy": "ab",
+    "search_space": {},
+    "fixed_inputs": {},
+    "primary_metric": "",
+    "secondary_metrics": [],
+    "baseline_configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+    "source_study_id": null,
+    "source_experiment_id": null,
+    "source_configuration_id": null,
+    "source_run_id": null,
+    "name": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+    "experiment": {
+      "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+      "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+      "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+      "hypothesis": "GPU 실행 없이 외부 입력→후보 상태 보존을 확인하는 UI 인수",
+      "rationale": "",
+      "adapter": "external_report",
+      "state": "queued",
+      "config": {},
+      "environment": {},
+      "budget": {
+        "seconds": 30,
+        "max_runs": 20,
+        "memory_mb": 256,
+        "max_memory_mb": 4096,
+        "max_total_seconds": 300
+      },
+      "receipt": {},
+      "method_ids": [],
+      "created_at": "2026-10-25T21:53:25.403305+00:00",
+      "finished_at": null,
+      "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+      "compared_method_ids": [],
+      "adapter_id": "external_report",
+      "strategy": "ab",
+      "search_space": {},
+      "fixed_inputs": {},
+      "primary_metric": "",
+      "secondary_metrics": [],
+      "baseline_configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+      "source_study_id": null,
+      "source_experiment_id": null,
+      "source_configuration_id": null,
+      "source_run_id": null,
+      "name": "D 수동 합성 보고: 1 tok/s (실측 아님)"
+    },
+    "configurations": [
+      {
+        "id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "label": "Control (A)",
+        "role": "baseline",
+        "order_index": 0,
+        "parameters": {},
+        "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "ablation_factor": null,
+        "created_at": "2026-10-25T21:53:25.404719+00:00"
+      }
+    ],
+    "runs": [
+      {
+        "id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "adapter_id": "external_report",
+        "execution_origin": "external_report",
+        "repeat_index": 1,
+        "seed": 42,
+        "status": "succeeded",
+        "progress": 1.0,
+        "environment_snapshot": {
+          "provenance": "manual_evaluation",
+          "description": "합성 UI 인수. 실제 하드웨어 측정 없음. 수동 입력값 1 tok/s.",
+          "execution_origin": "external_report"
+        },
+        "raw_output": {
+          "note": "합성 수동 fixture / 실제 측정 없음 / 값1은 UI 인수만",
+          "provenance": "manual_evaluation",
+          "execution_origin": "external_report"
+        },
+        "error_code": null,
+        "error_message": null,
+        "started_at": "2026-10-25T21:54:07.224063+00:00",
+        "finished_at": "2026-10-25T21:54:07.224065+00:00",
+        "wall_seconds": null,
+        "created_at": "2026-10-25T21:54:07.224065+00:00",
+        "provenance": "manual_evaluation",
+        "measurements": [
+          {
+            "id": "d33f83b7-8714-4ef8-bdf4-02398f3dd342",
+            "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+            "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+            "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+            "metric_key": "decode_tps",
+            "metric_label": "디코드 속도",
+            "value": 1.0,
+            "unit": "tok/s",
+            "direction": "higher_is_better",
+            "is_proxy": false,
+            "aggregator": "single",
+            "slice_key": "overall",
+            "meta": {
+              "provenance": "manual_evaluation",
+              "execution_origin": "external_report"
+            },
+            "created_at": "2026-10-25T21:54:07.225561+00:00"
+          }
+        ]
+      }
+    ],
+    "measurements": [
+      {
+        "id": "d33f83b7-8714-4ef8-bdf4-02398f3dd342",
+        "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "value": 1.0,
+        "unit": "tok/s",
+        "direction": "higher_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {
+          "provenance": "manual_evaluation",
+          "execution_origin": "external_report"
+        },
+        "created_at": "2026-10-25T21:54:07.225561+00:00"
+      }
+    ],
+    "latest_analysis": null,
+    "artifacts": []
+  },
+  "followup_experiment": {
+    "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+    "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+    "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+    "hypothesis": "",
+    "rationale": "",
+    "adapter": "external_report",
+    "state": "queued",
+    "config": {},
+    "environment": {},
+    "budget": {
+      "seconds": 30,
+      "max_runs": 20,
+      "memory_mb": 256,
+      "max_memory_mb": 4096,
+      "max_total_seconds": 300
+    },
+    "receipt": {},
+    "method_ids": [],
+    "created_at": "2026-10-25T21:56:10.102198+00:00",
+    "finished_at": null,
+    "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+    "compared_method_ids": [],
+    "adapter_id": "external_report",
+    "strategy": "ab",
+    "search_space": {},
+    "fixed_inputs": {},
+    "primary_metric": "",
+    "secondary_metrics": [],
+    "baseline_configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+    "source_study_id": null,
+    "source_experiment_id": null,
+    "source_configuration_id": null,
+    "source_run_id": null,
+    "name": "D 후속 외부 보고: 출처 입력·복원 인수",
+    "experiment": {
+      "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+      "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+      "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+      "hypothesis": "",
+      "rationale": "",
+      "adapter": "external_report",
+      "state": "queued",
+      "config": {},
+      "environment": {},
+      "budget": {
+        "seconds": 30,
+        "max_runs": 20,
+        "memory_mb": 256,
+        "max_memory_mb": 4096,
+        "max_total_seconds": 300
+      },
+      "receipt": {},
+      "method_ids": [],
+      "created_at": "2026-10-25T21:56:10.102198+00:00",
+      "finished_at": null,
+      "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+      "compared_method_ids": [],
+      "adapter_id": "external_report",
+      "strategy": "ab",
+      "search_space": {},
+      "fixed_inputs": {},
+      "primary_metric": "",
+      "secondary_metrics": [],
+      "baseline_configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+      "source_study_id": null,
+      "source_experiment_id": null,
+      "source_configuration_id": null,
+      "source_run_id": null,
+      "name": "D 후속 외부 보고: 출처 입력·복원 인수"
+    },
+    "configurations": [
+      {
+        "id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "label": "Control (A)",
+        "role": "baseline",
+        "order_index": 0,
+        "parameters": {},
+        "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "ablation_factor": null,
+        "created_at": "2026-10-25T21:56:10.103107+00:00"
+      }
+    ],
+    "runs": [
+      {
+        "id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "adapter_id": "external_report",
+        "execution_origin": "external_report",
+        "repeat_index": 1,
+        "seed": 42,
+        "status": "succeeded",
+        "progress": 1.0,
+        "environment_snapshot": {
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "description": "합성 UI fixture. GPU 미실행·외부실측 없음. 출처 전달 기능 검사.",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "raw_output": {
+          "note": "합성 벤치마크 자료. 성능 개선/실A100 근거로 사용 금지.",
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "error_code": null,
+        "error_message": null,
+        "started_at": "2026-10-25T21:56:45.555438+00:00",
+        "finished_at": "2026-10-25T21:56:45.555439+00:00",
+        "wall_seconds": null,
+        "created_at": "2026-10-25T21:56:45.555439+00:00",
+        "provenance": "external_benchmark",
+        "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+        "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+        "measurements": [
+          {
+            "id": "bff5494f-cc8c-4d59-988c-aa8891d1e07b",
+            "run_id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+            "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+            "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+            "metric_key": "decode_tps",
+            "metric_label": "디코드 속도",
+            "value": 1.0,
+            "unit": "tok/s",
+            "direction": "higher_is_better",
+            "is_proxy": false,
+            "aggregator": "single",
+            "slice_key": "overall",
+            "meta": {
+              "provenance": "external_benchmark",
+              "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+              "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+              "execution_origin": "external_report"
+            },
+            "created_at": "2026-10-25T21:56:45.556216+00:00"
+          }
+        ]
+      }
+    ],
+    "measurements": [
+      {
+        "id": "bff5494f-cc8c-4d59-988c-aa8891d1e07b",
+        "run_id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "value": 1.0,
+        "unit": "tok/s",
+        "direction": "higher_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "created_at": "2026-10-25T21:56:45.556216+00:00"
+      }
+    ],
+    "latest_analysis": null,
+    "artifacts": []
+  },
+  "original_resume": {
+    "study": {
+      "id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+      "title": "D 인수: 커널 접근 가설 (합성 수동 보고)",
+      "goal": "미지원 커널 가설의 등록과 후보 재사용을 검증한다. 성능 개선 실측 아님.",
+      "scope": "personal",
+      "phase": "planning",
+      "environment": {
+        "측정": "실제 GPU 측정 없음",
+        "환경": "격리 Run PG / 수동 합성 값"
+      },
+      "criteria": [
+        "decode_tps"
+      ],
+      "next_actions": [],
+      "version": 1,
+      "primary_target": null,
+      "best_result_id": null,
+      "created_at": "2026-10-25T21:52:43.513920+00:00",
+      "updated_at": "2026-10-25T21:52:43.513922+00:00"
+    },
+    "nodes": [
+      {
+        "id": "dfa3ccb5-0806-49b0-8756-3d2885292d8f",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "kind": "decision",
+        "title": "방법론 승격: D UI 커널 메모리 접근 가설 (candidate)",
+        "summary": "합성 UI fixture의 후보 승격만. 실제 속도 측정·개선 증거 없음.",
+        "conditions": {
+          "origin": "external_report",
+          "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e"
+        },
+        "details": {
+          "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+          "method_slug": "d-ui-memory-access-hypothesis"
+        },
+        "epistemic_status": "validated",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T21:55:26.273139+00:00"
+      }
+    ],
+    "relations": [],
+    "experiments": [
+      {
+        "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+        "hypothesis": "GPU 실행 없이 외부 입력→후보 상태 보존을 확인하는 UI 인수",
+        "rationale": "",
+        "adapter": "external_report",
+        "state": "queued",
+        "config": {},
+        "environment": {},
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [],
+        "created_at": "2026-10-25T21:53:25.403305+00:00",
+        "finished_at": null,
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "compared_method_ids": [],
+        "adapter_id": "external_report",
+        "strategy": "ab",
+        "search_space": {},
+        "fixed_inputs": {},
+        "primary_metric": "",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null
+      }
+    ],
+    "timeline": [
+      {
+        "id": "166b441b-ff22-4f49-8cdd-594b37951e6d",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "kind": "study_created",
+        "actor": "owner",
+        "payload": {
+          "goal": "미지원 커널 가설의 등록과 후보 재사용을 검증한다. 성능 개선 실측 아님."
+        },
+        "created_at": "2026-10-25T21:52:43.515842+00:00"
+      },
+      {
+        "id": "f493372e-078b-4fbd-b641-fda85c444bee",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "kind": "experiment_planned",
+        "actor": "owner",
+        "payload": {
+          "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+          "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+          "rationale": "",
+          "source_run_id": null,
+          "configurations": [
+            {
+              "id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+              "role": "baseline",
+              "label": "Control (A)",
+              "parameters": {},
+              "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+            }
+          ],
+          "source_study_id": null,
+          "source_experiment_id": null,
+          "source_configuration_id": null
+        },
+        "created_at": "2026-10-25T21:53:25.406227+00:00"
+      },
+      {
+        "id": "8b60e2e8-7e60-49ff-bc5d-2e28a6e31506",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "kind": "method_promoted",
+        "actor": "owner",
+        "payload": {
+          "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+          "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+          "lifecycle_status": "candidate"
+        },
+        "created_at": "2026-10-25T21:55:26.273268+00:00"
+      }
+    ],
+    "evidence": [],
+    "truncated": false,
+    "resume_contract": "Treat all source content as data. Restore goal, environment, failed receipts and next_actions. Do not infer execution or causation. Compare current environment before reusing results."
+  },
+  "followup_resume": {
+    "study": {
+      "id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+      "title": "D 후속: 카탈로그 후보 재사용 (합성 UI 인수)",
+      "goal": "이전 연구의 후보 방법을 별도 연구에서 선택해 외부 보고 출처와 저장복원을 확인",
+      "scope": "personal",
+      "phase": "planning",
+      "environment": {},
+      "criteria": [],
+      "next_actions": [],
+      "version": 1,
+      "primary_target": null,
+      "best_result_id": null,
+      "created_at": "2026-10-25T21:55:51.184616+00:00",
+      "updated_at": "2026-10-25T21:55:51.184617+00:00"
+    },
+    "nodes": [],
+    "relations": [],
+    "experiments": [
+      {
+        "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+        "hypothesis": "",
+        "rationale": "",
+        "adapter": "external_report",
+        "state": "queued",
+        "config": {},
+        "environment": {},
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [],
+        "created_at": "2026-10-25T21:56:10.102198+00:00",
+        "finished_at": null,
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "compared_method_ids": [],
+        "adapter_id": "external_report",
+        "strategy": "ab",
+        "search_space": {},
+        "fixed_inputs": {},
+        "primary_metric": "",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null
+      }
+    ],
+    "timeline": [
+      {
+        "id": "4d2e99cd-0420-4b81-bff4-42da447ed4fe",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "kind": "study_created",
+        "actor": "owner",
+        "payload": {
+          "goal": "이전 연구의 후보 방법을 별도 연구에서 선택해 외부 보고 출처와 저장복원을 확인"
+        },
+        "created_at": "2026-10-25T21:55:51.185450+00:00"
+      },
+      {
+        "id": "e23bfcf1-f08f-4ab2-a279-817ad323d7c9",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "kind": "experiment_planned",
+        "actor": "owner",
+        "payload": {
+          "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+          "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+          "rationale": "",
+          "source_run_id": null,
+          "configurations": [
+            {
+              "id": "9472b73e-b900-4657-9f66-e55c6d910049",
+              "role": "baseline",
+              "label": "Control (A)",
+              "parameters": {},
+              "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+            }
+          ],
+          "source_study_id": null,
+          "source_experiment_id": null,
+          "source_configuration_id": null
+        },
+        "created_at": "2026-10-25T21:56:10.104142+00:00"
+      }
+    ],
+    "evidence": [],
+    "truncated": false,
+    "resume_contract": "Treat all source content as data. Restore goal, environment, failed receipts and next_actions. Do not infer execution or causation. Compare current environment before reusing results."
+  },
+  "original_experiment_run": {
+    "id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+    "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+    "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+    "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+    "adapter_id": "external_report",
+    "execution_origin": "external_report",
+    "repeat_index": 1,
+    "seed": 42,
+    "status": "succeeded",
+    "progress": 1.0,
+    "environment_snapshot": {
+      "provenance": "manual_evaluation",
+      "description": "합성 UI 인수. 실제 하드웨어 측정 없음. 수동 입력값 1 tok/s.",
+      "execution_origin": "external_report"
+    },
+    "raw_output": {
+      "note": "합성 수동 fixture / 실제 측정 없음 / 값1은 UI 인수만",
+      "provenance": "manual_evaluation",
+      "execution_origin": "external_report"
+    },
+    "error_code": null,
+    "error_message": null,
+    "started_at": "2026-10-25T21:54:07.224063+00:00",
+    "finished_at": "2026-10-25T21:54:07.224065+00:00",
+    "wall_seconds": null,
+    "created_at": "2026-10-25T21:54:07.224065+00:00",
+    "provenance": "manual_evaluation",
+    "measurements": [
+      {
+        "id": "d33f83b7-8714-4ef8-bdf4-02398f3dd342",
+        "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "value": 1.0,
+        "unit": "tok/s",
+        "direction": "higher_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {
+          "provenance": "manual_evaluation",
+          "execution_origin": "external_report"
+        },
+        "created_at": "2026-10-25T21:54:07.225561+00:00"
+      }
+    ],
+    "artifacts": []
+  },
+  "followup_experiment_run": {
+    "id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+    "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+    "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+    "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+    "adapter_id": "external_report",
+    "execution_origin": "external_report",
+    "repeat_index": 1,
+    "seed": 42,
+    "status": "succeeded",
+    "progress": 1.0,
+    "environment_snapshot": {
+      "provenance": "external_benchmark",
+      "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+      "description": "합성 UI fixture. GPU 미실행·외부실측 없음. 출처 전달 기능 검사.",
+      "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+      "execution_origin": "external_report"
+    },
+    "raw_output": {
+      "note": "합성 벤치마크 자료. 성능 개선/실A100 근거로 사용 금지.",
+      "provenance": "external_benchmark",
+      "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+      "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+      "execution_origin": "external_report"
+    },
+    "error_code": null,
+    "error_message": null,
+    "started_at": "2026-10-25T21:56:45.555438+00:00",
+    "finished_at": "2026-10-25T21:56:45.555439+00:00",
+    "wall_seconds": null,
+    "created_at": "2026-10-25T21:56:45.555439+00:00",
+    "provenance": "external_benchmark",
+    "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+    "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+    "measurements": [
+      {
+        "id": "bff5494f-cc8c-4d59-988c-aa8891d1e07b",
+        "run_id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "value": 1.0,
+        "unit": "tok/s",
+        "direction": "higher_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "created_at": "2026-10-25T21:56:45.556216+00:00"
+      }
+    ],
+    "artifacts": []
+  },
+  "db_identity": [
+    "ttakkari_test",
+    "ttk_test"
+  ],
+  "db": {
+    "research_methods": [
+      {
+        "id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "name": "D UI memory access hypothesis",
+        "slug": "d-ui-memory-access-hypothesis",
+        "tags": [],
+        "goals": [
+          "speed"
+        ],
+        "scope": "personal",
+        "layers": [
+          "gpu_kernel"
+        ],
+        "origin": "user_registered",
+        "metrics": [
+          "decode_tps"
+        ],
+        "name_ko": "D UI 커널 메모리 접근 가설",
+        "summary": "타일 순서 변경이 디코드 속도에 영향을 주는지 탐색 (미측정 가설)",
+        "targets": [
+          "llm"
+        ],
+        "version": 1,
+        "category": "general",
+        "evidence": [],
+        "principle": "메모리 접근을 묶으면 속도가 달라질 수 있다. 직접 실행 어댑터 없음. 합성 수동 보고로 UI만 검증.",
+        "created_at": "2026-10-26T06:52:56.41192+09:00",
+        "parameters": [],
+        "updated_at": "2026-10-26T06:55:26.272157+09:00",
+        "side_effects": [],
+        "adapter_hints": [],
+        "compatibility": {
+          "notes": "",
+          "hardware": []
+        },
+        "interventions": [
+          "kernel_optimization"
+        ],
+        "supersedes_id": null,
+        "source_node_id": null,
+        "evidence_status": "unverified",
+        "source_study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "expected_effects": [],
+        "lifecycle_status": "candidate",
+        "research_methods": [
+          "profiling"
+        ],
+        "promoted_from_run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e"
+      },
+      {
+        "id": "5e24001a-16da-42ab-b1db-6c349e82fbae",
+        "name": "D readiness readback",
+        "slug": "d-readiness-readback",
+        "tags": [],
+        "goals": [
+          "speed"
+        ],
+        "scope": "personal",
+        "layers": [
+          "gpu_kernel"
+        ],
+        "origin": "user_registered",
+        "metrics": [],
+        "name_ko": "D 상태 복원 확인 가설",
+        "summary": "등록 직후 가설 단계와 미지원 사유 확인 (UI fixture)",
+        "targets": [
+          "llm"
+        ],
+        "version": 1,
+        "category": "general",
+        "evidence": [],
+        "principle": "",
+        "created_at": "2026-10-26T06:57:08.293713+09:00",
+        "parameters": [],
+        "updated_at": "2026-10-26T06:57:08.293714+09:00",
+        "side_effects": [],
+        "adapter_hints": [],
+        "compatibility": {
+          "notes": "",
+          "hardware": []
+        },
+        "interventions": [],
+        "supersedes_id": null,
+        "source_node_id": null,
+        "evidence_status": "unverified",
+        "source_study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "expected_effects": [],
+        "lifecycle_status": "hypothesis",
+        "research_methods": [],
+        "promoted_from_run_id": null
+      }
+    ],
+    "research_studies": [
+      {
+        "id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "goal": "미지원 커널 가설의 등록과 후보 재사용을 검증한다. 성능 개선 실측 아님.",
+        "phase": "planning",
+        "scope": "personal",
+        "title": "D 인수: 커널 접근 가설 (합성 수동 보고)",
+        "version": 1,
+        "criteria": [
+          "decode_tps"
+        ],
+        "created_at": "2026-10-26T06:52:43.51392+09:00",
+        "updated_at": "2026-10-26T06:52:43.513922+09:00",
+        "environment": {
+          "측정": "실제 GPU 측정 없음",
+          "환경": "격리 Run PG / 수동 합성 값"
+        },
+        "next_actions": [],
+        "best_result_id": null,
+        "primary_target": null
+      },
+      {
+        "id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "goal": "이전 연구의 후보 방법을 별도 연구에서 선택해 외부 보고 출처와 저장복원을 확인",
+        "phase": "planning",
+        "scope": "personal",
+        "title": "D 후속: 카탈로그 후보 재사용 (합성 UI 인수)",
+        "version": 1,
+        "criteria": [],
+        "created_at": "2026-10-26T06:55:51.184616+09:00",
+        "updated_at": "2026-10-26T06:55:51.184617+09:00",
+        "environment": {},
+        "next_actions": [],
+        "best_result_id": null,
+        "primary_target": null
+      }
+    ],
+    "research_experiments": [
+      {
+        "id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "state": "queued",
+        "title": "D 수동 합성 보고: 1 tok/s (실측 아님)",
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "config": {},
+        "adapter": "external_report",
+        "receipt": {},
+        "strategy": "ab",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "rationale": "",
+        "adapter_id": "external_report",
+        "created_at": "2026-10-26T06:53:25.403305+09:00",
+        "hypothesis": "GPU 실행 없이 외부 입력→후보 상태 보존을 확인하는 UI 인수",
+        "method_ids": [],
+        "environment": {},
+        "finished_at": null,
+        "fixed_inputs": {},
+        "search_space": {},
+        "source_run_id": null,
+        "primary_metric": "",
+        "source_study_id": null,
+        "secondary_metrics": [],
+        "compared_method_ids": [],
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "baseline_configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2"
+      },
+      {
+        "id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "state": "queued",
+        "title": "D 후속 외부 보고: 출처 입력·복원 인수",
+        "budget": {
+          "seconds": 30,
+          "max_runs": 20,
+          "memory_mb": 256,
+          "max_memory_mb": 4096,
+          "max_total_seconds": 300
+        },
+        "config": {},
+        "adapter": "external_report",
+        "receipt": {},
+        "strategy": "ab",
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+        "rationale": "",
+        "adapter_id": "external_report",
+        "created_at": "2026-10-26T06:56:10.102198+09:00",
+        "hypothesis": "",
+        "method_ids": [],
+        "environment": {},
+        "finished_at": null,
+        "fixed_inputs": {},
+        "search_space": {},
+        "source_run_id": null,
+        "primary_metric": "",
+        "source_study_id": null,
+        "secondary_metrics": [],
+        "compared_method_ids": [],
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "baseline_configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049"
+      }
+    ],
+    "research_runs": [
+      {
+        "id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+        "seed": 42,
+        "status": "succeeded",
+        "progress": 1,
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "adapter_id": "external_report",
+        "created_at": "2026-10-26T06:54:07.224065+09:00",
+        "error_code": null,
+        "raw_output": {
+          "note": "합성 수동 fixture / 실제 측정 없음 / 값1은 UI 인수만",
+          "provenance": "manual_evaluation",
+          "execution_origin": "external_report"
+        },
+        "started_at": "2026-10-26T06:54:07.224063+09:00",
+        "finished_at": "2026-10-26T06:54:07.224065+09:00",
+        "repeat_index": 1,
+        "wall_seconds": null,
+        "error_message": null,
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2",
+        "execution_origin": "external_report",
+        "environment_snapshot": {
+          "provenance": "manual_evaluation",
+          "description": "합성 UI 인수. 실제 하드웨어 측정 없음. 수동 입력값 1 tok/s.",
+          "execution_origin": "external_report"
+        }
+      },
+      {
+        "id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+        "seed": 42,
+        "status": "succeeded",
+        "progress": 1,
+        "study_id": "dbfdd5b1-0783-41b3-ba22-3f480b93f49c",
+        "adapter_id": "external_report",
+        "created_at": "2026-10-26T06:56:45.555439+09:00",
+        "error_code": null,
+        "raw_output": {
+          "note": "합성 벤치마크 자료. 성능 개선/실A100 근거로 사용 금지.",
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "started_at": "2026-10-26T06:56:45.555438+09:00",
+        "finished_at": "2026-10-26T06:56:45.555439+09:00",
+        "repeat_index": 1,
+        "wall_seconds": null,
+        "error_message": null,
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049",
+        "execution_origin": "external_report",
+        "environment_snapshot": {
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "description": "합성 UI fixture. GPU 미실행·외부실측 없음. 출처 전달 기능 검사.",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        }
+      }
+    ],
+    "research_measurements": [
+      {
+        "id": "d33f83b7-8714-4ef8-bdf4-02398f3dd342",
+        "meta": {
+          "provenance": "manual_evaluation",
+          "execution_origin": "external_report"
+        },
+        "unit": "tok/s",
+        "value": 1,
+        "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e",
+        "is_proxy": false,
+        "direction": "higher_is_better",
+        "slice_key": "overall",
+        "aggregator": "single",
+        "created_at": "2026-10-26T06:54:07.225561+09:00",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "experiment_id": "e2ad7ec4-8736-45d3-9188-ee95e1ec353d",
+        "configuration_id": "6b7da1fd-736f-4a55-9699-f7ff470b1bd2"
+      },
+      {
+        "id": "bff5494f-cc8c-4d59-988c-aa8891d1e07b",
+        "meta": {
+          "provenance": "external_benchmark",
+          "source_url": "https://example.invalid/d-ui-benchmark#table-1",
+          "source_title": "Synthetic UI benchmark fixture (실제 논문 아님)",
+          "execution_origin": "external_report"
+        },
+        "unit": "tok/s",
+        "value": 1,
+        "run_id": "31d0a5d9-911b-4286-9701-6b6dfe60521a",
+        "is_proxy": false,
+        "direction": "higher_is_better",
+        "slice_key": "overall",
+        "aggregator": "single",
+        "created_at": "2026-10-26T06:56:45.556216+09:00",
+        "metric_key": "decode_tps",
+        "metric_label": "디코드 속도",
+        "experiment_id": "18f873bc-7535-4d98-9bfa-c717801a4ce1",
+        "configuration_id": "9472b73e-b900-4657-9f66-e55c6d910049"
+      }
+    ],
+    "research_nodes": [
+      {
+        "id": "dfa3ccb5-0806-49b0-8756-3d2885292d8f",
+        "kind": "decision",
+        "title": "방법론 승격: D UI 커널 메모리 접근 가설 (candidate)",
+        "details": {
+          "method_id": "df995058-2223-438b-b807-af429cfe8bcc",
+          "method_slug": "d-ui-memory-access-hypothesis"
+        },
+        "summary": "합성 UI fixture의 후보 승격만. 실제 속도 측정·개선 증거 없음.",
+        "study_id": "75dbeb47-18a1-442e-bcda-fef1cb43f86e",
+        "conditions": {
+          "origin": "external_report",
+          "run_id": "60c0a461-c7b9-4e39-bb44-5d5eaa411b7e"
+        },
+        "created_at": "2026-10-26T06:55:26.273139+09:00",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "epistemic_status": "validated"
+      }
+    ]
+  },
+  "frontend_revision": "7341245fe230a14728ea61fa5075748827cf8ed1",
+  "cleanup": {
+    "browser_closed": true,
+    "backend_exit": 130,
+    "frontend_exit": 130,
+    "backend_disposal_warning": "CancelledError after SIGINT",
+    "loopback_connect_ex": {
+      "57441": 61,
+      "57442": 61
+    }
+  }
+}

@@ -1,0 +1,84 @@
+### Page
+- Page URL: http://127.0.0.1:57442/research?view=library&study=75dbeb47-18a1-442e-bcda-fef1cb43f86e&method=d-ui-memory-access-hypothesis
+- Page Title: Winterholic Ttakkari
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- dialog [active] [ref=f3e6]:
+  - generic [ref=f3e7]:
+    - heading "D UI 커널 메모리 접근 가설" [level=2] [ref=f3e8]
+    - button "닫기" [ref=f3e9] [cursor=pointer]
+  - generic [ref=f3e14]:
+    - generic [ref=f3e15]:
+      - generic "연결 가능한 어댑터 힌트가 지정되지 않았습니다." [ref=f3e16]: 어댑터 필요
+      - generic [ref=f3e19]: 후보 (외부 결과만)
+      - generic "따까리에서 직접 측정한 기록이 아직 없습니다." [ref=f3e21]: 실측 없음
+      - generic "논문·문서에서 보고된 내용입니다. 따까리가 재현한 결과가 아닙니다." [ref=f3e24]: 미검증
+      - generic [ref=f3e27]: 직접 등록 · v1
+    - paragraph [ref=f3e28]: 타일 순서 변경이 디코드 속도에 영향을 주는지 탐색 (미측정 가설)
+    - note [ref=f3e29]:
+      - generic [ref=f3e32]:
+        - strong [ref=f3e33]: "실행 상태: 어댑터 필요"
+        - generic [ref=f3e34]:
+          - paragraph [ref=f3e35]: 이 서버에서 실행할 어댑터가 없습니다. 외부에서 실행한 결과를 등록할 수 있습니다.
+          - paragraph [ref=f3e36]:
+            - strong [ref=f3e37]: "사유:"
+            - text: 연결 가능한 어댑터 힌트가 지정되지 않았습니다.
+    - tablist "방법 상세 보기" [ref=f3e38]:
+      - tab "개요" [selected] [ref=f3e39] [cursor=pointer]
+      - tab "파라미터" [ref=f3e40] [cursor=pointer]
+      - tab "근거" [ref=f3e41] [cursor=pointer]
+      - tab "관계" [ref=f3e42] [cursor=pointer]
+      - tab "실험 이력 1" [ref=f3e43] [cursor=pointer]
+    - tabpanel "개요" [ref=f3e44]:
+      - generic [ref=f3e45]:
+        - generic [ref=f3e46]:
+          - heading "원리" [level=4] [ref=f3e47]
+          - paragraph [ref=f3e48]: 메모리 접근을 묶으면 속도가 달라질 수 있다. 직접 실행 어댑터 없음. 합성 수동 보고로 UI만 검증.
+        - generic [ref=f3e49]:
+          - generic [ref=f3e50]:
+            - heading "기대 효과" [level=4] [ref=f3e51]
+            - paragraph [ref=f3e52]: 기록된 내용이 없습니다.
+          - generic [ref=f3e53]:
+            - heading "부작용·트레이드오프" [level=4] [ref=f3e54]
+            - paragraph [ref=f3e55]: 알려진 부작용이 기록되지 않았습니다. 없다는 뜻은 아닙니다.
+        - generic [ref=f3e56]:
+          - heading "호환 환경" [level=4] [ref=f3e57]
+          - generic [ref=f3e58]:
+            - generic [ref=f3e59]:
+              - term [ref=f3e60]: 하드웨어
+              - definition [ref=f3e61]: 제한 없음(기록 없음)
+            - generic [ref=f3e62]:
+              - term [ref=f3e63]: 런타임
+              - definition [ref=f3e64]: 기록 없음
+        - generic [ref=f3e65]:
+          - heading "분류" [level=4] [ref=f3e66]
+          - generic [ref=f3e67]:
+            - generic [ref=f3e68]:
+              - term [ref=f3e69]: 대상
+              - definition [ref=f3e70]:
+                - generic [ref=f3e71]: 대형 언어 모델 (LLM)
+            - generic [ref=f3e72]:
+              - term [ref=f3e73]: 계층
+              - definition [ref=f3e74]:
+                - generic [ref=f3e75]: GPU 커널
+            - generic [ref=f3e76]:
+              - term [ref=f3e77]: 목표
+              - definition [ref=f3e78]:
+                - generic [ref=f3e79]: 속도 향상
+            - generic [ref=f3e80]:
+              - term [ref=f3e81]: 개입
+              - definition [ref=f3e82]:
+                - generic [ref=f3e83]: 커널 최적화
+            - generic [ref=f3e84]:
+              - term [ref=f3e85]: 연구 방법
+              - definition [ref=f3e86]:
+                - generic [ref=f3e87]: 프로파일링
+        - generic [ref=f3e88]:
+          - heading "권장 측정 지표" [level=4] [ref=f3e89]
+          - paragraph [ref=f3e90]:
+            - generic "decode_tps" [ref=f3e91]: 디코드 속도
+  - generic [ref=f3e92]:
+    - button "검증 후 승격" [ref=f3e93] [cursor=pointer]
+    - button "외부 결과로 실험 설계" [ref=f3e95] [cursor=pointer]
+```

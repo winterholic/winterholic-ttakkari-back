@@ -133,7 +133,15 @@ print(os.path.realpath(sys.argv[1]))
 EOF
 )"
   [[ "$TGT_REAL" != "$SRC_REAL" ]] || { echo "오류: 검증 대상이 원본과 같다: $TARGET" >&2; exit 2; }
-  tar -xzf "$WORK" -C "$TARGET"
+  # 검증본은 폐기할 평문이다. 원본의 0444/0555를 복원하면 정리가 실패하므로
+  # data 필터로 소유자 쓰기 권한·디렉터리 기본 권한을 확보하고 경로 이탈도 막는다.
+  "$PYTHON" - "$WORK" "$TARGET" <<'EOF'
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    archive.extractall(sys.argv[2], filter="data")
+EOF
   "$PYTHON" - "$VERIFY" "$TARGET" <<'EOF'
 import hashlib
 import json

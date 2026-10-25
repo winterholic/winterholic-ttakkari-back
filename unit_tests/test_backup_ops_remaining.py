@@ -226,6 +226,40 @@ def test_data_snapshot_skips_links_in_both_archive_and_manifest(tmp_path, sample
     assert outside.read_text() == "outside must stay unchanged"
 
 
+@pytest.mark.parametrize("readonly_tree", [False, True], ids=["readonly-file", "readonly-tree"])
+def test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned(
+        tmp_path, sample_data, passphrase_file, readonly_tree):
+    """Game bundles remain immutable; their disposable verification copy must be removable."""
+    from ttakkari.operations import runner
+
+    original = sample_data / "notes" / "a.md"
+    original.chmod(0o444)
+    if readonly_tree:
+        (sample_data / "notes").chmod(0o555)
+    out = tmp_path / "snapshots"
+    target = tmp_path / "verified"
+    try:
+        created = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out),
+                       "--passphrase-file", str(passphrase_file)])
+        assert created.returncode == 0, created.stdout + created.stderr
+        manifest = next(out.glob("*.manifest.json"))
+        verified = run([str(SNAPSHOT_SH), "--verify", str(manifest), "--target", str(target),
+                        "--passphrase-file", str(passphrase_file)])
+        assert verified.returncode == 0, verified.stdout + verified.stderr
+        assert "스냅샷 검증 통과" in verified.stdout
+        assert (target / "notes" / "a.md").read_bytes() == original.read_bytes()
+        assert runner._secure_rmtree(target), "verified plaintext must be completely removed"
+        assert not target.exists()
+        assert stat.S_IMODE(original.stat().st_mode) == 0o444
+        assert stat.S_IMODE((sample_data / "notes").stat().st_mode) == (0o555 if readonly_tree else 0o755)
+    finally:
+        # A RED run must not leave immutable fixtures behind.
+        for root in (sample_data, target):
+            if root.exists():
+                for path in [root, *root.rglob("*")]:
+                    path.chmod(0o700 if path.is_dir() else 0o600)
+
+
 def test_data_snapshot_verify_detects_tamper(tmp_path: Path, sample_data: Path) -> None:
     """아카이브가 바뀌면 검증이 실패한다."""
     out = tmp_path / "snaps"

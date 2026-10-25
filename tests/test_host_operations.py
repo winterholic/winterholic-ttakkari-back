@@ -516,7 +516,10 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     assert snap["summary"]["encrypted"] and snap["summary"]["file_count"] >= 1
     assert snap["summary"]["key_fingerprint"] == s["key_fingerprint"]
     verify = await _wait(client, hdr, (await _start(client, hdr, "snapshot_verify")).json()["id"])
-    assert verify["status"] == "succeeded", json.dumps(verify, ensure_ascii=False)
+    # ops_deploy_log clips each line to 300 chars: keep error and output readable there.
+    assert verify["status"] == "succeeded", json.dumps(
+        verify | {"output_tail": verify.get("output_tail", "").splitlines()},
+        ensure_ascii=False, indent=2)
     assert verify["summary"]["files_verified"] == snap["summary"]["file_count"]
     assert not any((isolated_state / plans.VERIFY_DIR).glob("*"))
 

@@ -296,3 +296,258 @@ async def test_pdf_mission_preserves_pages_and_reaches_knowledge_search(client, 
         item = await db.get(CollectorItem, uuid.UUID(detail["results"][0]["id"]))
         assert item.parser_version.startswith("pypdf-")
         assert item.envelope["extensions"]["collector:pdf"]["pages"][0]["page"] == 1
+
+
+async def test_mission_pause_and_resume_preserves_progress_and_continues(client, auth, env):  # noqa: F811
+    url = env.server.url("/resumable")
+    env.server.page("/resumable", article_html("Paused mission", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=5)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "일시정지와 재개", "urls": [url]})).json()
+    mid = made["id"]
+
+    # Pause mission
+    paused = (await client.post(BASE + f"/missions/{mid}/pause", headers=auth)).json()
+    assert paused["status"] == "paused"
+    # Idempotent pause
+    assert (await client.post(BASE + f"/missions/{mid}/pause", headers=auth)).status_code == 200
+
+    # In paused state, runner should NOT claim this job
+    assert await runner.consume_once(limit=1, managed_only=True) == 0
+
+    # Resume mission
+    resumed = (await client.post(BASE + f"/missions/{mid}/resume", headers=auth)).json()
+    assert resumed["status"] == "running"
+    # Idempotent resume
+    assert (await client.post(BASE + f"/missions/{mid}/resume", headers=auth)).status_code == 200
+
+    # Now runner can claim and finish the job
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert detail["counts"]["acquired"] == 1
+
+
+async def test_mission_cancel_prevents_child_jobs_and_cancels_active(client, auth, env):  # noqa: F811
+    url = env.server.url("/cancellable")
+    env.server.page("/cancellable", article_html("Cancellable mission", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=5)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "수집 취소", "urls": [url]})).json()
+    mid = made["id"]
+
+    cancelled = (await client.post(BASE + f"/missions/{mid}/cancel", headers=auth)).json()
+    assert cancelled["status"] == "cancelled"
+    assert len(cancelled["jobs"]) == 1
+    assert cancelled["jobs"][0]["status"] == "cancelled"
+
+    # Idempotent cancel
+    assert (await client.post(BASE + f"/missions/{mid}/cancel", headers=auth)).status_code == 200
+
+    # Runner should not run cancelled job and no child jobs should be created
+    assert await runner.consume_once(limit=1, managed_only=True) == 0
+    detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert detail["status"] == "cancelled"
+    assert len(detail["jobs"]) == 1
+
+
+async def test_mission_extend_reuses_preserved_frontier_with_additional_pages(client, auth, env, monkeypatch):  # noqa: F811
+    p1 = env.server.url("/ext/page1")
+    p2 = env.server.url("/ext/page2")
+    h1 = article_html("Page 1", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h2 = article_html("Page 2", [prose("en", 85, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    env.server.page("/ext/page1", h1 + f'<a href="{p2}">Page 2</a>')
+    env.server.page("/ext/page2", h2)
+
+    body = source_body(seeds=[p1], max_pages=10, source_key="ext-test-source")
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0, max_depth=2)
+    body["max_depth"] = 2
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    # Mission created with budget of 1 page -> p1 is fetched, p2 remains in frontier
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "확장 수집", "urls": [p1], "max_pages": 1})).json()
+    mid = made["id"]
+
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert detail["status"] == "partial"
+    assert detail["counts"]["acquired"] == 1
+    assert detail["counts"]["discovered"] == 2
+
+    # Extend mission: add 5 pages
+    extended = (await client.post(BASE + f"/missions/{mid}/extend", headers=auth, json={"add_pages": 5})).json()
+    assert extended["status"] == "running"
+    assert extended["plan"]["budget"]["pages"] == 6
+
+    # Runner consumes child job generated from preserved frontier
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 2
+    detail_after = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert detail_after["counts"]["acquired"] == 2
+    assert detail_after["counts"]["imported"] == 2
+    assert detail_after["status"] == "succeeded"
+
+
+async def test_mission_auto_split_when_exceeding_source_policy_page_limit(client, auth, env, monkeypatch):  # noqa: F811
+    p1 = env.server.url("/split/page1")
+    p2 = env.server.url("/split/page2")
+    p3 = env.server.url("/split/page3")
+    h1 = article_html("P1", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h2 = article_html("P2", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h3 = article_html("P3", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    env.server.page("/split/page1", h1 + f'<a href="{p2}">P2</a>')
+    env.server.page("/split/page2", h2 + f'<a href="{p3}">P3</a>')
+    env.server.page("/split/page3", h3)
+
+    # Policy with max_pages_per_job = 2
+    body = source_body(seeds=[p1], max_pages=2, source_key="split-policy-test")
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0, max_pages_per_job=2, max_depth=3)
+    body["max_depth"] = 3
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "자동 분할 수집", "urls": [p1], "max_pages": 10})).json()
+    mid = made["id"]
+
+    # Job 1 runs and acquires p1, p2 (reaching max_pages_per_job=2) -> finishes as partial, auto-splits child job
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    mid_detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert mid_detail["counts"]["acquired"] == 2
+    assert len(mid_detail["jobs"]) == 2  # Job 1 (finished) and Job 2 (auto-split queued)
+
+    # Job 2 runs and acquires p3
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 3
+    final_detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert final_detail["counts"]["acquired"] == 3
+    assert final_detail["counts"]["imported"] == 3
+    assert final_detail["status"] == "succeeded"
+
+
+async def test_mission_fair_allocation_reclaims_unused_pages_for_other_sources(client, auth, env, monkeypatch):  # noqa: F811
+    u1 = env.server.url("/fair/short")
+    u2 = env.server.url("/fair/long1")
+    u3 = env.server.url("/fair/long2")
+    env.server.page("/fair/short", article_html("Short", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", ""))  # 1 page total
+    h2 = article_html("L1", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h3 = article_html("L2", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    env.server.page("/fair/long1", h2 + f'<a href="{u3}">L2</a>')
+    env.server.page("/fair/long2", h3)
+
+    body1 = source_body(seeds=[u1], max_pages=10, source_key="fair-source-1")
+    body1["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body1)).status_code == 201
+
+    body2 = source_body(seeds=[u2], max_pages=1, source_key="fair-source-2")
+    body2["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0, max_pages_per_job=1, max_depth=2)
+    body2["max_depth"] = 2
+    assert (await client.post(BASE + "/sources", headers=auth, json=body2)).status_code == 201
+
+    # Mission budget = 3 pages across 2 sources (initial allocation: fair share = 3 // 2 = 1 page each)
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "공정 할당 검증", "urls": [u1, u2], "max_pages": 3})).json()
+    mid = made["id"]
+
+    # Consume job 1 (u1: acquires 1 page, finishes succeeded)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    # Consume job 2 (u2: acquires 1 page, reaches cap 1, frontier has u3)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+
+    # Unused budget calculation: total budget=3, u1 used 1, u2 used 1. Remaining budget = 1.
+    # Reconcile automatically creates child job for u2 with remaining 1 page!
+    detail_mid = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert detail_mid["counts"]["acquired"] == 2
+
+    # Consume job 3 (u2 child: acquires u3)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 3
+    final_detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert final_detail["counts"]["acquired"] == 3
+    assert final_detail["counts"]["imported"] == 3
+    assert final_detail["status"] == "succeeded"
+
+
+async def test_mission_preparation_metadata_failure_is_isolated_and_recorded_as_gap(client, auth, env, monkeypatch):  # noqa: F811
+    from ttakkari.collector import adapters
+
+    url_good = env.server.url("/good.md")
+    env.server.page("/good.md", "# Good Doc\n" + prose("en", 90, 15), "text/plain")
+    body = source_body(seeds=[url_good], max_pages=2)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    async def mock_github_repo(repo, **kwargs):
+        if "broken" in repo:
+            raise RuntimeError("GitHub API 404: Not Found")
+        return {"repository": "owner/good", "revision": "a" * 40,
+                "documents": [{"url": url_good, "path": "good.md", "revision": "a" * 40,
+                               "repository": "owner/good", "adapter": "website", "provenance": "github_api"}],
+                "license": {"id": None, "permission": "unknown"},
+                "coverage": {"eligible_files": 1, "selected_files": 1, "truncated": False}}
+
+    monkeypatch.setattr(adapters, "github_repository", mock_github_repo)
+    made = (await client.post(BASE + "/missions", headers=auth, json={
+        "goal": "메타데이터 실패 격리",
+        "urls": ["https://github.com/owner/broken", "https://github.com/owner/good"]
+    })).json()
+    mid = made["id"]
+
+    # Run preparation
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+
+    # The broken repository should be recorded as a gap, not crashing the entire mission
+    gap = next((g for g in detail["gaps"] if g.get("reason") == "github_metadata_failed"), None)
+    assert gap is not None
+    assert "broken" in gap["url"]
+
+    # And the good repository document was successfully enqueued and can be acquired
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    after_acq = (await client.get(BASE + f"/missions/{mid}", headers=auth)).json()
+    assert after_acq["counts"]["acquired"] == 1
+
+
+async def test_mission_control_security_and_validation(client, auth):
+    fake_id = str(uuid.uuid4())
+    # Unauthenticated requests must be 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/pause")).status_code == 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/resume")).status_code == 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/cancel")).status_code == 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/extend", json={"add_pages": 10})).status_code == 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/rerun")).status_code == 401
+    assert (await client.post(BASE + f"/missions/{fake_id}/schedule", json={"interval_minutes": 60})).status_code == 401
+
+    # Nonexistent mission must be 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/pause", headers=auth)).status_code == 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/resume", headers=auth)).status_code == 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/cancel", headers=auth)).status_code == 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/extend", headers=auth, json={"add_pages": 10})).status_code == 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/rerun", headers=auth)).status_code == 404
+    assert (await client.post(BASE + f"/missions/{fake_id}/schedule", headers=auth, json={"interval_minutes": 60})).status_code == 404
+
+    # Validation: invalid add_pages
+    assert (await client.post(BASE + f"/missions/{fake_id}/extend", headers=auth, json={"add_pages": 0})).status_code == 422
+    assert (await client.post(BASE + f"/missions/{fake_id}/schedule", headers=auth, json={"interval_minutes": 0})).status_code == 422
+
+
+async def test_mission_schedule_and_rerun_controls(client, auth, env):  # noqa: F811
+    url = env.server.url("/sched")
+    env.server.page("/sched", article_html("Scheduled mission", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=5)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "스케줄 및 재실행", "urls": [url]})).json()
+    mid = made["id"]
+
+    # Set schedule interval to 1440 minutes
+    sched = (await client.post(BASE + f"/missions/{mid}/schedule", headers=auth, json={"interval_minutes": 1440})).json()
+    assert sched["plan"]["schedule"]["interval_minutes"] == 1440
+
+    # Rerun mission
+    rerun = (await client.post(BASE + f"/missions/{mid}/rerun", headers=auth)).json()
+    assert rerun["status"] == "running"

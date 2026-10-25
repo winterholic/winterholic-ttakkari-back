@@ -118,6 +118,20 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     source.last_error = None
     if source.interval_minutes is not None:
         source.next_run_at = now + timedelta(minutes=source.interval_minutes)
+    if source.source_key.startswith("mission:"):
+        parts = source.source_key.split(":")
+        if len(parts) >= 2:
+            try:
+                mission_id = uuid.UUID(parts[1])
+                from ttakkari.collector_models import CollectionMissionJob
+                exists = await db.scalar(select(CollectionMissionJob.mission_id).where(
+                    CollectionMissionJob.mission_id == mission_id,
+                    CollectionMissionJob.job_id == result.job_id,
+                ))
+                if not exists:
+                    db.add(CollectionMissionJob(mission_id=mission_id, job_id=result.job_id))
+            except (ValueError, TypeError):
+                pass
     await db.flush()
     return await db.get(CollectorJob, result.job_id)
 

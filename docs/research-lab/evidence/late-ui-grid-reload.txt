@@ -1,0 +1,550 @@
+### Page
+- Page URL: http://127.0.0.1:57342/research?view=analysis&study=424ca2a9-4141-4f7f-a739-386d8b7ce166&experiment=525e85d1-289e-403f-ab4b-bc5c002d3cb7
+- Page Title: Winterholic Ttakkari
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- main [ref=f4e6]:
+  - generic [ref=f4e7]:
+    - generic [ref=f4e9]:
+      - button "메뉴 열기" [ref=f4e10] [cursor=pointer]
+      - generic [ref=f4e12]:
+        - heading "AI Research Lab" [level=1] [ref=f4e13]
+        - paragraph [ref=f4e14]:
+          - generic [ref=f4e15]: 조합·실제 실패 UI 인수 2026-10-26
+    - generic [ref=f4e17]:
+      - generic [ref=f4e18]:
+        - generic [ref=f4e19]:
+          - generic [ref=f4e20]: 연구
+          - generic [ref=f4e21]:
+            - combobox "연구 조합·실제 실패 UI 인수 2026-10-26" [ref=f4e22] [cursor=pointer]:
+              - generic [ref=f4e23]: 조합·실제 실패 UI 인수 2026-10-26
+            - text: ✓
+        - radiogroup "범위" [ref=f4e24]:
+          - generic [ref=f4e25] [cursor=pointer]:
+            - radio "개인" [checked] [disabled] [ref=f4e26]
+            - text: 개인
+          - generic [ref=f4e27] [cursor=pointer]:
+            - radio "회사" [disabled] [ref=f4e28]
+            - text: 회사
+        - button "새 연구" [ref=f4e29] [cursor=pointer]
+      - tablist "연구소 화면" [ref=f4e31]:
+        - tab "대시보드" [ref=f4e32] [cursor=pointer]
+        - tab "방법론" [ref=f4e33] [cursor=pointer]
+        - tab "실험 설계" [ref=f4e34] [cursor=pointer]
+        - tab "실행 모니터" [ref=f4e35] [cursor=pointer]
+        - tab "결과 분석" [selected] [ref=f4e36] [cursor=pointer]
+        - tab "기록·결과물" [ref=f4e37] [cursor=pointer]
+      - tabpanel "결과 분석" [ref=f4e38]:
+        - generic [ref=f4e39]:
+          - generic [ref=f4e40]:
+            - generic [ref=f4e41]:
+              - generic [ref=f4e42]: 분석할 실험
+              - generic [ref=f4e43]:
+                - combobox "분석할 실험 청크 분할 × Hybrid 4조건 실제 조합" [ref=f4e44] [cursor=pointer]:
+                  - generic [ref=f4e45]: 청크 분할 × Hybrid 4조건 실제 조합
+                - text: ✓
+            - generic [ref=f4e46]:
+              - generic [ref=f4e47]: Baseline (기준 설정)
+              - generic [ref=f4e48]:
+                - 'combobox "Baseline (기준 설정) #1 (chunking_strategy=none, retriever_mode=bm25)" [ref=f4e49] [cursor=pointer]':
+                  - generic [ref=f4e50]: "#1 (chunking_strategy=none, retriever_mode=bm25)"
+                - text: ✓
+          - generic [ref=f4e51]:
+            - heading "청크 분할 × Hybrid 4조건 실제 조합" [level=2] [ref=f4e52]
+            - paragraph [ref=f4e53]: 검색 평가 · Grid 탐색 · 주요 지표 재현율 (Recall@5) · 설정 4개 · 실행 4개
+            - generic [ref=f4e54]: 따까리 실측
+          - region [ref=f4e57]:
+            - heading "비교 전에 확인하세요" [level=3] [ref=f4e60]
+            - list [ref=f4e61]:
+              - listitem [ref=f4e62]:
+                - generic [aria-hidden] [ref=f4e63]: i
+                - generic [ref=f4e64]: 데이터셋 버전이 기록되지 않았습니다. 다른 입력으로 한 실험과 비교하려면 먼저 입력 동일성을 확인하세요.
+          - note [ref=f4e65]:
+            - generic [ref=f4e68]:
+              - strong [ref=f4e69]: 자동 수치 요약
+              - generic [ref=f4e70]:
+                - paragraph [ref=f4e71]: "주요 지표(재현율 (Recall@5)) 기준, 최적 설정은 '#1 (chunking_strategy=none, retriever_mode=bm25)'(0.917 ratio)입니다. Baseline 대비 상대 변화율은 +0.0%입니다. (파레토 최적 후보: #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf))"
+                - paragraph [ref=f4e72]: 규칙으로 만든 수치 요약입니다. 원인을 해석한 것이 아니며, 입력·환경이 같은 비교일 때만 의미가 있습니다.
+          - region [ref=f4e73]:
+            - generic [ref=f4e74]:
+              - generic [ref=f4e75]:
+                - heading "연구자 해석 (성공/실패 노트)" [level=3] [ref=f4e76]
+                - paragraph [ref=f4e77]: 수치 요약과 구분된 연구자의 주관적 해석과 다음 가설 노트입니다. 인과가 확정된 사실이 아니며 미검증(unverified)으로 보존됩니다.
+              - button "해석 추가" [ref=f4e79] [cursor=pointer]
+            - paragraph [ref=f4e81]: 아직 등록된 연구자 해석이 없습니다. '해석 추가'로 관찰된 원인과 다음 가설을 기록하세요.
+          - region [ref=f4e82]:
+            - generic [ref=f4e84]:
+              - heading "설정별 결과" [level=3] [ref=f4e85]
+              - paragraph [ref=f4e86]: 평균은 성공한 실행만 센 값입니다. ★ 는 그 지표 하나에서의 최고이며 전면 최적이 아닙니다.
+            - region "설정별 결과 표 (가로로 스크롤)" [ref=f4e88]:
+              - table [ref=f4e89]:
+                - rowgroup [ref=f4e90]:
+                  - row [ref=f4e91]:
+                    - columnheader "설정" [ref=f4e92]
+                    - columnheader "성공 n" [ref=f4e93]
+                    - columnheader "재현율 (Recall@5) (ratio)" [ref=f4e94]
+                    - columnheader "상호 역순위 (MRR@5) (ratio)" [ref=f4e95]
+                    - columnheader "정규화 할인 누적 이득 (NDCG@5) (ratio)" [ref=f4e96]
+                    - columnheader "평균 질의 지연 시간 (ms)" [ref=f4e97]
+                    - columnheader "p95 질의 지연 시간 (ms)" [ref=f4e98]
+                    - columnheader "분할된 총 청크 수 (count)" [ref=f4e99]
+                    - columnheader "전체 소요 시간 (s)" [ref=f4e100]
+                    - columnheader "후속 조치" [ref=f4e101]
+                - rowgroup [ref=f4e102]:
+                  - row [selected] [ref=f4e103]:
+                    - rowheader "#1 (chunking_strategy=none, retriever_mode=bm25) 기준" [ref=f4e104]:
+                      - text: "#1 (chunking_strategy=none, retriever_mode=bm25)"
+                      - generic [ref=f4e105]: 기준
+                    - cell "1" [ref=f4e107]
+                    - cell "0.917 ★ · 변동성 미상" [ref=f4e108]
+                    - cell "1 ★ · 변동성 미상" [ref=f4e109]
+                    - cell "0.978 · 변동성 미상" [ref=f4e110]
+                    - cell "0.02 ★ · 변동성 미상" [ref=f4e111]
+                    - cell "0.03 ★ · 변동성 미상" [ref=f4e112]
+                    - cell "32 ★ · 변동성 미상" [ref=f4e113]
+                    - cell "0.001 ★ · 변동성 미상" [ref=f4e114]
+                    - cell [ref=f4e115]:
+                      - button "이 설정으로 후속 실험" [ref=f4e116] [cursor=pointer]
+                  - row [ref=f4e118]:
+                    - rowheader "#2 (chunking_strategy=none, retriever_mode=hybrid_rrf)" [ref=f4e119]
+                    - cell "1" [ref=f4e120]
+                    - cell "0.917 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e121]:
+                      - text: 0.917 · 변동성 미상
+                      - generic [ref=f4e122]: ― 0.0% 변화 없음
+                    - cell "1 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e123]:
+                      - text: 1 · 변동성 미상
+                      - generic [ref=f4e124]: ― 0.0% 변화 없음
+                    - cell "0.98 · 변동성 미상 ― +0.3% 변화 없음" [ref=f4e125]:
+                      - text: 0.98 · 변동성 미상
+                      - generic [ref=f4e126]: ― +0.3% 변화 없음
+                    - cell "0.71 · 변동성 미상 ▼ +3450.0% 퇴보" [ref=f4e127]:
+                      - text: 0.71 · 변동성 미상
+                      - generic [ref=f4e128]: ▼ +3450.0% 퇴보
+                    - cell "0.75 · 변동성 미상 ▼ +2400.0% 퇴보" [ref=f4e129]:
+                      - text: 0.75 · 변동성 미상
+                      - generic [ref=f4e130]: ▼ +2400.0% 퇴보
+                    - cell "32 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e131]:
+                      - text: 32 · 변동성 미상
+                      - generic [ref=f4e132]: ― 0.0% 변화 없음
+                    - cell "0.015 · 변동성 미상 ▼ +1400.0% 퇴보" [ref=f4e133]:
+                      - text: 0.015 · 변동성 미상
+                      - generic [ref=f4e134]: ▼ +1400.0% 퇴보
+                    - cell [ref=f4e135]:
+                      - button "이 설정으로 후속 실험" [ref=f4e136] [cursor=pointer]
+                  - row [ref=f4e138]:
+                    - rowheader "#3 (chunking_strategy=fixed_window, retriever_mode=bm25)" [ref=f4e139]
+                    - cell "1" [ref=f4e140]
+                    - cell "0.917 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e141]:
+                      - text: 0.917 · 변동성 미상
+                      - generic [ref=f4e142]: ― 0.0% 변화 없음
+                    - cell "1 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e143]:
+                      - text: 1 · 변동성 미상
+                      - generic [ref=f4e144]: ― 0.0% 변화 없음
+                    - cell "0.959 · 변동성 미상 ▼ −2.0% 퇴보" [ref=f4e145]:
+                      - text: 0.959 · 변동성 미상
+                      - generic [ref=f4e146]: ▼ −2.0% 퇴보
+                    - cell "0.03 · 변동성 미상 ▼ +50.0% 퇴보" [ref=f4e147]:
+                      - text: 0.03 · 변동성 미상
+                      - generic [ref=f4e148]: ▼ +50.0% 퇴보
+                    - cell "0.03 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e149]:
+                      - text: 0.03 · 변동성 미상
+                      - generic [ref=f4e150]: ― 0.0% 변화 없음
+                    - cell "53 · 변동성 미상 ▼ +65.6% 퇴보" [ref=f4e151]:
+                      - text: 53 · 변동성 미상
+                      - generic [ref=f4e152]: ▼ +65.6% 퇴보
+                    - cell "0.001 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e153]:
+                      - text: 0.001 · 변동성 미상
+                      - generic [ref=f4e154]: ― 0.0% 변화 없음
+                    - cell [ref=f4e155]:
+                      - button "이 설정으로 후속 실험" [ref=f4e156] [cursor=pointer]
+                  - row [ref=f4e158]:
+                    - rowheader "#4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf)" [ref=f4e159]
+                    - cell "1" [ref=f4e160]
+                    - cell "0.917 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e161]:
+                      - text: 0.917 · 변동성 미상
+                      - generic [ref=f4e162]: ― 0.0% 변화 없음
+                    - cell "1 · 변동성 미상 ― 0.0% 변화 없음" [ref=f4e163]:
+                      - text: 1 · 변동성 미상
+                      - generic [ref=f4e164]: ― 0.0% 변화 없음
+                    - cell "0.983 ★ · 변동성 미상 ― +0.5% 변화 없음" [ref=f4e165]:
+                      - text: 0.983 ★ · 변동성 미상
+                      - generic [ref=f4e166]: ― +0.5% 변화 없음
+                    - cell "1.15 · 변동성 미상 ▼ +5650.0% 퇴보" [ref=f4e167]:
+                      - text: 1.15 · 변동성 미상
+                      - generic [ref=f4e168]: ▼ +5650.0% 퇴보
+                    - cell "1.21 · 변동성 미상 ▼ +3933.3% 퇴보" [ref=f4e169]:
+                      - text: 1.21 · 변동성 미상
+                      - generic [ref=f4e170]: ▼ +3933.3% 퇴보
+                    - cell "53 · 변동성 미상 ▼ +65.6% 퇴보" [ref=f4e171]:
+                      - text: 53 · 변동성 미상
+                      - generic [ref=f4e172]: ▼ +65.6% 퇴보
+                    - cell "0.024 · 변동성 미상 ▼ +2300.0% 퇴보" [ref=f4e173]:
+                      - text: 0.024 · 변동성 미상
+                      - generic [ref=f4e174]: ▼ +2300.0% 퇴보
+                    - cell [ref=f4e175]:
+                      - button "이 설정으로 후속 실험" [ref=f4e176] [cursor=pointer]
+          - region [ref=f4e178]:
+            - generic [ref=f4e179]:
+              - heading "Baseline 대비 변화" [level=3] [ref=f4e181]
+              - group "지표 선택" [ref=f4e183]:
+                - button "재현율 (Recall@5)" [pressed] [ref=f4e184] [cursor=pointer]
+                - button "상호 역순위 (MRR@5)" [ref=f4e185] [cursor=pointer]
+                - button "정규화 할인 누적 이득 (NDCG@5)" [ref=f4e186] [cursor=pointer]
+                - button "평균 질의 지연 시간" [ref=f4e187] [cursor=pointer]
+                - button "p95 질의 지연 시간" [ref=f4e188] [cursor=pointer]
+                - button "분할된 총 청크 수" [ref=f4e189] [cursor=pointer]
+                - button "전체 소요 시간" [ref=f4e190] [cursor=pointer]
+            - figure [ref=f4e191]:
+              - 'heading "재현율 (Recall@5) — #1 (chunking_strategy=none, retriever_mode=bm25) 대비 변화" [level=4] [ref=f4e193]'
+              - paragraph [ref=f4e194]: "높을수록 좋은 지표: 오른쪽(▲)이 개선"
+              - 'img "재현율 (Recall@5): #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.0% 변화 없음, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.0% 변화 없음, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 0.0% 변화 없음" [ref=f4e195]':
+                - img [aria-hidden] [ref=f4e196]:
+                  - generic [ref=f4e197]: 기준 0%
+                  - generic [ref=f4e198]:
+                    - generic [ref=f4e199]: "#2 (chunking_strategy=none, retri…"
+                    - generic [ref=f4e201]: ― 0.0%
+                  - generic [ref=f4e202]:
+                    - generic [ref=f4e203]: "#3 (chunking_strategy=fixed_windo…"
+                    - generic [ref=f4e205]: ― 0.0%
+                  - generic [ref=f4e206]:
+                    - generic [ref=f4e207]: "#4 (chunking_strategy=fixed_windo…"
+                    - generic [ref=f4e209]: ― 0.0%
+              - group [ref=f4e210]:
+                - generic "데이터 표로 보기" [ref=f4e211] [cursor=pointer]
+          - region [ref=f4e212]:
+            - generic [ref=f4e214]:
+              - heading "지표별 비교" [level=3] [ref=f4e215]
+              - paragraph [ref=f4e216]: 지표마다 단위와 좋은 방향이 달라 따로 그립니다.
+            - generic [ref=f4e217]:
+              - figure [ref=f4e218]:
+                - heading "재현율 (Recall@5)" [level=4] [ref=f4e220]
+                - paragraph [ref=f4e221]: 높을수록 좋음 · 단위 ratio · ★ 이 지표에서만 가장 좋은 값
+                - 'img "재현율 (Recall@5): #1 (chunking_strategy=none, retriever_mode=bm25) 0.917 ratio, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.917 ratio, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.917 ratio, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 0.917 ratio" [ref=f4e222]':
+                  - img [aria-hidden] [ref=f4e223]:
+                    - generic [ref=f4e224]:
+                      - generic [ref=f4e225]: "● #1 (chunking_str…"
+                      - generic [ref=f4e227]: 0.917 ★
+                    - generic [ref=f4e228]:
+                      - generic [ref=f4e229]: "#2 (chunking_strat…"
+                      - generic [ref=f4e231]: 0.917 ★
+                    - generic [ref=f4e232]:
+                      - generic [ref=f4e233]: "#3 (chunking_strat…"
+                      - generic [ref=f4e235]: 0.917 ★
+                    - generic [ref=f4e236]:
+                      - generic [ref=f4e237]: "#4 (chunking_strat…"
+                      - generic [ref=f4e239]: 0.917 ★
+                - group [ref=f4e240]:
+                  - generic "데이터 표로 보기" [ref=f4e241] [cursor=pointer]
+              - figure [ref=f4e242]:
+                - heading "상호 역순위 (MRR@5)" [level=4] [ref=f4e244]
+                - paragraph [ref=f4e245]: 높을수록 좋음 · 단위 ratio · ★ 이 지표에서만 가장 좋은 값
+                - 'img "상호 역순위 (MRR@5): #1 (chunking_strategy=none, retriever_mode=bm25) 1 ratio, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 1 ratio, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 1 ratio, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 1 ratio" [ref=f4e246]':
+                  - img [aria-hidden] [ref=f4e247]:
+                    - generic [ref=f4e248]:
+                      - generic [ref=f4e249]: "● #1 (chunking_str…"
+                      - generic [ref=f4e251]: 1 ★
+                    - generic [ref=f4e252]:
+                      - generic [ref=f4e253]: "#2 (chunking_strat…"
+                      - generic [ref=f4e255]: 1 ★
+                    - generic [ref=f4e256]:
+                      - generic [ref=f4e257]: "#3 (chunking_strat…"
+                      - generic [ref=f4e259]: 1 ★
+                    - generic [ref=f4e260]:
+                      - generic [ref=f4e261]: "#4 (chunking_strat…"
+                      - generic [ref=f4e263]: 1 ★
+                - group [ref=f4e264]:
+                  - generic "데이터 표로 보기" [ref=f4e265] [cursor=pointer]
+              - figure [ref=f4e266]:
+                - heading "정규화 할인 누적 이득 (NDCG@5)" [level=4] [ref=f4e268]
+                - paragraph [ref=f4e269]: 높을수록 좋음 · 단위 ratio · ★ 이 지표에서만 가장 좋은 값
+                - 'img "정규화 할인 누적 이득 (NDCG@5): #1 (chunking_strategy=none, retriever_mode=bm25) 0.978 ratio, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.98 ratio, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.959 ratio, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 0.983 ratio" [ref=f4e270]':
+                  - img [aria-hidden] [ref=f4e271]:
+                    - generic [ref=f4e272]:
+                      - generic [ref=f4e273]: "● #1 (chunking_str…"
+                      - generic [ref=f4e275]: "0.978"
+                    - generic [ref=f4e276]:
+                      - generic [ref=f4e277]: "#2 (chunking_strat…"
+                      - generic [ref=f4e279]: "0.98"
+                    - generic [ref=f4e280]:
+                      - generic [ref=f4e281]: "#3 (chunking_strat…"
+                      - generic [ref=f4e283]: "0.959"
+                    - generic [ref=f4e284]:
+                      - generic [ref=f4e285]: "#4 (chunking_strat…"
+                      - generic [ref=f4e287]: 0.983 ★
+                - group [ref=f4e288]:
+                  - generic "데이터 표로 보기" [ref=f4e289] [cursor=pointer]
+              - figure [ref=f4e290]:
+                - heading "평균 질의 지연 시간" [level=4] [ref=f4e292]
+                - paragraph [ref=f4e293]: 낮을수록 좋음 · 단위 ms · ★ 이 지표에서만 가장 좋은 값
+                - 'img "평균 질의 지연 시간: #1 (chunking_strategy=none, retriever_mode=bm25) 0.02 ms, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.71 ms, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.03 ms, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 1.15 ms" [ref=f4e294]':
+                  - img [aria-hidden] [ref=f4e295]:
+                    - generic [ref=f4e296]:
+                      - generic [ref=f4e297]: "● #1 (chunking_str…"
+                      - generic [ref=f4e299]: 0.02 ★
+                    - generic [ref=f4e300]:
+                      - generic [ref=f4e301]: "#2 (chunking_strat…"
+                      - generic [ref=f4e303]: "0.71"
+                    - generic [ref=f4e304]:
+                      - generic [ref=f4e305]: "#3 (chunking_strat…"
+                      - generic [ref=f4e307]: "0.03"
+                    - generic [ref=f4e308]:
+                      - generic [ref=f4e309]: "#4 (chunking_strat…"
+                      - generic [ref=f4e311]: "1.15"
+                - group [ref=f4e312]:
+                  - generic "데이터 표로 보기" [ref=f4e313] [cursor=pointer]
+              - figure [ref=f4e314]:
+                - heading "p95 질의 지연 시간" [level=4] [ref=f4e316]
+                - paragraph [ref=f4e317]: 낮을수록 좋음 · 단위 ms · ★ 이 지표에서만 가장 좋은 값
+                - 'img "p95 질의 지연 시간: #1 (chunking_strategy=none, retriever_mode=bm25) 0.03 ms, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.75 ms, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.03 ms, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 1.21 ms" [ref=f4e318]':
+                  - img [aria-hidden] [ref=f4e319]:
+                    - generic [ref=f4e320]:
+                      - generic [ref=f4e321]: "● #1 (chunking_str…"
+                      - generic [ref=f4e323]: 0.03 ★
+                    - generic [ref=f4e324]:
+                      - generic [ref=f4e325]: "#2 (chunking_strat…"
+                      - generic [ref=f4e327]: "0.75"
+                    - generic [ref=f4e328]:
+                      - generic [ref=f4e329]: "#3 (chunking_strat…"
+                      - generic [ref=f4e331]: 0.03 ★
+                    - generic [ref=f4e332]:
+                      - generic [ref=f4e333]: "#4 (chunking_strat…"
+                      - generic [ref=f4e335]: "1.21"
+                - group [ref=f4e336]:
+                  - generic "데이터 표로 보기" [ref=f4e337] [cursor=pointer]
+              - figure [ref=f4e338]:
+                - heading "분할된 총 청크 수" [level=4] [ref=f4e340]
+                - paragraph [ref=f4e341]: 낮을수록 좋음 · 단위 count · ★ 이 지표에서만 가장 좋은 값
+                - 'img "분할된 총 청크 수: #1 (chunking_strategy=none, retriever_mode=bm25) 32 count, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 32 count, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 53 count, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 53 count" [ref=f4e342]':
+                  - img [aria-hidden] [ref=f4e343]:
+                    - generic [ref=f4e344]:
+                      - generic [ref=f4e345]: "● #1 (chunking_str…"
+                      - generic [ref=f4e347]: 32 ★
+                    - generic [ref=f4e348]:
+                      - generic [ref=f4e349]: "#2 (chunking_strat…"
+                      - generic [ref=f4e351]: 32 ★
+                    - generic [ref=f4e352]:
+                      - generic [ref=f4e353]: "#3 (chunking_strat…"
+                      - generic [ref=f4e355]: "53"
+                    - generic [ref=f4e356]:
+                      - generic [ref=f4e357]: "#4 (chunking_strat…"
+                      - generic [ref=f4e359]: "53"
+                - group [ref=f4e360]:
+                  - generic "데이터 표로 보기" [ref=f4e361] [cursor=pointer]
+              - figure [ref=f4e362]:
+                - heading "전체 소요 시간" [level=4] [ref=f4e364]
+                - paragraph [ref=f4e365]: 낮을수록 좋음 · 단위 s · ★ 이 지표에서만 가장 좋은 값
+                - 'img "전체 소요 시간: #1 (chunking_strategy=none, retriever_mode=bm25) 0.001 s, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) 0.015 s, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) 0.001 s, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) 0.024 s" [ref=f4e366]':
+                  - img [aria-hidden] [ref=f4e367]:
+                    - generic [ref=f4e368]:
+                      - generic [ref=f4e369]: "● #1 (chunking_str…"
+                      - generic [ref=f4e371]: 0.001 ★
+                    - generic [ref=f4e372]:
+                      - generic [ref=f4e373]: "#2 (chunking_strat…"
+                      - generic [ref=f4e375]: "0.015"
+                    - generic [ref=f4e376]:
+                      - generic [ref=f4e377]: "#3 (chunking_strat…"
+                      - generic [ref=f4e379]: 0.001 ★
+                    - generic [ref=f4e380]:
+                      - generic [ref=f4e381]: "#4 (chunking_strat…"
+                      - generic [ref=f4e383]: "0.024"
+                - group [ref=f4e384]:
+                  - generic "데이터 표로 보기" [ref=f4e385] [cursor=pointer]
+          - region [ref=f4e386]:
+            - generic [ref=f4e388]:
+              - heading "반복 분포" [level=3] [ref=f4e389]
+              - paragraph [ref=f4e390]: 같은 설정을 여러 번 실행했을 때의 흩어짐입니다. 실행이 1회뿐이면 변동성을 알 수 없다고 표시합니다.
+            - figure [ref=f4e391]:
+              - heading "재현율 (Recall@5) — 반복 분포" [level=4] [ref=f4e393]
+              - paragraph [ref=f4e394]: 높을수록 좋음 · 단위 ratio · 4개 설정은 실행이 1회라 변동성 미상
+              - 'img "재현율 (Recall@5) 반복 분포: #1 (chunking_strategy=none, retriever_mode=bm25) n=1 평균 0.917 ratio 변동성 미상, #2 (chunking_strategy=none, retriever_mode=hybrid_rrf) n=1 평균 0.917 ratio 변동성 미상, #3 (chunking_strategy=fixed_window, retriever_mode=bm25) n=1 평균 0.917 ratio 변동성 미상, #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf) n=1 평균 0.917 ratio 변동성 미상" [ref=f4e395]':
+                - img [aria-hidden] [ref=f4e396]:
+                  - generic [ref=f4e397]: "0.8"
+                  - generic [ref=f4e399]: "0.85"
+                  - generic [ref=f4e401]: "0.9"
+                  - generic [ref=f4e403]: "0.95"
+                  - generic [ref=f4e405]: "1"
+                  - generic [ref=f4e407]:
+                    - generic [ref=f4e408]: "#1 (chunking_st…"
+                    - generic [ref=f4e411]: 변동성 미상 (n=1)
+                  - generic [ref=f4e412]:
+                    - generic [ref=f4e413]: "#2 (chunking_st…"
+                    - generic [ref=f4e416]: 변동성 미상 (n=1)
+                  - generic [ref=f4e417]:
+                    - generic [ref=f4e418]: "#3 (chunking_st…"
+                    - generic [ref=f4e421]: 변동성 미상 (n=1)
+                  - generic [ref=f4e422]:
+                    - generic [ref=f4e423]: "#4 (chunking_st…"
+                    - generic [ref=f4e426]: 변동성 미상 (n=1)
+              - group [ref=f4e427]:
+                - generic "데이터 표로 보기" [ref=f4e428] [cursor=pointer]
+          - region [ref=f4e429]:
+            - generic [ref=f4e430]:
+              - generic [ref=f4e431]:
+                - heading "Trade-off · Pareto" [level=3] [ref=f4e432]
+                - paragraph [ref=f4e433]: 속도를 얻으면 메모리나 품질을 잃는 식의 상충을 봅니다. 축을 바꿔 보세요.
+              - generic [ref=f4e435]:
+                - generic [ref=f4e436]:
+                  - generic [ref=f4e437]: 가로축
+                  - generic [ref=f4e438]:
+                    - combobox "가로축 평균 질의 지연 시간" [ref=f4e439] [cursor=pointer]:
+                      - generic [ref=f4e440]: 평균 질의 지연 시간
+                    - text: ✓
+                - generic [ref=f4e441]:
+                  - generic [ref=f4e442]: 세로축
+                  - generic [ref=f4e443]:
+                    - combobox "세로축 재현율 (Recall@5)" [ref=f4e444] [cursor=pointer]:
+                      - generic [ref=f4e445]: 재현율 (Recall@5)
+                    - text: ✓
+            - figure [ref=f4e446]:
+              - heading "평균 질의 지연 시간 × 재현율 (Recall@5)" [level=4] [ref=f4e448]
+              - paragraph [ref=f4e449]: 가로 평균 질의 지연 시간(낮을수록 좋음), 세로 재현율 (Recall@5)(높을수록 좋음) · 좋은 쪽은 왼쪽·위
+              - 'img "평균 질의 지연 시간 대 재현율 (Recall@5) 산점도. 점 4개, 파레토 최적 1개: #1 (chunking_strategy=none, retriever_mode=bm25)" [ref=f4e450]':
+                - img [aria-hidden] [ref=f4e451]:
+                  - generic [ref=f4e452]: "0.8"
+                  - generic [ref=f4e454]: "0.85"
+                  - generic [ref=f4e456]: "0.9"
+                  - generic [ref=f4e458]: "0.95"
+                  - generic [ref=f4e460]: "1"
+                  - generic [ref=f4e462]: "0"
+                  - generic [ref=f4e464]: "0.5"
+                  - generic [ref=f4e466]: "1"
+                  - generic [ref=f4e468]: 평균 질의 지연 시간 (ms)
+                  - generic [ref=f4e469] [cursor=pointer]: "1"
+                  - generic [ref=f4e471] [cursor=pointer]: "2"
+                  - generic [ref=f4e473] [cursor=pointer]: "3"
+                  - generic [ref=f4e475] [cursor=pointer]: "4"
+              - status [ref=f4e477]: 점이나 아래 목록의 설정을 눌러 값을 확인하세요
+              - list "점 목록" [ref=f4e478]:
+                - listitem [ref=f4e479]:
+                  - 'button "1 #1 (chunking_strategy=none, retriever_mode=bm25)" [ref=f4e480] [cursor=pointer]':
+                    - generic: "1"
+                    - text: "#1 (chunking_strategy=none, retriever_mode=bm25)"
+                  - generic [ref=f4e481]: 파레토 최적
+                - listitem [ref=f4e483]:
+                  - 'button "2 #2 (chunking_strategy=none, retriever_mode=hybrid_rrf)" [ref=f4e484] [cursor=pointer]':
+                    - generic: "2"
+                    - text: "#2 (chunking_strategy=none, retriever_mode=hybrid_rrf)"
+                - listitem [ref=f4e485]:
+                  - 'button "3 #3 (chunking_strategy=fixed_window, retriever_mode=bm25)" [ref=f4e486] [cursor=pointer]':
+                    - generic: "3"
+                    - text: "#3 (chunking_strategy=fixed_window, retriever_mode=bm25)"
+                - listitem [ref=f4e487]:
+                  - 'button "4 #4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf)" [ref=f4e488] [cursor=pointer]':
+                    - generic: "4"
+                    - text: "#4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf)"
+              - group [ref=f4e489]:
+                - generic "데이터 표로 보기" [ref=f4e490] [cursor=pointer]
+          - region [ref=f4e491]:
+            - generic [ref=f4e493]:
+              - heading "설정 차이" [level=3] [ref=f4e494]
+              - paragraph [ref=f4e495]: 설정마다 달라진 값만 강조합니다. 같은 값은 흐리게 보입니다.
+            - region "설정 차이 표 (가로로 스크롤)" [ref=f4e497]:
+              - table [ref=f4e498]:
+                - rowgroup [ref=f4e499]:
+                  - row [ref=f4e500]:
+                    - columnheader "설정" [ref=f4e501]
+                    - columnheader "chunk_overlap" [ref=f4e502]
+                    - columnheader "chunk_size" [ref=f4e503]
+                    - columnheader "chunking_strategy" [ref=f4e504]
+                    - columnheader "k" [ref=f4e505]
+                    - columnheader "preset_id" [ref=f4e506]
+                    - columnheader "retriever_mode" [ref=f4e507]
+                - rowgroup [ref=f4e508]:
+                  - row [ref=f4e509]:
+                    - rowheader "#1 (chunking_strategy=none, retriever_mode=bm25)" [ref=f4e510]
+                    - cell "16" [ref=f4e511]
+                    - cell "128" [ref=f4e512]
+                    - cell "none" [ref=f4e513]
+                    - cell "5" [ref=f4e514]
+                    - cell "ko_tech_docs_v1" [ref=f4e515]
+                    - cell "bm25" [ref=f4e516]
+                  - row [ref=f4e517]:
+                    - rowheader "#2 (chunking_strategy=none, retriever_mode=hybrid_rrf)" [ref=f4e518]
+                    - cell "16" [ref=f4e519]
+                    - cell "128" [ref=f4e520]
+                    - cell "none" [ref=f4e521]
+                    - cell "5" [ref=f4e522]
+                    - cell "ko_tech_docs_v1" [ref=f4e523]
+                    - cell "hybrid_rrf" [ref=f4e524]
+                  - row [ref=f4e525]:
+                    - rowheader "#3 (chunking_strategy=fixed_window, retriever_mode=bm25)" [ref=f4e526]
+                    - cell "16" [ref=f4e527]
+                    - cell "128" [ref=f4e528]
+                    - cell "fixed_window" [ref=f4e529]
+                    - cell "5" [ref=f4e530]
+                    - cell "ko_tech_docs_v1" [ref=f4e531]
+                    - cell "bm25" [ref=f4e532]
+                  - row [ref=f4e533]:
+                    - rowheader "#4 (chunking_strategy=fixed_window, retriever_mode=hybrid_rrf)" [ref=f4e534]
+                    - cell "16" [ref=f4e535]
+                    - cell "128" [ref=f4e536]
+                    - cell "fixed_window" [ref=f4e537]
+                    - cell "5" [ref=f4e538]
+                    - cell "ko_tech_docs_v1" [ref=f4e539]
+                    - cell "hybrid_rrf" [ref=f4e540]
+          - region [ref=f4e541]:
+            - generic [ref=f4e543]:
+              - heading "실패·취소한 실행" [level=3] [ref=f4e544]
+              - paragraph [ref=f4e545]: 결과에서 숨기지 않습니다. 실패 원인도 연구 자산입니다.
+            - paragraph [ref=f4e546]: 실패하거나 취소된 실행이 없습니다.
+          - region [ref=f4e547]:
+            - generic [ref=f4e549]:
+              - heading "최선 결과 채택" [level=3] [ref=f4e550]
+              - paragraph [ref=f4e551]: ‘최고’는 목표·지표·제약에 따라 달라집니다. 무엇에 대해 최적인지 적어야 기록할 수 있습니다.
+            - generic [ref=f4e552]:
+              - generic [ref=f4e553]:
+                - generic [ref=f4e554]:
+                  - generic [ref=f4e555]: 대상 설정
+                  - generic [ref=f4e556]:
+                    - 'combobox "대상 설정 #1 (chunking_strategy=none, retriever_mode=bm25)" [ref=f4e557] [cursor=pointer]':
+                      - generic [ref=f4e558]: "#1 (chunking_strategy=none, retriever_mode=bm25)"
+                    - text: ✓
+                - generic [ref=f4e559]:
+                  - generic [ref=f4e560]: 대표 실행
+                  - generic [ref=f4e561]:
+                    - combobox "대표 실행 반복 1 · 따까리 실측" [ref=f4e562] [cursor=pointer]:
+                      - generic [ref=f4e563]: 반복 1 · 따까리 실측
+                    - text: ✓
+              - group "무엇에 대해 최적인가 (필수)" [ref=f4e564]:
+                - generic [ref=f4e566]:
+                  - generic [ref=f4e567]: 목표
+                  - textbox "목표" [ref=f4e568]:
+                    - /placeholder: "예: 8GB 메모리에서 대화형 응답 속도"
+                    - text: 격리 CPU 조합과 실제 잘못된 코퍼스 실패를 화면에서 설명하고 복원
+                - generic [ref=f4e569]:
+                  - generic [ref=f4e570]: 기준 지표
+                  - generic [ref=f4e571]:
+                    - combobox "기준 지표 재현율 (Recall@5)" [ref=f4e572] [cursor=pointer]:
+                      - generic [ref=f4e573]: 재현율 (Recall@5)
+                    - text: ✓
+                  - paragraph [ref=f4e574]:
+                    - text: "#1 (chunking_strategy=none, retriever_mode=bm25)의 재현율 (Recall@5):"
+                    - strong [ref=f4e575]: 0.917 ratio
+                    - text: · 높을수록 좋음
+                - generic [ref=f4e576]:
+                  - generic [ref=f4e577]: 제약·조건
+                  - textbox "제약·조건" [ref=f4e578]:
+                    - /placeholder: "예: 메모리 6GB 이하, 한국어 정확도 하락 1% 이내, 이 장비에서만"
+                  - paragraph [ref=f4e579]: 다른 지표·환경에서는 이 결과가 최선이 아닐 수 있습니다. 조건을 남겨 두세요.
+              - group "결정" [ref=f4e580]:
+                - generic [ref=f4e582]:
+                  - generic [ref=f4e583] [cursor=pointer]:
+                    - radio "채택" [checked] [ref=f4e584]
+                    - text: 채택
+                  - generic [ref=f4e585] [cursor=pointer]:
+                    - radio "기각 (이유를 남김)" [ref=f4e586]
+                    - text: 기각 (이유를 남김)
+              - generic [ref=f4e587]:
+                - generic [ref=f4e588]: 판단 근거
+                - textbox "판단 근거" [ref=f4e589]:
+                  - /placeholder: 무엇을 보고 그렇게 판단했는지, 남은 불확실성은 무엇인지
+              - generic [ref=f4e590] [cursor=pointer]:
+                - checkbox "이 결과를 근거로 방법을 카탈로그에서 승격" [ref=f4e591]
+                - text: 이 결과를 근거로 방법을 카탈로그에서 승격
+              - paragraph [ref=f4e592]: 「#1 (chunking_strategy=none, retriever_mode=bm25)」 — 격리 CPU 조합과 실제 잘못된 코퍼스 실패를 화면에서 설명하고 복원에 대해, 재현율 (Recall@5) 기준 최선으로 채택
+              - button "이 설정 채택" [disabled] [ref=f4e594]
+          - generic [ref=f4e596]:
+            - button "분석 스냅샷 갱신" [ref=f4e597] [cursor=pointer]
+            - button "실행 모니터로" [ref=f4e599] [cursor=pointer]
+```

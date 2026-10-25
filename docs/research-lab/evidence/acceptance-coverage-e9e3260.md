@@ -50,3 +50,5 @@ RESEARCH_COMBINATION_RECEIPT=<현재 Run outbox>/research-combination-cpu.json P
 남은 공통 경로: 기존 controller 예약 `d3711123-da36-43c2-b730-06c23472e036`의 활성 revision 확인 → frontend main/Vercel → 새 runtime 실제 A Metal/RuntimeLease/raw → 운영 MCP 및 위 UI 잔여 → R1~R16/PMS 최종 대조. 이번 1회 배포 조회는 testing/error=null이며 로그는 27%까지다. 진행률은 완료율이 아니다. 같은 예약을 중복 생성하거나 대기 폴링하지 않는다.
 
 PMS 7.1~7.5의 source 재수집, 선택 반례, 장기 owner crash/drain, 500개 초과 탐색, 확대 데이터 acceptance는 관련 v2 기능이 있다는 이유로 완료 처리하지 않는다. 이 문서의 bounded 실행이 그 조건을 대체하지 않는다.
+
+후속 2026-10-26: 위 배포 testing 및 UX5/7 미확인 표시는 당시 상태다. d3711123은 release pytest의 test-method shadow 순서 의존으로 실패했고, 기존 main 교정을 통합한 누적 배포 2f8896ee가 testing이다. 격리 실제 조합 UI 새로고침 및 실제 KeyError/연구자 해석의 UI·DB·resume 저장복원은 [deployment-recovery-ui-237f135.md](deployment-recovery-ui-237f135.md)에서 보완했다. 운영 배포/Metal/MCP 미확인은 계속 유지한다.

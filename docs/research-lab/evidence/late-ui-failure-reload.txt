@@ -1,0 +1,115 @@
+### Page
+- Page URL: http://127.0.0.1:57342/research?view=analysis&study=424ca2a9-4141-4f7f-a739-386d8b7ce166&experiment=84af9db1-0650-4d88-bac4-f58aada5ffda
+- Page Title: Winterholic Ttakkari
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- main [ref=f3e6]:
+  - generic [ref=f3e7]:
+    - generic [ref=f3e10]:
+      - heading "AI Research Lab" [level=1] [ref=f3e11]
+      - paragraph [ref=f3e12]:
+        - generic [ref=f3e13]: 조합·실제 실패 UI 인수 2026-10-26
+    - generic [ref=f3e15]:
+      - generic [ref=f3e16]:
+        - generic [ref=f3e17]:
+          - generic [ref=f3e18]: 연구
+          - generic [ref=f3e19]:
+            - combobox "연구 조합·실제 실패 UI 인수 2026-10-26" [ref=f3e20] [cursor=pointer]:
+              - generic [ref=f3e21]: 조합·실제 실패 UI 인수 2026-10-26
+            - text: ✓
+        - radiogroup "범위" [ref=f3e22]:
+          - generic [ref=f3e23] [cursor=pointer]:
+            - radio "개인" [checked] [disabled] [ref=f3e24]
+            - text: 개인
+          - generic [ref=f3e25] [cursor=pointer]:
+            - radio "회사" [disabled] [ref=f3e26]
+            - text: 회사
+        - button "새 연구" [ref=f3e27] [cursor=pointer]
+      - tablist "연구소 화면" [ref=f3e29]:
+        - tab "대시보드" [ref=f3e30] [cursor=pointer]
+        - tab "방법론" [ref=f3e31] [cursor=pointer]
+        - tab "실험 설계" [ref=f3e32] [cursor=pointer]
+        - tab "실행 모니터" [ref=f3e33] [cursor=pointer]
+        - tab "결과 분석" [selected] [ref=f3e34] [cursor=pointer]
+        - tab "기록·결과물" [ref=f3e35] [cursor=pointer]
+      - tabpanel "결과 분석" [ref=f3e36]:
+        - generic [ref=f3e37]:
+          - generic [ref=f3e38]:
+            - generic [ref=f3e39]:
+              - generic [ref=f3e40]: 분석할 실험
+              - generic [ref=f3e41]:
+                - combobox "분석할 실험 누락된 text 필드의 실제 어댑터 실행 실패" [ref=f3e42] [cursor=pointer]:
+                  - generic [ref=f3e43]: 누락된 text 필드의 실제 어댑터 실행 실패
+                - text: ✓
+            - generic [ref=f3e44]:
+              - generic [ref=f3e45]: Baseline (기준 설정)
+              - generic [ref=f3e46]:
+                - combobox "Baseline (기준 설정) Baseline" [ref=f3e47] [cursor=pointer]:
+                  - generic [ref=f3e48]: Baseline
+                - text: ✓
+          - generic [ref=f3e49]:
+            - heading "누락된 text 필드의 실제 어댑터 실행 실패" [level=2] [ref=f3e50]
+            - paragraph [ref=f3e51]: 검색 평가 · 단일 실행 · 주요 지표 recall_at_5 · 설정 1개 · 실행 1개
+            - generic [ref=f3e52]: 따까리 실측
+          - region [ref=f3e55]:
+            - heading "비교 전에 확인하세요" [level=3] [ref=f3e58]
+            - list [ref=f3e59]:
+              - listitem [ref=f3e60]:
+                - generic [aria-hidden] [ref=f3e61]: "!"
+                - generic [ref=f3e62]: 성공한 실행이 없어 비교할 측정값이 없습니다.
+              - listitem [ref=f3e63]:
+                - generic [aria-hidden] [ref=f3e64]: ✕
+                - generic [ref=f3e65]: 실패·취소된 실행이 1건 있습니다. 아래 목록에 그대로 남겨 두었고 평균에는 넣지 않았습니다.
+              - listitem [ref=f3e66]:
+                - generic [aria-hidden] [ref=f3e67]: i
+                - generic [ref=f3e68]: 데이터셋 버전이 기록되지 않았습니다. 다른 입력으로 한 실험과 비교하려면 먼저 입력 동일성을 확인하세요.
+          - note [ref=f3e69]:
+            - generic [ref=f3e72]:
+              - strong [ref=f3e73]: 자동 수치 요약
+              - generic [ref=f3e74]:
+                - paragraph [ref=f3e75]: 측정 데이터가 충분하지 않습니다.
+                - paragraph [ref=f3e76]: 규칙으로 만든 수치 요약입니다. 원인을 해석한 것이 아니며, 입력·환경이 같은 비교일 때만 의미가 있습니다.
+          - region [ref=f3e77]:
+            - generic [ref=f3e78]:
+              - generic [ref=f3e79]:
+                - heading "연구자 해석 (성공/실패 노트)" [level=3] [ref=f3e80]
+                - paragraph [ref=f3e81]: 수치 요약과 구분된 연구자의 주관적 해석과 다음 가설 노트입니다. 인과가 확정된 사실이 아니며 미검증(unverified)으로 보존됩니다.
+              - button "해석 추가" [ref=f3e83] [cursor=pointer]
+            - list [ref=f3e85]:
+              - listitem [ref=f3e86]:
+                - generic [ref=f3e87]:
+                  - generic [ref=f3e88]: 실패 원인 해석
+                  - generic [ref=f3e90]: 연구자 해석 (미검증)
+                  - generic [ref=f3e92]: 실행 8ff847bb
+                  - generic [ref=f3e93]: 설정 Baseline
+                - strong [ref=f3e94]: "실제 KeyError: 입력 코퍼스의 text 누락"
+                - paragraph [ref=f3e95]: "격리 CPU retrieval_eval에 text 필드가 없는 문서를 넣어 실행했다. 실제 runner가 KeyError: 'text'를 저장했고 측정은 생성되지 않았다. 다음에는 문서의 text를 채워 같은 조건을 재실행한다. 입력 형식 실패에 대한 연구자 해석이며 검색 알고리즘의 품질 실패나 자동 인과 판정이 아니다."
+                - generic [ref=f3e96]: 10. 26. 오전 02:12 기록
+          - note [ref=f3e97]:
+            - generic [ref=f3e100]:
+              - strong [ref=f3e101]: 비교할 측정값이 없습니다
+              - generic [ref=f3e102]: 성공한 실행의 측정이 없어 차트를 그리지 않았습니다. 실패·취소한 실행은 아래에 있습니다.
+          - region [ref=f3e103]:
+            - generic [ref=f3e105]:
+              - heading "실패·취소한 실행" [level=3] [ref=f3e106]
+              - paragraph [ref=f3e107]: 결과에서 숨기지 않습니다. 실패 원인도 연구 자산입니다.
+            - list [ref=f3e108]:
+              - listitem [ref=f3e109]:
+                - generic [ref=f3e110]: 실패
+                - strong [ref=f3e112]: Baseline
+                - generic [ref=f3e113]: 반복 1
+                - paragraph [ref=f3e114]: "KeyError: 'text'"
+                - generic [ref=f3e115]:
+                  - button "실행 상세" [ref=f3e116] [cursor=pointer]
+                  - button "이 실행 설정으로 후속 실험" [ref=f3e118] [cursor=pointer]
+                  - button "실패 원인 해석 남기기" [ref=f3e120] [cursor=pointer]
+          - region [ref=f3e122]:
+            - generic [ref=f3e124]:
+              - heading "최선 결과 채택" [level=3] [ref=f3e125]
+              - paragraph [ref=f3e126]: ‘최고’는 목표·지표·제약에 따라 달라집니다. 무엇에 대해 최적인지 적어야 기록할 수 있습니다.
+            - paragraph [ref=f3e127]: 측정값이 있어야 채택할 수 있습니다.
+          - generic [ref=f3e128]:
+            - button "분석 스냅샷 갱신" [ref=f3e129] [cursor=pointer]
+            - button "실행 모니터로" [ref=f3e131] [cursor=pointer]
+```

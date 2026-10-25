@@ -21,6 +21,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.common.chunking import chunk_structured_document
 from ttakkari.config import get_settings
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.models import utcnow
@@ -278,15 +279,23 @@ def split_paragraphs(text: str) -> list[tuple[str | None, str, int, int]]:
 
 
 async def segment_revision(db: AsyncSession, revision_id: uuid.UUID) -> list[KbPassage]:
-    """리비전 본문을 패시지로 나눠 저장한다. 재실행해도 같은 행이 남는다(멱등)."""
+    """리비전 본문을 구조 보존 청킹(common.chunking)으로 패시지로 나눠 저장한다. 재실행해도 같은 행이 남는다(멱등).
+
+    section_path·chunk_kind·heading 을 채워 추출기(L0 헤딩 계층)와 검색이 문서 구조를 쓸 수 있게 한다.
+    """
     rev = await db.get(KbRevision, revision_id)
     if rev is None:
         raise KeyError(f"kb revision not found: {revision_id}")
     now = utcnow()
-    for ordinal, (_heading, body, start, end) in enumerate(split_paragraphs(rev.body)):
+    for chunk in chunk_structured_document(rev.body, min_chars=0):
         stmt = insert(KbPassage).values(
-            id=uuid.uuid4(), revision_id=revision_id, ord=ordinal, heading=None, body=body,
-            char_start=start, char_end=end, sha256=sha256_hex(body.encode("utf-8")), created_at=now,
+            id=uuid.uuid4(), revision_id=revision_id, ord=chunk.ord,
+            heading=(chunk.section_path[-1] if chunk.section_path else None), body=chunk.body,
+            char_start=chunk.char_start, char_end=chunk.char_end, sha256=chunk.sha256,
+            section_path=list(chunk.section_path), chunk_kind=chunk.chunk_kind,
+            page_no=chunk.page_no, slide_no=chunk.slide_no,
+            time_start_ms=chunk.time_start_ms, time_end_ms=chunk.time_end_ms,
+            token_estimate=chunk.token_estimate, search_text=chunk.search_text, created_at=now,
         )
         stmt = stmt.on_conflict_do_nothing(constraint="uq_kb_passage_ord")
         await db.execute(stmt)

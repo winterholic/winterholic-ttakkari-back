@@ -12,10 +12,12 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # 6단계 파이프라인 단계 식별자
@@ -34,6 +36,20 @@ PIPELINE_STAGES: tuple[str, ...] = (
     STAGE_INDEXING,
     STAGE_CANONICALIZING,
 )
+
+# 단계 의존성. 요건 단계가 succeeded 또는 degraded(부분 결과 있음)일 때만 실행한다.
+# indexing 은 linking 결과와 무관하게 chunking 만 있으면 진행한다(추출/연결 실패가 검색 색인을 막지 않는다).
+STAGE_REQUIRES: dict[str, tuple[str, ...]] = {
+    STAGE_PARSING: (),
+    STAGE_CHUNKING: (STAGE_PARSING,),
+    STAGE_EXTRACTING: (STAGE_CHUNKING,),
+    STAGE_LINKING: (STAGE_EXTRACTING,),
+    STAGE_INDEXING: (STAGE_CHUNKING,),
+    STAGE_CANONICALIZING: (STAGE_LINKING, STAGE_INDEXING),
+}
+
+# 실패하면 문서 자체를 쓸 수 없는 핵심 단계. 나머지는 지식 보강 단계라 실패해도 검색은 가능하다.
+CORE_STAGES: tuple[str, ...] = (STAGE_PARSING, STAGE_CHUNKING, STAGE_INDEXING)
 
 # 잡 전체 상태
 JOB_STATUS_REGISTERED = "registered"
@@ -105,6 +121,33 @@ class StageContext:
     visibility: str = "work_only"
     session_factory: Callable[[], AsyncSession] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+
+    @asynccontextmanager
+    async def fenced_session(self) -> AsyncIterator[AsyncSession]:
+        """처리기의 DB 쓰기용 세션. 같은 트랜잭션 안에서 잡 행을 잠그고 attempt_token 을 확인한 뒤 커밋한다.
+
+        잡 행의 FOR UPDATE 잠금이 커밋까지 유지되므로 그 사이에 토큰을 바꾸는 재임차/재시도는 기다린다.
+        토큰이 이미 바뀌었으면 StaleWriterError 로 아무것도 쓰지 않는다. 오래 걸리는 계산(모델 호출 등)은
+        세션을 열기 전에 끝내야 한다.
+        """
+        if self.session_factory is None:
+            raise StaleWriterError("session_factory_missing")
+        from ttakkari.kb_pipeline_models import KbPipelineJob
+
+        async with self.session_factory() as db:
+            job = await db.scalar(
+                select(KbPipelineJob)
+                .where(KbPipelineJob.id == self.job_id)
+                .with_for_update()
+            )
+            if job is None:
+                raise StaleWriterError(f"job_not_found: {self.job_id}")
+            if job.attempt_token != self.attempt_token:
+                raise StaleWriterError(
+                    f"stale_writer_fenced: token mismatch for job {self.job_id}"
+                )
+            yield db
+            await db.commit()
 
 
 @dataclass

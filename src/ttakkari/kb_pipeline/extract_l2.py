@@ -210,8 +210,8 @@ async def extract_l2_from_passages(
     llm_caller: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
     max_calls: int = 8,
     daily_budget_remaining: int | None = None,
-    origin_scope: str = "personal",
-    visibility: str = "global",
+    origin_scope: str = "work",
+    visibility: str = "work_only",
 ) -> L2ExtractionResult:
     """Run L2 extraction on selected passages with budget and degradation controls."""
     result = L2ExtractionResult()
@@ -225,15 +225,12 @@ async def extract_l2_from_passages(
         result.degradation_reason = "daily_budget_exhausted"
         return result
 
-    # Caller selection: if caller is not injected, verify environment availability
+    # 호출자는 어댑터(l2_adapters)가 주입한다. 없으면 L2 는 꺼진 것이다(접수용 Qwen 으로 몰래 우회하지 않는다).
     active_caller = llm_caller
     if active_caller is None:
-        ready, reason = check_qwen_availability()
-        if not ready:
-            result.degraded = True
-            result.degradation_reason = reason
-            return result
-        active_caller = default_qwen_llm_call
+        result.degraded = True
+        result.degradation_reason = "l2_disabled"
+        return result
 
     # Limit passages according to budgets
     call_budget = min(max_calls, len(passages))
@@ -253,9 +250,10 @@ async def extract_l2_from_passages(
             f"[패시지 본문]:\n{body}"
         )
 
+        # 실패한 호출도 예산을 쓴 것으로 센다(서버가 이미 일을 했을 수 있다).
+        result.calls_made += 1
         try:
             raw_res = await active_caller(prompt, L2_SCHEMA)
-            result.calls_made += 1
         except Exception as exc:  # noqa: BLE001
             log.warning("L2 extraction call failed on passage %s: %s", p.id, exc)
             result.degraded = True

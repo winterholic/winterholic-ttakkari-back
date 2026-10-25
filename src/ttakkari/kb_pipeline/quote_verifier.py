@@ -3,8 +3,8 @@
 All extracted assertions, mentions, and relations must satisfy the strict
 deterministic invariant:
     passage.body[span_start:span_end] == quote
-Any quote that cannot be strictly found in the target passage body is rejected
-immediately with 100% certainty (hallucination prevention).
+Any quote that is not exactly at the stated offsets (or, for offset-less candidates,
+not exactly once in the passage body) is rejected (hallucination prevention).
 """
 
 from __future__ import annotations
@@ -105,6 +105,8 @@ class VerificationReport:
     rejected_relations: list[CandidateRelation] = field(default_factory=list)
     verified_evidences: list[CandidateEvidence] = field(default_factory=list)
     hallucinated_quotes: list[str] = field(default_factory=list)
+    verified_mentions: list[CandidateMention] = field(default_factory=list)
+    rejected_mentions: list[CandidateMention] = field(default_factory=list)
 
     @property
     def total_verified(self) -> int:
@@ -121,46 +123,40 @@ def verify_quote_against_body(
     span_start: int | None = None,
     span_end: int | None = None,
 ) -> tuple[bool, int, int, str]:
-    """Verify that quote is exactly present in body at [start:end].
+    """quote 가 body 에 정확히 있는지 확인한다. 반환: (통과, 시작, 끝, sha256).
 
-    Returns (is_valid, exact_start, exact_end, sha256).
+    - 오프셋이 주어지면 body[start:end] == quote 가 정확히 일치할 때만 통과한다. 어긋난 오프셋을
+      본문 재검색으로 구제하지 않고, 중복 인용을 첫 위치로 옮기지도 않는다.
+    - 오프셋이 없는 후보(L2 LLM 은 위치를 말하지 못한다)는 인용이 본문에 정확히 한 번만 나타날 때만
+      그 위치로 확정한다. 0번 또는 2번 이상 나오면 모호하므로 거부한다.
+    - 인용 문자열은 가공(공백·따옴표 제거)하지 않는다.
     """
     if not quote or not body:
         return False, -1, -1, ""
 
-    # 1. Exact match at given offsets
-    if (
-        span_start is not None
-        and span_end is not None
-        and 0 <= span_start < span_end <= len(body)
-        and body[span_start:span_end] == quote
-    ):
-        sha = hashlib.sha256(quote.encode("utf-8")).hexdigest()
-        return True, span_start, span_end, sha
+    sha = hashlib.sha256(quote.encode("utf-8")).hexdigest()
+    offsets_absent = span_start in (None, -1) and span_end in (None, -1)
+    if not offsets_absent:
+        if (
+            span_start is not None
+            and span_end is not None
+            and 0 <= span_start < span_end <= len(body)
+            and body[span_start:span_end] == quote
+        ):
+            return True, span_start, span_end, sha
+        return False, -1, -1, ""
 
-    # 2. Search for exact occurrence in body
-    pos = body.find(quote)
-    if pos != -1:
-        end_pos = pos + len(quote)
-        sha = hashlib.sha256(quote.encode("utf-8")).hexdigest()
-        return True, pos, end_pos, sha
-
-    # 3. Strip leading/trailing surrounding quotes or whitespace if LLM wrapped it
-    stripped = quote.strip(" \t\n\r\"'`")
-    if stripped and stripped != quote:
-        pos = body.find(stripped)
-        if pos != -1:
-            end_pos = pos + len(stripped)
-            sha = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
-            return True, pos, end_pos, sha
-
-    return False, -1, -1, ""
+    first = body.find(quote)
+    if first == -1 or body.find(quote, first + 1) != -1:
+        return False, -1, -1, ""
+    return True, first, first + len(quote), sha
 
 
 def verify_extraction_candidates(
     passages: list[KbPassage] | dict[uuid.UUID, KbPassage],
     assertions: list[CandidateAssertion],
     relations: list[CandidateRelation],
+    mentions: list[CandidateMention] | None = None,
 ) -> VerificationReport:
     """Verify all candidate assertions and relations against the passage text.
 
@@ -195,8 +191,6 @@ def verify_extraction_candidates(
             report.hallucinated_quotes.append(a.evidence_quote)
             continue
 
-        # Invariant check
-        assert passage.body[start:end] == (a.evidence_quote if passage.body[start:end] == a.evidence_quote else passage.body[start:end])
         actual_quote = passage.body[start:end]
         actual_sha = hashlib.sha256(actual_quote.encode("utf-8")).hexdigest()
 
@@ -258,5 +252,34 @@ def verify_extraction_candidates(
         if ev_key not in seen_evidence_keys:
             seen_evidence_keys.add(ev_key)
             report.verified_evidences.append(ev)
+
+    # 3. Verify mentions (entity occurrence anchors). A mention without a verified anchor is dropped.
+    for m in mentions or []:
+        passage = passage_map.get(m.passage_id)
+        if passage is None:
+            report.rejected_mentions.append(m)
+            continue
+        valid, start, end, _sha = verify_quote_against_body(
+            passage.body, m.evidence_quote, m.span_start, m.span_end
+        )
+        if not valid:
+            report.rejected_mentions.append(m)
+            continue
+        actual_quote = passage.body[start:end]
+        m.span_start = start
+        m.span_end = end
+        m.evidence_quote = actual_quote
+        m.evidence = CandidateEvidence(
+            passage_id=m.passage_id,
+            span_start=start,
+            span_end=end,
+            quote=actual_quote,
+            sha256=hashlib.sha256(actual_quote.encode("utf-8")).hexdigest(),
+        )
+        report.verified_mentions.append(m)
+        ev_key = (m.passage_id, start, end)
+        if ev_key not in seen_evidence_keys:
+            seen_evidence_keys.add(ev_key)
+            report.verified_evidences.append(m.evidence)
 
     return report

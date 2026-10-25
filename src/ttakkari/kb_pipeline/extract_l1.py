@@ -229,5 +229,6 @@ def extract_l1_screen(
         scored_passages=scored,
         mentions=mentions,
         budget_exhausted=False,
-        budget_remaining=daily_budget_remaining - len(selected) if daily_budget_remaining is not None else None,
+        # L1 은 모델을 부르지 않으므로(비용 0) 일일 예산을 차감하지 않는다. 실제 호출을 하는 L2 가 차감한다.
+        budget_remaining=daily_budget_remaining,
     )

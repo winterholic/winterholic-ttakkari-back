@@ -49,7 +49,19 @@ async def test_failed_dense_query_is_reported_not_silently_relabelled(client, au
     assert r.status_code == 503
 
 
-async def test_oversize_passage_does_not_starve_following_documents(client, auth):
+async def test_oversize_passage_does_not_starve_following_documents(client, auth, monkeypatch):
+    # 구조 청커는 긴 구간을 나누므로 한 덩어리 패시지를 직접 만들어 임베딩 상한 격리만 시험한다.
+    import hashlib
+
+    from ttakkari import kb_store
+    from ttakkari.common.chunking import StructuredChunk
+
+    def one_chunk(body, *args, **kwargs):
+        text = body.strip()
+        return [StructuredChunk(ord=0, char_start=body.index(text), char_end=body.index(text) + len(text), body=text,
+                                sha256=hashlib.sha256(text.encode()).hexdigest())]
+
+    monkeypatch.setattr(kb_store, "chunk_structured_document", one_chunk)
     await register(client, auth, "x" * 50001)
     await register(client, auth, "searchable ordinary passage")
     from ttakkari import kb_retrieval

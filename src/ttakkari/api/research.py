@@ -391,11 +391,13 @@ async def select_methods(study_id: uuid.UUID, body: SelectionIn, _: User, db: Db
             )
         )
     nodes = (await db.scalars(q.order_by(Node.created_at.desc()).limit(200))).all()
+    contexts = await svc.selection_context(db, nodes, study.scope)
     methods = [
         {
             **svc.out(n),
             "cost_seconds": n.details.get("cost_seconds"),
             "evidence_count": int(n.evidence_id is not None),
+            "research_context": contexts[str(n.id)],
         }
         for n in nodes
     ]

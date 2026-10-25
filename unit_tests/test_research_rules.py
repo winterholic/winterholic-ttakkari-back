@@ -79,3 +79,49 @@ def test_novel_method_and_unknown_cost_are_visible_without_automatic_preference(
 )
 def test_numeric_resource_constraints(conditions):
     assert applicability(conditions, {"ram_gb": 64})["status"] == "incompatible"
+
+
+@pytest.mark.parametrize(
+    ("dataset", "expected"), [("A", "needs_review"), ("B", "candidate"), (None, "needs_review")]
+)
+def test_conflicting_report_requires_review_only_in_relevant_or_unknown_conditions(dataset, expected):
+    methods = [{
+        "id": "familiar", "title": "A familiar method", "conditions": {"backend": "metal"},
+        "cost_seconds": 1, "evidence_count": 100,
+        "research_context": {"truncated": False, "relations": [{
+            "id": "conflict", "predicate": "challenges_under_conditions", "conditions": {"dataset": "A"},
+            "other_node": {"id": "claim", "kind": "claim", "epistemic_status": "source_reported"},
+        }]},
+    }, {"id": "novel", "title": "Z new hypothesis", "conditions": {"backend": "metal"},
+        "cost_seconds": 1, "evidence_count": 0}]
+    environment = {"backend": "metal", **({"dataset": dataset} if dataset else {})}
+    ranked = rank_methods(methods, environment, 60)
+    familiar = next(m for m in ranked if m["id"] == "familiar")
+    assert familiar["eligibility"] == expected
+    assert familiar["reason"]["research_context"]["relations"][0]["applicability"]["status"] == (
+        "unknown" if dataset is None else "applicable" if dataset == "A" else "incompatible"
+    )
+    assert familiar["reason"]["expected_effect"] == "unknown_until_measured"
+    assert familiar["reason"]["information_value"] == "unassessed"
+    if expected == "needs_review":
+        assert ranked[0]["id"] == "novel"  # Links never override a relevant unresolved conflict.
+
+
+def test_past_failure_and_combination_hypothesis_remain_visible_without_excluding_method():
+    relations = [{"id": "past-failure", "predicate": "failed_under_conditions", "conditions": {"backend": "cuda"}},
+                 {"id": "combination", "predicate": "combination_hypothesis", "conditions": {"backend": "metal"}}]
+    result = rank_methods([{"id": "m", "title": "method", "conditions": {"backend": "metal"},
+                            "cost_seconds": 2, "research_context": {"relations": relations, "truncated": False}}],
+                          {"backend": "metal"}, 10)[0]
+    assert result["eligibility"] == "candidate"
+    context = result["reason"]["research_context"]
+    assert [r["id"] for r in context["relations"]] == ["past-failure", "combination"]
+    assert context["relations"][0]["applicability"]["status"] == "incompatible"
+    assert result["reason"]["information_value"] == "unassessed"
+
+
+def test_truncated_context_requires_review_and_preserves_hard_exclusion():
+    methods = [{"id": "m", "title": "method", "conditions": {"backend": "metal"},
+                "cost_seconds": 2, "research_context": {"relations": [], "truncated": True}}]
+    assert rank_methods(methods, {"backend": "metal"}, 10)[0]["eligibility"] == "needs_review"
+    assert rank_methods(methods, {"backend": "cuda"}, 10)[0]["eligibility"] == "excluded"

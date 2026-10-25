@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import aliased
 
 from ttakkari import kb_store
 from ttakkari.kb_models import KbEvidence as KnowledgeEvidence
@@ -100,6 +101,45 @@ async def get_study(
 
 def event(db, study_id, kind, actor, **payload):
     db.add(Event(study_id=study_id, kind=kind, actor=actor, payload=payload))
+
+
+async def selection_context(db, nodes: list[Node], scope: str, limit: int = 200) -> dict:
+    """Read bounded same-scope relations; retain reports without treating them as truth."""
+    ids = [n.id for n in nodes]
+    context = {str(ident): {"relations": [], "truncated": False} for ident in ids}
+    if not ids:
+        return context
+    source, target = aliased(Node), aliased(Node)
+    rows = (await db.execute(
+        select(Relation, source, target)
+        .join(Study, Study.id == Relation.study_id)
+        .join(source, source.id == Relation.from_id)
+        .join(target, target.id == Relation.to_id)
+        .where(
+            Study.scope == scope,
+            source.study_id == Study.id,
+            target.study_id == Study.id,
+            or_(Relation.from_id.in_(ids), Relation.to_id.in_(ids)),
+        )
+        .order_by(Relation.created_at.desc(), Relation.id)
+        .limit(limit + 1)
+    )).all()
+    truncated = len(rows) > limit
+    for item in context.values():
+        item["truncated"] = truncated
+    for relation, from_node, to_node in rows[:limit]:
+        for node, other in [(from_node, to_node), (to_node, from_node)]:
+            if str(node.id) not in context:
+                continue
+            context[str(node.id)]["relations"].append({
+                **out(relation),
+                "other_node": {
+                    "id": str(other.id), "kind": other.kind, "title": other.title,
+                    "conditions": other.conditions, "epistemic_status": other.epistemic_status,
+                    "evidence_id": str(other.evidence_id) if other.evidence_id else None,
+                },
+            })
+    return context
 
 
 async def get_node(db, study, ident):

@@ -74,6 +74,18 @@ def rank_methods(
     out = []
     for method in methods:
         fit = applicability(method.get("conditions", {}), environment)
+        stored_context = method.get("research_context", {})
+        relations = [
+            {**relation, "applicability": applicability(relation.get("conditions", {}), environment)}
+            for relation in stored_context.get("relations", [])
+        ]
+        context = {"relations": relations, "truncated": bool(stored_context.get("truncated"))}
+        # A challenge is an unresolved report, not proof that a method cannot work.
+        unresolved = context["truncated"] or any(
+            r.get("predicate") in {"challenges_under_conditions", "contradicts", "conflicts_with"}
+            and r["applicability"]["status"] != "incompatible"
+            for r in relations
+        )
         cost = method.get("cost_seconds")
         valid_cost = (
             isinstance(cost, (int, float))
@@ -86,14 +98,14 @@ def rank_methods(
             if fit["status"] == "incompatible" or (valid_cost and cost > budget_seconds)
             else (
                 "candidate"
-                if fit["status"] == "applicable" and valid_cost
+                if fit["status"] == "applicable" and valid_cost and not unresolved
                 else "needs_review"
             )
         )
         # Missing evidence is an uncertainty to investigate, not a novelty reward.
         out.append(
             {
-                **method,
+                **{key: value for key, value in method.items() if key != "research_context"},
                 "applicability": fit,
                 "eligibility": eligibility,
                 "reason": {
@@ -102,6 +114,9 @@ def rank_methods(
                     "within_budget": valid_cost and cost <= budget_seconds,
                     "evidence_links": method.get("evidence_count", 0),
                     "expected_effect": "unknown_until_measured",
+                    "information_value": "unassessed",
+                    "evidence_quality": "unassessed",
+                    "research_context": context,
                 },
                 "priority": (
                     0

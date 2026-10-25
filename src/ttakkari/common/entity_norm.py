@@ -110,7 +110,7 @@ def extract_explicit_definitions(text: str) -> list[dict[str, Any]]:
     # 1. Korean explicit definition pattern:
     # e.g., "디플로이먼트(Deployment)는 파드와 레플리카셋에 대한 선언적 업데이트를 제공하는 쿠버네티스 워크로드 리소스이다."
     ko_def_pattern = re.compile(
-        r"(?m)^(?:\s*[-*]\s*)?([A-Za-z0-9가-힣_\-\s()]{2,50})\s*(?:은|는|이란|란)\s+([^.\n]+?이다\.)"
+        r"(?m)^(?:\s*[-*]\s*)?([A-Za-z0-9가-힣_\-\s()]{2,50}?)\s*(?:은|는|이란|란)\s+([^.\n]+?이다\.)"
     )
     for m in ko_def_pattern.finditer(text):
         term_raw = m.group(1).strip()

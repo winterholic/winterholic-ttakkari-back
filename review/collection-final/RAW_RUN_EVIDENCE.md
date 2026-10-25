@@ -14,6 +14,7 @@
   - `review/collection-final/failed_45_stdout.txt` (`b9e24b58ed40044ee2c54e5b8e853b6e36166ecd596c7a29a648347778410c5e`): 45개 실패 항목 선택 회귀 실제 stdout
   - `review/collection-final/chain3_stdout.txt` (`88d66d08ce77ae6ce66a974f9487069b9b82512d34b7be2300db988af9a8f83d`): 마이그레이션 chain3 실제 stdout
   - `review/collection-final/muse3_stdout.txt` (`a4ed0a1f7e89919faed86525776669366f00041b057ef0bb6e6c4d68d227ba55`): Muse 3 계약 테스트 실제 stdout
+  - `review/collection-final/race_stdout.txt` (`028d93972b62812fd7f6ee7254bc7b6a0bf1bb81ec23ae0b7a0c28234ba2f6f8`): 실 production consume_pending_once ↔ unhold 경합 실제 stdout
   - `review/collection-final/full_run_raw.txt` (`eba2020771df3d7b1b197bd25d15aecadcb15d7a055513c3f24701c559487657`): 1차 5,236개 전체 회귀 원시 출력 (5 failed)
   - `review/collection-final/full_run_final.txt` (`c7944674dbeb5601a6bf636b0a552d4e2296f472913fed27fbf1dba72ed46819`): 최종 1회 전체 회귀 원시 출력 (5213 passed, 0 failed, ALL GREEN)
 - **실행 명령 및 환경**:
@@ -130,30 +131,35 @@
 
 ## 6. unhold ↔ precise apply 실 2개 DB 세션 동시 경합 및 KB Delivery/Search 실증
 - **검증 한계 정정**:
-  - `unit_tests/test_collection_mission_triage_unhold.py::test_concurrent_unhold_and_precise_apply_preserves_envelope_hash_and_single_outbox`는 `MagicMock` DB 및 공유 리스트를 이용한 **mock 순차 단위 검사**였으며, 실제 2개 DB 세션의 동시 실행이나 KB imported receipt/search 검증을 포함하지 못했음(증거 초과 정정).
-- **실제 2 DB 세션 경합 테스트 추가 및 실증**:
+  - `unit_tests/test_collection_mission_triage_unhold.py`는 Mock DB 기반 단위 검사였고, 이전 통합 테스트 초안은 session 2에서 production `consume_pending_once`를 부르지 않고 잠금/outbox 로직을 테스트 본문에서 복제했던 한계가 있었음(지적 사항 정정 반영).
+- **실제 production `consume_pending_once` 기반 2 DB 세션 경합 실증**:
   - **테스트 경로**: [`tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_missions.py)
   - **검증 시나리오**:
-    1. 동일 item에 대해 Session 1(`missions.unhold_item`)과 Session 2(`precise_eval.apply_precise_result` 및 멱등 outbox 생성)를 `asyncio.gather`로 실제 2개 PostgreSQL 트랜잭션 동시 경합 실행.
-    2. row lock (`.with_for_update(of=CollectorItem)`)을 통한 직렬화 및 `CollectorOutbox` 중복 없는 단 1건 생성 확인.
-    3. 원본 `envelope`, `rights`, `payload_hash`, `raw_sha256`, `text_sha256`, `retention` 불변 보존 확인.
-    4. `kb_delivery.deliver_once()` 실행 후 `receipt.outcome == "imported"` 확인 (추가 배달 시 0건으로 중복 배달 없음 확인).
-    5. `/api/assistant/kb/search?q=직렬화`를 통한 단일 문서 검색 및 색인 정상 확인.
+    1. 동일 item에 대해 Session 2가 실제 production `consume_pending_once(limit=1, evaluator=fake_evaluator)`를 호출하여 `실 claim(state="processing")` 완료.
+    2. 트랜잭션 밖에서 `fake_evaluator`가 호출되면 `eval_started.set()`으로 Session 1에 신호를 보내고 `unhold_done.wait()`로 대기.
+    3. Session 1(`missions.unhold_item`)이 `with_for_update(of=CollectorItem)` row lock을 획득하여 `item.status = "accepted"`로 전환하고 단일 `CollectorOutbox` 생성 후 commit (`unhold_done.set()`).
+    4. Session 2의 `fake_evaluator`가 accept를 반환하고, production `consume_pending_once`가 두 번째 트랜잭션에서 `with_for_update`로 item을 재조회.
+    5. Session 2가 `existing = await db.scalar(select(CollectorOutbox.id)...)`를 통해 Session 1이 이미 생성한 outbox를 확인하고 중복 outbox를 생성하지 않음(멱등성 유지).
+    6. 원본 `envelope`, `rights`, `payload_hash`, `raw_sha256`, `text_sha256`, `retention` 불변 보존 확인.
+    7. `kb_delivery.deliver_once()` 실행 후 `receipt.outcome == "imported"` 확인 (추가 배달 시 0건으로 중복 배달 없음 확인).
+    8. `/api/assistant/kb/search?q=직렬화`를 통한 단일 문서 검색 및 색인 정상 확인.
+    9. **유한 retention 경계 실증**: `retain_days=7`인 유한 retention 문서에 대해 `missions.unhold_item` 호출 시 `kb_import_requires_unlimited_retention_policy`로 명확히 거부되고, 거부 후에도 유한 retention(`retain_until`)과 `held` 상태가 비자명하게 불변 보존됨을 확인.
+  - **원시 증거**: `review/collection-final/race_stdout.txt` (SHA256: `028d93972b62812fd7f6ee7254bc7b6a0bf1bb81ec23ae0b7a0c28234ba2f6f8`)
   - **실행 명령 및 결과**:
     ```bash
-    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions_unhold_and_precise_apply_race
+    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions_unhold_and_precise_apply_race -v
     ```
     ```text
-    tests/test_collection_missions.py .                                      [100%]
-    db reset: 1 selective (avg 3.0/111 tables), 0 forced full, 0 fell back to full
-    1 passed, 40 deselected in 0.84s
+    tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race PASSED [100%]
+    1 passed, 40 deselected in 0.88s
     ```
 
 ---
 
 ## 7. Renderer borrowed PoliteFetcher 수명 관리 및 순차 페이지 재사용 검증
-- **원인 규명**:
+- **원인 규명 및 검증 범위 고지**:
   - `render.default_fetch`에서 호출자가 주입한 `polite` 객체에 대해 `closer = polite.fetcher.aclose`를 반환할 경우, 첫 번째 페이지 렌더 완료 후 `closer()`가 공유 fetcher를 닫아버려 동일 job/파이프라인의 후속 페이지 수집 시 연결 실패가 발생할 위험이 확인됨.
+  - 본 테스트는 `mock_polite`의 수명 콜(`aclose` 미호출) 확인 범위까지만 직접 단언하며, 실제 `SafeFetcher`의 네트워크 재사용은 독립 검증자(77a)에게 배정됨.
 - **교정 내역**:
   - 주입받은(borrowed) `polite`에 대해서는 호출자에게 수명 소유권이 있으므로 렌더러 완료 시 닫지 않는 `noop_closer`를 반환하도록 [`src/ttakkari/collector/render.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/collector/render.py) 수정.
 - **반례 및 재사용 검증**:
@@ -210,9 +216,9 @@
 ---
 
 ## 10. Muse SDK 명령 계약 테스트 환경 격리 주입 및 원시 증거 보존
-- **원인 규명**:
+- **원인 규명 및 엄밀한 상태 고지**:
   - 1차 full run(`full_run_raw.txt`)에서 관측된 Muse 관련 3건 실패는 `build_command` 단계에서 `(settings.muse_runtime_root / 'node_modules/@muse-code/sdk/package.json').is_file()` 검사에 걸려 발생한 것임.
-  - 이는 배포된 Muse의 부재 증거가 아니며, 테스트 러너의 HOME 환경 변수에 따라 `settings.muse_runtime_root`가 가리키는 경로에 node_modules가 부재하여 발생한 테스트 환경 격리 결함임.
+  - 이는 `back-integration build_command` 테스트 환경의 런타임 부재만을 증명하며, 운영 Muse나 호스트의 고장이 아님. 따라서 이를 단순 '외부 환경 결함'이나 '전체 green'으로 모호하게 표현하지 않고 테스트 환경 내 runtime 부재로 엄밀히 규정함.
   - 해당 3건(`test_agent_token_security.py::test_muse_argv_hides_token_value`, `test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise`, `test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch`)은 argv token 노출 차단 및 effort=max command 생성 계약 테스트임.
 - **교정 내역**:
   - 프로덕션 코드의 `RuntimeError` 거부 보안 게이트를 온전히 보존하고 전역 skip/xfail/Path.is_file mock을 일절 배제함.

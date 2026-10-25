@@ -1,0 +1,615 @@
+"""Local TTS synthesis and pronunciation evaluation adapter."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+import tempfile
+import time
+import unicodedata
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from ttakkari.research.adapters.base import (
+    AdapterEnvironmentStatus,
+    AdapterRunResult,
+    ExecutionAdapter,
+    MeasurementRecord,
+    ResourceEstimate,
+)
+from ttakkari.research.adapters.presets import load_tts_preset
+
+VALID_MODES = {"normalize_only", "synthesize", "synthesize_and_stt"}
+VALID_VOICES = {"M1", "M2", "F1", "F2"}
+
+
+def _apply_custom_dict(text: str, custom_dict: dict[str, str]) -> str:
+    """Replace domain terms with custom pronunciation entries."""
+    if not custom_dict:
+        return text
+    result = text
+    # Replace longer keys first to prevent partial match conflicts
+    for k in sorted(custom_dict.keys(), key=len, reverse=True):
+        val = custom_dict[k]
+        result = result.replace(k, val)
+    return result
+
+
+def _normalize_with_options(
+    text: str,
+    *,
+    use_convert_numbers: bool = True,
+    use_read_latin: bool = True,
+    use_plain_text: bool = True,
+    custom_dict: dict[str, str] | None = None,
+) -> str:
+    """Normalize text with granular component toggles."""
+    from ttakkari.tts.normalize import (
+        _EMOJI,
+        _ZERO_WIDTH,
+        _final_cleanup,
+        _symbols,
+        convert_numbers,
+        plain_text,
+        read_latin,
+    )
+
+    t = unicodedata.normalize("NFC", text)
+    if custom_dict:
+        t = _apply_custom_dict(t, custom_dict)
+    t = _ZERO_WIDTH.sub("", t)
+    if use_plain_text:
+        t = plain_text(t)
+    t = _EMOJI.sub(" ", t)
+    if use_convert_numbers:
+        t = convert_numbers(t)
+    t = _symbols(t)
+    if use_read_latin:
+        t = read_latin(t)
+    t = _final_cleanup(t)
+    if custom_dict:
+        t = _apply_custom_dict(t, custom_dict)
+    return unicodedata.normalize("NFC", t)
+
+
+class TtsSynthesisAdapter:
+    """Evaluation adapter for TTS normalization, Supertonic 3 synthesis, and STT validation."""
+
+    id: str = "tts_synthesis"
+    version: str = "1.0.0"
+    name_ko: str = "로컬 TTS 음성 합성 및 발음 평가 어댑터"
+    domains: list[str] = ["tts", "stt"]
+    supported_methods: list[str] = [
+        "normalization*",
+        "g2p*",
+        "pronunciation-dict*",
+        "voice*",
+        "tts*",
+        "prosody*",
+    ]
+    supported_parameters: list[str] = [
+        "mode",
+        "engine",
+        "voice",
+        "speed",
+        "total_steps",
+        "convert_numbers",
+        "read_latin",
+        "plain_text",
+        "custom_pronunciation_dict",
+        "max_chunk_chars",
+        "preset_id",
+        "texts",
+    ]
+    required_inputs: list[str] = ["preset_id"]
+
+    def check_environment(self, *, scope: str) -> AdapterEnvironmentStatus:
+        """Check Supertonic 3 model, runtime venv, and STT availability."""
+        details: dict[str, Any] = {
+            "scope": scope,
+            "normalize_only_ready": True,
+            "engine": "supertonic",
+            "kokoro_supported": False,
+            "kokoro_note": "Kokoro는 한국어 음성 미지원으로 폐기되었으며 Supertonic 3를 사용합니다.",
+        }
+
+        try:
+            from ttakkari.config import get_settings
+            from ttakkari.tts.supertonic import SupertonicProvider
+
+            s = get_settings()
+            provider = SupertonicProvider(s)
+            avail = provider.availability()
+
+            voices = [v.id for v in provider.voices_sync()]
+            synth_ready = avail.ready
+            details["synth_ready"] = synth_ready
+            details["supertonic_status"] = avail.reason
+            details["available_voices"] = voices
+
+            # Check STT availability
+            stt_ready = False
+            try:
+                stt_py = getattr(s, "local_stt_python", "") or ""
+                if Path(stt_py).is_file():
+                    stt_ready = True
+            except Exception:
+                pass
+            details["stt_ready"] = stt_ready
+
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,  # normalize_only is always ready; synth depends on model files
+                execution_mode="subprocess_worker" if synth_ready else "in_process",
+                reason=f"전처리 정규화 상시 지원; 합성 엔진: {avail.reason}",
+                available_models=voices if synth_ready else [],
+                details=details,
+            )
+        except Exception as exc:
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,
+                execution_mode="in_process",
+                reason=f"기본 정규화 전처리 지원 (엔진 확인 오류: {exc})",
+                available_models=[],
+                details=details,
+            )
+
+    def validate_config(self, config: dict[str, Any], *, scope: str) -> list[str]:
+        errors: list[str] = []
+
+        mode = config.get("mode", "normalize_only")
+        if mode not in VALID_MODES:
+            errors.append(f"지원되지 않는 mode: '{mode}'. 허용 값: {sorted(VALID_MODES)}")
+
+        engine = config.get("engine")
+        if engine and engine.lower() == "kokoro":
+            # Note/Warning: contract dictates fallback to supertonic with note
+            pass
+
+        voice = config.get("voice", "M1")
+        if voice not in VALID_VOICES:
+            errors.append(f"지원되지 않는 voice: '{voice}'. 허용 값: {sorted(VALID_VOICES)}")
+
+        speed = config.get("speed", 1.0)
+        if not isinstance(speed, (int, float)) or speed < 0.5 or speed > 2.0:
+            errors.append("speed는 0.5 이상 2.0 이하의 숫자여야 합니다.")
+
+        preset_id = config.get("preset_id")
+        texts = config.get("texts")
+        if not preset_id and not texts:
+            errors.append("preset_id 또는 texts 설정이 필수입니다.")
+
+        if preset_id:
+            try:
+                load_tts_preset(str(preset_id))
+            except FileNotFoundError:
+                errors.append(f"존재하지 않는 TTS 프리셋 ID: '{preset_id}'.")
+
+        custom_dict = config.get("custom_pronunciation_dict")
+        if custom_dict is not None and not isinstance(custom_dict, dict):
+            errors.append("custom_pronunciation_dict는 키-값 문자열 딕셔너리여야 합니다.")
+
+        return errors
+
+    def estimate_resources(self, config: dict[str, Any]) -> ResourceEstimate:
+        mode = config.get("mode", "normalize_only")
+        if mode == "normalize_only":
+            return ResourceEstimate(
+                estimated_seconds=2,
+                estimated_memory_mb=64,
+                requires_gpu_lease=False,
+                requires_tts_lock=False,
+                requires_cpu_lock=False,
+            )
+        return ResourceEstimate(
+            estimated_seconds=20,
+            estimated_memory_mb=1024,
+            requires_gpu_lease=False,
+            requires_tts_lock=True,
+            requires_cpu_lock=False,
+        )
+
+    async def execute_run(
+        self,
+        run_id: UUID,
+        config: dict[str, Any],
+        *,
+        scope: str,
+        cancel_event: Any = None,
+    ) -> AdapterRunResult:
+        errors = self.validate_config(config, scope=scope)
+        if errors:
+            return AdapterRunResult(
+                status="failed",
+                raw_output={"errors": errors, "config": config},
+                environment_snapshot={"scope": scope},
+                error_code="invalid_config",
+                error_message="; ".join(errors),
+                wall_seconds=0.0,
+            )
+
+        started_wall = time.monotonic()
+
+        # Load texts
+        preset_id = config.get("preset_id")
+        if preset_id:
+            preset_data = load_tts_preset(str(preset_id))
+            raw_texts = preset_data.get("sentences", [])
+            dataset_name = preset_data.get("name", preset_id)
+        else:
+            raw_texts = config.get("texts", [])
+            dataset_name = "custom_texts"
+
+        mode = config.get("mode", "normalize_only")
+        engine_req = config.get("engine", "supertonic")
+        voice = config.get("voice", "M1")
+        speed = float(config.get("speed", 1.0))
+        max_chunk_chars = int(config.get("max_chunk_chars", 220))
+        convert_numbers = bool(config.get("convert_numbers", True))
+        read_latin = bool(config.get("read_latin", True))
+        plain_text_flag = bool(config.get("plain_text", True))
+        custom_dict = config.get("custom_pronunciation_dict") or {}
+
+        # 1. Text Normalization Pipeline
+        from ttakkari.tts.normalize import chunk_text
+
+        sentence_reports: list[dict[str, Any]] = []
+        all_chunks: list[str] = []
+        raw_char_count = 0
+        normalized_char_count = 0
+
+        for s_idx, raw_s in enumerate(raw_texts):
+            raw_char_count += len(raw_s)
+            norm_s = _normalize_with_options(
+                raw_s,
+                use_convert_numbers=convert_numbers,
+                use_read_latin=read_latin,
+                use_plain_text=plain_text_flag,
+                custom_dict=custom_dict,
+            )
+            normalized_char_count += len(norm_s)
+            chunks = chunk_text(norm_s, max_chars=max_chunk_chars)
+            all_chunks.extend(chunks)
+
+            sentence_reports.append({
+                "index": s_idx + 1,
+                "raw_text": raw_s,
+                "normalized_text": norm_s,
+                "char_delta": len(norm_s) - len(raw_s),
+                "chunks": chunks,
+                "chunk_count": len(chunks),
+            })
+
+        char_delta_total = normalized_char_count - raw_char_count
+
+        # If mode is normalize_only, return results immediately
+        if mode == "normalize_only":
+            total_wall = time.monotonic() - started_wall
+            return AdapterRunResult(
+                status="succeeded",
+                raw_output={
+                    "mode": mode,
+                    "engine": "supertonic",
+                    "engine_requested": engine_req,
+                    "dataset_name": dataset_name,
+                    "sentence_count": len(raw_texts),
+                    "chunk_count": len(all_chunks),
+                    "raw_char_count": raw_char_count,
+                    "normalized_char_count": normalized_char_count,
+                    "char_delta_total": char_delta_total,
+                    "sentences": sentence_reports,
+                    "wall_seconds": round(total_wall, 3),
+                },
+                environment_snapshot={"scope": scope, "mode": mode},
+                wall_seconds=round(total_wall, 3),
+            )
+
+        # 2. Synthesis Mode (Supertonic 3)
+        from ttakkari.config import get_settings
+        from ttakkari.tts.supertonic import SupertonicProvider
+
+        s = get_settings()
+        provider = SupertonicProvider(s)
+        avail = provider.availability()
+
+        if not avail.ready:
+            return AdapterRunResult(
+                status="failed",
+                raw_output={
+                    "mode": mode,
+                    "error": avail.reason,
+                    "sentences": sentence_reports,
+                },
+                environment_snapshot={"scope": scope, "engine": "supertonic"},
+                error_code="tts_engine_unavailable",
+                error_message=f"Supertonic 3 음성 엔진 사용 불가: {avail.reason}",
+                wall_seconds=time.monotonic() - started_wall,
+            )
+
+        if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
+            return AdapterRunResult(
+                status="cancelled",
+                raw_output={"reason": "cancelled_before_synthesis"},
+                environment_snapshot={"scope": scope},
+                wall_seconds=time.monotonic() - started_wall,
+            )
+
+        temp_dir = tempfile.mkdtemp(prefix=f"research_tts_{run_id}_")
+        artifacts_to_register: list[dict[str, Any]] = []
+
+        try:
+            tts_res = await provider.synthesize(
+                all_chunks,
+                voice=voice,
+                speed=speed,
+                lang="ko",
+                out_dir=temp_dir,
+            )
+
+            metrics = tts_res.metrics or {}
+            synth_seconds = float(metrics.get("synth_seconds", 0.0))
+            audio_seconds = float(metrics.get("audio_seconds", 0.0))
+            load_seconds = float(metrics.get("load_seconds", 0.0))
+            peak_rss = int(metrics.get("peak_rss_bytes", 0))
+            rtf = (synth_seconds / audio_seconds) if audio_seconds > 0 else 0.0
+
+            # Collect audio chunk artifacts
+            audio_chunks_info = []
+            for c_idx, cr in enumerate(tts_res.chunks):
+                chunk_file = Path(cr.path)
+                artifacts_to_register.append({
+                    "kind": "audio",
+                    "category": "research_tts_sample",
+                    "path": str(chunk_file),
+                    "filename": chunk_file.name,
+                    "duration_seconds": cr.duration_seconds,
+                    "sample_rate": cr.sample_rate,
+                    "bytes": cr.bytes,
+                })
+                audio_chunks_info.append({
+                    "chunk_index": c_idx,
+                    "path": str(chunk_file),
+                    "filename": chunk_file.name,
+                    "duration_seconds": cr.duration_seconds,
+                    "sample_rate": cr.sample_rate,
+                    "bytes": cr.bytes,
+                })
+
+            stt_eval_results: list[dict[str, Any]] = []
+
+            # 3. Optional STT Recognition and CER/WER Evaluation
+            if mode == "synthesize_and_stt":
+                try:
+                    from ttakkari.meetings.local_stt import core as stt_core
+                    from ttakkari.meetings.local_stt import runner as stt_runner
+
+                    # Run STT worker on audio files if STT runtime available
+                    stt_py = getattr(s, "local_stt_python", "") or ""
+                    if Path(stt_py).is_file():
+                        # Transcribe synthesized chunks and compute CER/WER
+                        for idx, chunk_info in enumerate(audio_chunks_info):
+                            wav_path = chunk_info["path"]
+                            stt_req = {
+                                "file_path": wav_path,
+                                "profile": "baseline",
+                                "language": "ko",
+                            }
+                            stt_out = await stt_runner.run_worker(
+                                module="ttakkari.meetings.local_stt.worker",
+                                request=stt_req,
+                                settings=s,
+                            )
+                            transcript = str(stt_out.get("transcript", "")).strip()
+                            norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
+
+                            # Find matching raw sentence snippet
+                            rates_norm = stt_core.error_rates(norm_ref, transcript)
+                            stt_eval_results.append({
+                                "chunk_index": idx,
+                                "recognized_text": transcript,
+                                "normalized_reference": norm_ref,
+                                "cer_vs_normalized": rates_norm.get("cer"),
+                                "wer_vs_normalized": rates_norm.get("wer"),
+                            })
+                    else:
+                        stt_eval_results.append({
+                            "warning": "STT 런타임 환경 부재로 음성 재인식 단계 건너뜀"
+                        })
+                except Exception as stt_exc:
+                    stt_eval_results.append({"stt_error": str(stt_exc)})
+
+            total_wall = time.monotonic() - started_wall
+
+            raw_out = {
+                "mode": mode,
+                "engine": "supertonic",
+                "engine_requested": engine_req,
+                "voice": voice,
+                "speed": speed,
+                "dataset_name": dataset_name,
+                "sentence_count": len(raw_texts),
+                "chunk_count": len(all_chunks),
+                "raw_char_count": raw_char_count,
+                "normalized_char_count": normalized_char_count,
+                "char_delta_total": char_delta_total,
+                "metrics": {
+                    "rtf": round(rtf, 4),
+                    "synth_seconds": round(synth_seconds, 3),
+                    "audio_seconds": round(audio_seconds, 3),
+                    "load_seconds": round(load_seconds, 3),
+                    "peak_rss_mb": round(peak_rss / 1048576.0, 2),
+                    "wall_seconds": round(total_wall, 3),
+                },
+                "audio_chunks": audio_chunks_info,
+                "stt_eval": stt_eval_results,
+                "sentences": sentence_reports,
+            }
+
+            return AdapterRunResult(
+                status="succeeded",
+                raw_output=raw_out,
+                environment_snapshot={
+                    "scope": scope,
+                    "engine": "supertonic",
+                    "voice": voice,
+                    "temp_dir": temp_dir,
+                },
+                wall_seconds=round(total_wall, 3),
+                artifacts=artifacts_to_register,
+            )
+
+        except Exception as exc:
+            total_wall = time.monotonic() - started_wall
+            return AdapterRunResult(
+                status="failed",
+                raw_output={"error": str(exc), "mode": mode},
+                environment_snapshot={"scope": scope, "engine": "supertonic"},
+                error_code=type(exc).__name__,
+                error_message=str(exc),
+                wall_seconds=round(total_wall, 3),
+            )
+
+    def to_measurements(
+        self, result: AdapterRunResult, config: dict[str, Any]
+    ) -> list[MeasurementRecord]:
+        if result.status != "succeeded":
+            return []
+
+        raw = result.raw_output
+        metrics = raw.get("metrics") or {}
+        records: list[MeasurementRecord] = []
+
+        chunk_count = raw.get("chunk_count", 0)
+        char_delta = raw.get("char_delta_total", 0)
+
+        records.append(
+            MeasurementRecord(
+                metric_key="chunk_count",
+                metric_label="분할된 총 청크 수",
+                value=float(chunk_count),
+                unit="count",
+                direction="lower_is_better",
+                aggregator="single",
+            )
+        )
+
+        records.append(
+            MeasurementRecord(
+                metric_key="normalized_char_delta",
+                metric_label="정규화 후 글자 수 증감",
+                value=float(char_delta),
+                unit="count",
+                direction="lower_is_better",
+                aggregator="single",
+            )
+        )
+
+        if "rtf" in metrics:
+            records.append(
+                MeasurementRecord(
+                    metric_key="rtf",
+                    metric_label="실시간 계수 (RTF)",
+                    value=float(metrics["rtf"]),
+                    unit="ratio",
+                    direction="lower_is_better",
+                    aggregator="single",
+                )
+            )
+
+        if "synth_seconds" in metrics:
+            records.append(
+                MeasurementRecord(
+                    metric_key="synth_seconds",
+                    metric_label="음성 합성 소요 시간",
+                    value=float(metrics["synth_seconds"]),
+                    unit="s",
+                    direction="lower_is_better",
+                    aggregator="single",
+                )
+            )
+
+        if "audio_seconds" in metrics:
+            records.append(
+                MeasurementRecord(
+                    metric_key="audio_seconds",
+                    metric_label="생성된 오디오 총 길이",
+                    value=float(metrics["audio_seconds"]),
+                    unit="s",
+                    direction="higher_is_better",
+                    aggregator="single",
+                )
+            )
+
+        if "load_seconds" in metrics:
+            records.append(
+                MeasurementRecord(
+                    metric_key="load_seconds",
+                    metric_label="모델 로드 시간",
+                    value=float(metrics["load_seconds"]),
+                    unit="s",
+                    direction="lower_is_better",
+                    aggregator="single",
+                )
+            )
+
+        if "peak_rss_mb" in metrics:
+            records.append(
+                MeasurementRecord(
+                    metric_key="peak_rss_mb",
+                    metric_label="최대 RSS 메모리",
+                    value=float(metrics["peak_rss_mb"]),
+                    unit="MB",
+                    direction="lower_is_better",
+                    aggregator="single",
+                )
+            )
+
+        stt_eval = raw.get("stt_eval") or []
+        cer_values = [item["cer_vs_normalized"] for item in stt_eval if item.get("cer_vs_normalized") is not None]
+        wer_values = [item["wer_vs_normalized"] for item in stt_eval if item.get("wer_vs_normalized") is not None]
+
+        if cer_values:
+            mean_cer = sum(cer_values) / len(cer_values)
+            records.append(
+                MeasurementRecord(
+                    metric_key="stt_cer_vs_normalized",
+                    metric_label="STT 재인식 음절 오류율 (대리 지표)",
+                    value=round(mean_cer, 4),
+                    unit="ratio",
+                    direction="lower_is_better",
+                    is_proxy=True,
+                    aggregator="mean",
+                    meta={"explanation": "Whisper 재인식을 통한 발음 명료도 간접 대리 지표이며 사람 청취 품질(MOS)이 아님"},
+                )
+            )
+
+        if wer_values:
+            mean_wer = sum(wer_values) / len(wer_values)
+            records.append(
+                MeasurementRecord(
+                    metric_key="stt_wer_vs_normalized",
+                    metric_label="STT 재인식 어절 오류율 (대리 지표)",
+                    value=round(mean_wer, 4),
+                    unit="ratio",
+                    direction="lower_is_better",
+                    is_proxy=True,
+                    aggregator="mean",
+                    meta={"explanation": "Whisper 재인식을 통한 발음 명료도 간접 대리 지표이며 사람 청취 품질(MOS)이 아님"},
+                )
+            )
+
+        records.append(
+            MeasurementRecord(
+                metric_key="wall_seconds",
+                metric_label="전체 소요 시간",
+                value=float(metrics.get("wall_seconds", result.wall_seconds)),
+                unit="s",
+                direction="lower_is_better",
+                aggregator="single",
+            )
+        )
+
+        return records

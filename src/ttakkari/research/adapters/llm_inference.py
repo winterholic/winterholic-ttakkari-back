@@ -17,6 +17,13 @@ from ttakkari.research.adapters.base import (
     ResourceEstimate,
 )
 
+# quant_type은 사전 양자화 GGUF 모델 별칭을 고르는 키다. 등록된 정확한 값만 받고 별칭("Q2K" 등)은 받지 않는다.
+QUANT_TYPE_MODELS: dict[str, str] = {
+    "Q4_K_M": "qwen3.5-4b-q4_k_m",
+    "Q2_K": "qwen3.8-flash-next-q2k",
+}
+_LIVE_PHASES = ("starting", "ready")
+
 
 class LlmInferenceAdapter:
     """Execution adapter for local LLM inference benchmarking via HostGpu."""
@@ -44,10 +51,8 @@ class LlmInferenceAdapter:
         "batch_size",
         "ubatch_size",
         "n_gpu_layers",
-        "main_gpu",
         "flash_attn_enabled",
         "quant_type",
-        "quant_method",
         "threads_batch",
         "logical_batch_size",
         "physical_ubatch_size",
@@ -181,28 +186,28 @@ class LlmInferenceAdapter:
         # Resolve model
         model = config.get("model")
         quant_type = config.get("quant_type")
+        quant_model = None
+        if quant_type is not None:
+            quant_model = QUANT_TYPE_MODELS.get(quant_type) if isinstance(quant_type, str) else None
+            if quant_model is None:
+                errors.append(
+                    f"지원되지 않는 quant_type: {quant_type!r}. 허용 값(정확히 일치): {', '.join(QUANT_TYPE_MODELS)}"
+                )
         if not model:
-            if quant_type:
-                if quant_type == "Q4_K_M":
-                    model = "qwen3.5-4b-q4_k_m"
-                elif quant_type in ("Q2_K", "Q2K"):
-                    model = "qwen3.8-flash-next-q2k"
-                else:
-                    errors.append(
-                        f"지원되지 않는 quant_type: '{quant_type}'. 사전 양자화 모델은 Q4_K_M, Q2_K만 지원됩니다."
-                    )
-            else:
+            if quant_model:
+                model = quant_model
+            elif quant_type is None:
                 errors.append("model 또는 지원되는 quant_type('Q4_K_M', 'Q2_K') 설정이 필수입니다.")
-        elif quant_type:
-            # model과 quant_type이 둘 다 주어진 경우에도 quant_type 유효성 확인
-            if quant_type not in ("Q4_K_M", "Q2_K", "Q2K"):
-                errors.append(f"지원되지 않는 quant_type: '{quant_type}'. 허용 값: Q4_K_M, Q2_K")
+        elif quant_model and quant_model != model:
+            errors.append(
+                f"quant_type '{quant_type}'은 모델 '{quant_model}'에 대응하지만 model은 '{model}'입니다. 하나만 지정하거나 일치시키십시오."
+            )
 
         try:
             from ttakkari.config import get_settings
             s = get_settings()
             models_dict = getattr(s, "host_gpu_models", {}) or {}
-            if model not in models_dict:
+            if model and model not in models_dict:
                 errors.append(
                     f"허용되지 않은 모델 별칭: '{model}'. 허용 목록: {sorted(models_dict.keys())}"
                 )
@@ -277,16 +282,8 @@ class LlmInferenceAdapter:
         s = get_settings()
         host_gpu = HostGpu(s)
 
-        # Resolve model
-        model = config.get("model")
-        if not model:
-            quant_type = config.get("quant_type")
-            if quant_type == "Q4_K_M":
-                model = "qwen3.5-4b-q4_k_m"
-            elif quant_type in ("Q2_K", "Q2K"):
-                model = "qwen3.8-flash-next-q2k"
-            else:
-                model = "qwen3.5-4b-q4_k_m"
+        # validate_config guarantees model or an exact quant_type is present
+        model = config.get("model") or QUANT_TYPE_MODELS[config["quant_type"]]
 
         # Build start request with parameter mappings
         req_kwargs: dict[str, Any] = {"model": model}
@@ -334,6 +331,7 @@ class LlmInferenceAdapter:
 
         started_wall = time.monotonic()
         server_started = False
+        launch_id: str | None = None
         cleanup_info: dict[str, Any] = {"attempted": False, "success": False}
         run_result: AdapterRunResult | None = None
 
@@ -349,6 +347,9 @@ class LlmInferenceAdapter:
 
             await asyncio.to_thread(host_gpu.start, start_req)
             server_started = True
+            # start() does not return the launch id; read it right away. HostGpu allows one live
+            # instance, so the state written by the start() that just returned is ours.
+            launch_id = await asyncio.to_thread(self._current_launch_id, host_gpu)
 
             deadline = time.monotonic() + 45.0
             ready = False
@@ -422,15 +423,52 @@ class LlmInferenceAdapter:
 
         finally:
             if server_started:
-                cleanup_info["attempted"] = True
-                try:
-                    stop_res = await asyncio.to_thread(host_gpu.stop)
-                    cleanup_info["success"] = True
-                    cleanup_info["result"] = stop_res
-                except Exception as cleanup_exc:
-                    cleanup_info["error"] = f"{type(cleanup_exc).__name__}: {cleanup_exc}"
+                cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch_id)
             if run_result is not None and isinstance(run_result.raw_output, dict):
                 run_result.raw_output["cleanup"] = cleanup_info
+
+    @staticmethod
+    def _current_launch_id(host_gpu: Any) -> str | None:
+        state = host_gpu._current() or {}
+        launch_id = state.get("launch_id")
+        return str(launch_id) if launch_id else None
+
+    @staticmethod
+    def _cleanup_owned_launch(host_gpu: Any, data_dir: Path, launch_id: str | None) -> dict[str, Any]:
+        """Stop the server only if it is the launch this run started, and judge the stop result.
+
+        HostGpu.stop() takes no launch id and re-reads the current state itself, so the ownership
+        check below leaves a window of a few ms between the read and the stop.
+        """
+        from ttakkari.host_gpu import _lock_held, state_dir
+
+        info: dict[str, Any] = {"attempted": True, "success": False, "launch_id": launch_id, "stopped": False}
+        if launch_id is None:
+            info["error"] = "ownership_unverified: start() 직후 상태에서 launch_id를 읽지 못해 stop을 호출하지 않았습니다."
+            return info
+        try:
+            state = host_gpu._current() or {}
+            if state.get("launch_id") != launch_id:
+                # HostGpu keeps a single state; ours is no longer the current (hence not the live) launch.
+                info.update(success=True, skipped_reason="launch_replaced", current_launch_id=state.get("launch_id"))
+                return info
+            if state.get("phase") not in _LIVE_PHASES:
+                info.update(success=True, skipped_reason="already_stopped", phase=state.get("phase"))
+                return info
+
+            stop_res = host_gpu.stop()
+            info["result"] = stop_res
+            if not isinstance(stop_res, dict):
+                info["error"] = f"unexpected_stop_result: {type(stop_res).__name__}"
+            elif stop_res.get("running") or stop_res.get("phase") in _LIVE_PHASES:
+                info["error"] = f"still_running: phase={stop_res.get('phase')}"
+            elif _lock_held(state_dir(data_dir)):
+                info["error"] = "lock_still_held: 감독자 종료 후에도 호스트 자원 잠금이 해제되지 않았습니다."
+            else:
+                info.update(success=True, stopped=True)
+        except Exception as exc:
+            info["error"] = f"{type(exc).__name__}: {exc}"
+        return info
 
     def to_measurements(
         self, result: AdapterRunResult, config: dict[str, Any]

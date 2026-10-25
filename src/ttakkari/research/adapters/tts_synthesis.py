@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ from ttakkari.research.adapters.base import (
     ResourceEstimate,
 )
 from ttakkari.research.adapters.presets import load_tts_preset
+from ttakkari.tts.providers import TtsResult
 
 VALID_MODES = {"normalize_only", "synthesize", "synthesize_and_stt"}
 VALID_VOICES = {"M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"}
@@ -33,6 +35,30 @@ VOICE_PRESET_MAP: dict[str, str] = {
     "ko_male_1": "M1",
     "ko_male_2": "M2",
 }
+
+
+def _cancel_requested(cancel_event: Any) -> bool:
+    return bool(cancel_event and getattr(cancel_event, "is_set", lambda: False)())
+
+
+async def _await_unless_cancelled(
+    awaitable: Any, cancel_event: Any, *, poll_seconds: float = 0.1
+) -> tuple[Any, bool]:
+    """Await `awaitable`, cancelling it as soon as `cancel_event` is set. Returns (result, cancelled)."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=poll_seconds)
+            if done:
+                return task.result(), False
+            if _cancel_requested(cancel_event):
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                return None, True
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 def _apply_custom_dict(text: str, custom_dict: dict[str, str], *, case_sensitive: bool = False) -> str:
@@ -111,7 +137,6 @@ class TtsSynthesisAdapter:
         "english_acronym_mode",
         "case_sensitive",
         "max_chunk_length",
-        "split_on_comma",
         "speed_ratio",
         "voice_preset",
         # Adapter internal parameter keys
@@ -119,7 +144,6 @@ class TtsSynthesisAdapter:
         "engine",
         "voice",
         "speed",
-        "total_steps",
         "convert_numbers",
         "read_latin",
         "plain_text",
@@ -429,7 +453,7 @@ class TtsSynthesisAdapter:
                 wall_seconds=time.monotonic() - started_wall,
             )
 
-        if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
+        if _cancel_requested(cancel_event):
             return AdapterRunResult(
                 status="cancelled",
                 raw_output={"reason": "cancelled_before_synthesis"},
@@ -440,15 +464,33 @@ class TtsSynthesisAdapter:
         temp_dir = tempfile.mkdtemp(prefix=f"research_tts_{run_id}_")
         artifacts_to_register: list[dict[str, Any]] = []
 
-        try:
+        def _cancelled_result(reason: str, *, artifacts: list[dict[str, Any]] | None = None) -> AdapterRunResult:
+            return AdapterRunResult(
+                status="cancelled",
+                raw_output={"reason": reason},
+                environment_snapshot={"scope": scope},
+                wall_seconds=round(time.monotonic() - started_wall, 3),
+                artifacts=artifacts or [],
+            )
+
+        async def _synthesize_under_budget() -> TtsResult | None:
             async with _execution_lock:
-                tts_res = await provider.synthesize(
+                if _cancel_requested(cancel_event):  # cancelled while queued for the lock
+                    return None
+                return await provider.synthesize(
                     all_chunks,
                     voice=voice,
                     speed=speed,
                     lang="ko",
                     out_dir=temp_dir,
                 )
+
+        try:
+            # Both the lock wait and the synthesis itself are cancelled when cancel_event is set.
+            tts_res, cancelled = await _await_unless_cancelled(_synthesize_under_budget(), cancel_event)
+            if cancelled or tts_res is None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return _cancelled_result("cancelled_during_synthesis")
 
             metrics = tts_res.metrics or {}
             synth_seconds = float(metrics.get("synth_seconds", 0.0))
@@ -504,25 +546,18 @@ class TtsSynthesisAdapter:
 
                 stt_failures = 0
                 for idx, chunk_info in enumerate(audio_chunks_info):
-                    if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
-                        total_wall = time.monotonic() - started_wall
-                        return AdapterRunResult(
-                            status="cancelled",
-                            raw_output={"reason": "cancelled_during_stt_eval"},
-                            environment_snapshot={"scope": scope},
-                            wall_seconds=round(total_wall, 3),
-                            artifacts=artifacts_to_register,
-                        )
+                    if _cancel_requested(cancel_event):
+                        return _cancelled_result("cancelled_during_stt_eval", artifacts=artifacts_to_register)
 
                     wav_path = Path(chunk_info["path"])
                     stt_params = {"language": "ko"}
                     try:
-                        stt_out = await stt_runner.run_worker(
-                            wav_path,
-                            stt_params,
-                            s,
-                            production=True,
+                        stt_out, stt_cancelled = await _await_unless_cancelled(
+                            stt_runner.run_worker(wav_path, stt_params, s, production=True),
+                            cancel_event,
                         )
+                        if stt_cancelled:
+                            return _cancelled_result("cancelled_during_stt_eval", artifacts=artifacts_to_register)
                         transcript = str(stt_out.get("text") or stt_out.get("transcript") or "").strip()
                         norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
                         sent_idx = chunk_sentence_map[idx] if idx < len(chunk_sentence_map) else 0
@@ -548,18 +583,26 @@ class TtsSynthesisAdapter:
                             "stt_error": f"{type(stt_exc).__name__}: {stt_exc}",
                         })
 
-                if stt_failures == len(audio_chunks_info) and len(audio_chunks_info) > 0:
+                # AdapterRunResult has no partial status, and a mean over the surviving chunks would
+                # read as the whole dataset, so one failed chunk fails the run.
+                if stt_failures > 0:
                     total_wall = time.monotonic() - started_wall
+                    failed_chunks = [e["chunk_index"] for e in stt_eval_results if "stt_error" in e]
                     return AdapterRunResult(
                         status="failed",
                         raw_output={
                             "error": "STT 재인식 워커 실행 실패",
+                            "failed_chunks": failed_chunks,
+                            "stt_chunk_count": len(audio_chunks_info),
                             "stt_eval": stt_eval_results,
                             "audio_chunks": audio_chunks_info,
                         },
                         environment_snapshot={"scope": scope, "engine": "supertonic"},
                         error_code="stt_worker_failed",
-                        error_message="모든 청크에 대한 STT 재인식 워커 실행이 실패했습니다.",
+                        error_message=(
+                            f"STT 재인식이 {stt_failures}/{len(audio_chunks_info)}개 청크에서 실패해 "
+                            f"평가 표본이 불완전합니다 (실패 chunk: {failed_chunks})"
+                        ),
                         wall_seconds=round(total_wall, 3),
                         artifacts=artifacts_to_register,
                     )

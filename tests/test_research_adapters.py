@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -27,6 +30,9 @@ from ttakkari.research.adapters.presets import load_retrieval_preset, load_tts_p
 from ttakkari.research.adapters.retrieval_eval import RetrievalEvalAdapter
 from ttakkari.research.adapters.tts_synthesis import TtsSynthesisAdapter
 from ttakkari.research.readiness import compute_execution_status
+from ttakkari.tts import service as tts_service
+from ttakkari.tts.providers import ProviderAvailability, ProviderState, TtsChunkResult, TtsResult
+from ttakkari.tts.supertonic import SupertonicProvider
 
 
 # Research adapters do not require database connection. Override conftest DB autouse fixtures.
@@ -364,60 +370,143 @@ def test_readiness_axis_f_determination_with_seed_methods() -> None:
     assert st_rrf.is_executable is True
 
 
+_LLM_CONFIG = {"model": "qwen3.5-4b-q4_k_m", "n_gpu_layers": 33}
+_BENCH_RESULT = {
+    "execution_path": "host_gpu",
+    "median_generation_tokens_per_second": 45.0,
+    "median_prompt_tokens_per_second": 120.0,
+    "runs": [{"prompt_tokens": 30}],
+    "wall_seconds": 1.5,
+    "swap": {"peak_growth_bytes": 5242880},
+}
+_STOPPED = {"phase": "stopped", "running": False, "stopped_now": True}
+
+
+@contextlib.contextmanager
+def _autospecced_host_gpu(*, owner_states, stop_result=None, stop_error=None, lock_held=False):
+    """Replace HostGpu methods with autospec'd mocks so a wrong call signature fails the test.
+
+    `owner_states` is the sequence of values `HostGpu._current()` returns: the first is read
+    right after start() (ownership capture), the later ones are read by the cleanup.
+    """
+    states = iter(owner_states)
+    with patch.object(HostGpu, "start", autospec=True, return_value={"ready": True}) as start, \
+         patch.object(HostGpu, "status", autospec=True, return_value={"ready": True}), \
+         patch.object(HostGpu, "bench", autospec=True, return_value=dict(_BENCH_RESULT)) as bench, \
+         patch.object(HostGpu, "_current", autospec=True, side_effect=lambda self: next(states)) as current, \
+         patch.object(HostGpu, "stop", autospec=True, return_value=stop_result, side_effect=stop_error) as stop, \
+         patch("ttakkari.host_gpu._lock_held", autospec=True, return_value=lock_held):
+        yield SimpleNamespace(start=start, bench=bench, current=current, stop=stop)
+
+
+def test_host_gpu_stop_signature_is_self_only() -> None:
+    assert list(inspect.signature(HostGpu.stop).parameters) == ["self"]
+
+
 @pytest.mark.asyncio
-async def test_llm_inference_stop_signature_and_cleanup_contract() -> None:
-    adapter = LlmInferenceAdapter()
-    config = {
-        "model": "qwen3.5-4b-q4_k_m",
-        "n_gpu_layers": 33,
-    }
-    run_id = uuid4()
+async def test_llm_cleanup_stops_the_launch_this_run_started() -> None:
+    live = {"launch_id": "launch-A", "phase": "ready"}
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)) as m:
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-    # 1. Verify that real HostGpu.stop signature takes no arguments other than self
-    sig = inspect.signature(HostGpu.stop)
-    assert len(sig.parameters) == 1  # only 'self'
+    assert result.status == "succeeded"
+    assert m.stop.call_count == 1
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["attempted"] is True
+    assert cleanup["success"] is True
+    assert cleanup["launch_id"] == "launch-A"
 
-    # 2. Strict mock verifying stop is called without extra parameters (like reason=...)
-    with patch("ttakkari.host_gpu.HostGpu") as mock_cls:
-        instance = mock_cls.return_value
-        instance.start.return_value = {"ready": True}
-        instance.status.return_value = {"ready": True}
-        instance.bench.return_value = {
-            "execution_path": "host_gpu",
-            "median_generation_tokens_per_second": 45.0,
-            "median_prompt_tokens_per_second": 120.0,
-            "runs": [{"prompt_tokens": 30}],
-            "wall_seconds": 1.5,
-            "swap": {"peak_growth_bytes": 5242880},  # 5 MB
-        }
 
-        def strict_stop(*args, **kwargs):
-            if args or kwargs:
-                raise TypeError(f"stop() takes 0 positional arguments but {len(args)} were given")
-            return {"phase": "stopped", "stopped_now": True}
+@pytest.mark.asyncio
+async def test_llm_cleanup_does_not_stop_another_runs_launch() -> None:
+    mine = {"launch_id": "launch-A", "phase": "ready"}
+    theirs = {"launch_id": "launch-B", "phase": "ready"}
+    with _autospecced_host_gpu(owner_states=[mine, theirs]) as m:
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-        instance.stop.side_effect = strict_stop
+    assert m.stop.call_count == 0
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["launch_id"] == "launch-A"
+    assert cleanup["stopped"] is False
+    assert cleanup["skipped_reason"] == "launch_replaced"
+    assert cleanup["success"] is True  # our launch is no longer the live one
 
-        result = await adapter.execute_run(run_id, config, scope="personal")
-        assert result.status == "succeeded"
-        assert instance.stop.call_count == 1
-        cleanup = result.raw_output.get("cleanup")
-        assert cleanup is not None
-        assert cleanup["attempted"] is True
-        assert cleanup["success"] is True
 
-        # 3. Verify cleanup error recording when stop fails
-        def failing_stop(*args, **kwargs):
-            if args or kwargs:
-                raise TypeError("stop() takes 0 arguments")
-            raise RuntimeError("Lease manager failed to signal supervisor")
+@pytest.mark.asyncio
+async def test_llm_cleanup_skips_stop_when_launch_already_ended() -> None:
+    mine = {"launch_id": "launch-A", "phase": "ready"}
+    ended = {"launch_id": "launch-A", "phase": "stopped"}
+    with _autospecced_host_gpu(owner_states=[mine, ended]) as m:
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-        instance.stop.side_effect = failing_stop
-        result_fail = await adapter.execute_run(uuid4(), config, scope="personal")
-        cleanup_fail = result_fail.raw_output.get("cleanup")
-        assert cleanup_fail["attempted"] is True
-        assert cleanup_fail["success"] is False
-        assert "RuntimeError" in cleanup_fail["error"]
+    assert m.stop.call_count == 0
+    assert result.raw_output["cleanup"]["skipped_reason"] == "already_stopped"
+    assert result.raw_output["cleanup"]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_llm_cleanup_without_verified_ownership_never_stops_and_reports_failure() -> None:
+    with _autospecced_host_gpu(owner_states=[{"phase": "ready"}]) as m:  # no launch_id in state
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    assert m.stop.call_count == 0
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["success"] is False
+    assert "ownership" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stop_result", "lock_held", "expected_error"),
+    [
+        # stop() waited out its 40s and the supervisor is still live
+        ({"phase": "ready", "running": True, "stopped_now": True}, False, "still_running"),
+        # state says stopped but the resource lock was never released
+        ({"phase": "stopped", "running": False, "stopped_now": True}, True, "lock_still_held"),
+        (None, False, "unexpected_stop_result"),
+    ],
+)
+async def test_llm_cleanup_interprets_stop_result_instead_of_assuming_success(
+    stop_result, lock_held, expected_error
+) -> None:
+    live = {"launch_id": "launch-A", "phase": "ready"}
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=stop_result, lock_held=lock_held) as m:
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    assert m.stop.call_count == 1
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["attempted"] is True
+    assert cleanup["success"] is False
+    assert expected_error in cleanup["error"]
+
+
+@pytest.mark.asyncio
+async def test_llm_cleanup_records_stop_exception() -> None:
+    live = {"launch_id": "launch-A", "phase": "ready"}
+    err = RuntimeError("Lease manager failed to signal supervisor")
+    with _autospecced_host_gpu(owner_states=[live, live], stop_error=err):
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["attempted"] is True
+    assert cleanup["success"] is False
+    assert "RuntimeError" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+async def test_llm_cleanup_runs_on_cancellation_after_start() -> None:
+    live = {"launch_id": "launch-A", "phase": "ready"}
+    cancel_event = asyncio.Event()
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)) as m:
+        m.start.side_effect = lambda self, req: cancel_event.set() or {"ready": True}
+        result = await LlmInferenceAdapter().execute_run(
+            uuid4(), _LLM_CONFIG, scope="personal", cancel_event=cancel_event
+        )
+
+    assert result.status == "cancelled"
+    assert m.bench.call_count == 0
+    assert m.stop.call_count == 1
+    assert result.raw_output["cleanup"]["success"] is True
 
 
 def test_llm_inference_parameter_rejections_and_quant_type_mapping() -> None:
@@ -450,6 +539,42 @@ def test_llm_inference_parameter_rejections_and_quant_type_mapping() -> None:
     assert any("model 또는 지원되는 quant_type" in e for e in errors_missing)
 
 
+@pytest.mark.parametrize("config", [{"quant_type": "Q2K"}, {"model": "qwen3.5-4b-q4_k_m", "quant_type": "Q2K"}])
+def test_llm_quant_type_accepts_only_exact_registered_values(config) -> None:
+    errors = LlmInferenceAdapter().validate_config(config, scope="personal")
+    assert any("지원되지 않는 quant_type" in e and "Q2K" in e for e in errors)
+
+
+@pytest.mark.parametrize("bad", ["q4_k_m", "Q4_K_M ", "Q2k", ["Q4_K_M"], 4])
+def test_llm_quant_type_rejects_non_canonical_without_crashing(bad) -> None:
+    errors = LlmInferenceAdapter().validate_config({"quant_type": bad}, scope="personal")
+    assert any("quant_type" in e for e in errors)
+
+
+def test_llm_quant_type_conflicting_with_explicit_model_is_rejected() -> None:
+    errors = LlmInferenceAdapter().validate_config(
+        {"model": "qwen3.5-4b-q4_k_m", "quant_type": "Q2_K"}, scope="personal"
+    )
+    assert any("quant_type" in e and "model" in e for e in errors)
+
+
+@pytest.mark.parametrize("adapter", [LlmInferenceAdapter(), TtsSynthesisAdapter()], ids=lambda a: a.id)
+def test_supported_parameters_never_contain_keys_validate_config_rejects(adapter) -> None:
+    base = {"texts": ["t"]} if adapter.id == "tts_synthesis" else {"model": "qwen3.5-4b-q4_k_m"}
+    for key in adapter.supported_parameters:
+        errors = adapter.validate_config({**base, key: 0}, scope="personal")
+        rejected = [e for e in errors if key in e and "미지원" in e]
+        assert not rejected, f"{adapter.id} lists {key!r} as supported but rejects it: {rejected}"
+
+
+def test_llm_supported_parameters_exclude_main_gpu_and_quant_method() -> None:
+    assert not {"main_gpu", "quant_method"} & set(LlmInferenceAdapter.supported_parameters)
+
+
+def test_tts_supported_parameters_exclude_split_on_comma_and_total_steps() -> None:
+    assert not {"split_on_comma", "total_steps"} & set(TtsSynthesisAdapter.supported_parameters)
+
+
 def test_llm_inference_swap_top_level_metric() -> None:
     adapter = LlmInferenceAdapter()
     run_res = AdapterRunResult(
@@ -473,75 +598,142 @@ def test_llm_inference_swap_top_level_metric() -> None:
     assert keys["swap_peak_growth_mb"].unit == "MB"
 
 
+_TTS_TEXTS = ["안녕하세요 음성 합성 테스트입니다", "두 번째 문장입니다"]
+
+
+def _tts_result(count: int) -> TtsResult:
+    return TtsResult(
+        chunks=[
+            TtsChunkResult(index=i, path=f"/tmp/research_chunk_{i}.wav", duration_seconds=5.0,
+                           sample_rate=24000, bytes=10000)
+            for i in range(count)
+        ],
+        metrics={"synth_seconds": 1.0, "audio_seconds": 5.0, "load_seconds": 0.2, "peak_rss_bytes": 104857600},
+    )
+
+
+@contextlib.contextmanager
+def _autospecced_tts(*, chunks: int = 1, run_worker=None, synthesize=None):
+    """Autospec SupertonicProvider/STT runner so signature drift fails the test."""
+    from ttakkari.config import get_settings
+
+    settings = get_settings().model_copy(update={"local_stt_python": sys.executable})
+    ready = ProviderAvailability(state=ProviderState.ready, reason="Ready")
+    with patch("ttakkari.config.get_settings", autospec=True, return_value=settings), \
+         patch.object(SupertonicProvider, "availability", autospec=True, return_value=ready), \
+         patch.object(SupertonicProvider, "synthesize", autospec=True,
+                      return_value=_tts_result(chunks), side_effect=synthesize) as synth, \
+         patch.object(stt_runner, "run_worker", autospec=True, side_effect=run_worker) as worker:
+        yield SimpleNamespace(synthesize=synth, run_worker=worker)
+
+
 @pytest.mark.asyncio
 async def test_tts_synthesis_stt_runner_signature_and_both_cer_metrics() -> None:
     adapter = TtsSynthesisAdapter()
+    config = {"texts": _TTS_TEXTS[:1], "mode": "synthesize_and_stt", "voice": "M1"}
 
-    # Verify signature of stt runner.run_worker
-    sig = inspect.signature(stt_runner.run_worker)
-    assert "audio_path" in sig.parameters
-    assert "params" in sig.parameters
-    assert "settings" in sig.parameters
-    assert "production" in sig.parameters
+    async def fake_run_worker(audio_path, params, settings, *, production=True):
+        assert isinstance(audio_path, Path)
+        assert isinstance(params, dict)
+        assert production is True
+        return {"text": "안녕하세요 음성 합성 테스트입니다"}
 
-    config = {
-        "texts": ["안녕하세요. 음성 합성 테스트입니다."],
-        "mode": "synthesize_and_stt",
-        "voice": "M1",
-    }
-    run_id = uuid4()
-
-    with patch("ttakkari.tts.supertonic.SupertonicProvider.availability") as mock_avail, \
-         patch("ttakkari.tts.supertonic.SupertonicProvider.synthesize") as mock_synth, \
-         patch("ttakkari.meetings.local_stt.runner.run_worker") as mock_run_worker, \
-         patch("ttakkari.config.get_settings") as mock_settings:
-
-        avail_obj = MagicMock()
-        avail_obj.ready = True
-        avail_obj.reason = "Ready"
-        mock_avail.return_value = avail_obj
-
-        synth_res = MagicMock()
-        synth_res.metrics = {"synth_seconds": 1.0, "audio_seconds": 5.0, "load_seconds": 0.2, "peak_rss_bytes": 104857600}
-        chunk_mock = MagicMock()
-        chunk_mock.path = "/tmp/dummy_chunk.wav"
-        chunk_mock.duration_seconds = 5.0
-        chunk_mock.sample_rate = 24000
-        chunk_mock.bytes = 10000
-        synth_res.chunks = [chunk_mock]
-        mock_synth.return_value = synth_res
-
-        settings_obj = MagicMock()
-        settings_obj.local_stt_python = "/usr/bin/python3"
-        mock_settings.return_value = settings_obj
-
-        # Strict run_worker check: must accept audio_path, params, settings, production
-        async def fake_run_worker(audio_path, params, settings, *, production=True):
-            assert isinstance(audio_path, Path)
-            assert isinstance(params, dict)
-            assert production is True
-            return {"text": "안녕하세요 음성 합성 테스트입니다"}
-
-        mock_run_worker.side_effect = fake_run_worker
-
-        result = await adapter.execute_run(run_id, config, scope="personal")
+    with _autospecced_tts(chunks=1, run_worker=fake_run_worker) as m:
+        result = await adapter.execute_run(uuid4(), config, scope="personal")
         assert result.status == "succeeded"
-        assert mock_run_worker.call_count == 1
+        assert m.run_worker.call_count == 1
+        evaluated = result.raw_output["stt_eval"]
+        assert [e["recognized_text"] for e in evaluated] == ["안녕하세요 음성 합성 테스트입니다"]
+        assert isinstance(evaluated[0]["cer_vs_normalized"], float)
+        assert isinstance(evaluated[0]["cer_vs_raw"], float)
+        assert evaluated[0]["cer_vs_normalized"] == 0.0
+        assert evaluated[0]["cer_vs_raw"] == 0.0
 
         measurements = adapter.to_measurements(result, config)
-        keys = {m.metric_key: m for m in measurements}
-        assert "stt_cer_vs_normalized" in keys
-        assert "stt_cer_vs_raw" in keys
-        assert "stt_wer_vs_normalized" in keys
-        assert "stt_wer_vs_raw" in keys
+        keys = {x.metric_key: x for x in measurements}
+        assert {"stt_cer_vs_normalized", "stt_cer_vs_raw", "stt_wer_vs_normalized", "stt_wer_vs_raw"} <= set(keys)
         assert keys["stt_cer_vs_normalized"].is_proxy is True
         assert keys["stt_cer_vs_raw"].is_proxy is True
 
-        # Test STT worker failure in synthesize_and_stt mode -> contract is status="failed"
-        mock_run_worker.side_effect = RuntimeError("STT worker crashed with OOM")
+        m.run_worker.side_effect = RuntimeError("STT worker crashed with OOM")
         result_failed = await adapter.execute_run(uuid4(), config, scope="personal")
         assert result_failed.status == "failed"
         assert result_failed.error_code == "stt_worker_failed"
+
+
+@pytest.mark.asyncio
+async def test_tts_partial_stt_chunk_failure_fails_run_and_lists_failed_chunks() -> None:
+    """RunStatus has no 'partial'; a missing evaluation sample must not read as a complete result."""
+    calls = 0
+
+    async def flaky_run_worker(audio_path, params, settings, *, production=True):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("worker crashed on chunk 1")
+        return {"text": "안녕하세요 음성 합성 테스트입니다"}
+
+    config = {"texts": _TTS_TEXTS, "mode": "synthesize_and_stt", "voice": "M1"}
+    with _autospecced_tts(chunks=2, run_worker=flaky_run_worker):
+        result = await TtsSynthesisAdapter().execute_run(uuid4(), config, scope="personal")
+
+    assert result.status == "failed"
+    assert result.error_code == "stt_worker_failed"
+    assert result.raw_output["failed_chunks"] == [1]
+    assert result.raw_output["stt_chunk_count"] == 2
+    assert [e["chunk_index"] for e in result.raw_output["stt_eval"]] == [0, 1]
+    assert "1/2" in result.error_message
+    assert TtsSynthesisAdapter().to_measurements(result, config) == []
+
+
+@pytest.mark.asyncio
+async def test_tts_cancel_while_waiting_for_execution_lock_never_synthesizes() -> None:
+    cancel_event = asyncio.Event()
+    config = {"texts": _TTS_TEXTS[:1], "mode": "synthesize"}
+    with _autospecced_tts(chunks=1) as m:
+        await tts_service._execution_lock.acquire()
+        try:
+            task = asyncio.create_task(
+                TtsSynthesisAdapter().execute_run(uuid4(), config, scope="personal", cancel_event=cancel_event)
+            )
+            await asyncio.sleep(0.05)
+            cancel_event.set()
+            # the lock is still held by someone else: the run must still react to cancel
+            result = await asyncio.wait_for(task, timeout=3)
+        finally:
+            tts_service._execution_lock.release()
+
+    assert result.status == "cancelled"
+    assert m.synthesize.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_tts_cancel_during_synthesis_stops_provider_and_frees_lock() -> None:
+    cancel_event = asyncio.Event()
+    started = asyncio.Event()
+    state = {"cancelled": False}
+
+    async def blocking_synthesize(self, chunks, *, voice, speed, lang, out_dir):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            state["cancelled"] = True
+            raise
+
+    config = {"texts": _TTS_TEXTS[:1], "mode": "synthesize"}
+    with _autospecced_tts(chunks=1, synthesize=blocking_synthesize):
+        task = asyncio.create_task(
+            TtsSynthesisAdapter().execute_run(uuid4(), config, scope="personal", cancel_event=cancel_event)
+        )
+        await asyncio.wait_for(started.wait(), timeout=3)
+        cancel_event.set()
+        result = await asyncio.wait_for(task, timeout=3)
+
+    assert result.status == "cancelled"
+    assert result.raw_output["reason"] == "cancelled_during_synthesis"
+    assert state["cancelled"] is True
+    assert not tts_service._execution_lock.locked()
 
 
 def test_tts_synthesis_unsupported_parameters_and_methods_audit() -> None:

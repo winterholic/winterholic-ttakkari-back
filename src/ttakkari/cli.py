@@ -259,6 +259,7 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
     import json
 
     from ttakkari import db
+    from ttakkari.kb_library import ensure_document_access
     from ttakkari.kb_store import KbInputError, ingest_source, segment_revision
 
     path = Path(args.file).expanduser()
@@ -285,6 +286,8 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
                     title=args.title,
                     lang=args.lang,
                 )
+                # 접근 행이 없으면 scope 를 알 수 없는 문서가 된다(work_only 로 취급돼 개인 검색에서 사라진다). 항상 쓴다.
+                await ensure_document_access(session, result.document_id, scope=args.scope)
                 # 패시지가 있어야 검색된다. 이미 나뉜 리비전이면 같은 행이 남는다(멱등).
                 await segment_revision(session, result.revision_id)
                 await session.commit()
@@ -305,6 +308,7 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
         "sha256": result.sha256,
         "created": result.created,
         "healed_file": result.healed_file,
+        "scope": args.scope,
     }, ensure_ascii=False))
     return 0
 
@@ -418,6 +422,37 @@ def _cmd_kb_enqueue_jobs(args: argparse.Namespace) -> int:
     except BackfillAlreadyRunning as exc:
         print(f"이미 실행 중인 잡 백필이 있다: {exc}", file=sys.stderr)
         return 3
+    return 0
+
+
+def _cmd_kb_backfill_access(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.config import get_settings
+    from ttakkari.kb_access_backfill import check_target, run_backfill
+
+    try:
+        database = check_target(
+            str(get_settings().database_url), apply=args.apply, confirm_database=args.confirm_database
+        )
+    except PermissionError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                return await run_backfill(
+                    session, apply=args.apply, personal_prefixes=args.personal_doc_key_prefix, limit=args.limit
+                )
+        finally:
+            await db.dispose_engine()
+
+    report = asyncio.run(run()).as_dict()
+    report["database"] = database
+    print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -571,7 +606,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--media-type", default=None)
     p.add_argument("--title", default=None)
     p.add_argument("--lang", default=None)
+    p.add_argument("--scope", choices=["personal", "work"], default="work",
+                   help="접근 범위. 기본 work(work_only): 개인 검색에 노출하지 않는다. personal 은 global 로 노출한다")
     p.set_defaults(func=_cmd_kb_ingest)
+
+    p = sub.add_parser(
+        "kb-backfill-access",
+        help="접근 행이 없는 기존 문서에 접근 행을 채운다(기본 dry-run, 미상은 work_only)",
+    )
+    p.add_argument("--apply", action="store_true", help="실제로 쓴다. --confirm-database 가 필요하다")
+    p.add_argument("--confirm-database", default=None, help="접속 DB 이름(쓰기 모드에서 직접 다시 입력)")
+    p.add_argument("--personal-doc-key-prefix", action="append", default=[],
+                   help="이 접두사의 doc_key 는 personal(global)로 채운다(반복 가능). 지목하지 않은 미상은 work_only")
+    p.add_argument("--limit", type=int, default=None, help="처리할 문서 수 상한")
+    p.set_defaults(func=_cmd_kb_backfill_access)
 
     p = sub.add_parser("kb-segment", help="패시지가 없는 지식 도서관 리비전을 문단으로 나눠 검색 가능하게 한다(멱등)")
     p.set_defaults(func=_cmd_kb_segment)

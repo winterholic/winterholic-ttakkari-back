@@ -23,13 +23,14 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.kb_access import (
     KbAccessContext,
     document_access_conditions,
     from_caller_visibility,
 )
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision
+from ttakkari.kb_ontology.currency import current_revision_ids
 from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
     KbEntity,
@@ -56,32 +57,8 @@ def _validate_query(caller_visibility: str, offset: int, limit: int) -> None:
 async def _current_revision_map(
     db: AsyncSession, document_ids: set[uuid.UUID]
 ) -> dict[uuid.UUID, uuid.UUID]:
-    """kb_library._current_revision_filter 와 같은 event_time→rev_no 우선순위."""
-    if not document_ids:
-        return {}
-    current: dict[uuid.UUID, uuid.UUID] = {}
-    observations = await db.execute(
-        select(KbObservation.document_id, KbObservation.revision_id)
-        .where(KbObservation.document_id.in_(document_ids))
-        .order_by(
-            KbObservation.event_time.desc(),
-            KbObservation.recorded_at.desc(),
-            KbObservation.id.desc(),
-        )
-    )
-    for document_id, revision_id in observations:
-        current.setdefault(document_id, revision_id)
-
-    missing = document_ids - current.keys()
-    if missing:
-        revisions = await db.execute(
-            select(KbRevision.document_id, KbRevision.id)
-            .where(KbRevision.document_id.in_(missing))
-            .order_by(KbRevision.rev_no.desc())
-        )
-        for document_id, revision_id in revisions:
-            current.setdefault(document_id, revision_id)
-    return current
+    """문서별 현재 리비전(rev_no 최대). 주장·정본·충돌과 같은 정의다(kb_ontology.currency)."""
+    return await current_revision_ids(db, document_ids)
 
 __all__ = [
     "GraphEdge",

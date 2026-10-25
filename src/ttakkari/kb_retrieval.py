@@ -46,6 +46,7 @@ from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
     KbEntity,
 )
+from ttakkari.kb_store import source_domain, source_domain_expression
 from ttakkari.kb_vector_models import KbPassageVector as V
 from ttakkari.model_process import run_json_worker
 from ttakkari.models import EMBED_DIM
@@ -94,24 +95,31 @@ def _metadata_filter_predicates(
     domain = filters.get("domain")
     domain_predicate = None
     if domain:
-        # 사용자가 등록 때 고른 주제가 우선이고, 없으면 문서 엔터티의 domain 으로 자동 분류한 값과 맞춘다.
-        explicit = select(KbSource.id).where(
-            KbSource.id == KbRevision.source_id, KbSource.source_meta["domain"].astext == str(domain)
+        norm_domain = str(domain).strip().lower().rstrip(".")
+        # 1. URL 호스트명 또는 source_meta['domain'] (fixes: docs.example.org 및 명시 메타)
+        source_match = select(KbSource.id).where(
+            KbSource.id == KbRevision.source_id,
+            source_domain_expression() == norm_domain,
         ).correlate(KbRevision).exists()
-        auto_ent = aliased(KbEntity)
-        auto_doc = aliased(KbDocumentEntity)
-        derived = (
-            select(auto_doc.entity_id)
-            .join(auto_ent, auto_ent.id == auto_doc.entity_id)
-            .where(
-                auto_doc.revision_id == KbRevision.id,
-                auto_ent.domain.in_(entity_domains_for_topic(str(domain))),
-                entity_access_filter(ctx, auto_ent),
+        # 2. 문서 엔터티의 domain 으로 자동 분류한 주제 (HEAD: dev-infra, security 등)
+        topic_domains = entity_domains_for_topic(str(domain))
+        if topic_domains:
+            auto_ent = aliased(KbEntity)
+            auto_doc = aliased(KbDocumentEntity)
+            derived = (
+                select(auto_doc.entity_id)
+                .join(auto_ent, auto_ent.id == auto_doc.entity_id)
+                .where(
+                    auto_doc.revision_id == KbRevision.id,
+                    auto_ent.domain.in_(topic_domains),
+                    entity_access_filter(ctx, auto_ent),
+                )
+                .correlate(KbRevision)
+                .exists()
             )
-            .correlate(KbRevision)
-            .exists()
-        )
-        domain_predicate = or_(explicit, derived)
+            domain_predicate = or_(source_match, derived)
+        else:
+            domain_predicate = source_match
     entity_id = filters.get("entity_id")
     if entity_id:
         try:
@@ -789,22 +797,26 @@ async def search(
 
         conflict_a = aliased(KbAssertion)
         conflict_b = aliased(KbAssertion)
-        conflict_stmt = (
-            select(KbDocumentEntity.passage_id)
-            .join(KbConflict, KbConflict.entity_id == KbDocumentEntity.entity_id)
-            .join(conflict_a, conflict_a.id == KbConflict.assertion_a_id)
-            .join(conflict_b, conflict_b.id == KbConflict.assertion_b_id)
-            .where(
-                KbDocumentEntity.passage_id.in_(valid_pid_uuids),
-                KbConflict.status == "open",
-                KbConflict.visibility.in_(ctx.allowed_visibilities),
-                assertion_access_filter(ctx, conflict_a),
-                assertion_access_filter(ctx, conflict_b),
+        # has_conflict 는 열린 충돌의 당사자 주장(a 또는 b)을 뒷받침하는 근거 패시지에만 붙는다. 같은 엔터티를 언급할 뿐인
+        # 패시지에는 붙이지 않는다.
+        for party_column in (KbConflict.assertion_a_id, KbConflict.assertion_b_id):
+            conflict_stmt = (
+                select(KbEvidence.passage_id)
+                .join(KbAssertionEvidence, KbAssertionEvidence.evidence_id == KbEvidence.id)
+                .join(KbConflict, party_column == KbAssertionEvidence.assertion_id)
+                .join(conflict_a, conflict_a.id == KbConflict.assertion_a_id)
+                .join(conflict_b, conflict_b.id == KbConflict.assertion_b_id)
+                .where(
+                    KbEvidence.passage_id.in_(valid_pid_uuids),
+                    KbAssertionEvidence.relation == "supports",
+                    KbConflict.status == "open",
+                    KbConflict.visibility.in_(ctx.allowed_visibilities),
+                    assertion_access_filter(ctx, conflict_a),
+                    assertion_access_filter(ctx, conflict_b),
+                )
             )
-        )
-        conflict_pids = (await db.execute(conflict_stmt)).scalars().all()
-        for cp_id in conflict_pids:
-            passage_conflict_map[str(cp_id)] = True
+            for cp_id in (await db.execute(conflict_stmt)).scalars().all():
+                passage_conflict_map[str(cp_id)] = True
 
     # 패시지 메타데이터 구성 (RRF 랭킹 계산용)
     for pid in valid_pids:
@@ -876,7 +888,7 @@ async def search(
                 "id": str(doc.id),
                 "title": doc.title,
                 "lang": doc.lang,
-                "domain": getattr(doc, "domain", None),
+                "domain": source_domain(src),
             },
             "revision": {
                 "id": str(rev.id),

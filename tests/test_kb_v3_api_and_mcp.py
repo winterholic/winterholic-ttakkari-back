@@ -38,7 +38,7 @@ ReplicaSet manages Pod objects and keeps the replica count stable.
 
 ## 네트워크
 
-서비스는 Pod 집합을 노출한다. 외부 노출은 반드시 서비스로 한다.
+서비스는 작업부하 집합을 노출한다. 외부 노출은 반드시 서비스로 한다.
 """
 
 

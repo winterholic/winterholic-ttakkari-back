@@ -169,7 +169,7 @@ async def classify(db: AsyncSession, doc: KbDocument, *, classify_legacy: bool, 
     if access is not None and access.hidden and not include_hidden:
         return Plan(doc.id, doc.title, SKIP_HIDDEN, "hidden_by_collection_policy")
     if access is None and not classify_legacy:
-        # 접근 행이 없는 레거시 문서는 개인 범위로만 보인다. 파생 지식은 fail-closed(work_only)가 되므로 사람이 결정한다.
+        # 접근 행이 없는 문서는 work_only 취급된다. 백필 계획에서 처리하려면 --classify-legacy 로 안전하게 분류하거나 사전에 kb-backfill-access 를 실행해야 한다.
         return Plan(doc.id, doc.title, SKIP_UNCLASSIFIED, "no_access_row_needs_classify_legacy_decision")
     rev = await _latest_revision(db, doc.id)
     if rev is None:
@@ -283,8 +283,13 @@ async def apply_plan(db: AsyncSession, plan: Plan, run_id: str, *, classify_lega
     doc = await db.get(KbDocument, plan.document_id)
     prev = await db.get(KbRevision, plan.revision_id)
     if classify_legacy and await db.get(KbDocumentAccess, doc.id) is None:
-        # 접근 행이 없던 문서의 현재 노출(개인 범위)을 그대로 명시한다. 노출을 넓히지도 좁히지도 않는다.
-        db.add(KbDocumentAccess(document_id=doc.id, tenant_id="owner", scope="personal", origin_scope="personal", visibility="global"))
+        # 접근 행이 없는 문서는 안전 규칙에 따라 분류한다 (알 수 없으면 work_only, 근거 있는 분류만 personal).
+        from ttakkari.kb_access_backfill import classify as classify_access
+        source = await db.get(KbSource, prev.source_id) if prev else None
+        scope, _rule = classify_access(doc.doc_key, source.origin_meta if source else None)
+        origin_scope = "personal" if scope == "personal" else "work"
+        visibility = "global" if scope == "personal" else "work_only"
+        db.add(KbDocumentAccess(document_id=doc.id, tenant_id="owner", scope=scope, origin_scope=origin_scope, visibility=visibility))
         await db.flush()
     if plan.action == ENQUEUE_ONLY:
         await segment_revision(db, prev.id)  # 패시지가 이미 있으면 같은 행이 남는다(멱등)

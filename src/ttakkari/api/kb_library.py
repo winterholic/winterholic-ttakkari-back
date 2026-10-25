@@ -1,8 +1,10 @@
 """Owner KB API: 하나의 통합 지식 도서관(KB v3, KB3-402).
 
 개인/회사 선택 파라미터 없이 하나의 공간으로 응답한다. 접근은 kb_access 단일 규칙이다: 사용자 웹 세션은 개인 세션 기준
-(global + 자기 소유 personal 출처)이고 work_only 는 보이지 않는다. 기존 `scope` 쿼리는 deprecated 로 받기만 한다
+(global + 자기 소유 personal 출처)이고 work_only 는 보이지 않는다. 접근 행이 없는 문서는 work_only 로 격리된다
+(미상 scope 는 절대 personal 에 도달하지 않는다). 기존 `scope` 쿼리는 deprecated 로 받기만 한다
 (생략·personal = 통합 공간, work = 기존 회사 범위 조회를 명시적으로 고르는 레거시 경로). 기존 응답 필드는 보존하고 v3 필드는 추가만 한다.
+Model rankings are evidence candidates; KB7 quality approval is separate.
 """
 
 from __future__ import annotations

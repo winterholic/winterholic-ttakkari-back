@@ -15,6 +15,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy import text as sa_text
@@ -36,6 +37,38 @@ DEFAULT_ORPHAN_GRACE_SECONDS = 60.0
 DEFAULT_TMP_GRACE_SECONDS = 60.0
 # DB 컬럼 길이(문자 수). 초과 입력은 파일을 쓰기 전에 거부한다.
 _FIELD_LIMITS = {"source_key": 500, "kind": 40, "media_type": 120, "lang": 16, "parser_version": 60}
+
+
+def domain_from_locator(locator: str | None) -> str | None:
+    """http(s) 주소의 호스트(소문자, 포트·계정 제외). URL 이 아니면 None 이다. `domain` 필터와 표시의 단일 정의다."""
+    if not locator:
+        return None
+    try:
+        parts = urlsplit(locator.strip())
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        return None
+    return host.rstrip(".") or None
+
+
+def source_domain(source: KbSource | None) -> str | None:
+    """기록된 source_meta.domain 이 우선이고, 수집 경로가 기록하기 전의 기존 행은 locator 에서 도출한다."""
+    if source is None:
+        return None
+    recorded = (source.source_meta or {}).get("domain")
+    return recorded if isinstance(recorded, str) and recorded else domain_from_locator(source.locator)
+
+
+# locator 에서 호스트만 뽑는 POSIX 정규식(대소문자 무시, 계정·포트·경로 제외). domain_from_locator 와 같은 규칙이다.
+_LOCATOR_HOST_REGEX = r"(?i)^https?://(?:[^/@?#]*@)?([^/:?#\[]+)"
+
+
+def source_domain_expression():
+    """SQL 쪽 source_domain. kb_sources 는 UPDATE 가 불변이라 기존 행은 갱신하지 않고 읽을 때 같은 규칙으로 도출한다."""
+    derived = func.lower(func.substring(KbSource.locator, _LOCATOR_HOST_REGEX))
+    return func.coalesce(func.lower(KbSource.source_meta["domain"].astext), derived)
 
 
 class KbInputError(ValueError):
@@ -226,15 +259,20 @@ async def ingest_source(
         if parser_name is not None:
             extra["parser_name"] = parser_name[:60]
             extra["parser_version"] = parser_version[:60]
+        meta = {}
+        if (domain := domain_from_locator(locator)):
+            meta["domain"] = domain
         if source_meta:
-            extra["source_meta"] = source_meta
+            meta.update(source_meta)
+        if meta:
+            extra["source_meta"] = meta
         await db.execute(
-        insert(KbSource).values(
-            id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
-            byte_size=len(data), media_type=media_type, store_path=str(relpath),
-            collected_at=collected, origin_meta=origin_meta or {}, created_at=now, **extra,
+            insert(KbSource).values(
+                id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
+                byte_size=len(data), media_type=media_type, store_path=str(relpath),
+                collected_at=collected, origin_meta=origin_meta or {}, created_at=now, **extra,
+            )
         )
-    )
     doc = (await db.execute(select(KbDocument).where(KbDocument.doc_key == source_key))).scalar_one_or_none()
     if doc is None:
         doc_id = uuid.uuid4()

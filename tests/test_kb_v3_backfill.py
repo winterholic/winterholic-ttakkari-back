@@ -224,8 +224,54 @@ async def test_classify_legacy_makes_the_current_exposure_explicit_and_include_h
     assert s.by_action[SKIP_UNCLASSIFIED] == 0 and s.by_action[SKIP_HIDDEN] == 0
     async with sessionmaker()() as db:
         row = await db.get(KbDocumentAccess, corpus["legacy"])
-        assert (row.scope, row.origin_scope, row.visibility, row.hidden) == ("personal", "personal", "global", False)
+        # 미상 문서는 노출 확대 방지를 위해 work_only 로 안전 격리된다
+        assert (row.scope, row.origin_scope, row.visibility, row.hidden) == ("work", "work", "work_only", False)
         assert (await db.get(KbDocumentAccess, corpus["hidden"])).hidden is True, "숨김 상태는 풀리지 않는다"
+
+
+async def test_classify_legacy_does_not_expose_unprovenanced_documents(tmp_path):
+    """--classify-legacy 는 출처 근거가 없는 문서를 personal/global 로 노출하지 않고 work_only 로 격리한다.
+
+    근거가 확실한 research:personal 이나 collector personal 만 personal/global 로 인정한다.
+    """
+    async with sessionmaker()() as db:
+        # 1. 미상 업로드 문서 (출처 근거 없음) -> work_only 격리
+        res_unknown = await _legacy_doc(db, "upload:unknown_corp", "Confidential company data", kind="upload",
+                                        access=False, observe=False)
+        # 2. research:personal 문서 (근거 있음) -> personal/global
+        res_res_p = await _legacy_doc(db, "research:personal:my_note", "My personal note", kind="web",
+                                      access=False, observe=False)
+        # 3. research:work 문서 -> work_only
+        res_res_w = await _legacy_doc(db, "research:work:project_x", "Work project spec", kind="web",
+                                      access=False, observe=False)
+        # 4. collector personal 문서 (origin_meta 에 명시적 scope) -> personal/global
+        res_col_p = await ingest_source(
+            db, source_key="collector:personal_doc", data=b"# P\n\nPersonal blog post\n", kind="web",
+            locator="https://blog.me/post", media_type="text/html", title="blog", lang="ko",
+            parser_version="raw-v1", normalized_body="# P\n\nPersonal blog post\n",
+            origin_meta={"via": "collector", "scope": "personal"},
+        )
+        await _single_passage(db, res_col_p.revision_id, "# P\n\nPersonal blog post\n")
+        await db.commit()
+
+    summary = await _run(apply=True, classify_legacy=True, report_dir=tmp_path)
+    assert summary.by_action[SKIP_UNCLASSIFIED] == 0
+
+    async with sessionmaker()() as db:
+        acc_unknown = await db.get(KbDocumentAccess, res_unknown.document_id)
+        assert (acc_unknown.scope, acc_unknown.origin_scope, acc_unknown.visibility) == ("work", "work", "work_only"), \
+            "근거 없는 미상 문서는 회사자료 보호를 위해 work_only 로 격리되어야 한다"
+
+        acc_res_p = await db.get(KbDocumentAccess, res_res_p.document_id)
+        assert (acc_res_p.scope, acc_res_p.origin_scope, acc_res_p.visibility) == ("personal", "personal", "global"), \
+            "research:personal 은 personal/global 로 허용된다"
+
+        acc_res_w = await db.get(KbDocumentAccess, res_res_w.document_id)
+        assert (acc_res_w.scope, acc_res_w.origin_scope, acc_res_w.visibility) == ("work", "work", "work_only")
+
+        acc_col_p = await db.get(KbDocumentAccess, res_col_p.document_id)
+        assert (acc_col_p.scope, acc_col_p.origin_scope, acc_col_p.visibility) == ("personal", "personal", "global"), \
+            "collector personal 은 personal/global 로 허용된다"
 
 
 async def test_limit_resume_and_stop_event_continue_where_they_left_off(corpus, tmp_path):

@@ -516,7 +516,11 @@ async def test_conflicting_definitions_create_a_conflict_that_search_and_list_ex
         for ctx in (create_owner_context(), create_personal_agent_context()):
             assert len(await list_conflicts(db, access=ctx)) == 1
             out = await search(db, query="Kubernetes refers to", access_context=ctx, mode="graph", limit=5)
-            assert out["items"] and all(i["has_conflict"] for i in out["items"])
+            # has_conflict 는 충돌 당사자 주장의 근거 패시지(정의 문장)에만 붙는다. 같은 엔터티가 제목에 나올 뿐인 패시지는 아니다.
+            assert out["items"]
+            for item in out["items"]:
+                assert item["has_conflict"] is ("refers to" in item["snippet"]), item["snippet"]
+            assert any(i["has_conflict"] for i in out["items"])
     # caller_visibility 호환 경로도 같은 단일 규칙으로 같은 결과를 낸다
     async with sessionmaker()() as db:
         assert len(await list_conflicts(db, caller_visibility="global")) == 1

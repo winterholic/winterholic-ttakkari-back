@@ -17,16 +17,21 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.kb_access import (
     create_owner_context,
     create_personal_agent_context,
     document_access_conditions,
 )
 from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
+from ttakkari.kb_ontology.currency import (
+    current_revision_id,
+    current_revision_ids,
+    older_revision_ids,
+)
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -49,88 +54,158 @@ __all__ = [
 ]
 
 
+SUPERSESSION_RESOLVER = "system:revision_supersession"
+
+
 async def update_superseded_assertions(
     db: AsyncSession, revision_id: uuid.UUID
 ) -> int:
-    """새 리비전이 구버전 리비전을 대체(supersedes_id 또는 rev_no 갱신)할 때 과거 주장을 superseded 로 전환.
+    """새 리비전 또는 재관측된 리비전으로 인해 대체되는 과거 주장을 superseded 로 전환하고,
+    현재 리비전의 주장은 active 로 유지/복원한다.
 
     원장(kb_revisions, kb_passages, kb_evidence)은 절대 UPDATE/DELETE 하지 않으며,
-    파생 프로젝션인 kb_assertions.status 만 변경한다.
+    파생 프로젝션인 kb_assertions.status 와 kb_conflicts 만 변경한다.
+    충돌 당사자라 disputed 로 남아 있던 구버전 주장도 대체한다. 그 주장이 당사자인 열린 충돌은 닫는다(아래).
     """
     rev = await db.get(KbRevision, revision_id)
     if rev is None:
         return 0
 
-    older_rev_ids: set[uuid.UUID] = set()
-
-    # 1. 명시적 supersedes_id 가 있는 경우
-    if rev.supersedes_id is not None:
-        older_rev_ids.add(rev.supersedes_id)
-
-    # 2. 동일 문서의 더 낮은 rev_no 리비전들
-    older_rev_rows = await db.scalars(
-        select(KbRevision.id).where(
-            KbRevision.document_id == rev.document_id,
-            KbRevision.rev_no < rev.rev_no,
-        )
-    )
-    for oid in older_rev_rows:
-        older_rev_ids.add(oid)
-
-    if not older_rev_ids:
+    curr_id = await current_revision_id(db, rev.document_id)
+    if curr_id is None:
         return 0
 
-    # 과거 리비전에 속한 active 주장들을 superseded 로 전환
-    older_assertions = list(
+    # 1. 만약 rev 가 문서의 현재 리비전인 경우:
+    if curr_id == rev.id:
+        # A->B->A 복귀 시 이전에 superseded 처리되었을 수 있는 현재 리비전의 주장을 active 로 복원
+        restored = list(
+            await db.scalars(
+                select(KbAssertion).where(
+                    KbAssertion.revision_id == rev.id,
+                    KbAssertion.status == "superseded",
+                )
+            )
+        )
+        for assertion in restored:
+            assertion.status = "active"
+
+        # 동일 문서의 다른 모든 과거 리비전의 주장을 superseded 로 전환
+        older_rev_ids = await older_revision_ids(db, rev)
+        if not older_rev_ids:
+            return len(restored)
+
+        older_assertions = list(
+            await db.scalars(
+                select(KbAssertion).where(
+                    KbAssertion.revision_id.in_(list(older_rev_ids)),
+                    KbAssertion.status.in_(("active", "disputed")),
+                )
+            )
+        )
+        for assertion in older_assertions:
+            assertion.status = "superseded"
+            assertion.is_canonical = False
+
+        if older_assertions:
+            await _close_conflicts_of_superseded(db, {a.id for a in older_assertions})
+            log.info(
+                "revision %s superseded %d assertions from older revisions %s",
+                revision_id,
+                len(older_assertions),
+                older_rev_ids,
+            )
+        return len(older_assertions) + len(restored)
+
+    # 2. 만약 rev 가 현재 리비전이 아닌 경우 (오래된 스냅샷 늦은 수집 등):
+    # rev 자신의 active/disputed 주장은 비현재 리비전이므로 superseded 로 전환한다.
+    # 현재 리비전(curr_id)의 주장은 절대 건드리지 않는다.
+    rev_assertions = list(
         await db.scalars(
             select(KbAssertion).where(
-                KbAssertion.revision_id.in_(list(older_rev_ids)),
-                KbAssertion.status == "active",
+                KbAssertion.revision_id == rev.id,
+                KbAssertion.status.in_(("active", "disputed")),
             )
         )
     )
-    for assertion in older_assertions:
+    for assertion in rev_assertions:
         assertion.status = "superseded"
         assertion.is_canonical = False
 
-    if older_assertions:
+    if rev_assertions:
+        await _close_conflicts_of_superseded(db, {a.id for a in rev_assertions})
         log.info(
-            "revision %s superseded %d assertions from older revisions %s",
+            "non-current revision %s assertions (%d) set to superseded",
             revision_id,
-            len(older_assertions),
-            older_rev_ids,
+            len(rev_assertions),
         )
-    return len(older_assertions)
+    return len(rev_assertions)
 
 
-def _current_revision_subquery(document_id: Any) -> Any:
-    """kb_library._current_revision_filter 와 동등한 최신 리비전 ID 결정 서브쿼리."""
-    obs = KbObservation.__table__.alias("obs_curr")
-    newer = KbRevision.__table__.alias("newer_rev")
+async def _close_conflicts_of_superseded(
+    db: AsyncSession, superseded_ids: set[uuid.UUID]
+) -> list[KbConflict]:
+    """당사자 주장이 대체된 열린 충돌을 닫는다.
 
-    observed = (
-        select(obs.c.revision_id)
-        .where(obs.c.document_id == document_id)
-        .order_by(
-            obs.c.event_time.desc(),
-            obs.c.recorded_at.desc(),
-            obs.c.id.desc(),
+    - 한쪽 당사자만 대체된 경우: 살아남은 당사자 쪽으로 resolved_a / resolved_b 로 전환.
+      살아남은 당사자가 다른 열린 충돌에 걸려 있지 않으면 disputed 에서 active 로 되돌린다.
+    - 양쪽 당사자가 모두 대체된 경우: resolved_both_valid 는 둘 다 유효하다는 오해를 주므로
+      사용하지 않고, 기존 상태값 중 특정 주장을 채택하지 않고 종결함을 나타내는 kept_separate 를 쓴다.
+    - 사유는 resolution_note ('both_parties_superseded_by_newer_revision' 등)에 남기고,
+      resolved_by 에 SUPERSESSION_RESOLVER 를 남긴다.
+    """
+    conflicts = list(
+        await db.scalars(
+            select(KbConflict).where(
+                KbConflict.status == "open",
+                or_(
+                    KbConflict.assertion_a_id.in_(superseded_ids),
+                    KbConflict.assertion_b_id.in_(superseded_ids),
+                ),
+            )
         )
-        .limit(1)
-        .scalar_subquery()
     )
+    now = utcnow()
+    survivors: set[uuid.UUID] = set()
+    for conflict in conflicts:
+        a_gone = conflict.assertion_a_id in superseded_ids
+        b_gone = conflict.assertion_b_id in superseded_ids
+        if a_gone and b_gone:
+            conflict.status = "kept_separate"
+            note = "both_parties_superseded_by_newer_revision"
+        elif a_gone:
+            conflict.status = "resolved_b"
+            note = "party_a_superseded_by_newer_revision"
+            if conflict.assertion_b_id is not None:
+                survivors.add(conflict.assertion_b_id)
+        else:
+            conflict.status = "resolved_a"
+            note = "party_b_superseded_by_newer_revision"
+            if conflict.assertion_a_id is not None:
+                survivors.add(conflict.assertion_a_id)
+        conflict.resolution_note = note
+        conflict.resolved_by = SUPERSESSION_RESOLVER
+        conflict.resolved_at = now
+    if not conflicts:
+        return []
+    await db.flush()
 
-    latest_legacy = (
-        select(newer.c.id)
-        .where(
-            newer.c.document_id == document_id,
+    for survivor_id in survivors:
+        survivor = await db.get(KbAssertion, survivor_id)
+        if survivor is None or survivor.status != "disputed":
+            continue
+        still_open = await db.scalar(
+            select(func.count(KbConflict.id)).where(
+                KbConflict.status == "open",
+                or_(
+                    KbConflict.assertion_a_id == survivor_id,
+                    KbConflict.assertion_b_id == survivor_id,
+                ),
+            )
         )
-        .order_by(newer.c.rev_no.desc())
-        .limit(1)
-        .scalar_subquery()
-    )
-
-    return func.coalesce(observed, latest_legacy)
+        if not still_open:
+            survivor.status = "active"
+    log.info("closed %d conflicts whose party assertion was superseded", len(conflicts))
+    return conflicts
 
 
 async def get_active_assertions_for_entity(
@@ -181,32 +256,8 @@ async def get_active_assertions_for_entity(
     if not rows:
         return []
 
-    # 문서별 현재 리비전 검증 (메모리에서 캐싱하여 최신 리비전 아닌 주장 필터링)
-    doc_ids = {a.document_id for a, _ in rows}
-    current_rev_map: dict[uuid.UUID, uuid.UUID | None] = {}
-    for did in doc_ids:
-        # observation 확인
-        latest_obs = await db.scalar(
-            select(KbObservation.revision_id)
-            .where(KbObservation.document_id == did)
-            .order_by(
-                KbObservation.event_time.desc(),
-                KbObservation.recorded_at.desc(),
-                KbObservation.id.desc(),
-            )
-            .limit(1)
-        )
-        if latest_obs is not None:
-            current_rev_map[did] = latest_obs
-        else:
-            # rev_no 최대치
-            latest_rev = await db.scalar(
-                select(KbRevision.id)
-                .where(KbRevision.document_id == did)
-                .order_by(KbRevision.rev_no.desc())
-                .limit(1)
-            )
-            current_rev_map[did] = latest_rev
+    # 문서별 현재 리비전은 rev_no 최대(kb_ontology.currency). 현재 리비전이 아닌 리비전의 주장은 정본에서 뺀다.
+    current_rev_map = await current_revision_ids(db, {a.document_id for a, _ in rows})
 
     # 현재 리비전에 해당하는 주장들만 선별
     valid_pairs: list[tuple[KbAssertion, uuid.UUID]] = []
@@ -403,16 +454,17 @@ async def update_canonicals_for_revision(
         if a.object_entity_id is not None:
             affected_entity_ids.add(a.object_entity_id)
 
-    # 3. 만약 구버전이 대체되었다면 구버전의 주장 주어 엔터티도 갱신 대상에 포함
-    if rev.supersedes_id is not None:
-        older_assertions = list(
+    # 3. 구버전이 대체되었다면 구버전(supersedes_id 와 더 낮은 rev_no 전부)의 주장 주어 엔터티도 갱신 대상에 포함
+    older_ids = await older_revision_ids(db, rev)
+    if older_ids:
+        older_subjects = list(
             await db.scalars(
                 select(KbAssertion.subject_entity_id).where(
-                    KbAssertion.revision_id == rev.supersedes_id
+                    KbAssertion.revision_id.in_(older_ids)
                 )
             )
         )
-        for eid in older_assertions:
+        for eid in older_subjects:
             affected_entity_ids.add(eid)
 
     updated: list[KbEntityCanonical] = []

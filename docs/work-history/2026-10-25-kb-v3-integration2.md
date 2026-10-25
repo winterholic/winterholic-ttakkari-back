@@ -70,3 +70,36 @@ HTTP fetch와 outbox는 거치지 않았다. 그 전체 경로는 `tests/test_co
 
 - **관계 active 승격 경로가 없다.** 추출 파이프라인은 관계를 `candidate`로만 저장한다(설계). 검색의 1-hop 확장과 `query_1hop_subgraph`는 `active` 관계만 쓰므로, 승격 주체(L2 검증, 검토 승인 등)가 정해지기 전에는 파이프라인이 만든 관계로는 1-hop 결과가 나오지 않는다. 시험과 실 DB 흐름에서는 근거 행이 있는 관계를 직접 `active`로 바꿔(검토 승인 모사) 확장이 동작함을 보였다.
 - 추출된 엔터티의 `tenant_id`는 `"personal"`이고 문서 접근 tenant는 `"owner"`다. 다중 tenant로 가려면 엔터티 tenant를 owner tenant와 연결하는 설계가 필요하다.
+
+## 후속: L2 재합류와 세대 배포 contract (0072/0073)
+
+### L2
+`afcb5ab`는 앞선 병합에 이미 들어 있었다. 이후 L2 브랜치가 `263a162`(예산 경계·CLI 계약 시험, claude json-schema, 구독 전용 env)까지 전진해서 그 HEAD를 다시 병합했다. 텍스트 충돌은 없었다.
+`stages.py`에는 evidence-flow의 legacy Collector HTML hold와 L2 예산 호출부가 함께 있고, resolver 경유 영속화(`extractor_step.py`)는 건드리지 않았다.
+그 worktree에는 아직 커밋되지 않은 변경(`l2_adapters.py`, `subscription_transport.py`, `desk.py`, CLI 계약 시험 수정)이 남아 있어 포함하지 않았다.
+
+### `deploy/generation-contract.json`의 의미
+- `schema_revision`은 이 릴리스가 목표로 하는 alembic head다. 후보 세대를 올릴 때 감독이 DB의 현재 revision과 비교한다.
+- `online_migration_from`에 현재 revision이 있으면 **구 세대가 계속 요청을 받는 채로** 새 세대가 migration을 먼저 적용한다(lock timeout 2초, statement timeout 30초). 목록에 없으면 `waiting_idle`로 두고 실행 중 Run이 0일 때 일반 migration과 컷오버를 한다. 즉 목록에 올리는 것은 "이 단계가 구 세대 코드와 공존한다"는 보증이다.
+- `tests/test_generation_deployment.py`는 head의 모든 조상 revision이 이 목록에 있어야 통과시킨다. 그래서 0072/0073을 올리면서 구 세대 호환을 따로 검토해야 한다(시험 메시지: review online compatibility).
+
+### 공존 판단: 가능
+구 세대는 현재 contract head 0071을 낳은 `a3a29ec`다. 실제 PG(pgvector pg17)에서 확인했다.
+1. 구 코드로 0071 스키마와 문서 2건(personal, work)을 만든다.
+2. 새 코드로 `TTAKKARI_MIGRATION_ONLINE=true alembic upgrade head`(lock 2s, stmt 30s)를 실행하면 0073까지 0.5초에 끝난다. 기존 access 행은 personal은 (personal, global), work는 (work, work_only)로 backfill된다.
+3. 구 코드의 쓰기·읽기를 0073 스키마에서 실행했다.
+   - `kb_library.register_text`(personal·work): access 행에 `scope`만 넣고 `visibility`/`origin_scope`를 넘기지 않아도 성공한다. NOT NULL 검사는 BEFORE INSERT 트리거가 NULL을 채운 뒤에 일어나므로 통과하고, 결과 행은 (personal, personal, global), (work, work, work_only)다.
+   - `kb_delivery`와 같은 형태(`ingest_source` + `KbDocumentAccess(document_id, tenant_id, scope)` + `segment_revision`)도 성공한다.
+   - `list_documents`, `search_passages`, 구 `index_pending`/`search`, `collect_control`의 `UPDATE ... hidden=true`도 성공한다.
+   - 구 코드는 access의 scope를 UPDATE하지 않고(`ck_..._work_visibility`가 걸릴 유일한 경로), 문서를 삭제하지도 않는다(새 표의 `ON DELETE RESTRICT` FK와 부딪힐 경로가 없다).
+4. lock 경합: 다른 세션이 `kb_passages`·`kb_document_access`를 읽는 트랜잭션을 열어 둔 채 online migration을 하면 2초 뒤 `LockNotAvailableError`로 실패하고 전부 롤백된다(DB는 0071 그대로, 0072의 표·컬럼 없음). 트랜잭션이 끝난 뒤 재실행하면 0073까지 성공한다. 구 세대를 막지 않고 부분 적용도 남기지 않는다.
+5. 0073은 새 표 2개와 인덱스뿐이라 구 코드에 영향이 없다. 0072의 새 컬럼은 상수 default 또는 NULL 허용이고, `kb_document_access`의 두 컬럼만 default 없이 NOT NULL이며 위 트리거가 채운다.
+
+그래서 contract를 `schema_revision=0073_kb_l2_budget_ledger`로 올리고 `0071_library_platform_v2_merge`, `0072_kb_v3_schema_and_scope`를 `online_migration_from`에 추가했다. 0072는 배포 head였던 적이 없지만 head 조상 체인 시험이 요구한다.
+
+### 공존은 되지만 남는 운영 사항
+- **파이프라인 잡 공백:** 구 세대 코드는 `enqueue_pipeline_job`을 모른다. 겹치는 구간에 등록된 문서와 0071 때부터 있던 기존 문서에는 `kb_pipeline_jobs`가 없어 v3 6단계(엔터티·정본·충돌)가 돌지 않는다. 검색의 어휘·벡터 경로는 패시지만으로 동작한다. 컷오버 뒤 "잡이 없는 현재 리비전에 잡 만들기" 백필이 필요한데 이 작업에는 없다(`knowledge-backfill`은 원문 버전 보존용으로 별개).
+- **migration 중 큰 표 UPDATE:** 0072의 `kb_document_access` backfill은 전 행 UPDATE다. 행이 많아 30초 statement timeout에 걸리면 전체가 롤백되고 배포가 실패로 끝난다(데이터는 안전). 현재 규모에서는 0.5초였다.
+
+### 가짜 L2 + 실PG
+`scripts/kb_v3_real_db_flow.py`에 E 단계를 추가했다. 가짜 L2 어댑터(구독 CLI·모델 서버 호출 없음), 일일 예산 1, 워커 2개를 동시에 돌렸다. 가짜 어댑터 호출은 전체 1회, 원장은 reservation 1건(completed)과 usage 1건(consumed), 두 번째 문서는 `daily_budget_exhausted`로 degraded였고, L2 주장 1건이 저장되고 환각 인용 1건은 거부됐다.

@@ -26,7 +26,8 @@
 - 실 PostgreSQL 4개 동시 transaction에서 시드/일반 해소 생성 경합, 두 transaction의 역순 생성 3건을 새 회귀로 고정했다. 코드 변경 전 3 FAIL: 앞의 2건 UniqueViolationError, 마지막 deadlock detected. `identity-red-actual.log`.
 - identity resolver 및 직접 seed 보장 진입점에서 ontology tenant 단위 PostgreSQL transaction advisory lock을 잡는다. 여러 visibility가 global identity를 같이 참조할 수 있으므로 visibility로 잠금을 쪼개지 않는다. commit/rollback 시 해제되며 모델 계산은 잠금 밖이다. SQLite in-memory 단일 쓰기 시험에는 PostgreSQL 잠금을 실행하지 않는다.
 - 새 3회귀 GREEN. 관련 실제 PG/API/관계/추출 및 SQLite 해소 묶음: `84 passed, 1 skipped in 13.19s`. skip은 별도 KB3_PG_URL schema-reset fixture이며 새 동시성 3회귀는 실제 PG에서 실행됐다. 첫 묶음은 SQLite에서 PG SQL을 실행해 24 failed/60 passed/1 skipped였고 원시 실패 로그도 보존했다. ruff 및 git diff --check 통과.
-- 동시성 교정 후 같은 실자료 자동 batch 재시험은 다음 단계다. 검색 측정은 교정 전 SHA이며 검색 소스는 이번 교정에서 바꾸지 않았다.
+- 교정 커밋 `ecdea4b6dc240c9b688b96f0243a5131f024b7a1`을 실제 서버에서 실행했다. 기존 자료 본문 36건을 4건씩 동시에 등록하고 자동 worker가 처리했다. 36/36 attempt=1, 서버 로그에서 UniqueViolation/deadlock/실패 traceback 0건. parsing/chunking/linking/indexing/canonicalizing은 성공, extracting만 `l2_disabled`이므로 전체는 36건 모두 degraded다. 이 결과를 자동 심층 추출 성공으로 세지 않는다. `replay-batch.json`, `replay-batch.log`, `server-fixed.log`.
+- 검색 측정은 교정 전 SHA이며 검색 소스는 이번 교정에서 바꾸지 않았다. 교정 후 같은 순위 묶음을 불필요하게 반복하지 않았다.
 
 ## 미검증과 환경 경계
 
@@ -34,6 +35,7 @@
 - 새 L2 실행 가용성·PDF/충돌 E2E는 미검증이다. hash 검색이나 수동 assertion 삽입으로 대신하지 않는다.
 - 전용 서버 `/api/version`이 반환한 본인 PID SIGTERM은 Codex command sandbox에서 Operation not permitted로 거부됐다. 다른 shell 우회는 하지 않았다. 지원 exec 세션 `write_stdin` Ctrl-C로 exit 130을 얻었고 이어 loopback connection refused로 실제 종료를 확인했다. 이후에만 같은 DB pytest를 실행했다.
 - main 작업 폴더의 무관한 다수 변경은 그대로 보존했다. 통합은 별도 clean worktree에서 해야 한다. main/push/deploy/PMS done은 아직 하지 않았다.
+- 최신 `origin/main`을 fetch한 결과 `77c1238a2b8ade01c096dc74b4f4da3a52c89849`다. 이쪽 schema head는 `0073_research_reuse_source`이고 KB head는 `0073_kb_l2_budget_ledger`이므로 후속 통합에서 Alembic merge revision 및 generation contract 양쪽 경로를 보존해야 한다. 아직 병합하지 않았다.
 
 ## 재현·증거
 

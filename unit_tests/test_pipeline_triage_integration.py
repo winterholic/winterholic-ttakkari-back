@@ -288,3 +288,37 @@ def test_envelope_exposes_stage2_axes_with_validation_state_and_stays_contract_v
     assert ext["stage2"]["status"] == "evaluated" and ext["precise_eval"]["state"] in ("pending", "not_needed")
     assert set(ext["axes"]) >= {"relevance_lexical", "content_rules", "novelty", "topic_relevance_semantic",
                                 "information_value", "low_quality_likelihood", "explanation_quality"}
+
+
+def test_envelope_with_precise_eval_evaluated_stays_contract_valid():
+    triage_sig = {
+        "version": "1.0",
+        "action": "accept",
+        "triage_status": "review_needed",
+        "scores": {"relevance": 0.40, "quality": 0.80, "novelty": 1.0, "source_trust": 0.50},
+        "reasons": ["review:low_relevance", "review:precise_eval_rescued"],
+        "thresholds": {"min_accept_relevance": 0.25},
+        "mode": "active",
+        "verified": False,
+        "precise_eval": {
+            "needed": True,
+            "state": "evaluated",
+            "verdict": "accept",
+            "confidence": 0.95,
+            "axes": {
+                "topic_relevance": {"value": 0.90, "explanation": "높은 주제 일치도"},
+                "information_depth": {"value": 0.85},
+                "low_quality_signals": ["none"],
+            },
+            "engine": {"name": "qwen-local", "status": "evaluated"},
+            "receipt": {"tokens": 400, "provider": "qwen-local"},
+        },
+    }
+
+    validated = _validated_envelope(triage_sig)
+    ext = validated["extensions"]["collector:triage"]
+    assert ext["precise_eval"]["state"] == "evaluated"
+    assert ext["precise_eval"]["verdict"] == "accept"
+    assert ext["precise_eval"]["axes"]["topic_relevance"]["value"] == 0.90
+    assert validated["quality"]["relevance"]["status"] == "measured"
+

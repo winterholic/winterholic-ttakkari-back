@@ -277,3 +277,76 @@
 6. 규칙 축(어휘 관련성, 내용 규칙, 새로움)은 여전히 외부 라벨 평가가 없는 휴리스틱이며 `validation=unvalidated`로 표기한다. 따라서 전체 상태는 `partial` 이상이 되지 않는다.
 7. 운영 환경의 실제 모델 파일 존재와 지연은 이 Run에서 별도로 확인하지 않았다(보호 영역). 평가와 비용은 `/tmp`에 받은 같은 snapshot(ac6781cd)으로 측정했다. 임무 job에서 모델이 없으면 `unavailable`로 기록되고 규칙으로 계속 수집한다. 운영 배포 뒤 임무 view의 `triage.ml.documents_by_status`로 실동작을 확인해야 한다.
 8. 해시 임베더 환경(테스트)에서는 2단계가 자동으로 꺼진다(`disabled`).
+
+### C4 후속 2: 3단계 정밀평가(Bounded Precise Evaluation) 소비 경로 및 복구 E2E (2026-10-25)
+
+2단계에서 남겨진 `signals.triage.precise_eval.state="pending"` 대기열을 실제로 안전하게 소비하는 Stage 3 정밀평가 경로를 연결했다.
+
+#### 구현 내용
+- **모듈 신설 (`src/ttakkari/collector/precise_eval.py`)**:
+  - `LOCAL_QWEN_ENGINE`: `EngineBound` 규격을 엄격히 충족(`enforces_input_cap=True`, `enforces_output_cap=True`, `returns_usage=True`, `micro_usd_per_1k_input=0`, `micro_usd_per_1k_output=0`).
+  - 예산 장부(`budget.py`) 연동: `budget.guarded_call`을 통해 `worst_case` 사전 예약 -> provider 호출 -> provider reported usage 기반 `settle` 절차를 준수한다. 예산 거부(`BudgetDenied`) 시 문서를 안전하게 보류하고 `state="budget_denied"`를 기록하며, 예외/타임아웃 발생 시 예약 상태를 `unknown`으로 유지해 보수성을 지킨다.
+  - 로컬 모델 경로 재사용: 기존 `runs/desk_qwen.py`, `runs/desk_qwen_server.py`, `runs/qwen_slot.py` 계약을 재사용한다. loopback llama-server의 `/v1/chat/completions` 엔드포인트를 호출하며, `qwen_slot.is_process_lock_busy()`를 검사하여 Mac-wide 단일 Qwen 슬롯을 우회하거나 경쟁하지 않는다.
+  - 신뢰할 수 없는 문서(Untrusted Input) 안전성:
+    - 외부 웹 데이터에 포함될 수 있는 시스템 오버라이드/탈옥 시도를 방어하기 위해 시스템 프롬프트에서 도구 실행을 전면 차단하고 텍스트를 순수 데이터로만 취급한다.
+    - OpenAI 호환 `response_format`의 `json_schema` strict 모드를 강제하여 `topic_relevance`, `relevance_explanation`, `information_depth`, `low_quality_signals`, `recommendation`, `confidence` 필드만 반환받는다.
+    - malformed JSON 응답이나 필드 누락 시 안전하게 실패 처리하며, 원문 파기나 권리 변경을 유발하지 않는다.
+  - 좋은 자료의 손실 없는 복구 (Rescue Logic):
+    - 어휘 규칙의 오판으로 `held`(자동 보류)되었으나 정밀평가 결과 `recommendation="accept"`(고관련성·고정보가치·결함 없음)로 확인된 문서는 `status="accepted"`로 복구된다.
+    - 복구 시 `reason_codes`에 `review:precise_eval_rescued` 및 `review_needed`가 부여되며, 지식 도서관으로 전달될 수 있도록 `CollectorOutbox` delivery row가 같은 트랜잭션에서 등록된다.
+  - 투명한 엔진 상태 노출 (`engine_status`):
+    - `collector_teacher_enabled=False` 또는 `desk_qwen_enabled=False`인 경우 `unavailable` 사유 명시.
+    - 서버 미기동 시 `endpoint not ready`, 슬롯 점유 시 `busy`를 명확히 구분하여 노출하며, 미연결 상태를 '통과'로 위장하지 않는다.
+- **파이프라인 연동 (`src/ttakkari/collector/pipeline.py`)**:
+  - `_admit_precise`: `precise_eval.engine_status()`를 기록하여 대기열 진입 시점의 실제 엔진 상태를 보존.
+  - `_finalize_page`: API 프로세스가 아닌 collector worker의 durable page commit 트랜잭션 내부에서 `consume_prepared_precise_eval`을 호출했다. (폐기됨. 아래 "C4 정밀평가 실행경계 보강" 참조. 현재 page 트랜잭션은 평가하지 않고 pending만 저장한다.)
+- **임무 상세 및 관측 (`src/ttakkari/collector/missions.py`)**:
+  - `view`의 `precise_counts` 집계에 `pending`, `skipped_cap`, `evaluated`, `failed`, `budget_denied` 상태를 모두 포함.
+  - 임무 상세 응답의 `triage.precise_eval` 블록에 상태별 카운트와 함께 현재 `engine` 상세(`status`, `detail`, `model` 등)를 노출.
+
+#### 검증 및 실행 근거
+- **신규 및 회귀 단위 테스트**:
+  - `unit_tests/test_collection_precise_eval.py`: 10 passed in 0.37s.
+    - `test_engine_bound_contract`: EngineBound 4대 조건 및 bounded 속성 검증.
+    - `test_engine_status_reports_reasons_transparently`: 5가지 상태(teacher off, desk off, no endpoint, slot busy, ready) 투명 노출 검증.
+    - `test_untrusted_prompt_escaping_and_input_cap`: 입력 토큰 상한 및 프롬프트 인젝션 텍스트 격리 검증.
+    - `test_qwen_api_structured_output_success`: MockTransport를 통한 strict JSON schema 및 usage receipt 정상 반환 검증.
+    - `test_qwen_api_malformed_json_raises`: malformed 응답에 대한 MalformedEvaluatorOutput 예외 검증.
+    - `test_apply_precise_result_rescues_held_item`: held -> accepted 복구 및 review 사유/영수증 반영 검증.
+    - `test_apply_precise_result_retains_held_on_negative_verdict`: 부정 판정 시 원문 보존 및 held 유지 검증.
+    - `test_consume_prepared_precise_eval_when_engine_not_ready`: 미연결 시 0 소비 및 pending 유지 검증.
+    - `test_consume_prepared_precise_eval_success_rescues_held_and_emits_outbox`: 복구 시 OutboxItem 생성 검증.
+    - `test_consume_prepared_precise_eval_budget_denied_updates_state_gracefully`: 예산 거부 시 budget_denied 상태 전이 및 중단 검증.
+  - `unit_tests/test_pipeline_triage_integration.py`: `test_envelope_with_precise_eval_evaluated_stays_contract_valid` 추가 및 5 passed in 0.34s.
+  - 관련 전체 단위 테스트: `PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_precise_eval.py unit_tests/test_pipeline_triage_integration.py unit_tests/test_collection_triage_ml.py unit_tests/test_collection_triage.py unit_tests/test_collection_triage_eval.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_collection_plan.py` -> **105 passed, 66 subtests passed in 1.05s**.
+  - `ruff check`: 변경 파일 전체 clean (`All checks passed!`).
+  - `ruff format`: 변경 파일 포맷팅 적용.
+- **미실행/한계**:
+  - `tests/test_collection_mission_stage2.py` 등 DB 통합 테스트: 미실행 (`antigravity 샌드박스 환경 내 loopback 소켓 연결 차단 PermissionError: [Errno 1] Operation not permitted`). 호스트 자체의 결함이 아니며 단위 테스트 격리 Mock으로 기능 검증 완료.
+  - 운영 llama-server 실제 호출 smoke: 현재 무인 샌드박스 환경에서는 loopback 소켓 접근이 차단되어 있으므로 실제 네트워크/소켓 호출은 격리 httpx.MockTransport로 검증. 실제 모델 추론은 백엔드 배포 및 권한 환경에서 수행 필요.
+
+## C4 정밀평가 실행경계 보강 (fix/collection-precise-verification-20261025, 2026-10-25)
+
+### 재현한 원인
+- 정밀평가를 `_finalize_page`의 DB page 트랜잭션 안에서 호출했다. `budget.guarded_call`은 별도 세션으로 예약 commit, 모델 호출, 정산 commit 순서로 진행한 뒤 결과를 반환한다. page commit 전에 프로세스가 죽으면 원장은 settled인데 item은 롤백되고, 재시도는 `already_attempted`에서 `budget_denied`가 된다.
+- 컬렉터 패키지 정적 경계 검사(`test_collector_package_has_no_llm_or_knowledge_dependency`)가 함수 내부 `ttakkari.runs` import 때문에 실패했다.
+
+### 변경
+- `_finalize_page`는 모델을 호출하지 않는다. pending만 저장하고 HTTP 없이 commit한다.
+- `precise_eval.consume_pending_once`: 기존 collector worker tick(`runner.consume_once`) 끝에서 1건을 소비한다. 짧은 DB claim(lease 120초, `processing`), transaction 밖 bounded 호출, 결과를 별도 짧은 transaction으로 적용하는 순서다. 엔진 busy/unavailable은 pending으로 되돌려 다음 tick에 재시도한다.
+- 정산된 결과는 `collector_budget_reservations.receipt.precise_eval_result`에 영속된다. 정산 후 apply 전 crash나 lease 만료 뒤에는 `budget.recover_settled_result`가 저장된 결과를 재적용하고 모델을 다시 호출하지 않는다.
+- 결과를 알 수 없는 호출(unknown)은 환불이나 재호출 없이 `unresolved`로 남는다.
+- 컬렉터 패키지는 `ttakkari.runs`를 import하지 않는다. `ttakkari/collector_precise_runtime.py`가 엔진 상태와 Mac 공용 `qwen_slot`을 `precise_eval.register_runtime`으로 주입하고, `generation_service`의 collector tick 두 곳에서 `install()`한다.
+- 트랜잭션 안 평가 경로(`consume_prepared_precise_eval`)와 그 단위 테스트 3개는 삭제했다. 같은 계약을 `tests/test_collection_missions.py`의 DB 테스트가 검증한다.
+
+### 검증
+- 신규 DB 테스트 2개. `test_precise_result_survives_worker_crash_after_budget_settlement`는 페이지 commit 후 pending 영속, 모델 호출 중 mission GET 응답, 동시 worker 중복 호출 없음, 정산 후 apply 전 crash, lease 만료 후 재적용 시 호출 1회 유지를 본다. `test_unknown_precise_call_is_unresolved_without_refund_or_retry`는 unknown 호출이 `unresolved`이고 예약이 `unknown`으로 남는 것을 본다.
+- 변이 검증: 결과 복구 경로를 끄면 첫 테스트가 `'pending' == 'evaluated'`로 실패한다.
+- 회귀: collector/generation 관련 13개 파일 177 passed. 정적 경계 검사 포함.
+- 실행 주의: 공용 venv의 editable 설치가 다른 체크아웃을 가리키므로 `PYTHONPATH=src`가 필요하다. 없으면 `/missions`가 404로 나온다.
+
+### 미검증과 후속
+- 실제 Qwen 모델 호출은 실행하지 않았다. 이 Run에서 쓸 수 있는 지원 MCP에 Qwen 상태·호출 도구가 없고 `backend_deploy_status`는 job_id가 필요했다. 배포 revision과 런타임도 확인하지 못했다. 테스트의 verdict는 fixture이며 실모델 결과가 아니다.
+- 이 정밀평가는 AI 효용 검토이며 인간의 사실성 검증이 아니다(review 사유에 factuality unverified로 기록).
+- 후속: 배포 후 짧은 실모델 1건 smoke(slot 점유 중 busy 응답 포함), `unresolved` 항목을 운영자가 해소하는 경로. 마이그레이션은 추가하지 않았다.
+

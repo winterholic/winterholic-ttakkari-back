@@ -205,4 +205,8 @@ async def consume_once(*, limit: int | None = None, managed_only: bool = False) 
             break
         await run_one(claimed[0], handler)
         done += 1
+    if accepting():
+        from ttakkari.collector import precise_eval
+
+        await precise_eval.consume_pending_once(limit=1, owner=owner)
     return done

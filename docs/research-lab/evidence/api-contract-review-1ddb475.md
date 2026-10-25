@@ -84,6 +84,6 @@ Analyzer 관련 통과 테스트:
 
 - 재개 시점 backend HEAD는 `ac2e54f48533711bf353d7865bdc5650eaeb769a`이며, 앞선 검증 당시 backend HEAD `3df79b9541fb502d418137a321ac756d399ff4cf` 이후에는 이 API 보고서 커밋만 추가됐다. 그 검증 스냅샷에는 동료의 `catalog-review-1c41426.md`와 앞선 `1c41426` catalog test fix가 이미 포함돼 있었다. frontend HEAD는 계속 `9521cc171ce555332c48c9e50acdf5fcef86eee3`이다. 두 worktree의 `git status --porcelain=v1` 출력은 비어 있었다.
 - `git diff --name-status 1ddb47577bca9d59037f282a5268834d11ea1083..HEAD -- src/ttakkari/research seed/readiness.py`는 출력이 없었다. 따라서 고정 대상 백엔드의 API 소스는 바뀌지 않았고 기존 API 계약 결과는 유효하다.
-- 교정 알림의 short SHA `8730ff9d`는 이 checkout에서 `git cat-file -t 8730ff9d`로 조회했을 때 `fatal: Not a valid object name 8730ff9d`를 반환했다. 이는 현재 checkout에서 해당 교정 커밋을 확인하지 못했다는 뜻이다. 별도 worktree의 코드 상태는 읽거나 검증하지 않았다.
+- 식별자 정정: `8730ff9d`는 카탈로그 교정 작업자 UUID `8730ff9d-b2eb-411b-ae3b-1b4b3c63fba4`의 접두사이며 커밋 SHA가 아니다. 앞서 이를 SHA로 잘못 해석해 실행한 `git cat-file -t 8730ff9d`의 `fatal: Not a valid object name 8730ff9d`는 교정 커밋의 존재나 완료 여부를 판정하는 근거가 아니다. 교정 결과는 작업자의 완료 보고에서 실제 커밋 SHA를 받은 뒤 별도 검증한다.
 - 이전 backend 테스트 묶음(`tests/test_research_v2_api_contract.py`, `tests/test_research_v2_e2e.py`, `tests/test_research_v2_core.py`, `tests/test_research_adapters.py`, `tests/test_research_lab.py`, 99 passed)은 2026-10-25 06:17:35 UTC의 교정 배정 알림보다 먼저 실행됐다. 이 중 core/readiness 관련 결과도 교정 전 스냅샷 결과다. 교정 후 실행으로 계산하지 않는다.
 - 이번 재개에서는 고정 대상 코드가 바뀌지 않은 점만 확인하고 테스트를 다시 실행하지 않았다. 교정 변경 후 promotion/readiness 테스트는 **미실행·미검증**이며, 고정 대상 SHA 검증과 혼합하지 않는다. 새 교정 커밋을 별도 검증하는 단계에서 해당 코드와 테스트 시점을 다시 기록해야 한다.

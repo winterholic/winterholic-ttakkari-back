@@ -723,7 +723,7 @@ async def _recover_orphaned_runs() -> int:
         candidates = list(await db.scalars(select(Run).where(
             Run.status.in_(("queued", "running")) | (
                 Run.status.in_(("succeeded", "failed", "cancelled"))
-                & (Run.environment_snapshot[RESOURCE_KEY]["state"].astext.in_(("owned", "cleanup_unverified"))
+                & (Run.environment_snapshot[RESOURCE_KEY]["state"].astext.in_(("starting", "owned", "cleanup_unverified"))
                    | (Run.environment_snapshot[WORKERS_KEY]["state"].astext == "owned"))
                 & ~Run.environment_snapshot.has_key(RECOVERY_KEY)
             ),
@@ -749,7 +749,7 @@ async def _recover_orphaned_runs() -> int:
                     resource, workers = snapshot.get(RESOURCE_KEY), snapshot.get(WORKERS_KEY)
                     interrupted = row.status in ("queued", "running")
                     cleanup_pending = (
-                        ((isinstance(resource, dict) and resource.get("state") in ("owned", "cleanup_unverified"))
+                        ((isinstance(resource, dict) and resource.get("state") in ("starting", "owned", "cleanup_unverified"))
                          or (isinstance(workers, dict) and workers.get("state") == "owned"))
                         and RECOVERY_KEY not in snapshot
                     )

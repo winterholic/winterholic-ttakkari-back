@@ -714,13 +714,16 @@ class HostGpu:
                                     "stopped_at": time.time(), "operator_reason": reason.strip()})
         return {"released_lease": released_lease, "state_stopped": state_live, **evidence}
 
-    def start(self, req: StartRequest) -> dict[str, Any]:
+    def start(self, req: StartRequest, *, launch_id: str | None = None) -> dict[str, Any]:
+        # Internal caller identity, never a user-supplied StartRequest field.
+        if launch_id is not None and not isinstance(launch_id, str):
+            raise ValueError("launch_id must be a UUID string")
+        launch_id = uuid.uuid4().hex if launch_id is None else uuid.UUID(launch_id).hex
         server, model = self._paths(req)
         current = self._current()
         if current and current.get("phase") in _PHASES_LIVE or _lock_held(self.dir):
             raise Busy("a host GPU test instance is already running; stop it first")
         cap = int(self.s.host_gpu_max_runtime_seconds)
-        launch_id = uuid.uuid4().hex
         spec = {
             "launch_id": launch_id, "request": req.model_dump(), "state_dir": str(self.dir),
             "server_path": str(server), "model_path": str(model),
@@ -733,11 +736,10 @@ class HostGpu:
         spec_path = self.dir / f"spec-{launch_id}.json"
         spec_path.write_text(json.dumps(spec), encoding="utf-8")
         os.chmod(spec_path, 0o600)
-        supervisor_log = open(self.dir / "supervisor.log", "ab")  # noqa: SIM115
-        child = subprocess.Popen([sys.executable, "-m", "ttakkari.host_gpu", "supervise", "--spec-file", str(spec_path)],
-                                 stdout=supervisor_log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                 start_new_session=True, env=_min_env())
-        supervisor_log.close()
+        with open(self.dir / "supervisor.log", "ab") as supervisor_log:
+            child = subprocess.Popen([sys.executable, "-m", "ttakkari.host_gpu", "supervise", "--spec-file", str(spec_path)],
+                                     stdout=supervisor_log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                     start_new_session=True, env=_min_env())
         threading.Thread(target=child.wait, daemon=True).start()  # 끝난 감독자가 좀비로 남지 않게 거둔다
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:

@@ -1,0 +1,17 @@
+{
+  "runtime": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+  "fields_compared": 575,
+  "changed_or_missing": [],
+  "additions": [
+    {
+      "group": "study",
+      "id": "eb41e3a7-43cd-4f2b-8c03-79380a2e1163",
+      "fields": [
+        "best_result_id",
+        "primary_target"
+      ]
+    }
+  ],
+  "truncated": false,
+  "scope": "Original eb41 study only; no entire-DB row-count or migration lock-time claim"
+}

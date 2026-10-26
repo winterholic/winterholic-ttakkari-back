@@ -1,0 +1,760 @@
+{
+  "base_revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+  "integrated_main": "e4899781e95f3350314b82b90f940914d65ef27d",
+  "environment": "lead Codex command sandbox; actual CPU ML; isolated Run PostgreSQL; synthetic adapter seam invoking real worker.main and model libraries",
+  "independent_verification": false,
+  "validation": {
+    "passed": 2,
+    "seconds": 15.37,
+    "command": "TTAKKARI_RESEARCH_LIVE_OWNER=1 RESEARCH_OWNER_LIVE_REPORT=<this Run outbox>/model-owner-live.json PYTHONPATH=src:tests .venv/bin/python -m pytest tests/research_smoke/model_owner_live_acceptance.py -q -s --timeout=240 --tb=short",
+    "ruff": "All checks passed!",
+    "source_hashes": "8/8 preserved after fast-forward"
+  },
+  "resources": {
+    "collected_at": 1793020159.7233028,
+    "host": {
+      "hostname": "winterholicui-MacStudio.local",
+      "os": "macOS 27.0",
+      "model": "Mac17,14",
+      "boot_time": 1790240953,
+      "uptime_seconds": 2779206
+    },
+    "cpu": {
+      "percent": 12.9,
+      "per_core": [
+        50.8,
+        19,
+        34.9,
+        14.3,
+        7.9,
+        45.2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        11.3,
+        11.1,
+        8.1,
+        9.7,
+        9.5,
+        9.7
+      ],
+      "load_avg": [
+        2.31,
+        2.57,
+        2.53
+      ],
+      "cores_logical": 18,
+      "cores_physical": 18,
+      "performance_cores": 6,
+      "efficiency_cores": 12,
+      "chip": "Apple M5 Max"
+    },
+    "gpu": {
+      "status": "available",
+      "reason": null,
+      "model": "Apple M5 Max",
+      "cores": 40,
+      "percent": 0,
+      "memory_used_bytes": 512016384,
+      "memory_allocated_bytes": 2446589952
+    },
+    "memory": {
+      "total": 68719476736,
+      "used": 30714609664,
+      "available": 38004867072,
+      "percent": 44.7,
+      "wired": 5110693888,
+      "pressure": "normal",
+      "pressure_free_percent": 90,
+      "swap": {
+        "total": 45097156608,
+        "used": 43287379968,
+        "percent": 96
+      }
+    },
+    "disks": [
+      {
+        "name": "내장 디스크",
+        "fstype": "apfs",
+        "mounts": [
+          "/",
+          "/System/Volumes/Data"
+        ],
+        "total": 994610155520,
+        "used": 767813922816,
+        "free": 226796232704,
+        "percent": 77.2,
+        "volumes": [
+          {
+            "mount": "/",
+            "used": 14087061504
+          },
+          {
+            "mount": "/System/Volumes/Data",
+            "used": 680596340736
+          }
+        ]
+      }
+    ],
+    "network": {
+      "rx_bytes_per_sec": 16331,
+      "tx_bytes_per_sec": 17964
+    },
+    "processes": {
+      "top_cpu": [
+        {
+          "pid": 61529,
+          "name": "python3.13",
+          "cpu_percent": 12.6,
+          "memory_bytes": 277708800
+        },
+        {
+          "pid": 73539,
+          "name": "python3.13",
+          "cpu_percent": 10.1,
+          "memory_bytes": 200081408
+        },
+        {
+          "pid": 1604,
+          "name": "WallpaperAerialsExtension",
+          "cpu_percent": 6.3,
+          "memory_bytes": 25657344
+        },
+        {
+          "pid": 62090,
+          "name": "python3.13",
+          "cpu_percent": 4.6,
+          "memory_bytes": 634699776
+        },
+        {
+          "pid": 64807,
+          "name": "postgres",
+          "cpu_percent": 3.5,
+          "memory_bytes": 159350784
+        }
+      ],
+      "top_memory": [
+        {
+          "pid": 87957,
+          "name": "OrbStack Helper",
+          "cpu_percent": 0,
+          "memory_bytes": 7736983552
+        },
+        {
+          "pid": 61848,
+          "name": "llama-server",
+          "cpu_percent": 0,
+          "memory_bytes": 6212550656
+        },
+        {
+          "pid": 77815,
+          "name": "llama-server",
+          "cpu_percent": 0,
+          "memory_bytes": 5927747584
+        },
+        {
+          "pid": 21274,
+          "name": "llama-server",
+          "cpu_percent": 0,
+          "memory_bytes": 1036075008
+        },
+        {
+          "pid": 42936,
+          "name": "llama-server",
+          "cpu_percent": 0,
+          "memory_bytes": 1036075008
+        }
+      ],
+      "ttakkari": [
+        {
+          "pid": 61529,
+          "name": "python3.13",
+          "cpu_percent": 12.6,
+          "memory_bytes": 277708800,
+          "kind": "backend"
+        },
+        {
+          "pid": 61848,
+          "name": "llama-server",
+          "cpu_percent": 0,
+          "memory_bytes": 6212550656,
+          "kind": "other"
+        },
+        {
+          "pid": 70024,
+          "name": "codex",
+          "cpu_percent": 0.8,
+          "memory_bytes": 272596992,
+          "kind": "codex"
+        },
+        {
+          "pid": 70037,
+          "name": "node",
+          "cpu_percent": 0,
+          "memory_bytes": 114130944,
+          "kind": "other"
+        },
+        {
+          "pid": 70038,
+          "name": "python3.13",
+          "cpu_percent": 0,
+          "memory_bytes": 93143040,
+          "kind": "other"
+        },
+        {
+          "pid": 70364,
+          "name": "codex-code-mode-host",
+          "cpu_percent": 0,
+          "memory_bytes": 31326208,
+          "kind": "codex"
+        }
+      ],
+      "ttakkari_total": {
+        "cpu_percent": 13.4,
+        "memory_bytes": 7001456640
+      }
+    }
+  },
+  "dashboard": {
+    "counts": {
+      "studies": 2,
+      "methods": 112,
+      "executable_methods": 95,
+      "fully_executable_methods": 9,
+      "running_runs": 0,
+      "completed_runs": 2
+    },
+    "host_readiness": {
+      "llm_inference": {
+        "adapter_id": "llm_inference",
+        "name_ko": "로컬 LLM 추론 및 GPU 가속 벤치마크 어댑터",
+        "version": "1.0.0",
+        "domains": [
+          "llm"
+        ],
+        "supported_parameters": [
+          "cache_type_k",
+          "cache_type_v",
+          "ctx_size",
+          "batch_size",
+          "ubatch_size",
+          "n_gpu_layers",
+          "flash_attn_enabled",
+          "quant_type",
+          "threads_batch",
+          "logical_batch_size",
+          "physical_ubatch_size",
+          "model",
+          "gpu_layers",
+          "cpu_moe",
+          "n_cpu_moe",
+          "threads",
+          "flash_attn",
+          "device",
+          "spec_type",
+          "parallel",
+          "rope_scaling",
+          "prompt",
+          "n_predict",
+          "temperature",
+          "repetitions",
+          "max_seconds"
+        ],
+        "required_inputs": [
+          "model"
+        ],
+        "ready": true,
+        "execution_mode": "host_supervisor",
+        "reason": "호스트 GPU 경로 (llama-server) 사용 가능",
+        "available_models": [
+          "qwen3.8-flash-next-q2k",
+          "qwen3.5-4b-q4_k_m"
+        ],
+        "details": {
+          "runtime": "llama.cpp",
+          "hardware": "apple_silicon_metal",
+          "server_path": "/Users/winterholic/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server",
+          "server_exists": true,
+          "allowlisted_aliases": [
+            "qwen3.8-flash-next-q2k",
+            "qwen3.5-4b-q4_k_m"
+          ],
+          "available_models": [
+            "qwen3.8-flash-next-q2k",
+            "qwen3.5-4b-q4_k_m"
+          ],
+          "lease_currently_held": false,
+          "scope": "personal"
+        }
+      },
+      "retrieval_eval": {
+        "adapter_id": "retrieval_eval",
+        "name_ko": "검색 및 RAG 평가 어댑터",
+        "version": "1.0.0",
+        "domains": [
+          "rag",
+          "embedding",
+          "reranker"
+        ],
+        "supported_parameters": [
+          "chunking_mode",
+          "chunk_size",
+          "chunk_overlap",
+          "dense_weight",
+          "top_k",
+          "rrf_k",
+          "embedding_model_id",
+          "retriever_mode",
+          "chunking_strategy",
+          "normalize_korean_stopwords",
+          "bm25_k1",
+          "bm25_b",
+          "hybrid_alpha",
+          "rerank_mode",
+          "rerank_window",
+          "k",
+          "preset_id",
+          "corpus",
+          "queries"
+        ],
+        "required_inputs": [
+          "preset_id"
+        ],
+        "ready": true,
+        "execution_mode": "in_process",
+        "reason": "기본 인프로세스(BM25, hash_embedder) 상시 지원; 신경망 E5 모델: 사용 가능",
+        "available_models": [
+          "hash_embedder",
+          "multilingual-e5-large"
+        ],
+        "details": {
+          "scope": "personal",
+          "runtime": "scikit-learn",
+          "hardware": "cpu",
+          "hash_embedder_ready": true,
+          "bm25_ready": true,
+          "e5_ready": true
+        }
+      },
+      "tts_synthesis": {
+        "adapter_id": "tts_synthesis",
+        "name_ko": "로컬 TTS 음성 합성 및 발음 평가 어댑터",
+        "version": "1.0.0",
+        "domains": [
+          "tts",
+          "stt"
+        ],
+        "supported_parameters": [
+          "handle_measure_units",
+          "english_acronym_mode",
+          "case_sensitive",
+          "max_chunk_length",
+          "speed_ratio",
+          "voice_preset",
+          "mode",
+          "engine",
+          "voice",
+          "speed",
+          "convert_numbers",
+          "read_latin",
+          "plain_text",
+          "custom_pronunciation_dict",
+          "max_chunk_chars",
+          "preset_id",
+          "texts"
+        ],
+        "required_inputs": [
+          "preset_id"
+        ],
+        "ready": true,
+        "execution_mode": "subprocess_worker",
+        "reason": "전처리 정규화 상시 지원; 음성 합성 엔진: 이 Mac에서 Supertonic 3로 합성해요.",
+        "available_models": [
+          "F1",
+          "F2",
+          "F3",
+          "F4",
+          "F5",
+          "M1",
+          "M2",
+          "M3",
+          "M4",
+          "M5"
+        ],
+        "details": {
+          "scope": "personal",
+          "runtime": "onnxruntime",
+          "hardware": "cpu",
+          "normalize_only_ready": true,
+          "engine": "supertonic",
+          "kokoro_supported": false,
+          "kokoro_note": "Kokoro는 한국어 음성 미지원으로 폐기되었으며 Supertonic 3를 사용합니다.",
+          "synth_ready": true,
+          "supertonic_status": "이 Mac에서 Supertonic 3로 합성해요.",
+          "available_voices": [
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5"
+          ],
+          "stt_ready": true
+        }
+      },
+      "external_report": {
+        "adapter_id": "external_report",
+        "name_ko": "외부 벤치마크 및 리포트 반입 어댑터",
+        "version": "1.0.0",
+        "domains": [
+          "*"
+        ],
+        "supported_parameters": [
+          "provenance",
+          "source_title",
+          "source_url",
+          "source_year",
+          "external_run_id",
+          "notes",
+          "measurements"
+        ],
+        "required_inputs": [
+          "provenance",
+          "measurements"
+        ],
+        "ready": true,
+        "execution_mode": "manual",
+        "reason": "외부 결과 및 보고서 반입 상시 지원",
+        "available_models": [],
+        "details": {
+          "scope": "personal",
+          "runtime": "external_report",
+          "hardware": "external",
+          "supported_provenance": [
+            "external_benchmark",
+            "imported_log",
+            "manual_evaluation"
+          ]
+        }
+      }
+    },
+    "gpu_lease": {
+      "held": false
+    },
+    "recent_runs": [
+      {
+        "id": "0b3d1f3c-e86a-4488-8dd4-e2a3f15b4382",
+        "experiment_id": "dd87c769-d339-49f6-878e-5b86dd1ac2a6",
+        "configuration_id": "e9d56a9c-bff6-46bc-b9ae-e539255fb47f",
+        "study_id": "cb031b8c-2f55-4f7d-b771-6b116732798a",
+        "adapter_id": "llm_inference",
+        "execution_origin": "local_measured",
+        "repeat_index": 1,
+        "seed": 42,
+        "status": "succeeded",
+        "progress": null,
+        "error_code": null,
+        "error_message": null,
+        "started_at": "2026-10-26T05:35:54.487888+00:00",
+        "finished_at": "2026-10-26T05:35:58.583695+00:00",
+        "wall_seconds": 3.867,
+        "created_at": "2026-10-26T05:35:50.431689+00:00",
+        "run_id": "0b3d1f3c-e86a-4488-8dd4-e2a3f15b4382",
+        "experiment_title": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "experiment_name": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "configuration_label": "Treatment (B: cache_type_k=q8_0)"
+      },
+      {
+        "id": "7de4d2d5-f06b-4ec5-8dbd-fa20379148ef",
+        "experiment_id": "dd87c769-d339-49f6-878e-5b86dd1ac2a6",
+        "configuration_id": "402babdf-f214-4d32-80be-7858897122a6",
+        "study_id": "cb031b8c-2f55-4f7d-b771-6b116732798a",
+        "adapter_id": "llm_inference",
+        "execution_origin": "local_measured",
+        "repeat_index": 1,
+        "seed": 42,
+        "status": "succeeded",
+        "progress": null,
+        "error_code": null,
+        "error_message": null,
+        "started_at": "2026-10-26T05:35:50.448693+00:00",
+        "finished_at": "2026-10-26T05:35:54.483347+00:00",
+        "wall_seconds": 3.806,
+        "created_at": "2026-10-26T05:35:50.431644+00:00",
+        "run_id": "7de4d2d5-f06b-4ec5-8dbd-fa20379148ef",
+        "experiment_title": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "experiment_name": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "configuration_label": "Control (A)"
+      }
+    ],
+    "best_results": [
+      {
+        "id": "46cd85b0-760e-497d-90d5-42177253c33d",
+        "study_id": "cb031b8c-2f55-4f7d-b771-6b116732798a",
+        "experiment_id": "dd87c769-d339-49f6-878e-5b86dd1ac2a6",
+        "configuration_id": "402babdf-f214-4d32-80be-7858897122a6",
+        "run_id": "7de4d2d5-f06b-4ec5-8dbd-fa20379148ef",
+        "decision_node_id": "625689d0-edd1-4e12-8eb8-56d0248f84ff",
+        "status": "adopted",
+        "objective": "이번 4B 모델·짧은 한국어 입력·ctx4096에서 관측한 디코딩 처리량",
+        "primary_metric": "decode_tps",
+        "constraints": {
+          "model": "qwen3.5-4b-q4_k_m",
+          "memory": "swap 증가량만 관측, VRAM 미측정",
+          "quality": "미평가",
+          "ctx_size": 4096,
+          "bench_repetitions": 2
+        },
+        "rationale": "호스트 GPU 경로의 이번 2회 벤치 중앙값에서 F16 Key 캐시 119.99 tok/s, Q8 Key 캐시 90.52 tok/s였다. 이 입력 범위에서 처리량이 높은 기준 설정을 채택하며 일반 성능·품질 우위를 주장하지 않는다. 실제 레이어 배치 로그 전체는 응답 선택 보완 뒤 추가 확인 필요.",
+        "created_at": "2026-10-26T05:39:23.357822+00:00",
+        "best_result_id": "46cd85b0-760e-497d-90d5-42177253c33d",
+        "experiment_title": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "experiment_name": "F16 vs Q8 Key 캐시 · 운영 Metal 인수",
+        "configuration_label": "Control (A)"
+      }
+    ],
+    "quick_start_templates": [
+      {
+        "id": "llm_speed_memory",
+        "title": "LLM KV 캐시 양자화 & Flash Attention 속도·메모리 탐색",
+        "adapter_id": "llm_inference",
+        "strategy": "grid",
+        "target": "llm"
+      },
+      {
+        "id": "rag_retrieval_eval",
+        "title": "한국어 하이브리드 검색 (BM25 vs Dense Hash RRF) 정확도 비교",
+        "adapter_id": "retrieval_eval",
+        "strategy": "ab",
+        "target": "rag"
+      },
+      {
+        "id": "tts_pronunciation_ablation",
+        "title": "Supertonic 한국어 발음사전 & 전처리 Ablation 실험",
+        "adapter_id": "tts_synthesis",
+        "strategy": "ablation",
+        "target": "tts"
+      },
+      {
+        "id": "custom_hypothesis",
+        "title": "신규 연구 가설 및 외부 실험 보고서 등록",
+        "adapter_id": "external_report",
+        "strategy": "single",
+        "target": "general"
+      }
+    ]
+  },
+  "deploy": {
+    "id": "4a36d067-f2d1-4776-9642-d83982c9c6a9",
+    "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+    "skip_tests": false,
+    "status": "testing",
+    "created_at": "2026-10-26T13:02:43.042531+00:00",
+    "error": null,
+    "strategy": "generations",
+    "updated_at": "2026-10-26T13:04:03.335811+00:00"
+  },
+  "runtime": {
+    "id": "bdea99cc-bbdc-430b-869f-ac89d033e43b",
+    "kind": "runtime_report",
+    "status": "succeeded",
+    "created_at": "2026-10-26T13:11:17.667520+00:00",
+    "started_at": "2026-10-26T13:11:17.667520+00:00",
+    "finished_at": "2026-10-26T13:11:17.680917+00:00",
+    "updated_at": "2026-10-26T13:11:17.685849+00:00",
+    "summary": {
+      "this_process": {
+        "pid": 61529,
+        "release_revision": "116dad45203fad2c81a862309016d430eb3eae49",
+        "generation_id": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+        "role": "api",
+        "execution_mode": "local"
+      },
+      "control": {
+        "active_generation": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+        "executor_generation": null,
+        "epoch": 113
+      },
+      "generations": [
+        {
+          "id": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+          "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+          "role": "api",
+          "state": "active",
+          "execution_mode": "local",
+          "pid": 61529,
+          "pid_alive": true,
+          "heartbeat_age_s": 0,
+          "leases": 1,
+          "process_groups": 1
+        },
+        {
+          "id": "fd750caa-1538-4436-9478-ea38b9f6ca20",
+          "revision": "e6b4fd0df9513058f9e30845c08f4b0c9172b095",
+          "role": "api",
+          "state": "draining",
+          "execution_mode": "local",
+          "pid": 77451,
+          "pid_alive": true,
+          "heartbeat_age_s": 0,
+          "leases": 1,
+          "process_groups": 1
+        },
+        {
+          "id": "77e28a51-3f92-4ab3-823c-a562afa19a39",
+          "revision": "dd9748675b5744ca0ec73f6726bfd5ffae5e7c41",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 32228,
+          "pid_alive": false,
+          "heartbeat_age_s": 9375,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "3b0bb4ee-5945-4029-9abf-590526fcca4e",
+          "revision": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 87194,
+          "pid_alive": false,
+          "heartbeat_age_s": 12307.9,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "e2b02089-35ce-4f71-b3dc-989790ac4241",
+          "revision": "600eb8432f7e1a3e64a9f3a07f175cd183fb90eb",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 6372,
+          "pid_alive": false,
+          "heartbeat_age_s": 49819.7,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "96b4138b-cd38-49c3-8e64-1870c1dd8e68",
+          "revision": "bc37116801807918cd8b9a515e4ca8d2940ae6f0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 16631,
+          "pid_alive": false,
+          "heartbeat_age_s": 100643.7,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "a554932c-e135-4ec8-b127-4b7e82849a12",
+          "revision": "23e0cbe691efed2ca699a7a0c1d984510fb543f7",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 73943,
+          "pid_alive": false,
+          "heartbeat_age_s": 107729.6,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "5c4ca115-5bdb-40a6-961d-cd531c274848",
+          "revision": "94a4963c6ce05c56a83765785f753ff49cb852f5",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 59057,
+          "pid_alive": false,
+          "heartbeat_age_s": 112008.6,
+          "leases": 0,
+          "process_groups": 0
+        }
+      ],
+      "runs_running": 2,
+      "deploy_strategy": "generations",
+      "recent_deploys": [
+        {
+          "id": "8bf8f04a-6808-4536-b178-12d868218186",
+          "revision": "6a994c2b576b99ec8e982bfbe0d8826b4c2267fd",
+          "status": "failed",
+          "created_at": "2026-10-26T11:39:33.344009+00:00"
+        },
+        {
+          "id": "f5194370-e954-4469-a9a7-5f6f3b45027f",
+          "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+          "status": "draining",
+          "created_at": "2026-10-26T12:41:55.617697+00:00"
+        },
+        {
+          "id": "1f459249-e2d3-4dae-87de-adb3f91a3470",
+          "revision": "70b70941ce79c822393d0e28bd0f855860c2c46b",
+          "status": "superseded",
+          "created_at": "2026-10-26T12:56:15.801417+00:00"
+        },
+        {
+          "id": "4a36d067-f2d1-4776-9642-d83982c9c6a9",
+          "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+          "status": "testing",
+          "created_at": "2026-10-26T13:02:43.042531+00:00"
+        },
+        {
+          "id": "d277424d-3e74-49b0-94da-f70fdeaf915f",
+          "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+          "status": "requested",
+          "created_at": "2026-10-26T13:11:00.806530+00:00"
+        }
+      ]
+    },
+    "identity": {},
+    "inline": true,
+    "requested_by_session": "e416bc01-66ed-4ad6-a654-fecdbec85d32",
+    "deduplicated": false,
+    "audit_error": null,
+    "audit_pending": false
+  },
+  "ops": {
+    "job_id": "4a36d067-f2d1-4776-9642-d83982c9c6a9",
+    "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+    "status": "testing",
+    "strategy": "generations",
+    "created_at": "2026-10-26T13:02:43.042531+00:00",
+    "updated_at": "2026-10-26T13:04:03.335811+00:00",
+    "error": null,
+    "log": {
+      "exists": true,
+      "bytes": 1710,
+      "lines": 24,
+      "clipped_head": false
+    },
+    "sections": [],
+    "tail": "10| ........................................................................ [  9%]\n11| ........................................................................ [ 11%]\n12| ........................................................................ [ 12%]\n13| .................................................................. [ 13%]\n14| .............................................sssss...................... [ 14%]\n15| .........................................s.............................. [ 15%]\n16| ........................................................................ [ 17%]\n17| ........................................................................ [ 18%]\n18| ........................................................................ [ 19%]\n19| ........................................................................ [ 20%]\n20| ........................................................................ [ 22%]\n21| ........................................................................ [ 23%]\n22| .................ssssssss............................................... [ 24%]\n23| ........................................................................ [ 25%]\n24| ........."
+  },
+  "unverified": [
+    "exact native call/GIL state at owner kill",
+    "actual GPU owner crash",
+    "native training checkpoint resume",
+    "whole memory/OS budget",
+    "RuntimeLease and authenticated production UI",
+    "PMS original completion criteria"
+  ],
+  "source_sha256": {
+    "src/ttakkari/model_process.py": "97cfaa00061ace0d8054f38d05cbc7eaca330ff7b6f5c28b915878f5baaab1ce",
+    "src/ttakkari/model_process_guard.py": "297cedaa6c881b4978869a4c1c39f519562dca179be0f3f657869448ef3395dc",
+    "src/ttakkari/research/runner.py": "e7305bf0cf434b22f1c7839dbd123a3b57707411ee14d812e7ce4579e6529738",
+    "src/ttakkari/research/resources.py": "6efa9d4b6b24b47da92e5aa69d97639c91933cae0ff731bff4b044d33ff9e114",
+    "src/ttakkari/tts/worker_supertonic.py": "ed13bf56baf07bd49d6c87d0698fe80df4718eee8c097241f3d34df13a6805f1",
+    "src/ttakkari/meetings/local_stt/worker.py": "ac7d09f7b2e8a9f4b3469a0b9727d6f2d02623e8c4ef600a37e837053fbdbb7c",
+    "tests/research_smoke/model_owner_live_acceptance.py": "bc5cc4b56573e32501b34d20e598c1e9ed3641429a6f88068e83eec88fed05fc",
+    "docs/research-lab/evidence/model-owner-live-d5bf5df7.json": "8b240c7f5acbc05f5b565e05c494b292a3a68332ee505c0a79b91a9f1d0c2d6a"
+  }
+}

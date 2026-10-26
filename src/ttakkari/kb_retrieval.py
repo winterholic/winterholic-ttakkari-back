@@ -27,8 +27,10 @@ from ttakkari.kb_access import (
     KbAccessContext,
     assertion_access_filter,
     entity_access_filter,
+    from_agent_pool,
     from_legacy_scope,
     passage_access_filter,
+    with_engine_pool,
 )
 from ttakkari.kb_domains import entity_domains_for_topic
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
@@ -303,9 +305,9 @@ async def status(
     pool: str | None = None,
 ) -> dict[str, Any]:
     if pool is not None and access_context is None:
-        ctx = from_legacy_scope("work" if pool == "work" else "personal")
+        ctx = from_agent_pool(pool)
     else:
-        ctx = access_context or from_legacy_scope(scope)
+        ctx = with_engine_pool(access_context or from_legacy_scope(scope), pool)
     total = (
         await db.scalar(
             select(func.count())
@@ -537,9 +539,9 @@ async def search(
         raise ValueError("kb_hybrid_offset_limit")
 
     if pool is not None and access_context is None:
-        ctx = from_legacy_scope("work" if pool == "work" else "personal")
+        ctx = from_agent_pool(pool)
     else:
-        ctx = access_context or from_legacy_scope(scope)
+        ctx = with_engine_pool(access_context or from_legacy_scope(scope), pool)
     words = terms(query)
     filter_dict = filters or {}
     metadata_predicates = _metadata_filter_predicates(filter_dict, ctx)

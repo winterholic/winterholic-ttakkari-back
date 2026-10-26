@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -44,6 +45,7 @@ async def operate(db, *, apply: bool = False) -> dict[str, Any]:
     """
     from ttakkari import generation
     from ttakkari.config import get_settings
+    from ttakkari.generation_deployment import Releases
     from ttakkari.models import (
         RuntimeControl,
         RuntimeGeneration,
@@ -57,7 +59,7 @@ async def operate(db, *, apply: bool = False) -> dict[str, Any]:
         if not await db.scalar(text("SELECT to_regclass('alembic_version')")):
             raise RuntimeError("schema_not_ready")
         heads = list(await db.scalars(text("SELECT version_num FROM alembic_version")))
-        if heads != ["0075_collection_research_merge"]:
+        if heads != [Releases.contract(Path(__file__).resolve().parents[3])["schema_revision"]]:
             raise RuntimeError("schema_not_ready")
         control = await db.scalar(select(RuntimeControl).where(RuntimeControl.id == 1).with_for_update())
         current = generation.current

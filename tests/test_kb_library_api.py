@@ -5,6 +5,7 @@ import uuid
 
 import pytest
 from sqlalchemy import func, select
+from test_kb_agent_api import headers  # noqa: F401 -- actual personal/work sessions
 
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbDocument, KbRevision, KbSource
@@ -171,14 +172,14 @@ async def test_evidence_reports_original_position_and_hash(client, auth):
     assert (await client.get(f"{BASE}/passages/{uuid.uuid4()}/evidence", headers=auth)).status_code == 404
 
 
-async def test_unsegmented_revision_becomes_searchable_after_backfill(client, auth):
+async def test_unsegmented_revision_becomes_searchable_after_backfill(client, auth, headers):  # noqa: F811
     from ttakkari.kb_library import segment_unsegmented
     from ttakkari.kb_store import ingest_source
 
     async with sessionmaker()() as db:
         await ingest_source(db, source_key="file:legacy.md", data="레거시 문단은 격리 수준을 다룬다.\n".encode(), title="레거시")
         await db.commit()
-    # 접근 행이 없는 문서는 scope 를 알 수 없어 work_only 로 취급한다: 개인 검색에는 나뉘기 전·후 모두 나오지 않는다.
+    # 미상 출처는 work_only: 소유자는 단일 도서관에서 보지만 개인 에이전트에는 계속 닫힌다.
     work = {"q": "격리 수준", "scope": "work"}
     before = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert before["items"] == []
@@ -188,7 +189,9 @@ async def test_unsegmented_revision_becomes_searchable_after_backfill(client, au
         assert await segment_unsegmented(db) == {"revisions_checked": 0, "passages": 0}
     after = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert [h["document"]["title"] for h in after["items"]] == ["레거시"]
-    personal = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    owner = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    assert [h["document"]["title"] for h in owner["items"]] == ["레거시"]
+    personal = (await client.get("/api/agent/kb/search", params={"q": "격리 수준"}, headers=headers["personal"])).json()
     assert personal["items"] == []
 
 

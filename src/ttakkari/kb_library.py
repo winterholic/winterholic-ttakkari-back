@@ -11,7 +11,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import and_, func, literal, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import (
@@ -32,6 +32,7 @@ from ttakkari.kb_access import (
     KbAccessContext,
     document_access_filter,
     from_legacy_scope,
+    with_engine_pool,
 )
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_ontology.currency import current_revision, current_revision_filter
@@ -53,17 +54,17 @@ class KbNotFound(LookupError):
     """요청한 문서·리비전·패시지가 없다."""
 
 
-def scope_filter(scope: str = "personal", access: KbAccessContext | None = None):
+def scope_filter(scope: str = "personal", access: KbAccessContext | None = None, pool: str | None = None):
     """문서 접근 조건. 모든 조회는 kb_access 의 단일 규칙(document_access_filter)을 쓴다.
 
     access 를 주면 그 컨텍스트를, 아니면 레거시 scope('personal'|'work')를 같은 규칙의 컨텍스트로 바꿔 쓴다.
     접근 행이 없는 문서는 scope 를 알 수 없으므로 work_only 로 취급한다(kb_access 와 같은 규칙). personal 에는 보이지 않는다.
     """
-    return document_access_filter(access or from_legacy_scope(scope), KbDocument)
+    return document_access_filter(with_engine_pool(access or from_legacy_scope(scope), pool), KbDocument)
 
 
-async def require_document_scope(db, document_id, scope="personal", access: KbAccessContext | None = None):
-    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope, access))):
+async def require_document_scope(db, document_id, scope="personal", access: KbAccessContext | None = None, pool: str | None = None):
+    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope, access, pool))):
         raise KbNotFound("document")
 
 
@@ -124,15 +125,11 @@ async def set_engine_access(db, document_id, *, company_engine: bool) -> str:
     if access is None:
         db.add(KbDocumentAccess(
             document_id=document_id, tenant_id="owner", scope=LIBRARY_SCOPE, pool=pool,
-            origin_scope="work" if company_engine else "personal",
-            visibility="work_only" if company_engine else "global",
+            origin_scope="work", visibility="work_only",
         ))
     else:
         access.pool = pool
-        if company_engine:
-            access.origin_scope = "work"
-            access.visibility = "work_only"
-        elif access.scope == "work":
+        if not company_engine and access.scope == "work":
             access.scope = LIBRARY_SCOPE
     return pool
 
@@ -217,7 +214,7 @@ async def summary(
         covered = select(KbDocumentAlias.document_id).where(
             KbDocumentAlias.document_id == KbDocument.id, KbDocumentAlias.relation == "covered"
         ).exists()
-        cond = and_(scope_filter(scope, access), ~covered)
+        cond = and_(scope_filter(scope, access, pool), ~covered)
     counts = {}
     for name, model in (("documents", KbDocument), ("revisions", KbRevision), ("passages", KbPassage), ("evidence", KbEvidence)):
         stmt = select(func.count()).select_from(model)
@@ -245,7 +242,7 @@ async def list_documents(
         covered = select(KbDocumentAlias.document_id).where(
             KbDocumentAlias.document_id == KbDocument.id, KbDocumentAlias.relation == "covered"
         ).exists()
-        stmt = select(KbDocument).where(and_(scope_filter(scope, access), ~covered))
+        stmt = select(KbDocument).where(and_(scope_filter(scope, access, pool), ~covered))
     if q and q.strip():
         pattern = q.strip()
         stmt = stmt.where(
@@ -297,7 +294,7 @@ async def get_document(
     if pool is not None and access is None:
         await require_document_access(db, document_id, pool)
     else:
-        await require_document_scope(db, document_id, scope, access)
+        await require_document_scope(db, document_id, scope, access, pool)
     doc = await db.get(KbDocument, document_id)
     if doc is None:
         raise KbNotFound("document")
@@ -384,7 +381,7 @@ async def search_passages(
         covered = select(KbDocumentAlias.document_id).where(
             KbDocumentAlias.document_id == KbDocument.id, KbDocumentAlias.relation == "covered"
         ).exists()
-        access_cond = and_(scope_filter(scope, access), ~covered)
+        access_cond = and_(scope_filter(scope, access, pool), ~covered)
     stmt = (
         select(KbPassage, KbRevision, KbDocument, score)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
@@ -445,7 +442,7 @@ async def get_evidence(
     if pool is not None and access is None:
         await require_document_access(db, rev.document_id, pool)
     else:
-        await require_document_scope(db, rev.document_id, scope, access)
+        await require_document_scope(db, rev.document_id, scope, access, pool)
     doc = await db.get(KbDocument, rev.document_id)
     src = await db.get(KbSource, rev.source_id)
     span_start = 0 if start is None else start

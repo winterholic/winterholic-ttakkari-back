@@ -369,7 +369,7 @@ async def test_summary_contract_has_unified_scale_pipeline_and_v3_metrics(client
     assert set(s["pipeline"]) >= {"registered", "running", "ready", "degraded", "held", "failed"}
     assert set(s["v3"]) >= {"relations_active", "relations_candidate", "single_passage_documents", "documents_without_pipeline_job", "embedding_coverage"}
     assert s["retrieval"]["total"] >= 1 and s["last_collected_at"]
-    assert s["access"]["view"] == "unified" and s["access"]["visibilities"] == ["global"]
+    assert s["access"]["view"] == "unified" and s["access"]["visibilities"] == ["global", "work_only"]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -508,58 +508,67 @@ async def _seed_work_and_personal(client, auth):
     return work.json(), personal["items"][0]
 
 
-async def test_work_only_is_invisible_to_the_unified_web_view_on_every_endpoint(client, auth):
+async def test_owner_unified_web_includes_work_material_and_keeps_agent_boundary(client, auth, sessions):
     work, personal = await _seed_work_and_personal(client, auth)
     wid, pid = work["document_id"], personal["document_id"]
-
     docs = (await client.get(f"{BASE}/documents", headers=auth)).json()
-    assert {d["id"] for d in docs["items"]} == {pid} and docs["total"] == 1
-    assert (await client.get(f"{BASE}/documents/{wid}", headers=auth)).status_code == 404
-    assert (await client.get(f"{BASE}/jobs/{work['job_id']}", headers=auth)).status_code == 404
-    assert work["job_id"] not in {j["id"] for j in (await client.get(f"{BASE}/jobs", headers=auth)).json()["items"]}
-    assert (await client.post(f"{BASE}/jobs/{work['job_id']}/retry", headers=auth, json={})).status_code == 404
+    assert {d["id"] for d in docs["items"]} == {wid, pid} and docs["total"] == 2
+    assert (await client.get(f"{BASE}/documents/{wid}", headers=auth)).status_code == 200
+    assert (await client.get(f"{BASE}/jobs/{work['job_id']}", headers=auth)).status_code == 200
+    assert work["job_id"] in {j["id"] for j in (await client.get(f"{BASE}/jobs", headers=auth)).json()["items"]}
+    # The owner could already read scope=work; the unified view now makes those same documents discoverable.
     for mode in ("lexical", "hybrid", "vector"):
-        # 해시 임베딩은 어떤 질의에도 가장 가까운 패시지를 돌려주므로(의미 보장 없음) 비어 있음이 아니라 회사 문서가 없음을 본다.
         hits = (await client.get(f"{BASE}/search", headers=auth, params={"q": "AuroraXQ77", "mode": mode})).json()
-        assert all(i["document"]["id"] != wid for i in hits["items"]), mode
-        assert "AuroraPlatform" not in json.dumps(hits.get("matched_entities", []), ensure_ascii=False)
+        assert any(i["document"]["id"] == wid for i in hits["items"]), mode
     summary = (await client.get(f"{BASE}/summary", headers=auth)).json()
-    assert summary["counts"]["documents"] == 1
-    graph = (await client.get(f"{BASE}/ontology/graph", headers=auth)).json()
-    assert "AuroraPlatform" not in {n["name"] for n in graph["nodes"]}
-    assert (await client.get(f"{BASE}/ontology/graph", headers=auth, params={"q": "aurora"})).json()["nodes"] == []
-    # 근거(evidence) 직접 조회도 막힌다
-    # (work 패시지 id 는 work 범위로만 얻을 수 있다)
+    assert summary["counts"]["documents"] == 2
     legacy_work = (await client.get(f"{BASE}/search", headers=auth, params={"q": "AuroraXQ77", "scope": "work"})).json()
-    assert legacy_work["items"], "명시적 레거시 scope=work 선택에서는 기존처럼 회사 문서가 보인다"
+    assert legacy_work["items"]
     pid_work = legacy_work["items"][0]["passage_id"]
-    assert (await client.get(f"{BASE}/passages/{pid_work}/evidence", headers=auth)).status_code == 404
+    assert (await client.get(f"{BASE}/passages/{pid_work}/evidence", headers=auth)).status_code == 200
     assert (await client.get(f"{BASE}/passages/{pid_work}/evidence", headers=auth, params={"scope": "work"})).status_code == 200
-    # scope 위조: 알 수 없는 값은 경계를 넓히지 못한다
+    # Actual personal-session tokens still cannot read any work-only document or evidence.
+    for path in (f"documents/{wid}", f"passages/{pid_work}/evidence"):
+        assert (await client.get('/api/agent/kb/' + path, headers=sessions['personal'])).status_code == 404
+    for mode in ("lexical", "hybrid"):
+        hits = (await client.get('/api/agent/kb/search', headers=sessions['personal'],
+                                params={"q": "AuroraXQ77", "mode": mode})).json()
+        assert all(i["document"]["id"] != wid for i in hits["items"])
+        assert "AuroraPlatform" not in json.dumps(hits.get("matched_entities", []), ensure_ascii=False)
     assert (await client.get(f"{BASE}/documents", headers=auth, params={"scope": "all"})).status_code == 422
-    forged = (await client.get(f"{BASE}/documents", headers=auth, params={"scope": "personal"})).json()
-    assert {d["id"] for d in forged["items"]} == {pid}
+    compatible = (await client.get(f"{BASE}/documents", headers=auth, params={"scope": "personal"})).json()
+    assert {d["id"] for d in compatible["items"]} == {wid, pid}
 
 
-async def test_work_entities_do_not_leak_through_aliases_conflicts_or_entity_detail(client, auth):
+async def test_personal_context_hides_work_entities_aliases_and_graph_while_owner_can_read(client, auth):
+    from ttakkari import kb_v3_ontology_views as views
+    from ttakkari.kb_access import create_personal_agent_context
+    from ttakkari.kb_ontology_models import KbEntity
+
     await _seed_work_and_personal(client, auth)
     await _drain(_worker())
+    ctx = create_personal_agent_context()
     async with sessionmaker()() as db:
-        from ttakkari.kb_ontology_models import KbEntity
-
         aurora = await db.scalar(select(KbEntity).where(KbEntity.canonical_name == "AuroraPlatform"))
-        if aurora is None:  # 이름 표기가 한글로 잡히는 경우
+        if aurora is None:
             aurora = await db.scalar(select(KbEntity).where(KbEntity.visibility == "work_only"))
-    assert aurora is not None and aurora.visibility == "work_only"
-    assert (await client.get(f"{BASE}/ontology/entities/{aurora.id}", headers=auth)).status_code == 404
-    assert (await client.get(f"{BASE}/ontology/graph", headers=auth, params={"center_entity_id": str(aurora.id)})).status_code == 404
-    assert (await client.post(f"{BASE}/ontology/entities/{aurora.id}/aliases", headers=auth, json={"alias": "내부시스템"})).status_code == 404
-    # 회사 문서가 개인 엔터티의 별칭·문서 수를 오염하지 않는다: 개인 시점의 Deployment/ReplicaSet 상세에 회사 문서가 없다
-    graph = (await client.get(f"{BASE}/ontology/graph", headers=auth)).json()
-    rs = next(n for n in graph["nodes"] if n["name"] == "ReplicaSet")
-    detail = (await client.get(f"{BASE}/ontology/entities/{rs['id']}", headers=auth)).json()
-    assert {d["title"] for d in detail["documents"]} == {"개인 문서"}
-    assert all("오로라" not in json.dumps(r, ensure_ascii=False) for r in detail["relations"])
+        assert aurora is not None and aurora.visibility == "work_only"
+        for lookup in (
+            lambda: views.entity_detail_v3(db, ctx, aurora.id),
+            lambda: views.graph_v3(db, ctx, center_entity_id=aurora.id, q=None, domain=None,
+                                  hops=1, limit=30, offset=0, include_candidates=False),
+            lambda: views.add_alias(db, ctx, aurora.id, alias="내부시스템", lang="ko"),
+        ):
+            with pytest.raises(views.EntityNotFound):
+                await lookup()
+        graph = await views.graph_v3(db, ctx, center_entity_id=None, q=None, domain=None,
+                                     hops=1, limit=30, offset=0, include_candidates=False)
+        assert str(aurora.id) not in {n['id'] for n in graph['nodes']}
+        rs = next(n for n in graph["nodes"] if n["name"] == "ReplicaSet")
+        detail = await views.entity_detail_v3(db, ctx, uuid.UUID(rs['id']))
+        assert {d["title"] for d in detail["documents"]} == {"개인 문서"}
+        assert all("오로라" not in json.dumps(r, ensure_ascii=False) for r in detail["relations"])
+    assert (await client.get(f"{BASE}/ontology/entities/{aurora.id}", headers=auth)).status_code == 200
 
 
 async def test_agent_api_keeps_session_scope_rules_and_adds_fields_only(client, auth, sessions):

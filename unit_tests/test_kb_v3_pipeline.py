@@ -953,7 +953,8 @@ async def test_collector_delivery_queues_pipeline_job(pipeline_db, monkeypatch):
         # access 행 검증
         access = await db.get(KbDocumentAccess, doc_id)
         assert access is not None
-        assert access.scope == "work"
+        assert access.scope == "personal"  # C2 single storage namespace
+        assert access.pool == "work"
         assert access.origin_scope == "work"
         assert access.visibility == "work_only"
 

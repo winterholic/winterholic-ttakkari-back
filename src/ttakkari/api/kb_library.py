@@ -1,10 +1,9 @@
 """Owner KB API: 하나의 통합 지식 도서관(KB v3, KB3-402).
 
-개인/회사 선택 파라미터 없이 하나의 공간으로 응답한다. 접근은 kb_access 단일 규칙이다: 사용자 웹 세션은 개인 세션 기준
-(global + 자기 소유 personal 출처)이고 work_only 는 보이지 않는다. 접근 행이 없는 문서는 work_only 로 격리된다
-(미상 scope 는 절대 personal 에 도달하지 않는다). 기존 `scope` 쿼리는 deprecated 로 받기만 한다
-(생략·personal = 통합 공간, work = 기존 회사 범위 조회를 명시적으로 고르는 레거시 경로). 기존 응답 필드는 보존하고 v3 필드는 추가만 한다.
-회사 계정 엔진 세션이 읽는 범위만 문서별 접근 속성(pool)이 정하며 PUT /documents/{id}/engine-access 로 소유자가 바꾼다.
+소유자가 기존에 접근할 수 있는 global/work_only 자료를 하나의 공간에서 응답한다.
+개인 에이전트에는 global 만 허용하며, 미상 출처는 work_only 로 격리한다.
+기존 scope 쿼리는 deprecated 호환 경로다(생략·personal = 통합 공간, work = 기존 회사 범위).
+회사 엔진의 문서별 접근 허용(pool)은 원본 출처·visibility 와 독립적으로 소유자가 설정한다.
 Model rankings are evidence candidates; KB7 quality approval is separate.
 """
 
@@ -20,7 +19,6 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from ttakkari import kb_ingest, kb_jobs, kb_v3_ontology_views, kb_v3_views
 from ttakkari import kb_library as lib
-from ttakkari import kb_retrieval
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.collector.library import pool_for_scope
@@ -33,8 +31,6 @@ from ttakkari.kb_store import KbInputError
 from ttakkari.security.auth import User
 
 router = APIRouter(prefix="/api/assistant/kb", tags=["kb-library"])
-LegacyScope = Annotated[str | None, Query(deprecated=True, description="무시한다. 도서관은 하나다.")]
-
 LegacyScope = Annotated[
     Literal["personal", "work"] | None,
     Query(deprecated=True, description="deprecated: 생략하면 통합 도서관. work 는 기존 회사 범위 조회를 명시적으로 고르는 레거시 경로."),
@@ -49,7 +45,7 @@ def web_access(scope: str | None) -> KbAccessContext:
 class RegisterIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    scope: str | None = Field(default=None, deprecated=True)  # 무시한다. 옛 클라이언트가 보내도 거부하지 않는다.
+    scope: str | None = Field(default=None, deprecated=True)  # 옛 work 입력은 출처·visibility 를 보존한다.
     title: str = Field(min_length=1, max_length=500)
     text: str = Field(min_length=1, max_length=lib.MAX_TEXT_CHARS)
     source_key: str | None = Field(default=None, min_length=1, max_length=500)

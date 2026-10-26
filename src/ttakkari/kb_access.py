@@ -24,7 +24,7 @@ Caller 유형(Role)과 신뢰된 컨텍스트(Trusted Context)에 따라 접근 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from sqlalchemy import and_, func, not_, or_, select
@@ -65,6 +65,8 @@ class KbAccessContext:
     # kb_entities.tenant_id 는 온톨로지 네임스페이스(해소기·추출기 기본값 "personal")이고, 문서 접근 행의 tenant_id("owner")와
     # 다른 축이다. 두 값을 같은 문자열로 비교하면 실제 추출된 엔터티가 전부 걸러진다(실 PG 흐름에서 확인).
     ontology_tenant_id: str = ONTOLOGY_TENANT_ID
+    # Explicit company-engine grants are independent of source classification.
+    engine_pool: str | None = None
 
     def can_access_visibility(self, visibility: str | None) -> bool:
         """주어진 visibility 에 접근 가능한지 검사."""
@@ -131,19 +133,8 @@ def create_web_context(
     *,
     include_hidden: bool = False,
 ) -> KbAccessContext:
-    """사용자 웹 세션(owner JWT)의 통합 도서관 컨텍스트.
-
-    웹 세션은 개인(personal) 세션 기준이다: tenant 내 global(자기 소유 personal 출처 포함)만 하나의 공간으로 본다.
-    work_only 는 개인 세션과 같이 보이지 않는다(회사 자료 노출 확대 금지). 회사 자료는 명시적인 레거시 scope=work 선택으로만 본다.
-    """
-    return KbAccessContext(
-        tenant_id=tenant_id,
-        caller_role="owner",
-        allowed_visibilities=GLOBAL_ONLY_VISIBILITY,
-        include_hidden=include_hidden,
-        strict_provenance=True,
-        origin_scope_filter=None,
-    )
+    """소유자가 이미 접근 가능한 자료를 하나의 도서관에서 조회한다."""
+    return create_owner_context(tenant_id=tenant_id, include_hidden=include_hidden)
 
 
 def from_web_request(scope: str | None, tenant_id: str = "owner") -> KbAccessContext:
@@ -162,8 +153,13 @@ def from_web_request(scope: str | None, tenant_id: str = "owner") -> KbAccessCon
 def from_agent_pool(pool: str | None, tenant_id: str = "owner") -> KbAccessContext:
     """에이전트 풀 이름('work', 'personal' 등)에 따라 적절한 에이전트 컨텍스트 생성."""
     if pool == "work":
-        return create_work_agent_context(tenant_id=tenant_id)
+        return with_engine_pool(create_work_agent_context(tenant_id=tenant_id), "work")
     return create_personal_agent_context(tenant_id=tenant_id)
+
+
+def with_engine_pool(ctx: KbAccessContext, pool: str | None) -> KbAccessContext:
+    """Add a trusted engine grant restriction without widening source visibility."""
+    return replace(ctx, engine_pool="work") if pool == "work" else ctx
 
 
 def from_legacy_scope(scope: str | None = "personal", tenant_id: str = "owner") -> KbAccessContext:
@@ -215,6 +211,7 @@ def from_caller_visibility(
         strict_provenance=ctx.strict_provenance,
         origin_scope_filter=ctx.origin_scope_filter,
         ontology_tenant_id=ontology_tenant_id,
+        engine_pool=ctx.engine_pool,
     )
 
 
@@ -238,6 +235,8 @@ def document_access_conditions(ctx: KbAccessContext, access_model: Any = None) -
         conditions.append(access.hidden.is_(False))
     if ctx.origin_scope_filter:
         conditions.append(access.origin_scope == ctx.origin_scope_filter)
+    if ctx.engine_pool == "work":
+        conditions.append(or_(access.pool == "work", access.scope == "work"))
     return conditions
 
 def unclassified_documents_visible(ctx: KbAccessContext) -> bool:
@@ -246,7 +245,7 @@ def unclassified_documents_visible(ctx: KbAccessContext) -> bool:
     문서 접근 행이 없다는 것은 scope 를 알 수 없다는 뜻이라 kb_visibility 와 똑같이 ('work', 'work_only') 로 본다.
     work_only 를 허용하지 않는 컨텍스트(personal)나 origin_scope 가 personal 로 제한된 컨텍스트에서는 절대 보이지 않는다.
     """
-    if VISIBILITY_WORK_ONLY not in ctx.allowed_visibilities:
+    if ctx.engine_pool == "work" or VISIBILITY_WORK_ONLY not in ctx.allowed_visibilities:
         return False
     return ctx.origin_scope_filter in (None, SCOPE_WORK)
 
@@ -268,13 +267,8 @@ def document_access_filter(ctx: KbAccessContext, doc_model: Any = None):
 
     conditions = [
         KbDocumentAccess.document_id == target_doc.id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
     ]
-    if not ctx.include_hidden:
-        conditions.append(KbDocumentAccess.hidden.is_(False))
-    if ctx.origin_scope_filter:
-        conditions.append(KbDocumentAccess.origin_scope == ctx.origin_scope_filter)
 
     matched = select(KbDocumentAccess.document_id).where(and_(*conditions)).exists()
 
@@ -301,13 +295,8 @@ def passage_access_filter(ctx: KbAccessContext, passage_model: Any = None):
     conditions = [
         KbDocumentAccess.document_id == KbRevision.document_id,
         KbRevision.id == p.revision_id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
     ]
-    if not ctx.include_hidden:
-        conditions.append(KbDocumentAccess.hidden.is_(False))
-    if ctx.origin_scope_filter:
-        conditions.append(KbDocumentAccess.origin_scope == ctx.origin_scope_filter)
 
     matched = select(KbDocumentAccess.document_id).select_from(KbRevision).join(
         KbDocumentAccess, KbDocumentAccess.document_id == KbRevision.document_id
@@ -350,11 +339,8 @@ def entity_access_filter(ctx: KbAccessContext, entity_model: Any = None):
     doc_access_cond = [
         KbDocumentEntity.entity_id == e.id,
         KbDocumentAccess.document_id == KbDocumentEntity.document_id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
     ]
-    if not ctx.include_hidden:
-        doc_access_cond.append(KbDocumentAccess.hidden.is_(False))
 
     has_permitted_doc = select(KbDocumentEntity.entity_id).select_from(KbDocumentEntity).join(
         KbDocumentAccess, KbDocumentAccess.document_id == KbDocumentEntity.document_id
@@ -429,11 +415,8 @@ def assertion_access_filter(ctx: KbAccessContext, assertion_model: Any = None):
         KbPassage.id == KbEvidence.passage_id,
         KbRevision.id == KbPassage.revision_id,
         KbDocumentAccess.document_id == KbRevision.document_id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
     ]
-    if not ctx.include_hidden:
-        doc_cond.append(KbDocumentAccess.hidden.is_(False))
 
     has_valid_evidence = select(KbAssertionEvidence.assertion_id).select_from(
         KbAssertionEvidence
@@ -481,11 +464,8 @@ def relation_access_filter(
         KbPassage.id == KbEvidence.passage_id,
         KbRevision.id == KbPassage.revision_id,
         KbDocumentAccess.document_id == KbRevision.document_id,
-        KbDocumentAccess.tenant_id == ctx.tenant_id,
-        KbDocumentAccess.visibility.in_(ctx.allowed_visibilities),
+        *document_access_conditions(ctx, KbDocumentAccess),
     ]
-    if not ctx.include_hidden:
-        doc_cond.append(KbDocumentAccess.hidden.is_(False))
 
     has_valid_evidence = select(KbRelationEvidence.relation_id).select_from(
         KbRelationEvidence

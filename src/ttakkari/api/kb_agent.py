@@ -1,7 +1,7 @@
 """Read-only general knowledge tools. 세션 pool(personal/work)에서 접근 범위를 유도하고 kb_access 단일 규칙으로 거른다.
 
-기존 정책 그대로: 개인 세션은 global 문서만, 회사 세션은 회사(work_only) 문서만 본다. 회사 세션에 개인 자료를 열지 않고
-개인 세션에 회사 자료를 열지 않는다. 응답 필드는 기존 것을 보존하고 v3 필드(section_path·locator_meta·canonical_facts 등)만 더한다.
+개인 세션은 global 문서만, 회사 세션은 명시적으로 회사 엔진 접근을 허용한 문서만 본다.
+원본 출처와 visibility 는 엔진 접근 설정과 독립적으로 유지한다. 응답 필드는 기존 것을 보존하고 v3 필드(section_path·locator_meta·canonical_facts 등)만 더한다.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ttakkari import kb_retrieval
 from ttakkari.api.collect import agent_access
 from ttakkari.api.deps import Db
 from ttakkari.collector.contracts import AuthContext
-from ttakkari.kb_access import KbAccessContext, from_legacy_scope
+from ttakkari.kb_access import KbAccessContext, from_agent_pool
 from ttakkari.kb_store import KbInputError
 
 router = APIRouter(prefix="/api/agent/kb", tags=["kb-library"])
@@ -23,9 +23,9 @@ Access = Annotated[AuthContext, Depends(agent_access)]
 
 
 def agent_kb_access(ctx: AuthContext) -> KbAccessContext:
-    """세션 범위(ctx.pool 또는 ctx.scope: personal|work)를 kb_access 컨텍스트로. 'work' 만 회사 문서, 그 밖은 모두 개인(global) 기준이다."""
+    """신뢰된 세션 pool 을 출처 가시성과 엔진 접근 허용 조건으로 변환한다."""
     pool = getattr(ctx, "pool", None) or getattr(ctx, "scope", "personal")
-    return from_legacy_scope("work" if pool == "work" else "personal", tenant_id=ctx.tenant_id)
+    return from_agent_pool(pool, tenant_id=ctx.tenant_id)
 
 
 @router.get("/search")

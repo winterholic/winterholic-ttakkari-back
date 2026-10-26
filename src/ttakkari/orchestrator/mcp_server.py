@@ -38,10 +38,10 @@ def query_tool(fn):
 
 
 async def _call(method: str, path: str, body: dict[str, Any] | None = None, *, prefix: str = "/api/orchestrator",
-                params: dict[str, Any] | None = None) -> str:
+                params: dict[str, Any] | None = None, timeout: float = 30) -> str:
     api = os.environ.get("TTK_API_URL", "http://127.0.0.1:8787").rstrip("/")
     headers = {"Authorization": f"Bearer {os.environ.get('TTK_ORCH_TOKEN', '')}"}
-    async with httpx.AsyncClient(base_url=api, headers=headers, timeout=30) as c:
+    async with httpx.AsyncClient(base_url=api, headers=headers, timeout=timeout) as c:
         r = await c.request(method, f"{prefix}{path}", json=body,
                             params={k: v for k, v in (params or {}).items() if v is not None} or None)
     try:
@@ -919,6 +919,18 @@ async def host_operation_cancel(job_id: str) -> str:
     """Cancel a queued or running host operation. The runner stops its child process group; finished work and
     already-written backups are preserved."""
     return await _agent("POST", f"/operations/{quote(job_id, safe='')}/cancel", None)
+
+
+# ---- GitHub 계정별 저장소 작업. 전역 gh active 계정은 변경하지 않고 개인 세션 workspace 안에서만 clone/pull 한다.
+
+@server.tool()
+async def github_git(operation: Literal["clone", "pull"], account: str, owner: str, repo: str) -> str:
+    """Clone or fast-forward pull one github.com repository into this personal session's workspace under
+    .ttakkari-github/<owner>/<repo>. Choose `account` explicitly from the logged-in GitHub accounts.
+    Clone is shallow. Pull refuses a dirty tree, changed origin, missing same-branch upstream or non-fast-forward.
+    No shell, arbitrary URL/path, push, submodule or code execution is exposed; work sessions are rejected."""
+    return await _call("POST", "/github/git", {"operation": operation, "account": account, "owner": owner, "repo": repo},
+                       prefix="/api/agent", timeout=210)
 
 
 # ---- 운영 로그·오류 이슈(ADR 0033). 응답은 서버가 요약·마스킹·크기 제한하고, 여기서 한 번 더 16,000자로 막는다.

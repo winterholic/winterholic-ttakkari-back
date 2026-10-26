@@ -8,11 +8,13 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "unit_tests"))
+
 from github_fakes import FakeGh, fake_token, ok
 
 from ttakkari.github import service as svc_mod
 from ttakkari.github.accounts import AccountRegistry
 from ttakkari.github.client import GithubClient
+from ttakkari.github.git_ops import GithubGitOperations
 from ttakkari.github.logs import LogFetcher
 from ttakkari.main import app
 
@@ -59,3 +61,45 @@ async def test_upstream_401_does_not_log_the_app_session_out(client, auth, fake_
     state["handler"] = lambda req: httpx.Response(401, json={"message": "Bad credentials"})
     r = await client.get("/api/github/me", params={"account": "alice"}, headers=auth)
     assert r.status_code == 502 and r.json()["code"] == "gh_auth_expired" and "www-authenticate" not in {k.lower() for k in r.headers}
+
+
+async def test_agent_git_is_account_scoped_and_personal_session_only(client, auth, make_dir, fake_service):
+    import uuid
+
+    from ttakkari.api import github_agent
+    from ttakkari.orchestrator.runtime import issue_token
+
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": "github work", "root_path": str(root)},
+                            headers=auth)).json()
+    headers = {}
+    for pool in ("personal", "work"):
+        session = await client.post("/api/sessions", json={"workspace_id": ws["id"], "pool": pool}, headers=auth)
+        assert session.status_code == 201, session.text
+        headers[pool] = {"Authorization": "Bearer " + issue_token(uuid.UUID(session.json()["id"]))}
+
+    seen = []
+
+    async def runner(args, *, cwd, env, timeout):
+        seen.append((env["TTAKKARI_GITHUB_TOKEN"], list(args)))
+        if "clone" in args:
+            Path(args[-1], ".git").mkdir(parents=True)
+            return 0, b"cloned", b""
+        return 0, b"a" * 40, b""
+
+    ops = GithubGitOperations(fake_service[0].registry, runner=runner)
+    app.dependency_overrides[github_agent.get_git_operations] = lambda: ops
+    try:
+        body = {"operation": "clone", "account": "alice", "owner": "acme", "repo": "private"}
+        denied = await client.post("/api/agent/github/git", json=body, headers=headers["work"])
+        assert denied.status_code == 403
+        assert not seen
+
+        response = await client.post("/api/agent/github/git", json=body, headers=headers["personal"])
+        assert response.status_code == 200, response.text
+        assert response.json()["account"] == "alice"
+        assert response.json()["path"] == ".ttakkari-github/acme/private"
+        assert seen[0][0] == fake_token("alice")
+        assert fake_token("alice") not in response.text
+    finally:
+        app.dependency_overrides.pop(github_agent.get_git_operations, None)

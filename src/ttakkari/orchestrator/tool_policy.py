@@ -46,6 +46,8 @@ HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environ
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
 # 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 상태 조회도 끝난 러너를 실패로 정리하므로 읽기 전용으로 표시하지 않는다. 종류 허용 목록·개인 세션 한정·단일 실행은 API 가 검사한다.
 HOST_OPERATION_TOOLS = frozenset({"host_operation_start", "host_operation_status", "host_operation_cancel"})
+# Fixed GitHub clone/pull operations use the explicit selected-account token and the session workspace only.
+GITHUB_GIT_TOOLS = frozenset({"github_git"})
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "stop_agents", "reset_my_context", "manage_work"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 # Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
@@ -62,4 +64,4 @@ CREATIVE_TOOLS = frozenset({
 })
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
                        | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS
-                       | HOST_OPERATION_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS)
+                       | HOST_OPERATION_TOOLS | GITHUB_GIT_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS)

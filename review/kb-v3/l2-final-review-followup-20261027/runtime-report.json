@@ -1,0 +1,160 @@
+{
+  "id": "9ec07348-5e33-4323-bfd9-d144dc18591a",
+  "kind": "runtime_report",
+  "status": "succeeded",
+  "created_at": "2026-10-26T23:10:12.116650+00:00",
+  "started_at": "2026-10-26T23:10:12.116650+00:00",
+  "finished_at": "2026-10-26T23:10:12.155411+00:00",
+  "updated_at": "2026-10-26T23:10:12.158783+00:00",
+  "summary": {
+    "this_process": {
+      "pid": 92353,
+      "release_revision": "7687a9be4f9edb45b8ee8492c067ea3941bb9dbb",
+      "generation_id": "e45956a8-8b39-43cf-ba0d-c1255f623518",
+      "role": "api",
+      "execution_mode": "local"
+    },
+    "control": {
+      "active_generation": "e45956a8-8b39-43cf-ba0d-c1255f623518",
+      "executor_generation": null,
+      "epoch": 116
+    },
+    "generations": [
+      {
+        "id": "e45956a8-8b39-43cf-ba0d-c1255f623518",
+        "revision": "7687a9be4f9edb45b8ee8492c067ea3941bb9dbb",
+        "role": "api",
+        "state": "active",
+        "execution_mode": "local",
+        "pid": 92353,
+        "pid_alive": true,
+        "heartbeat_age_s": 0,
+        "leases": 3,
+        "process_groups": 3
+      },
+      {
+        "id": "93f5d24a-df0f-42b7-a949-767a3ff377b0",
+        "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 57410,
+        "pid_alive": false,
+        "heartbeat_age_s": 3106.3,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "cf1d8921-2070-4659-879c-697c2ae2dc0d",
+        "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 10029,
+        "pid_alive": false,
+        "heartbeat_age_s": 32120.8,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+        "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 61529,
+        "pid_alive": false,
+        "heartbeat_age_s": 35006.1,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "fd750caa-1538-4436-9478-ea38b9f6ca20",
+        "revision": "e6b4fd0df9513058f9e30845c08f4b0c9172b095",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 77451,
+        "pid_alive": false,
+        "heartbeat_age_s": 35001,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "77e28a51-3f92-4ab3-823c-a562afa19a39",
+        "revision": "dd9748675b5744ca0ec73f6726bfd5ffae5e7c41",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 32228,
+        "pid_alive": false,
+        "heartbeat_age_s": 45309.4,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "3b0bb4ee-5945-4029-9abf-590526fcca4e",
+        "revision": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 87194,
+        "pid_alive": false,
+        "heartbeat_age_s": 48242.4,
+        "leases": 0,
+        "process_groups": 0
+      },
+      {
+        "id": "e2b02089-35ce-4f71-b3dc-989790ac4241",
+        "revision": "600eb8432f7e1a3e64a9f3a07f175cd183fb90eb",
+        "role": "api",
+        "state": "offline",
+        "execution_mode": "local",
+        "pid": 6372,
+        "pid_alive": false,
+        "heartbeat_age_s": 85754.2,
+        "leases": 0,
+        "process_groups": 0
+      }
+    ],
+    "runs_running": 3,
+    "deploy_strategy": "generations",
+    "recent_deploys": [
+      {
+        "id": "d277424d-3e74-49b0-94da-f70fdeaf915f",
+        "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+        "status": "succeeded",
+        "created_at": "2026-10-26T13:11:00.806530+00:00"
+      },
+      {
+        "id": "b6444f6a-7d55-4b3f-a435-08cc239b1b77",
+        "revision": "5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1",
+        "status": "failed",
+        "created_at": "2026-10-26T13:45:31.098585+00:00"
+      },
+      {
+        "id": "c5fb3942-2c7a-493b-a873-cdf73c9994fc",
+        "revision": "1083a0cee98879da6869a6b224f5a11282ec290d",
+        "status": "failed",
+        "created_at": "2026-10-26T13:58:54.340497+00:00"
+      },
+      {
+        "id": "969992e0-deda-4bfd-ba89-1b9f6b3788cc",
+        "revision": "7687a9be4f9edb45b8ee8492c067ea3941bb9dbb",
+        "status": "succeeded",
+        "created_at": "2026-10-26T21:53:14.604975+00:00"
+      },
+      {
+        "id": "50d4c86e-738c-4903-b7e3-0d0eca3b0d51",
+        "revision": "78c4a2e7cde02536327eefd7184b64826d1726aa",
+        "status": "testing",
+        "created_at": "2026-10-26T23:05:01.570901+00:00"
+      }
+    ]
+  },
+  "identity": {},
+  "inline": true,
+  "requested_by_session": "0b201a98-e689-4e13-a1b6-6e8db3c4d60d",
+  "audit_error": null,
+  "audit_pending": false
+}

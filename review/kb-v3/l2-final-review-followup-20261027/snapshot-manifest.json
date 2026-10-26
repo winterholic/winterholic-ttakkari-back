@@ -1,0 +1,10 @@
+{
+  "independent-report.md": {
+    "source": "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2-activation-20261027/review/kb-v3/l2-independent-20261027/report.md",
+    "sha256": "7620cb1799b30686e361492f713b29ac207ce4c7cf2182f9f48aa5a076939789"
+  },
+  "independent-verification_outcome.json": {
+    "source": "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2-activation-20261027/review/kb-v3/l2-independent-20261027/verification_outcome.json",
+    "sha256": "8346712a7adca0f8949cf5f39f67c86c5164ec46d3b48cbac5de9ee33175f1c8"
+  }
+}

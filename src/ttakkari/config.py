@@ -237,6 +237,10 @@ class Settings(BaseSettings):
     collector_daily_page_cap: int = Field(default=500, ge=1, le=100000)
     # 절대 지출 상한(architecture 6, 제안 기본값). teacher 는 한도를 강제하는 엔진이 연결되기 전까지 꺼 둔다.
     collector_teacher_enabled: bool = False
+    # 수집 임무 2단계 경량 ML(e5 임베딩 축). 켜져 있어도 context_embedder 가 e5 가 아니면 자동으로 쓰이지 않는다.
+    collector_triage_ml_enabled: bool = True
+    # 임무(작업)당 정밀평가 대기열 상한. 넘으면 'skipped_cap' 으로 남기고 문서는 검토 필요로 적재한다.
+    collector_triage_precise_queue_cap: int = Field(default=25, ge=0, le=1000)
     # 파일럿 출처(collector/pilot.py)를 운영 첫 주기에 한 번 등록한다. 등록 뒤에는 DB 플래그가 재등록을 막는다.
     collector_pilot_enabled: bool = True
     collector_budget_day_tokens: int = Field(default=60_000, ge=0)
@@ -253,6 +257,10 @@ class Settings(BaseSettings):
     collector_contact: str = ""
     # 원본 보존소 총량 상한(제안 20GiB, architecture 7). 도달하면 새 fetch 를 멈춘다.
     collector_blob_cap_bytes: int = Field(default=20 * 1024**3, ge=0)
+    # 정적 본문이 비어 있는 스크립트 셸 페이지만 격리된 브라우저로 렌더링한다(collector/render.py). 런타임이 없으면 사유를 남기고 건너뛴다.
+    collector_render_enabled: bool = True
+    collector_render_runtime_dir: str = ""
+    collector_render_browsers_path: str = ""
     collector_batch_size: int = Field(default=5, ge=1, le=50)
     collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더

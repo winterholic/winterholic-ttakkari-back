@@ -230,7 +230,8 @@ async def snapshot(db, now: datetime | None = None) -> dict:
 
 async def guarded_call(*, request_key: str, purpose: str, engine: EngineBound, input_tokens: int,
                        call: Callable[[], Awaitable[tuple[object, CallUsage]]],
-                       job_id: uuid.UUID | str | None = None) -> object:
+                       job_id: uuid.UUID | str | None = None,
+                       replay_result_key: str | None = None) -> object:
     """reserve+commit -> provider call -> settle. The only sanctioned way to spend. A BudgetDenied escapes before
     the call; any failure after it leaves the reservation occupied as `unknown`."""
     async with sessionmaker()() as db:
@@ -239,6 +240,14 @@ async def guarded_call(*, request_key: str, purpose: str, engine: EngineBound, i
         await db.commit()
     if reservation.replay:
         # An earlier attempt may still be running or may have crashed after the provider charged; never call twice.
+        if reservation.state == "settled" and replay_result_key:
+            async with sessionmaker()() as db:
+                prior = await db.scalar(select(CollectorBudgetReservation).where(
+                    CollectorBudgetReservation.request_key == request_key
+                ))
+                recovered = (prior.receipt or {}).get(replay_result_key) if prior else None
+            if recovered is not None:
+                return recovered
         raise BudgetDenied("already_attempted", f"{request_key} is {reservation.state}; resolve it with a receipt")
     try:
         output, usage = await call()
@@ -255,3 +264,23 @@ async def _mark(request_key: str) -> None:
     async with sessionmaker()() as db:
         await mark_unknown(db, request_key)
         await db.commit()
+
+
+async def recover_settled_result(
+    *, request_key: str, purpose: str, engine: EngineBound, job_id: uuid.UUID | str | None, result_key: str
+) -> tuple[bool, object | None]:
+    """Read a result durably coupled to a settled usage receipt; unresolved attempts remain fenced."""
+    async with sessionmaker()() as db:
+        row = await db.scalar(select(CollectorBudgetReservation).where(
+            CollectorBudgetReservation.request_key == request_key
+        ))
+        if row is None:
+            return False, None
+        job = str(job_id) if job_id is not None else None
+        if (row.job_id, row.purpose, row.engine) != (job, purpose, engine.name):
+            raise BudgetConflict("request_key reused with different parameters")
+        if row.state == "settled":
+            result = (row.receipt or {}).get(result_key)
+            if result is not None:
+                return True, result
+        raise BudgetDenied("already_attempted", f"{request_key} is {row.state} without a recoverable result")

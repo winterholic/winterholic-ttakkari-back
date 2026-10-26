@@ -14,7 +14,19 @@ from dataclasses import dataclass
 from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.collector.control_models import (
+    KbDocumentAccess,
+    KbDocumentAlias,
+    KbObservation,
+)
+from ttakkari.collector.library import (
+    LIBRARY_SCOPE,
+    WORK_POOL,
+    effective_pool,
+    legacy_work_upload_key,
+    narrowest_pool,
+    normalize_pool,
+)
 from ttakkari.context.search import lexical, terms
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_store import (
@@ -35,20 +47,76 @@ class KbNotFound(LookupError):
     """요청한 문서·리비전·패시지가 없다."""
 
 
-def scope_filter(scope: str = "personal"):
-    matched = select(KbDocumentAccess.document_id).where(
-        KbDocumentAccess.document_id == KbDocument.id, KbDocumentAccess.tenant_id == "owner",
-        KbDocumentAccess.scope == scope,
-        KbDocumentAccess.hidden.is_(False),
+def access_filter(pool: str = "personal"):
+    """직접 ID 로 여는 문서·근거의 접근 조건. 숨김(revocation)·다른 tenant 는 닫고, 회사 엔진(work) pool 은 work 행만 연다.
+
+    C2: personal/work 도서관 구획은 없다. 접근 행이 없는 옛 문서는 소유자와 personal pool 에만 보이고 회사 엔진에는 닫힌다.
+    병합 전 옛 work 행(scope=work)도 work 로 읽어 병합 전후 결과가 같다.
+    """
+    closed = select(KbDocumentAccess.document_id).where(
+        KbDocumentAccess.document_id == KbDocument.id,
+        or_(KbDocumentAccess.hidden.is_(True), KbDocumentAccess.tenant_id != "owner"),
     ).exists()
-    any_access = select(KbDocumentAccess.document_id).where(KbDocumentAccess.document_id == KbDocument.id).exists()
-    # Existing unclassified rows stay visible only in personal scope, never also in work.
-    return or_(matched, ~any_access) if scope == "personal" else matched
+    if normalize_pool(pool) != WORK_POOL:
+        return ~closed
+    work_open = select(KbDocumentAccess.document_id).where(
+        KbDocumentAccess.document_id == KbDocument.id, KbDocumentAccess.tenant_id == "owner",
+        or_(KbDocumentAccess.pool == WORK_POOL, KbDocumentAccess.scope == "work"),
+    ).exists()
+    return and_(~closed, work_open)
 
 
-async def require_document_scope(db, document_id, scope="personal"):
-    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope))):
+def library_filter(pool: str = "personal"):
+    """목록·검색·집계 조건. access_filter 에 더해, 본문이 canonical 에 모두 있는 병합 중복(covered)은 한 번만 보이도록 뺀다.
+    중복 문서와 그 근거 ID 는 지워지지 않아 ID 로는 계속 열린다."""
+    covered = select(KbDocumentAlias.document_id).where(
+        KbDocumentAlias.document_id == KbDocument.id, KbDocumentAlias.relation == "covered").exists()
+    return and_(access_filter(pool), ~covered)
+
+
+async def resolve_doc_key(db, new_key: str, legacy_keys: list[str]) -> str:
+    """같은 출처의 문서가 옛 scope 별 키로 이미 있으면 그 계보의 키를 쓴다(병합 전후 모두).
+    여러 개면 가장 먼저 만든 문서, alias 로 합쳐졌다면 canonical 문서의 키다."""
+    docs = list(await db.scalars(select(KbDocument).where(KbDocument.doc_key.in_([new_key, *legacy_keys]))
+                                 .order_by(KbDocument.created_at, KbDocument.id)))
+    if not docs:
+        return new_key
+    chosen = docs[0]
+    alias = await db.get(KbDocumentAlias, chosen.id)
+    if alias is not None:
+        canonical = await db.get(KbDocument, alias.canonical_document_id)
+        if canonical is not None:
+            chosen = canonical
+    return chosen.doc_key
+
+
+async def require_document_access(db, document_id, pool="personal"):
+    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, access_filter(pool))):
         raise KbNotFound("document")
+
+
+async def set_engine_access(db, document_id, *, company_engine: bool) -> str:
+    """접근 pool 만 바꾼다. 문서·리비전은 건드리지 않으며 숨김(revocation) 상태도 그대로 둔다."""
+    if await db.get(KbDocument, document_id) is None:
+        raise KbNotFound("document")
+    pool = WORK_POOL if company_engine else "personal"
+    access = await db.get(KbDocumentAccess, document_id)
+    if access is None:
+        db.add(KbDocumentAccess(document_id=document_id, tenant_id="owner", scope=LIBRARY_SCOPE, pool=pool))
+    else:
+        access.pool = pool
+        if access.scope == "work" and not company_engine:
+            access.scope = LIBRARY_SCOPE  # 병합 전 옛 값이 work 로 다시 읽히지 않게 한다.
+    return pool
+
+
+async def document_aliases(db, document_id) -> list[dict]:
+    """같은 출처로 합쳐진 문서(양방향). 본문이 다른 이력(variant)과 숨겨진 중복(covered)을 구분해 알린다."""
+    rows = (await db.execute(select(KbDocumentAlias).where(or_(
+        KbDocumentAlias.document_id == document_id, KbDocumentAlias.canonical_document_id == document_id)))).scalars()
+    return [{"document_id": str(a.canonical_document_id if a.document_id == document_id else a.document_id),
+             "role": "canonical" if a.document_id == document_id else "duplicate",
+             "relation": a.relation, "reason": a.reason} for a in rows]
 
 
 def _current_revision_filter():
@@ -106,7 +174,7 @@ def _source_out(src: KbSource) -> dict:
     }
 
 
-async def summary(db: AsyncSession, *, scope: str = "personal") -> dict:
+async def summary(db: AsyncSession, *, pool: str = "personal") -> dict:
     counts = {}
     for name, model in (("documents", KbDocument), ("revisions", KbRevision), ("passages", KbPassage), ("evidence", KbEvidence)):
         stmt = select(func.count()).select_from(model)
@@ -116,16 +184,16 @@ async def summary(db: AsyncSession, *, scope: str = "personal") -> dict:
             stmt = stmt.join(KbRevision, KbPassage.revision_id == KbRevision.id)
         if model is not KbDocument:
             stmt = stmt.join(KbDocument, KbRevision.document_id == KbDocument.id)
-        counts[name] = await db.scalar(stmt.where(scope_filter(scope))) or 0
+        counts[name] = await db.scalar(stmt.where(library_filter(pool))) or 0
     src = select(KbSource.id, KbSource.collected_at).join(KbRevision, KbSource.id == KbRevision.source_id).join(
-        KbDocument, KbRevision.document_id == KbDocument.id).where(scope_filter(scope)).distinct().subquery()
+        KbDocument, KbRevision.document_id == KbDocument.id).where(library_filter(pool)).distinct().subquery()
     counts["sources"] = await db.scalar(select(func.count()).select_from(src)) or 0
     last = await db.scalar(select(func.max(src.c.collected_at)))
     return {"counts": counts, "last_collected_at": last.isoformat() if last else None}
 
 
-async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset: int, scope: str = "personal") -> dict:
-    stmt = select(KbDocument).where(scope_filter(scope))
+async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset: int, pool: str = "personal") -> dict:
+    stmt = select(KbDocument).where(library_filter(pool))
     if q and q.strip():
         pattern = q.strip()
         stmt = stmt.where(
@@ -177,9 +245,9 @@ async def _document_row(db: AsyncSession, doc: KbDocument) -> dict:
 
 async def get_document(
     db: AsyncSession, document_id: uuid.UUID, *, revision_id: uuid.UUID | None,
-    passage_limit: int, passage_offset: int, scope: str = "personal",
+    passage_limit: int, passage_offset: int, pool: str = "personal",
 ) -> dict:
-    await require_document_scope(db, document_id, scope)
+    await require_document_access(db, document_id, pool)
     doc = await db.get(KbDocument, document_id)
     if doc is None:
         raise KbNotFound("document")
@@ -234,6 +302,7 @@ async def get_document(
                          for o in await db.scalars(select(KbObservation).where(KbObservation.document_id == doc.id)
                                                    .order_by(KbObservation.event_time.desc()).limit(100))],
         "revisions": revisions,
+        "aliases": await document_aliases(db, doc.id),
         "selected_revision_id": str(selected.id),
         "passages": {
             "items": [
@@ -250,7 +319,7 @@ async def get_document(
 
 async def search_passages(
     db: AsyncSession, *, query: str, limit: int, offset: int,
-    document_id: uuid.UUID | None, current_only: bool, scope: str = "personal",
+    document_id: uuid.UUID | None, current_only: bool, pool: str = "personal",
 ) -> dict:
     words = terms(query)
     if not words:
@@ -261,7 +330,7 @@ async def search_passages(
         select(KbPassage, KbRevision, KbDocument, score)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
         .join(KbDocument, KbDocument.id == KbRevision.document_id)
-        .where(predicate, scope_filter(scope))
+        .where(predicate, library_filter(pool))
     )
     if current_only:
         stmt = stmt.where(_current_revision_filter())
@@ -306,13 +375,13 @@ def _line_number(body: str, offset: int) -> int:
 
 
 async def get_evidence(
-    db: AsyncSession, passage_id: uuid.UUID, *, start: int | None, end: int | None, scope: str = "personal",
+    db: AsyncSession, passage_id: uuid.UUID, *, start: int | None, end: int | None, pool: str = "personal",
 ) -> dict:
     passage = await db.get(KbPassage, passage_id)
     if passage is None:
         raise KbNotFound("passage")
     rev = await db.get(KbRevision, passage.revision_id)
-    await require_document_scope(db, rev.document_id, scope)
+    await require_document_access(db, rev.document_id, pool)
     doc = await db.get(KbDocument, rev.document_id)
     src = await db.get(KbSource, rev.source_id)
     span_start = 0 if start is None else start
@@ -361,7 +430,7 @@ class RegisterResult:
 
 async def register_text(
     db: AsyncSession, *, title: str, text: str, source_key: str | None, lang: str | None,
-    locator: str | None, scope: str = "personal",
+    locator: str | None, pool: str = "personal",
 ) -> RegisterResult:
     """사용자가 붙여넣거나 올린 텍스트를 기존 수집 경로(ingest_source)로 등록하고 패시지로 나눈다.
 
@@ -373,20 +442,24 @@ async def register_text(
         raise KbInputError("text_too_long")
     data = text.encode("utf-8")
     key = source_key or f"upload:{hashlib.sha256(data).hexdigest()[:16]}"
-    if scope == "work":
-        key = "work:" + hashlib.sha256(key.encode()).hexdigest()
+    # 옛 work 업로드는 키가 달랐다. 같은 업로드가 이미 있으면 그 계보에 이어 도서관에 같은 글이 둘 생기지 않게 한다.
+    key = await resolve_doc_key(db, key, [legacy_work_upload_key(key)])
     existing = await db.scalar(select(KbDocument).where(KbDocument.doc_key == key))
     if existing is not None:
-        await require_document_scope(db, existing.id, scope)
+        await require_document_access(db, existing.id, pool)
     result = await ingest_source(
         db, source_key=key, data=data, kind="upload", locator=locator, media_type="text/plain",
         title=title, lang=lang, origin_meta={"via": "kb_library_api"},
     )
     access = await db.get(KbDocumentAccess, result.document_id)
     if access is None:
-        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id="owner", scope=scope))
-    elif access.scope != scope or access.tenant_id != "owner":
+        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id="owner", scope=LIBRARY_SCOPE,
+                                pool=normalize_pool(pool)))
+    elif access.tenant_id != "owner":
         raise KbInputError("document_scope_mismatch")
+    elif result.created:
+        # 새 본문이 들어오면 접근 범위는 좁은 쪽이다. 같은 바이트 재등록은 아무것도 바꾸지 않는다.
+        access.pool = narrowest_pool(effective_pool(access.pool, access.scope), pool)
     passages = await segment_revision(db, result.revision_id)
     return RegisterResult(
         document_id=result.document_id, revision_id=result.revision_id, rev_no=result.rev_no,

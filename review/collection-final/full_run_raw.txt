@@ -1,0 +1,154 @@
+........................................................................ [  1%]
+........................................................................ [  2%]
+.................................F...................................... [  4%]
+........................................................................ [  5%]
+................ss...................................................... [  6%]
+........................................................................ [  8%]
+....................................................s................... [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+...........................................ss..................... [ 15%]
+.................................s....s.....................F........... [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+....F................................................................... [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+...........ssssssss..........................s.......................... [ 26%]
+....................s...................................s............... [ 27%]
+........................................................................ [ 28%]
+...ss......ss....................s...................................... [ 30%]
+........................................................................ [ 31%]
+................................................................x...x... [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+.............F......................F................................... [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+................s....................................................... [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+......ss................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+...................................................s.................... [ 65%]
+........................................................................ [ 67%]
+....................................................................................... [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+............................................................. [ 93%]
+........................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+..............................                                           [100%]
+=================================== FAILURES ===================================
+_______________________ test_muse_argv_hides_token_value _______________________
+tests/test_agent_token_security.py:139: in test_muse_argv_hides_token_value
+    argv = adapter.build_command(spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+___________ test_tampered_access_is_403_without_side_effects[scope] ____________
+tests/test_collector_api.py:155: in test_tampered_access_is_403_without_side_effects
+    assert err(response) == (403, "scope_binding_mismatch")
+E   AssertionError: assert (422, 'invalid_envelope') == (403, 'scope_...ing_mismatch')
+E     
+E     At index 0 diff: 422 != 403
+E     Use -v to get more diff
+______ test_same_source_key_in_two_scopes_never_mixes_documents_or_search ______
+tests/test_collector_integration.py:114: in test_same_source_key_in_two_scopes_never_mixes_documents_or_search
+    source = await make_source(client, auth, env, [url], scope=scope)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_collector_integration.py:45: in make_source
+    assert r.status_code == 201, r.text
+E   AssertionError: {"code":"conflict","message":"source_key_exists"}
+E   assert 409 == 201
+E    +  where 409 = <Response [409 Conflict]>.status_code
+______ test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise _______
+tests/test_muse_effort_pinned.py:55: in test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise
+    cmd = adapter.build_command(spec, {"XDG_CONFIG_HOME": str(tmp_path / "cfg")})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+_______ test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch ________
+tests/test_muse_observation_ping.py:214: in test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch
+    cmd = adapter.build_command(spec, {"XDG_CONFIG_HOME": str(tmp_path / "cfg")})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+=============================== warnings summary ===============================
+tests/test_accounts.py::test_antigravity_check_endpoint_confirms_only_with_user_supplied_identity
+unit_tests/test_tossinvest_unit.py::test_limit_validation
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/routing.py:360: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    return await dependant.call(**values)
+
+tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]
+tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])
+    return self.__pydantic_serializer__.to_python(
+
+tests/test_collector_control.py: 1 warning
+tests/test_kb_agent_api.py: 1 warning
+tests/test_kb_library_api.py: 14 warnings
+tests/test_kb_retrieval.py: 5 warnings
+  /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/api/kb_library.py:81: DeprecationWarning: deprecated
+    locator=body.locator, pool=pool_for_scope(body.scope),
+
+unit_tests/test_github_main.py::test_router_registered_read_only_and_error_handler_installed
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/openapi/utils.py:303: UserWarning: Duplicate Operation ID get_api_public_shares__sid__head for function get at /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/api/public_shares.py
+    warnings.warn(message, stacklevel=1)
+
+unit_tests/test_github_main.py::test_router_registered_read_only_and_error_handler_installed
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/openapi/utils.py:303: UserWarning: Duplicate Operation ID download_api_public_shares__sid__download_head for function download at /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/api/public_shares.py
+    warnings.warn(message, stacklevel=1)
+
+unit_tests/test_muse_usage_recovery.py::test_reader_reports_cli_exit_before_composer
+unit_tests/test_muse_usage_recovery.py::test_reader_times_out_when_composer_never_paints
+unit_tests/test_muse_usage_recovery.py::test_reader_reports_permission_denied_screen
+  /Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pty.py:95: DeprecationWarning: This process (pid=49949) is multi-threaded, use of forkpty() may lead to deadlocks in the child.
+    pid, fd = os.forkpty()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+db reset: 3116 selective (avg 3.7/111 tables), 1 forced full, 1 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_agent_token_security.py::test_muse_argv_hides_token_value
+FAILED tests/test_collector_api.py::test_tampered_access_is_403_without_side_effects[scope]
+FAILED tests/test_collector_integration.py::test_same_source_key_in_two_scopes_never_mixes_documents_or_search
+FAILED tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise
+FAILED tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch
+5 failed, 5202 passed, 27 skipped, 2 xfailed, 30 warnings, 5018 subtests passed in 865.62s (0:14:25)

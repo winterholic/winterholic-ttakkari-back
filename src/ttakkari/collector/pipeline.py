@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Callable
@@ -25,9 +26,17 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from ttakkari.collector import parse, quality, store, textproc
+from ttakkari.collector import (
+    parse,
+    quality,
+    render,
+    store,
+    textproc,
+    triage,
+    triage_ml,
+)
 from ttakkari.collector import profiles as profiles_module
 from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
@@ -38,6 +47,11 @@ from ttakkari.collector.contracts import (
 )
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.jobs import ClaimedJob, OutboxItem
+from ttakkari.collector.library import effective_pool, in_library
+
+
+def _job_pool(job: Any) -> str:
+    return effective_pool(getattr(job, "pool", None), getattr(job, "scope", None))
 from ttakkari.collector.netguard import NetGuard, UrlRejected, normalize_url
 from ttakkari.collector.policy import (
     CollectRequest,
@@ -57,6 +71,7 @@ PRODUCER_ID = "ttakkari-collector"
 CHUNKER_VERSION = "whole-document-1"
 PRODUCT_TOKEN = "TtakkariCollector"
 PAGE_SIZE = 5
+MISSION_BATCH_PAGES = 25
 MAX_URL_TRIES = 3  # architecture 4: at most three attempts per URL
 MAX_SEEN = 2000
 MAX_NEST = 2  # feed/sitemap -> nested sitemap -> pages
@@ -202,7 +217,7 @@ async def _prepare(
     parsed = normalize_url(raw_url, allowed_schemes=spec.schemes, allowed_ports=spec.ports)
     source_key = job.envelope["source"]["key"]
     async with sessionmaker()() as db:
-        cache = await store.get_fetch_cache(db, job.tenant_id, job.scope, source_key, p.url_key)
+        cache = await store.get_fetch_cache(db, job.tenant_id, _job_pool(job), source_key, p.url_key)
     etag, last_modified = (cache.etag, cache.last_modified) if cache else (None, None)
     try:
         polite = await deps.polite.fetch(parsed, spec, etag=etag, last_modified=last_modified)
@@ -225,6 +240,7 @@ async def _prepare(
         return p
     p.etag, p.last_modified = res.etag, res.last_modified
     body = res.body
+    link_charset = res.charset
     p.raw_sha256, p.raw_size = hashlib.sha256(body).hexdigest(), len(body)
     p.media_type = res.media_type or "application/octet-stream"
     if cache is not None and cache.last_raw_sha256 == p.raw_sha256:
@@ -259,10 +275,27 @@ async def _prepare(
     if detected.kind in ("feed", "sitemap"):
         return await _discover(p, body, detected.kind, base, entry, spec)
     try:
-        extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
+        if detected.kind == "pdf":
+            from ttakkari.collector.adapters import extract_pdf
+            try:
+                extracted = await extract_pdf(body)
+            except (ValueError, TimeoutError) as exc:
+                p.stage, p.status = "extracted", "held"
+                p.reasons = [str(exc) if isinstance(exc, ValueError) else "pdf_parse_timeout"]
+                p.errors = [_err("extract", p.reasons[0], "PDF 본문을 안전하게 추출하지 못했습니다.")]
+                return p
+        elif detected.kind == "html":
+            # A script shell with no static text is rendered in an isolated browser; `body`/`link_charset` then follow the rendered DOM.
+            extracted, body, link_charset = await render.extract_with_fallback(
+                body, base, res.charset, p.signals, policy=spec, polite=deps.polite
+            )
+        else:
+            extracted = await asyncio.to_thread(parse.extract_document, body, url=base, kind=detected.kind, charset=res.charset)
     except ValueError as e:
         p.stage, p.status = "extracted", "failed"
         p.errors, p.reasons = [_err("extract", str(e), "no main text could be extracted from the page")], [str(e)]
+        if (p.signals.get("render") or {}).get("reason"):  # a script shell that could not be rendered says why
+            p.reasons.append(p.signals["render"]["reason"])
         p.signals["decision_hint"] = "error"
         return p
     except Exception as e:  # noqa: BLE001  a parser crash on hostile markup is an item failure, not a job failure
@@ -272,7 +305,7 @@ async def _prepare(
         p.signals["decision_hint"] = "error"
         return p
     if detected.kind == "html" and entry["d"] < req.max_depth:
-        links = await asyncio.to_thread(parse.extract_links, body, base, res.charset)
+        links = await asyncio.to_thread(parse.extract_links, body, base, link_charset)
         p.discovered = [(u, entry["d"] + 1, 0) for u in links]
     p.analysis = await _analyze(extracted, base, res.last_modified, req, deps)
     p.stage = "scored"
@@ -341,13 +374,13 @@ async def _analyze(
         params,
     )
     l1 = await quality.run_l1(req.l1, norm.text, lang.language, textproc.NORMALIZER_VERSION)
-    return Analysis(norm.text, norm.steps, norm.truncated, textproc.sha256_text(extracted.text), lang, sig, l0, result,
+    return Analysis(norm.text, norm.steps, norm.truncated or extracted.truncated, textproc.sha256_text(extracted.text), lang, sig, l0, result,
                     extracted, l1)
 
 
 # ---- page transaction: dedupe, decision, envelope, persistence --------------------------------------------------
 
-def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]], req: CollectRequest) -> tuple[str, list[str], list[dict]]:
+def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]], req: CollectRequest, *, goal: str = "") -> tuple[str, list[str], list[dict]]:
     """(state, reason_codes, extra_errors). Only 'hold' reasons can come from quality; nothing here deletes a document."""
     errors: list[dict] = []
     analysis = p.analysis
@@ -363,12 +396,56 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
         holds.append("exact_duplicate")
     if req.l1.mode == "gate" and analysis.l1.error:
         holds.append("l1_unavailable")
+    # C4: Lightweight multi-axis triage & goal relevance
+    triage_outcome = triage.evaluate_triage(
+        goal=goal, title=analysis.extracted.title or "", text=analysis.text,
+        l0_signals=analysis.l0.signals, exact_duplicate=exact is not None,
+        near_duplicates=near, truncated=analysis.truncated, ml=p.signals.get("ml"),
+    )
+    p.signals["triage"] = triage_outcome.signals
+    if triage_outcome.action == "hold":
+        holds.extend([r for r in triage_outcome.reasons if r not in holds])
     if holds:
         return "hold", holds, errors
     notes = ["l0_pass", *analysis.profile_result.notes, *analysis.l1.notes]
     if near:
         notes.append("near_duplicate_candidate")
+    for r in triage_outcome.reasons:
+        if r not in notes:
+            notes.append(r)
     return "accept", notes, errors
+
+
+def _job_goal(job: ClaimedJob) -> str:
+    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+    return (mission or {}).get("goal", "").strip() if mission else ""
+
+
+async def _ml_page(job: ClaimedJob, prepared: list[Prepared]) -> None:
+    """Stage-2 ML for one page with a single embedding child process, outside any DB transaction.
+    Failures become an `unavailable` record on each document; the rule stage then decides alone."""
+    targets = [p for p in prepared if p.analysis is not None and p.analysis.text]
+    if not targets:
+        return
+    docs = [{"title": p.analysis.extracted.title or "", "text": p.analysis.text,
+             "language": p.analysis.language.language} for p in targets]
+    for p, result in zip(targets, await triage_ml.evaluate_documents(_job_goal(job), docs), strict=True):
+        p.signals["ml"] = result
+
+
+def _admit_precise(p: Prepared, pending_now: int) -> None:
+    """Stage 3 state. The queue is capped per job; bounded evaluator status is recorded."""
+    precise = p.signals.get("triage", {}).get("precise_eval")
+    if not precise or not precise["needed"]:
+        return
+    from ttakkari.collector import precise_eval
+    settings = get_settings()
+    cap = settings.collector_triage_precise_queue_cap
+    precise["cap"] = cap
+    precise["engine"] = precise_eval.view_engine_status()
+    if pending_now >= cap:
+        precise["state"] = "skipped_cap"
+        precise["reasons"] = [*precise["reasons"], "precise_queue_cap_reached"]
 
 
 async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | None, list[dict[str, Any]]]:
@@ -376,12 +453,12 @@ async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | Non
     if a is None or not a.text:
         return None, []
     text_sha = textproc.sha256_text(a.text)
-    exact = await store.canonical_by_text(db, job.tenant_id, job.scope, text_sha, exclude_url_key=p.url_key)
+    exact = await store.canonical_by_text(db, job.tenant_id, _job_pool(job), text_sha, exclude_url_key=p.url_key)
     if exact is not None or a.minhash is None:
         return exact, []
     near: list[dict[str, Any]] = []
     for cand in await store.near_candidates(
-        db, job.tenant_id, job.scope, textproc.band_hashes(a.minhash), exclude_text_sha256=text_sha
+        db, job.tenant_id, _job_pool(job), textproc.band_hashes(a.minhash), exclude_text_sha256=text_sha
     ):
         jac = textproc.estimated_jaccard(a.minhash, cand.minhash)
         if jac >= textproc.NEAR_THRESHOLD:
@@ -389,6 +466,42 @@ async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | Non
                          "cluster_id": cand.cluster_id, "jaccard": round(jac, 3), "url": cand.final_url or cand.url})
     near.sort(key=lambda n: -n["jaccard"])
     return None, near[:5]
+
+
+def _measured_axis(value: float, scale: str, axis: dict[str, Any], *, query_id: str | None = None,
+                   extra: list[str] = ()) -> dict[str, Any]:
+    """Contract axis record. The validation state has no contract field, so it is stated in the evidence list."""
+    return {
+        "status": "measured", "value": value, "scale": scale, "model_id": axis["model_id"],
+        "model_revision": axis["model_revision"], "preprocess_version": triage.PREPROCESS_VERSION,
+        "calibration_id": None, "calibration_gold_hash": None, "calibrated_probability": None,
+        "query_id": query_id, "evidence": [f"validation={axis['validation']}", axis["reason"][:200], *extra],
+    }
+
+
+def _fill_triage_axes(quality_axes: dict[str, dict[str, Any]], tri: dict[str, Any], goal: str) -> None:
+    """Relevance: semantic cosine when the stage-2 model ran, else the lexical rule score. Education / spam come only
+    from stage-2 heads. Axes an L1 scorer already measured are left alone."""
+    axes = tri.get("axes", {})
+    if goal and quality_axes.get("relevance", {}).get("status") == "unmeasured":
+        query_id = hashlib.sha256(goal.encode("utf-8")).hexdigest()[:16]
+        lexical = axes.get("relevance_lexical") or {
+            "model_id": triage.MODEL_ID, "model_revision": triage.MODEL_REVISION, "validation": "unvalidated",
+            "reason": "lexical rule heuristic",
+        }
+        sem = axes.get("topic_relevance_semantic")
+        if sem and sem.get("status") == "measured":
+            quality_axes["relevance"] = _measured_axis(
+                float(sem["value"]), "similarity", sem, query_id=query_id,
+                extra=[f"lexical_relevance={tri['scores']['relevance']:.3f}"])
+        else:
+            quality_axes["relevance"] = _measured_axis(
+                float(tri["scores"]["relevance"]), "similarity", lexical, query_id=query_id,
+                extra=[f"relevance={tri['scores']['relevance']:.3f}"])
+    for name, key, scale in (("education", "information_value", "ordinal"), ("spam", "low_quality_likelihood", "raw_logit")):
+        axis = axes.get(key)
+        if axis and axis.get("status") == "measured" and quality_axes.get(name, {}).get("status") == "unmeasured":
+            quality_axes[name] = _measured_axis(float(axis["value"]), scale, axis, extra=[f"axis={key}"])
 
 
 def _build_envelope(
@@ -404,7 +517,7 @@ def _build_envelope(
     if a is not None and a.text:
         normalized = {
             "text": a.text, "sha256": textproc.sha256_text(a.text), "language": a.language.language,
-            "parser_version": parse.PARSER_VERSION, "normalizer_version": textproc.NORMALIZER_VERSION,
+            "parser_version": a.extracted.meta.get("parser_version", parse.PARSER_VERSION), "normalizer_version": textproc.NORMALIZER_VERSION,
             "chunker_version": CHUNKER_VERSION, "raw_alignment_handle": None, "truncated": a.truncated,
         }
         published = a.profile_result.published_at or a.extracted.published
@@ -429,9 +542,22 @@ def _build_envelope(
     }
     if p.signals.get("reprocessed_from"):
         ext["collector:lineage"]["reprocessed_from"] = p.signals["reprocessed_from"]
+    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+    if mission:
+        ext["collector:mission"] = mission
+        lineage.append(f"mission:{mission['id']}")
     quality_axes = quality.unmeasured_quality(textproc.NORMALIZER_VERSION)
     if a is not None:
-        quality_axes = a.l1.quality
+        quality_axes = dict(a.l1.quality)
+        if p.signals.get("triage"):
+            ext["collector:triage"] = p.signals["triage"]
+            _fill_triage_axes(quality_axes, p.signals["triage"], (mission or {}).get("goal", "").strip())
+        if a.extracted.meta.get("adapter") == "pypdf":
+            ext["collector:pdf"] = {"pages": json.loads(a.extracted.meta["pdf_pages"]),
+                                    "total_pages": int(a.extracted.meta["pdf_total_pages"]),
+                                    "page_offsets": "extracted_text_before_normalization"}
+        if p.signals.get("render"):
+            ext["collector:render"] = p.signals["render"]
         if a.extracted.title:
             ext["collector:page"] = {"title": a.extracted.title.strip()[:300]}
         ext["collector:l0"] = {"version": a.l0.version, "signals": a.l0.signals, "flags": list(a.l0.flags)}
@@ -458,7 +584,7 @@ def _build_envelope(
             "published_at": published.isoformat() if published else None, "valid_from": None, "valid_to": None,
         },
         "access": {
-            "tenant_id": job.tenant_id, "scope": job.scope, "principal_ids": list(access["principal_ids"]),
+            "tenant_id": job.tenant_id, "scope": access.get("scope", job.scope), "principal_ids": list(access["principal_ids"]),
             "sensitivity": access["sensitivity"],
         },
         "rights": spec.rights_block(label, p.fetched_at or now, p.robots),
@@ -493,7 +619,14 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
     envelope: dict[str, Any] | None = None
     # An envelope exists whenever raw bytes exist for a document: accepted, held (incl. unsupported media) or error.
     if p.kind == "document" and p.raw_sha256 and (a is not None or p.status in ("held", "failed")):
-        state, reasons, extra_errors = _decide(p, exact, near, req)
+        mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+        goal = mission.get("goal", "") if mission else ""
+        state, reasons, extra_errors = _decide(p, exact, near, req, goal=goal)
+        if p.signals.get("triage", {}).get("precise_eval", {}).get("needed"):
+            pending_now = await db.scalar(select(func.count(CollectorItem.id)).where(
+                CollectorItem.job_id == job.id,
+                CollectorItem.signals["triage"]["precise_eval"]["state"].astext == "pending")) or 0
+            _admit_precise(p, pending_now)
         status = {"accept": "accepted", "hold": "held", "error": "failed"}[state]
         try:
             envelope = validate_envelope(
@@ -528,7 +661,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
         exact_of=exact.id if exact is not None else None, cluster_id=cluster_id, profile=req.profile,
         decision_state=STATE_FOR_STATUS.get(status), reason_codes=reasons, errors=errors, signals=signals,
         envelope_id=env_id, envelope=envelope, payload_hash=compute_payload_hash(envelope) if envelope else None,
-        parser_version=parse.PARSER_VERSION if a is not None else None,
+        parser_version=a.extracted.meta.get("parser_version", parse.PARSER_VERSION) if a is not None else None,
         normalizer_version=textproc.NORMALIZER_VERSION if a is not None else None, fetched_at=p.fetched_at,
         created_at=now,
     )
@@ -537,7 +670,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
     if a is not None and a.minhash is not None and exact is None:
         store.add_bands(db, row.id, job.tenant_id, job.scope, textproc.band_hashes(a.minhash))
     if p.cache_hit:
-        await store.touch_fetch_cache(db, job.tenant_id, job.scope, source_key, p.url_key, p.etag, p.last_modified, now)
+        await store.touch_fetch_cache(db, job.tenant_id, _job_pool(job), source_key, p.url_key, p.etag, p.last_modified, now)
     elif p.raw_sha256 and status in ("accepted", "held", "discovered"):
         # Validators are kept only for outcomes a 304 may safely reuse. A failed extraction must be re-fetched.
         await store.put_fetch_cache(db, job.tenant_id, job.scope, source_key, p.url, etag=p.etag,
@@ -547,7 +680,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
 
 
 def _advance(cursor: dict[str, Any], page: list[dict[str, Any]], prepared: list[Prepared], items: list[CollectorItem],
-             spec: SourcePolicySpec, req: CollectRequest) -> dict[str, Any]:
+             spec: SourcePolicySpec, req: CollectRequest, *, preserve_frontier: bool = False) -> dict[str, Any]:
     """The cursor after this page: processed entries leave the frontier, deferred ones go to its tail, newly
     discovered URLs enter it (policy-filtered, de-duplicated, capped) and counters follow the final item statuses."""
     counts = dict(cursor["counts"])
@@ -582,7 +715,7 @@ def _advance(cursor: dict[str, Any], page: list[dict[str, Any]], prepared: list[
                 continue
             seen_set.add(key)
             discovered += 1
-            if len(seen) >= MAX_SEEN or processed + len(frontier) + len(deferred) >= req.max_pages:
+            if len(seen) >= MAX_SEEN or (not preserve_frontier and processed + len(frontier) + len(deferred) >= req.max_pages):
                 counts["skipped_limit"] += 1
                 continue
             seen.append(key)
@@ -606,7 +739,8 @@ async def _finalize_page(
         items.append(row)
         if ob is not None:
             outbox.append(ob)
-    new_cursor = _advance(cursor, page, prepared, items, spec, req)
+    new_cursor = _advance(cursor, page, prepared, items, spec, req,
+                          preserve_frontier=bool(job.envelope.get("extensions", {}).get("collector:mission")))
     result["cursor"] = new_cursor
     return new_cursor, outbox
 
@@ -644,6 +778,9 @@ def _summary(cursor: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
+    if getattr(job, "stage", None) == "mission_prepare":
+        from ttakkari.collector import missions
+        return await missions.prepare(job, ctx)
     deps = get_deps()
     source = job.envelope.get("source") or {}
     if source.get("kind") not in ("web", "feed"):
@@ -677,6 +814,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
             return HandlerResult("quarantined", {"code": "invalid_reprocess_request"})
         return await _handle_reprocess(job, ctx, spec, label, req, original_id, expected_raw_sha256, deps)
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
+    mission = bool(job.envelope.get("extensions", {}).get("collector:mission"))
+    batch_start = cursor["processed"]
 
     while cursor["frontier"] and cursor["processed"] < req.max_pages:
         # Move quota-blocked entries behind candidates that may dedupe to already durable orphans.
@@ -692,7 +831,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
             return HandlerResult("retry_wait", {"code": "storage_cap_reached", **_summary(cursor)}, retry_after=3600)
         if ordered != cursor["frontier"]:
             cursor = {**cursor, "frontier": ordered}
-        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"], ready_count)]
+        batch_remaining = MISSION_BATCH_PAGES - (cursor["processed"] - batch_start) if mission else PAGE_SIZE
+        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"], ready_count, batch_remaining)]
         prepared: list[Prepared] = []
         for entry in page:
             try:
@@ -706,6 +846,7 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 )
                 if prepared:
                     # Commit only the fully prepared prefix, leaving the rejected entry and tail in the frontier.
+                    await _ml_page(job, prepared)
                     quota_page = page[:len(prepared)]
                     quota_result: dict[str, Any] = {}
                     now = deps.clock()
@@ -733,6 +874,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 p.status, p.stage, p.reasons, p.retry = "failed", "fetch", ["retries_exhausted", p.retry[1]], None
             prepared.append(p)
             await ctx.heartbeat()
+        await _ml_page(job, prepared)
+        await ctx.heartbeat()
         now = deps.clock()
         result: dict[str, Any] = {}
 
@@ -748,8 +891,14 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 "retry_wait", {"code": "fetch_deferred", "reason": waits[0][1], **_summary(cursor)},
                 retry_after=max(w[0] for w in waits) or None,
             )
+        if mission and cursor["frontier"] and cursor["processed"] < req.max_pages and cursor["processed"] - batch_start >= MISSION_BATCH_PAGES:
+            return HandlerResult("yielded")
 
     if cursor["frontier"]:  # page limit reached with URLs left: counted, never silently dropped
+        if mission:
+            if await ctx.commit_page(cursor, stage="budget_reached") == "cancelled":
+                return HandlerResult("failed", {"code": "cancelled"})
+            return HandlerResult("partial", {"code": "mission_page_budget", "remaining_urls": len(cursor["frontier"]), **_summary(cursor)})
         left = len(cursor["frontier"])
         cursor = {**cursor, "frontier": [], "counts": {**cursor["counts"], "skipped_limit": cursor["counts"]["skipped_limit"] + left}}
     if await ctx.commit_page(cursor, stage="done") == "cancelled":
@@ -768,7 +917,7 @@ async def _handle_reprocess(job, ctx, spec, label, req, original_id, expected_ra
     async with sessionmaker()() as db:
         original = await db.scalar(select(CollectorItem).where(
             CollectorItem.id == original_id, CollectorItem.tenant_id == job.tenant_id,
-            CollectorItem.scope == job.scope,
+            in_library(CollectorItem.scope),
         ))
         if original is None or original.kind != "document" or not original.raw_handle or not original.raw_sha256:
             return HandlerResult("quarantined", {"code": "reprocess_source_unavailable"})
@@ -806,13 +955,17 @@ async def _handle_reprocess(job, ctx, spec, label, req, original_id, expected_ra
                  robots=original_data["robots"])
     p.signals["reprocessed_from"] = str(original_id)
     detected = parse.detect_kind(body, p.media_type)
-    if detected.kind not in ("html", "text"):
+    if detected.kind not in ("html", "text", "pdf"):
         p.status, p.stage = "held", "fetched"
         p.reasons = [f"unsupported_media:{detected.reason or detected.kind}"]
         p.errors = [_err("extract", detected.reason or "unsupported_media", detected.media_type)]
     else:
         try:
-            extracted = await asyncio.to_thread(parse.extract_document, body, url=p.url, kind=detected.kind)
+            if detected.kind == "pdf":
+                from ttakkari.collector.adapters import extract_pdf
+                extracted = await extract_pdf(body)
+            else:
+                extracted = await asyncio.to_thread(parse.extract_document, body, url=p.url, kind=detected.kind)
             p.analysis = await _analyze(extracted, p.url, None, req, deps)
             p.stage = "scored"
         except ValueError as exc:

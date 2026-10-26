@@ -232,6 +232,17 @@ def test_mcp_scope_values_valid():
 
 
 ROUTE_SCOPE: dict[tuple[str, str], str] = {
+    ("GET", "/api/assistant/collect/missions"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/plan"): "owner-plain",
+    ("GET", "/api/assistant/collect/missions/{mission_id}"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/cancel"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/extend"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/pause"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/rerun"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/resume"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/schedule"): "owner-plain",
+    ("POST", "/api/assistant/collect/missions/{mission_id}/items/{item_id}/unhold"): "owner-plain",
     ("POST", "/api/assistant/collect/items/{item_id}/import"): "owner-scoped",
     ("POST", "/api/assistant/collect/items/{item_id}/reprocess"): "owner-scoped",
     ("GET", "/api/assistant/collect/summary"): "owner-scoped",
@@ -848,6 +859,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("PUT", "/api/accounts/override"): "owner-plain",
     ("PUT", "/api/artcraft/bugs/{bug_id}"): "owner-plain",
     ("PUT", "/api/assistant/instructions"): "owner-plain",
+    ("PUT", "/api/assistant/kb/documents/{document_id}/engine-access"): "owner-plain",
     ("PUT", "/api/meetings/{mid}/stt/{jid}/speakers"): "owner-plain",
     ("PUT", "/api/memo-categories/order"): "owner-plain",
     ("PUT", "/api/remote-desktop/devices/{device_id}"): "owner-plain",

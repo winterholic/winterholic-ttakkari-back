@@ -1,0 +1,38 @@
+[
+  {
+    "source_head": "0073_research_reuse_source",
+    "target": "0073_research_reuse_source",
+    "versions": [
+      "0073_research_reuse_source"
+    ],
+    "database": "collection_accept_8c8c1fdaecb24ef0864dc002627736f4",
+    "exit": 0
+  },
+  {
+    "source_head": "0073_research_reuse_source",
+    "target": "head",
+    "versions": [
+      "0075_collection_research_merge"
+    ],
+    "database": "collection_accept_8c8c1fdaecb24ef0864dc002627736f4",
+    "exit": 0
+  },
+  {
+    "source_head": "0074_collection_single_library",
+    "target": "0074_collection_single_library",
+    "versions": [
+      "0074_collection_single_library"
+    ],
+    "database": "collection_accept_e04c696102ce4f47946b9bb8c03a8661",
+    "exit": 0
+  },
+  {
+    "source_head": "0074_collection_single_library",
+    "target": "head",
+    "versions": [
+      "0075_collection_research_merge"
+    ],
+    "database": "collection_accept_e04c696102ce4f47946b9bb8c03a8661",
+    "exit": 0
+  }
+]

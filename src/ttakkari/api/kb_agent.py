@@ -1,4 +1,4 @@
-"""Read-only general knowledge tools. Personal/work scope is derived from the authenticated session."""
+"""Read-only general knowledge tools. The company-engine (work) pool is derived from the authenticated session; other sessions read the whole library."""
 import uuid
 from typing import Annotated, Literal
 
@@ -20,24 +20,24 @@ async def search(ctx: Access, db: Db, q: str = Query(min_length=1, max_length=50
                  limit: int = Query(10, ge=1, le=30), mode: Literal["lexical", "hybrid"] = "lexical"):
     if mode == "hybrid":
         try:
-            return await kb_retrieval.search(db, query=q, limit=limit, scope=ctx.scope)
+            return await kb_retrieval.search(db, query=q, limit=limit, pool=ctx.pool)
         except RuntimeError as exc:
             raise HTTPException(503, "kb_semantic_temporarily_unavailable") from exc
     return await lib.search_passages(db, query=q, limit=limit, offset=0,
-                                      document_id=None, current_only=True, scope=ctx.scope)
+                                      document_id=None, current_only=True, pool=ctx.pool)
 
 
 @router.get("/documents")
 async def documents(ctx: Access, db: Db, q: str | None = Query(default=None, max_length=200),
                     limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return await lib.list_documents(db, q=q, limit=limit, offset=offset, scope=ctx.scope)
+    return await lib.list_documents(db, q=q, limit=limit, offset=offset, pool=ctx.pool)
 
 
 @router.get("/documents/{document_id}")
 async def document(document_id: uuid.UUID, ctx: Access, db: Db):
     try:
         return await lib.get_document(db, document_id, revision_id=None, passage_limit=100,
-                                       passage_offset=0, scope=ctx.scope)
+                                       passage_offset=0, pool=ctx.pool)
     except lib.KbNotFound as exc:
         raise HTTPException(404, "kb_document_not_found") from exc
 
@@ -46,7 +46,7 @@ async def document(document_id: uuid.UUID, ctx: Access, db: Db):
 async def evidence(passage_id: uuid.UUID, ctx: Access, db: Db,
                    start: int | None = Query(None, ge=0), end: int | None = Query(None, ge=1)):
     try:
-        return await lib.get_evidence(db, passage_id, start=start, end=end, scope=ctx.scope)
+        return await lib.get_evidence(db, passage_id, start=start, end=end, pool=ctx.pool)
     except lib.KbNotFound as exc:
         raise HTTPException(404, "kb_passage_not_found") from exc
     except KbInputError as exc:

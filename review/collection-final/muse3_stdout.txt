@@ -1,0 +1,19 @@
+# Execution SHA: 572de152bdeeedf882221dc82e955fb466fcdfd3
+# Date: 2026-10-25T21:37:09+09:00
+# Command: uv run pytest tests/test_agent_token_security.py::test_muse_argv_hides_token_value tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch -v
+---
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0 -- /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration
+configfile: pyproject.toml
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 3 items
+
+tests/test_agent_token_security.py::test_muse_argv_hides_token_value PASSED [ 33%]
+tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise PASSED [ 66%]
+tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch PASSED [100%]
+
+db reset: 3 selective (avg 1.7/111 tables), 0 forced full, 0 fell back to full
+============================== 3 passed in 0.61s ===============================

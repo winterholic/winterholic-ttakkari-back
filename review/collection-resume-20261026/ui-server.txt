@@ -1,0 +1,193 @@
+env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+cors_origins가 localhost/loopback 전용(http://localhost:5173)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+tts queue iteration failed
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 605, in _prepare_and_execute
+    self._rows = deque(await prepared_stmt.fetch(*parameters))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/asyncpg/prepared_stmt.py", line 177, in fetch
+    data = await self.__bind_execute(args, 0, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/asyncpg/prepared_stmt.py", line 268, in __bind_execute
+    data, status, _ = await self.__do_execute(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^
+        lambda protocol: protocol.bind_execute(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            self._state, args, '', limit, True, timeout))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/asyncpg/prepared_stmt.py", line 257, in __do_execute
+    return await executor(protocol)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "asyncpg/protocol/protocol.pyx", line 197, in bind_execute
+asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+DETAIL:  Process 24944 waits for AccessShareLock on relation 45474 of database 16385; blocked by process 36180.
+Process 36180 waits for AccessExclusiveLock on relation 45669 of database 16385; blocked by process 24944.
+HINT:  See server log for query details.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.Error: deadlock detected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/src/ttakkari/tts/jobs.py", line 585, in _loop
+    worked = await tick()
+             ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/src/ttakkari/tts/jobs.py", line 559, in tick
+    await _housekeeping(me)
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/src/ttakkari/tts/jobs.py", line 549, in _housekeeping
+    await _reap_stale_unknown_running()
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/src/ttakkari/tts/jobs.py", line 461, in _reap_stale_unknown_running
+    result = await db.execute(stmt)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 651, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 210, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/orm/bulk_persistence.py", line 1693, in orm_execute_statement
+    return super().orm_execute_statement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.exc.DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) deadlock detected
+[SQL: UPDATE tts_jobs SET status=$1::VARCHAR, error_code=$2::VARCHAR, finished_at=$3::TIMESTAMP WITH TIME ZONE WHERE tts_jobs.status = $4::VARCHAR AND coalesce(tts_jobs.started_at, tts_jobs.created_at) < $5::TIMESTAMP WITH TIME ZONE AND NOT (EXISTS (SELECT runtime_generations.id 
+FROM runtime_generations 
+WHERE runtime_generations.id = tts_jobs.owner_id)) RETURNING tts_jobs.id]
+[parameters: ('failed', 'owner_unknown_stale', datetime.datetime(2026, 10, 26, 12, 52, 32, 621872, tzinfo=datetime.timezone.utc), 'running', datetime.datetime(2026, 10, 26, 12, 41, 32, 621772, tzinfo=datetime.timezone.utc))]
+(Background on this error at: https://sqlalche.me/e/21/dbapi)

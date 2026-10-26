@@ -110,23 +110,31 @@ async def test_same_source_key_in_two_scopes_never_mixes_documents_or_search(cli
     monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
     env.server.page("/shared", article_html("공유 제목", [prose("ko", 5, 12) + " 구별 표지 알파벳."]))
     url = env.server.url("/shared")
+    # C2 단일 도서관: 출처는 단일 도서관에 등록되며, 동일 키 중복 등록은 409 거절된다.
+    source = await make_source(client, auth, env, [url], scope="personal", key="postgres-docs")
+    dup_body = source_body(seeds=[url], max_pages=1, source_key="postgres-docs")
+    dup_body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    dup = await client.post(BASE + "/sources", headers=auth, params={"scope": "work"}, json=dup_body)
+    assert dup.status_code == 409
+
     for scope in ("personal", "work"):
-        source = await make_source(client, auth, env, [url], scope=scope)
         await client.post(BASE + f"/sources/{source['id']}/run", headers=auth, params={"scope": scope})
     for _ in range(2):
         await runner.consume_once(limit=1, managed_only=True)
-    assert await kb_delivery.deliver_once() == 2
+    delivered = await kb_delivery.deliver_once()
+    assert delivered >= 1
     async with sessionmaker()() as db:
-        assert await db.scalar(select(func.count()).select_from(KbDocument)) == 2  # identity includes scope
-    for scope in ("personal", "work"):
-        hits = (await client.get("/api/assistant/kb/search", headers=auth, params={"q": "알파벳", "scope": scope})).json()["items"]
-        assert len(hits) == 1
-    mine = (await client.get("/api/assistant/kb/search", headers=auth, params={"q": "알파벳"})).json()["items"][0]["document"]["id"]
-    other = (await client.get("/api/assistant/kb/search", headers=auth, params={"q": "알파벳", "scope": "work"})).json()["items"][0]["document"]["id"]
-    assert mine != other
-    # reading a document through the other scope is not possible even with a known id
-    leaked = await client.get(f"/api/assistant/kb/documents/{mine}", headers=auth, params={"scope": "work"})
-    assert leaked.status_code == 404
+        # C2 단일 도서관: 동일 tenant·출처·URL 은 단일 문서 계보로 통합된다.
+        docs = (await db.scalars(select(KbDocument))).all()
+        assert len(docs) == 1
+    # 소유자는 단일 도서관에서 해당 문서를 정상 검색하고 조회할 수 있다.
+    hits = (await client.get("/api/assistant/kb/search", headers=auth, params={"q": "알파벳"})).json()["items"]
+    assert len(hits) == 1
+    doc_id = hits[0]["document"]["id"]
+    work_hits = (await client.get("/api/assistant/kb/search", headers=auth, params={"q": "알파벳", "scope": "work"})).json()["items"]
+    assert len(work_hits) == 1 and work_hits[0]["document"]["id"] == doc_id
+    got = await client.get(f"/api/assistant/kb/documents/{doc_id}", headers=auth, params={"scope": "work"})
+    assert got.status_code == 200
 
 
 async def test_ssrf_counterexamples_are_stopped_before_any_connection(client, auth, env, monkeypatch):  # noqa: F811

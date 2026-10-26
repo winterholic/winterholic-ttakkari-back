@@ -376,7 +376,8 @@ def create_app() -> FastAPI:
     app.include_router(research.agent_router)
     from ttakkari.api import tts as tts_api
     app.include_router(tts_api.router)
-    from ttakkari.api import collect, collect_control
+    from ttakkari.api import collect, collect_control, collection_missions
+    app.include_router(collection_missions.router)
     app.include_router(collect_control.router)
     app.include_router(collect.router)
     app.include_router(collect.agent_router)

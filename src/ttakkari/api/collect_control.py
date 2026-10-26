@@ -1,4 +1,4 @@
-"""Scoped source management, collection requests and inspectable delivery results."""
+"""Source management, collection requests and inspectable delivery results."""
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -21,6 +21,7 @@ from ttakkari.collector.control_models import (
     CollectorSource,
     KbDocumentAccess,
 )
+from ttakkari.collector.library import LEGACY_SCOPES, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.policy import CollectRequest, SourcePolicySpec
 from ttakkari.collector_models import CollectorItem, CollectorJob, CollectorOutbox
@@ -104,7 +105,7 @@ class ReviewIn(BaseModel):
 @router.post("/items/{item_id}/reviews", status_code=201)
 async def review_item(item_id: uuid.UUID, body: ReviewIn, ctx: Access, db: Db):
     item = await db.get(CollectorItem, item_id)
-    if item is None or item.tenant_id != ctx.tenant_id or item.scope != ctx.scope:
+    if item is None or item.tenant_id != ctx.tenant_id or item.scope not in LEGACY_SCOPES:
         raise HTTPException(404, "item_not_found")
     if not item.text_sha256 or not body.reason.strip():
         raise HTTPException(422, "review_requires_text_and_reason")
@@ -144,7 +145,7 @@ async def train_quality(ctx: Access, db: Db):
 def view(source: CollectorSource) -> dict:
     return {
         "id": str(source.id), "source_key": source.source_key, "title": source.title,
-        "scope": source.scope, "seeds": source.request["seeds"], "request": source.request,
+        "seeds": source.request["seeds"], "request": source.request,
         "enabled": source.enabled, "auto_import": source.auto_import,
         "interval_minutes": source.interval_minutes,
         "next_run_at": source.next_run_at.isoformat() if source.next_run_at else None,
@@ -157,7 +158,7 @@ def view(source: CollectorSource) -> dict:
 async def find_source(db, ctx, source_id):
     row = await db.scalar(select(CollectorSource).where(
         CollectorSource.id == source_id, CollectorSource.tenant_id == ctx.tenant_id,
-        CollectorSource.scope == ctx.scope,
+        in_library(CollectorSource.scope),
     ).with_for_update())
     if row is None:
         raise HTTPException(404, "source_not_found")
@@ -167,7 +168,7 @@ async def find_source(db, ctx, source_id):
 @router.get("/sources")
 async def sources(ctx: Access, db: Db):
     rows = await db.scalars(select(CollectorSource).where(
-        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == ctx.tenant_id, in_library(CollectorSource.scope),
     ).order_by(CollectorSource.created_at.desc()).limit(200))
     items = []
     for source in rows:
@@ -217,8 +218,7 @@ async def update_source(source_id: uuid.UUID, body: SourceUpdate, ctx: Access, d
         if not spec.allows("store") or not spec.allows("knowledge") or spec.retain_days is not None:
             doc_ids = select(KbRevision.document_id).join(KbSource).where(
                 KbSource.origin_meta["collector_source_key"].astext == row.source_key,
-                KbSource.origin_meta["tenant_id"].astext == ctx.tenant_id,
-                KbSource.origin_meta["scope"].astext == ctx.scope)
+                KbSource.origin_meta["tenant_id"].astext == ctx.tenant_id)
             await db.execute(update(KbDocumentAccess).where(KbDocumentAccess.document_id.in_(doc_ids)).values(hidden=True))
     row.request = request
     if body.title is not None:
@@ -257,7 +257,7 @@ async def retry(job_id: uuid.UUID, ctx: Access, db: Db):
 async def reprocess_item(item_id: uuid.UUID, ctx: Access, db: Db):
     """Queue the current parser/scorer over a retained raw response, without an outbound HTTP request."""
     visible = await db.scalar(select(CollectorItem.id).where(
-        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope),
     ))
     if visible is None:
         raise HTTPException(404, "item_not_found")
@@ -272,7 +272,7 @@ async def reprocess_item(item_id: uuid.UUID, ctx: Access, db: Db):
 @router.get("/jobs/{job_id}/items")
 async def job_items(job_id: uuid.UUID, ctx: Access, db: Db,
                     limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
-    await jobs.get_job(db, ctx.tenant_id, ctx.scope, job_id)
+    await jobs.get_job(db, ctx.tenant_id, ctx.pool, job_id)
     base = select(CollectorItem).where(CollectorItem.job_id == job_id)
     count = await db.scalar(select(func.count()).select_from(base.subquery()))
     rows = list(await db.scalars(base.order_by(CollectorItem.created_at, CollectorItem.id).limit(limit).offset(offset)))
@@ -290,7 +290,7 @@ async def job_items(job_id: uuid.UUID, ctx: Access, db: Db,
 @router.get("/items/{item_id}/export")
 async def export_item(item_id: uuid.UUID, ctx: Access, db: Db):
     item = await db.get(CollectorItem, item_id)
-    if item is None or item.tenant_id != ctx.tenant_id or item.scope != ctx.scope:
+    if item is None or item.tenant_id != ctx.tenant_id or item.scope not in LEGACY_SCOPES:
         raise HTTPException(404, "item_not_found")
     if not item.envelope or "export" not in item.envelope["rights"]["purposes"]:
         raise HTTPException(403, "export_not_permitted")
@@ -304,7 +304,7 @@ async def export_item(item_id: uuid.UUID, ctx: Access, db: Db):
 @router.post("/items/{item_id}/import", status_code=202)
 async def import_reviewed_item(item_id: uuid.UUID, ctx: Access, db: Db):
     item = await db.get(CollectorItem, item_id, with_for_update=True)
-    if item is None or item.tenant_id != ctx.tenant_id or item.scope != ctx.scope:
+    if item is None or item.tenant_id != ctx.tenant_id or item.scope not in LEGACY_SCOPES:
         raise HTTPException(404, "item_not_found")
     review = await db.scalar(select(CollectorReview).where(CollectorReview.item_id == item.id).order_by(
         CollectorReview.created_at.desc(), CollectorReview.id.desc()).limit(1))
@@ -319,7 +319,7 @@ async def import_reviewed_item(item_id: uuid.UUID, ctx: Access, db: Db):
     if rights["retain_until"] is not None:
         raise HTTPException(422, "kb_import_requires_unlimited_retention_policy")
     existing = await db.scalar(select(CollectorOutbox).where(CollectorOutbox.tenant_id == ctx.tenant_id,
-        CollectorOutbox.scope == ctx.scope, CollectorOutbox.sink == "knowledge", CollectorOutbox.envelope_id == item.envelope_id))
+        in_library(CollectorOutbox.scope), CollectorOutbox.sink == "knowledge", CollectorOutbox.envelope_id == item.envelope_id))
     if existing is None:
         existing = CollectorOutbox(job_id=item.job_id, tenant_id=ctx.tenant_id, scope=ctx.scope,
                                    sink="knowledge", envelope_id=item.envelope_id, payload_hash=item.payload_hash)
@@ -346,7 +346,7 @@ async def _pending_review_ids(db, ctx, limit: int, offset: int):
     reviewed = select(latest.c.item_id).where(latest.c.n == 1, latest.c.decision.in_(("accept", "reject")))
     imported = select(CollectorDelivery.item_id).where(CollectorDelivery.outcome == "imported")
     base = select(CollectorItem).where(
-        CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+        CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope),
         CollectorItem.status.in_(("held", "accepted")), CollectorItem.kind == "document",
         CollectorItem.text_sha256.is_not(None), CollectorItem.id.not_in(reviewed), CollectorItem.id.not_in(imported))
     total = await db.scalar(select(func.count()).select_from(base.subquery()))
@@ -358,18 +358,18 @@ async def _pending_review_ids(db, ctx, limit: int, offset: int):
 async def collect_summary(ctx: Access, db: Db):
     """Where every discovered URL ended up, plus what is waiting on time, budget, rights or the owner."""
     from ttakkari.collector import budget, runtime
-    mine = (CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope)
+    mine = (CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope))
     by_status = dict((await db.execute(select(CollectorItem.status, func.count()).where(*mine).group_by(CollectorItem.status))).all())
     fetched = await db.scalar(select(func.count()).where(*mine, CollectorItem.raw_sha256.is_not(None))) or 0
     extracted = await db.scalar(select(func.count()).where(*mine, CollectorItem.text_sha256.is_not(None))) or 0
     jobs_by = dict((await db.execute(select(CollectorJob.status, func.count()).where(
-        CollectorJob.tenant_id == ctx.tenant_id, CollectorJob.scope == ctx.scope).group_by(CollectorJob.status))).all())
+        CollectorJob.tenant_id == ctx.tenant_id, in_library(CollectorJob.scope)).group_by(CollectorJob.status))).all())
     waiting = list(await db.scalars(select(CollectorJob).where(
-        CollectorJob.tenant_id == ctx.tenant_id, CollectorJob.scope == ctx.scope,
+        CollectorJob.tenant_id == ctx.tenant_id, in_library(CollectorJob.scope),
         CollectorJob.status.in_(("retry_wait", "budget_wait", "policy_blocked", "quarantined"))
     ).order_by(CollectorJob.updated_at.desc()).limit(10)))
     outbox = dict((await db.execute(select(CollectorOutbox.status, func.count()).where(
-        CollectorOutbox.tenant_id == ctx.tenant_id, CollectorOutbox.scope == ctx.scope,
+        CollectorOutbox.tenant_id == ctx.tenant_id, in_library(CollectorOutbox.scope),
         CollectorOutbox.sink.in_(DELIVERY_SINKS)).group_by(CollectorOutbox.status))).all())
     imported = await db.scalar(select(func.count()).select_from(CollectorDelivery).join(
         CollectorItem, CollectorItem.id == CollectorDelivery.item_id).where(*mine, CollectorDelivery.outcome == "imported")) or 0
@@ -416,14 +416,14 @@ async def review_queue(ctx: Access, db: Db, limit: int = Query(20, ge=1, le=50),
 @router.get("/items/{item_id}")
 async def item_detail(item_id: uuid.UUID, ctx: Access, db: Db):
     item = await db.get(CollectorItem, item_id)
-    if item is None or item.tenant_id != ctx.tenant_id or item.scope != ctx.scope:
+    if item is None or item.tenant_id != ctx.tenant_id or item.scope not in LEGACY_SCOPES:
         raise HTTPException(404, "item_not_found")
     env = item.envelope or {}
     reviews = list(await db.scalars(select(CollectorReview).where(CollectorReview.item_id == item.id).order_by(
         CollectorReview.created_at.desc()).limit(20)))
     outbox = list(await db.scalars(select(CollectorOutbox).where(
         CollectorOutbox.envelope_id == item.envelope_id, CollectorOutbox.tenant_id == ctx.tenant_id,
-        CollectorOutbox.scope == ctx.scope, CollectorOutbox.sink.in_(DELIVERY_SINKS)))) if item.envelope_id else []
+        in_library(CollectorOutbox.scope), CollectorOutbox.sink.in_(DELIVERY_SINKS)))) if item.envelope_id else []
     receipts = {r.outbox_id: r for r in await db.scalars(select(CollectorDelivery).where(
         CollectorDelivery.outbox_id.in_([o.id for o in outbox] or [uuid.uuid4()])))}
     return {
@@ -448,7 +448,7 @@ async def item_detail(item_id: uuid.UUID, ctx: Access, db: Db):
 @router.get("/deliveries")
 async def deliveries(ctx: Access, db: Db, status: Literal["pending", "delivered", "failed", "delivery_unknown"] | None = None,
                      limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
-    base = select(CollectorOutbox).where(CollectorOutbox.tenant_id == ctx.tenant_id, CollectorOutbox.scope == ctx.scope,
+    base = select(CollectorOutbox).where(CollectorOutbox.tenant_id == ctx.tenant_id, in_library(CollectorOutbox.scope),
                                          CollectorOutbox.sink.in_(DELIVERY_SINKS))
     if status:
         base = base.where(CollectorOutbox.status == status)
@@ -470,7 +470,7 @@ async def reconcile_delivery(outbox_id: uuid.UUID, ctx: Access, db: Db):
     from ttakkari import kb_delivery
     out = await db.scalar(select(CollectorOutbox).where(
         CollectorOutbox.id == outbox_id, CollectorOutbox.tenant_id == ctx.tenant_id,
-        CollectorOutbox.scope == ctx.scope).with_for_update())
+        in_library(CollectorOutbox.scope)).with_for_update())
     if out is None:
         raise HTTPException(404, "delivery_not_found")
     result = await kb_delivery.reconcile(db, out)
@@ -500,7 +500,7 @@ async def set_runtime(body: RuntimeIn, ctx: Access, db: Db):
 
 @router.post("/pilot", status_code=201)
 async def register_pilot(ctx: Access, db: Db):
-    """Register any missing pilot source for this scope. Existing sources are never touched or re-enabled."""
+    """Register any missing pilot source. Existing sources are never touched or re-enabled."""
     from ttakkari.collector import pilot
     created = []
     for spec in pilot.PILOT_SOURCES:
@@ -524,7 +524,7 @@ async def hold_audit_sample(ctx: Access, db: Db, per_group: int = Query(2, ge=1,
     rank = func.row_number().over(partition_by=(CollectorItem.source_key, reason),
                                   order_by=func.md5(func.concat(CollectorItem.id.cast(String), day)))
     base = select(CollectorItem, reason.label("reason"), rank.label("n")).where(
-        CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope, CollectorItem.status == "held",
+        CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope), CollectorItem.status == "held",
         CollectorItem.kind == "document", CollectorItem.text_sha256.is_not(None))
     sub = base.subquery()
     sizes = {(r.source_key, r.reason): r.total for r in (await db.execute(

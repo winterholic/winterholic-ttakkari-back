@@ -15,7 +15,7 @@ from ttakkari.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # TTAKKARI_DATABASE_URL 환경변수는 Settings 가 이미 우선 적용한다.
 config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))

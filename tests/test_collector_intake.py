@@ -169,11 +169,14 @@ async def test_same_envelope_id_in_other_tenant_or_scope_is_independent(envelope
     other_scope, scope_env = rebound(envelope, "fixture-tenant", "work", "fixture-owner")
 
     by_tenant = await submit(other_tenant, "new-key", tenant_env)
-    by_scope = await submit(other_scope, "new-key", scope_env)
+    assert by_tenant.status == "created"
+    assert by_tenant.job_id != first.job_id
 
-    assert by_tenant.status == by_scope.status == "created"
-    assert len({first.job_id, by_tenant.job_id, by_scope.job_id}) == 3
-    assert await counts() == (3, 3)
+    # C2 단일 도서관: 같은 tenant 안에서는 scope 와 무관하게 단일 도서관에 등록되므로 동일 envelope_id 재제출 시 409 충돌이다.
+    with pytest.raises(CollectorConflictError):
+        await submit(other_scope, "new-key", scope_env)
+
+    assert await counts() == (2, 2)
 
 
 async def test_outbox_unique_key_includes_tenant(envelope):

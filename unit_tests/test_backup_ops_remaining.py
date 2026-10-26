@@ -80,6 +80,7 @@ def stubs(tmp_path: Path):
     return {
         "PATH": f"{d}{os.pathsep}{os.environ['PATH']}",
         "PYTHONPATH": str(d),
+        "TMPDIR": str(tmp_path),
         "STUB_LOG": str(log),
         "STUB_TABLES": "calendar_events\nmemos\n",
         "STUB_COUNTS": "calendar_events=5,memos=3",
@@ -190,8 +191,9 @@ def test_data_snapshot_encrypted_roundtrip(
         tmp_path: Path, sample_data: Path, passphrase_file: Path) -> None:
     """암호화 스냅샷→검증이 통과하고 평문 tar.gz가 남지 않는다."""
     out = tmp_path / "snaps-enc"
+    env = {"TMPDIR": str(tmp_path)}
     r = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out),
-             "--passphrase-file", str(passphrase_file)])
+             "--passphrase-file", str(passphrase_file)], env_extra=env)
     assert r.returncode == 0, r.stdout + r.stderr
     manifests = sorted(out.glob("*.manifest.json"))
     assert len(manifests) == 1
@@ -200,7 +202,7 @@ def test_data_snapshot_encrypted_roundtrip(
 
     r = run([str(SNAPSHOT_SH), "--verify", str(manifests[0]),
              "--target", str(tmp_path / "restored"),
-             "--passphrase-file", str(passphrase_file)])
+             "--passphrase-file", str(passphrase_file)], env_extra=env)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "스냅샷 검증 통과" in r.stdout
 

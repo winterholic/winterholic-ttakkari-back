@@ -200,7 +200,7 @@ async def test_collector_tick_pings_the_idle_account_once(client, auth, pings, m
     assert len(pings) == 1
 
 
-async def test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch(client, auth, monkeypatch, tmp_path):
+async def test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch(client, auth, monkeypatch, tmp_path, fake_muse_runtime):
     """핑도 Run 과 같은 어댑터를 쓰므로 생각 수준은 max 다."""
     import json
     from pathlib import Path

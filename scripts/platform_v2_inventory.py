@@ -1748,7 +1748,7 @@ def classify_table(name: str) -> str:
         return "domain.memory_ontology"
     if n.startswith(("knowledge_", "kb_")):
         return "domain.knowledge_rag"
-    if n.startswith("collector_"):
+    if n.startswith(("collector_", "collection_")):
         return "domain.collector"
     if n in ("artcraft_tasks",):
         return "domain.creative_studio"
@@ -1787,7 +1787,7 @@ def classify_table(name: str) -> str:
 def classify_migration(stem: str) -> str:
     s = stem.lower()
     # Core & Control
-    if s == "0071_library_platform_v2_merge":
+    if s in ("0071_library_platform_v2_merge", "0075_collection_research_merge"):
         # A no-op merge joins the library and execution branches; deployment
         # owns convergence, while each parent retains its domain's DDL.
         return "core.generation_deploy"
@@ -1850,7 +1850,7 @@ def classify_migration(stem: str) -> str:
         x in s for x in ("knowledge", "kb_", "clovanote_vectors", "retire_clovanote")
     ):
         return "domain.knowledge_rag"
-    if "collector" in s:
+    if any(x in s for x in ("collector", "collection")):
         return "domain.collector"
     if "artcraft" in s:
         return "domain.creative_studio"
@@ -2151,7 +2151,7 @@ def classify_source_file(rel_path: str) -> str:
         or "/api/kb_" in p
     ):
         return "domain.knowledge_rag"
-    if "/collector/" in p or "collector_models" in p or "/api/collect" in p:
+    if "/collector/" in p or "collector" in p or "/api/collect" in p:
         return "domain.collector"
     if (
         "/creative/" in p

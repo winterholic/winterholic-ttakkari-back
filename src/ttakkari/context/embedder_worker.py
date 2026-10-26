@@ -25,14 +25,22 @@ def compute(request: dict) -> dict:
         local_files_only=True,
     )
     loaded = time.perf_counter()
-    prefix = "query: " if request["query"] else "passage: "
+    default_prefix = "query: " if request["query"] else "passage: "
+    # Per-text prefixes let one child embed a query and its passages together (collector triage).
+    prefixes = request.get("prefixes") or [default_prefix] * len(request["texts"])
+    if len(prefixes) != len(request["texts"]):
+        raise ValueError("prefix_count_mismatch")
     vectors = []
-    for raw in model.embed([prefix + t for t in request["texts"]], batch_size=16):
+    for raw in model.embed([p + t for p, t in zip(prefixes, request["texts"], strict=True)], batch_size=16):
         values = list(map(float, raw))
         norm = math.sqrt(sum(x * x for x in values)) or 1.0
         vectors.append([x / norm for x in values])
+    inner_model = getattr(model, "model", None)
+    model_dir = getattr(inner_model, "_model_dir", None)
+    snapshot = Path(model_dir).resolve().name if model_dir else "unknown"
     return {
         "vectors": vectors,
+        "snapshot": snapshot,
         "metrics": {
             "load_seconds": loaded - started,
             "inference_seconds": time.perf_counter() - loaded,

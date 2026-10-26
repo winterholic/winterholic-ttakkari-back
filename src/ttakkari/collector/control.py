@@ -16,6 +16,7 @@ from ttakkari.collector.contracts import (
 )
 from ttakkari.collector.control_models import CollectorDailyBudget, CollectorSource
 from ttakkari.collector.intake import submit_envelope
+from ttakkari.collector.library import LIBRARY_SCOPE, effective_pool, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.policy import CollectRequest, SourcePolicySpec
 from ttakkari.collector.quality import unmeasured_quality
@@ -46,14 +47,15 @@ async def register_source(db, ctx: AuthContext, *, source_key: str, title: str, 
         parsed = normalize_url(seed, allowed_schemes=spec.schemes, allowed_ports=spec.ports)
         if reason := spec.check_url(parsed):
             raise CollectorContractError(reason)
-    await store._lock(db, "control-source", ctx.tenant_id, ctx.scope, source_key)
+    await store._lock(db, "control-source", ctx.tenant_id, source_key)
     existing = await db.scalar(select(CollectorSource).where(
-        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == ctx.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.source_key == source_key))
     if existing is not None:
         raise SourceKeyExists(source_key)
-    await store.register_policy(db, ctx.tenant_id, ctx.scope, source_key, spec)
-    row = CollectorSource(tenant_id=ctx.tenant_id, scope=ctx.scope, source_key=source_key, title=title, request=request,
+    await store.register_policy(db, ctx.tenant_id, LIBRARY_SCOPE, source_key, spec)
+    row = CollectorSource(tenant_id=ctx.tenant_id, scope=LIBRARY_SCOPE, pool=ctx.pool, source_key=source_key,
+                          title=title, request=request,
                           interval_minutes=interval_minutes, auto_import=auto_import,
                           next_run_at=datetime.now(UTC) if interval_minutes else None)
     db.add(row)
@@ -67,7 +69,7 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
         "producer": {"id": "collector-control", "version": "1"}, "recorded_at": now.isoformat(),
         "source": {"key": source.source_key, "kind": "web", "url": source.request["seeds"][0],
                    "collected_at": now.isoformat(), "published_at": None, "valid_from": None, "valid_to": None},
-        "access": {"tenant_id": source.tenant_id, "scope": source.scope, "principal_ids": ["owner"], "sensitivity": "normal"},
+        "access": {"tenant_id": source.tenant_id, "scope": LIBRARY_SCOPE, "principal_ids": ["owner"], "sensitivity": "normal"},
         "rights": spec.rights_block("intake", now, "not_applicable"),
         "raw": {"sha256": hashlib.sha256(b"").hexdigest(), "byte_size": 0,
                 "media_type": "application/octet-stream", "blob_handle": "intake:unfetched"},
@@ -79,9 +81,29 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
     }
 
 
-async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -> CollectorJob:
-    """Caller holds source row lock; repeated clicks or schedule ticks share an active job."""
+async def link_mission_job(db, mission_id: uuid.UUID, job_id: uuid.UUID, run_seq: int) -> None:
+    from ttakkari.collector_models import CollectionMissionJob
+    if not await db.scalar(select(CollectionMissionJob.mission_id).where(
+            CollectionMissionJob.mission_id == mission_id, CollectionMissionJob.job_id == job_id)):
+        db.add(CollectionMissionJob(mission_id=mission_id, job_id=job_id, run_seq=run_seq))
+
+
+def source_context(source: CollectorSource) -> AuthContext:
+    """source 가 만드는 job 은 source 의 접근 pool 을 물려받는다. 병합 전 옛 work source 도 work 로 남는다."""
+    return AuthContext(tenant_id=source.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner",
+                       pool=effective_pool(source.pool, source.scope))
+
+
+async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, extensions: dict | None = None,
+                  max_pages: int | None = None, cursor: dict | None = None) -> CollectorJob:
+    """Caller holds source row lock; repeated clicks or schedule ticks share an active job.
+
+    Mission allocations and preseeded incremental frontiers are preserved across retries and runs.
+    """
     now = now or datetime.now(UTC)
+    mission_ext = (extensions or {}).get("collector:mission")
+    if source.source_key.startswith("mission:") and not mission_ext:
+        raise JobStateError("mission sources are scheduled and budgeted by their mission")
     if not source.enabled:
         raise JobStateError("source is paused")
     if source.last_job_id:
@@ -91,33 +113,42 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -
     policy = await store.active_policy(db, source.tenant_id, source.scope, source.source_key)
     if policy is None or not policy[0].allows("store"):
         raise JobStateError("source store policy is not allowed")
+    request = dict(source.request)
+    if max_pages is not None:
+        request["max_pages"] = max_pages
     # A hard, global page admission ceiling: every new attempt is reserved before enqueue.
     day = budget_day(now)
     await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
     budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
-    pages = source.request["max_pages"]
+    pages = request["max_pages"]
     if budget.reserved_pages + pages > get_settings().collector_daily_page_cap:
         raise JobStateError("daily collection page budget reached")
     budget.reserved_pages += pages
     ident = uuid.uuid4()
     from ttakkari.collector import quality_service
     envelope = intake_envelope(source, policy[0], now, ident)
+    if extensions:
+        envelope["extensions"].update(extensions)
     model = await quality_service.latest_model(db, source.tenant_id, source.scope)
     if model is not None:
         quality_service.install(model)
-        request = dict(source.request)
-        request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(source.tenant_id, source.scope, model.digest)}
-        envelope["extensions"]["collector:request"] = request
-    result = await submit_envelope(
-        db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"), str(ident),
-        envelope,
-    )
+        request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(model.tenant_id, model.scope, model.digest)}
+    envelope["extensions"]["collector:request"] = request
+    result = await submit_envelope(db, source_context(source), str(ident), envelope)
     source.last_job_id = result.job_id
     source.last_error = None
     if source.interval_minutes is not None:
         source.next_run_at = now + timedelta(minutes=source.interval_minutes)
+    if mission_ext:
+        try:
+            await link_mission_job(db, uuid.UUID(str(mission_ext["id"])), result.job_id, int(mission_ext.get("run_seq", 1)))
+        except (ValueError, TypeError, KeyError):
+            pass
     await db.flush()
-    return await db.get(CollectorJob, result.job_id)
+    job = await db.get(CollectorJob, result.job_id)
+    if cursor is not None and job is not None and job.cursor is None:
+        job.cursor = cursor
+    return job
 
 
 async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: datetime | None = None) -> CollectorJob:
@@ -130,7 +161,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
 
     now = now or datetime.now(UTC)
     item = await db.scalar(select(CollectorItem).where(
-        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope),
     ).with_for_update())
     if item is None:
         raise JobStateError("item not found")
@@ -145,7 +176,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
         raise JobStateError("raw document retention has expired")
 
     source = await db.scalar(select(CollectorSource).where(
-        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == ctx.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.source_key == item.source_key,
     ).with_for_update())
     if source is None:
@@ -172,9 +203,9 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
                                                "profile_params": request["profile_params"]}).encode()).hexdigest()
     request_key = f"collector-reprocess:{item.id}:{policy_digest}:{processor_fingerprint}"
     existing = await db.scalar(select(CollectorJob).where(
-        CollectorJob.tenant_id == ctx.tenant_id, CollectorJob.scope == ctx.scope,
+        CollectorJob.tenant_id == ctx.tenant_id, in_library(CollectorJob.scope),
         CollectorJob.source_key == source.source_key, CollectorJob.request_key == request_key,
-    ))
+    ).order_by(CollectorJob.created_at).limit(1))
     if existing is not None:
         return existing
     ident = uuid.uuid5(uuid.NAMESPACE_URL, request_key)
@@ -186,12 +217,9 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
     if model is not None:
         quality_service.install(model)
         request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(
-            source.tenant_id, source.scope, model.digest)}
+            model.tenant_id, model.scope, model.digest)}
         envelope["extensions"]["collector:request"] = request
-    result = await submit_envelope(
-        db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"),
-        request_key, envelope,
-    )
+    result = await submit_envelope(db, source_context(source), request_key, envelope)
     if result.status == "created":
         day = budget_day(now)
         await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
@@ -201,7 +229,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
         budget.reserved_pages += 1
         source.last_job_id = result.job_id
     from ttakkari.collector import jobs
-    return await jobs.get_job(db, ctx.tenant_id, ctx.scope, result.job_id)
+    return await jobs.get_job(db, ctx.tenant_id, ctx.pool, result.job_id)
 
 
 async def schedule_once(*, now: datetime | None = None) -> int:
@@ -210,7 +238,7 @@ async def schedule_once(*, now: datetime | None = None) -> int:
     async with sessionmaker()() as db:
         sources = list(await db.scalars(select(CollectorSource).where(
             CollectorSource.enabled.is_(True), CollectorSource.interval_minutes.is_not(None),
-            CollectorSource.next_run_at <= now,
+            CollectorSource.next_run_at <= now, ~CollectorSource.source_key.startswith("mission:"),
         ).order_by(CollectorSource.next_run_at).limit(10).with_for_update(skip_locked=True)))
         for source in sources:
             try:
@@ -223,11 +251,17 @@ async def schedule_once(*, now: datetime | None = None) -> int:
                 source.last_error = str(exc)[:500]
                 source.next_run_at = now + timedelta(minutes=source.interval_minutes)
         await db.commit()
-    return count
+    # Mission sources are refreshed as whole runs with their own per-run budget, never one source at a time.
+    from ttakkari.collector import missions
+    return count + await missions.schedule_due_runs(now=now)
 
 
 async def retry_job(db, ctx: AuthContext, job_id: uuid.UUID) -> CollectorJob:
-    job = await jobs.get_job(db, ctx.tenant_id, ctx.scope, job_id)
+    job = await jobs.get_job(db, ctx.tenant_id, ctx.pool, job_id)
+    from ttakkari.collector_models import CollectionMissionJob
+    if await db.scalar(select(CollectionMissionJob.mission_id).where(CollectionMissionJob.job_id == job.id)):
+        # A retried job would spend its original allocation again after the mission reclaimed unused pages.
+        raise JobStateError("mission jobs are restarted through mission resume, extend or rerun")
     job = await db.get(CollectorJob, job.id, with_for_update=True, populate_existing=True)
     if job.status in ACTIVE:
         raise JobStateError("job is already active")

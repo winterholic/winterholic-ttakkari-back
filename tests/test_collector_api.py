@@ -110,10 +110,13 @@ async def test_same_envelope_id_with_other_key_is_409(client, auth, envelope):
 
 
 @pytest.mark.parametrize("fixture_name", sorted(INTAKE_EXPECTATIONS))
-async def test_intake_fixtures_give_same_result_over_http(client, auth, fixture_name):
+async def test_intake_fixtures_give_same_result_over_http(client, auth, agent_headers, fixture_name):
     """계약 fixture 10건이 HTTP 경로에서도 같은 결과다. 변조 fixture 는 tenant/principal 값만 owner 로 치환해 변조를 유지한다."""
     case = json.loads((FIXTURES_DIR / "intake" / fixture_name).read_text(encoding="utf-8"))
     scope = case["auth"]["session_pool"]
+    is_session = case["auth"].get("kind") == "session"
+    headers = agent_headers[scope] if is_session else auth
+    base = AGENT if is_session else OWNER
     want_sequence = INTAKE_EXPECTATIONS[fixture_name]
 
     def rebind(sub: dict) -> dict:
@@ -124,7 +127,7 @@ async def test_intake_fixtures_give_same_result_over_http(client, auth, fixture_
         return sub
 
     for index, (want, submission) in enumerate(zip(want_sequence, case["submissions"], strict=True)):
-        response = await post(client, auth, rebind(submission), key=case["request_key"], scope=scope)
+        response = await post(client, headers, rebind(submission), key=case["request_key"], base=base, scope=scope)
         label = f"{fixture_name}[{index}] -> {want}"
         if want == "reject:scope_binding_mismatch":
             assert err(response) == (403, "scope_binding_mismatch"), label
@@ -142,7 +145,7 @@ async def test_intake_fixtures_give_same_result_over_http(client, auth, fixture_
         pytest.param(lambda e: e["access"].update(tenant_id="someone-else"), id="tenant"),
         pytest.param(lambda e: e["access"].update(principal_ids=["other"]), id="principal"),
         pytest.param(lambda e: e["access"].update(principal_ids=["owner", "admin"]), id="principal-escalation"),
-        pytest.param(lambda e: e["access"].update(scope="work"), id="scope"),
+        pytest.param(lambda e: e["access"].update(scope="shared"), id="scope"),
     ],
 )
 async def test_tampered_access_is_403_without_side_effects(client, auth, envelope, mutate):
@@ -154,11 +157,11 @@ async def test_tampered_access_is_403_without_side_effects(client, auth, envelop
     assert await counts() == (0, 0)
 
 
-async def test_cross_scope_replay_never_reveals_the_existing_job(client, auth, envelope):
-    first = await post(client, auth, envelope)
+async def test_cross_scope_replay_never_reveals_the_existing_job(client, auth, envelope, agent_headers):
+    first = await post(client, agent_headers["personal"], envelope, base=AGENT)
     assert first.status_code == 202
     # 같은 키·같은 payload 를 work scope 요청으로 보내면 기존 job 을 돌려주지 않고 403 이다.
-    response = await post(client, auth, envelope, scope="work")
+    response = await post(client, agent_headers["work"], envelope, base=AGENT, scope="work")
     assert err(response) == (403, "scope_binding_mismatch")
     assert first.json()["job_id"] not in response.text
 
@@ -224,7 +227,7 @@ async def test_agent_scope_comes_from_session_pool_not_request(client, envelope,
 
     work_env = bound(envelope, "work")
     work_env["envelope_id"] = str(uuid.uuid4())
-    assert (await post(client, agent_headers["work"], work_env, base=AGENT)).status_code == 202
+    assert (await post(client, agent_headers["work"], work_env, base=AGENT, key="req-work")).status_code == 202
 
     # work 세션이 personal envelope 를 보내면 403. 쿼리로 scope 를 바꿔도 소용없다.
     response = await post(client, agent_headers["work"], with_id(envelope), base=AGENT, scope="personal", key="x")
@@ -237,17 +240,20 @@ async def test_agent_scope_comes_from_session_pool_not_request(client, envelope,
 async def test_other_scope_jobs_are_invisible_and_uncancellable(client, auth, envelope, agent_headers):
     job_id = (await post(client, auth, envelope)).json()["job_id"]
 
-    for headers, base, params in (
-        (auth, OWNER, {"scope": "work"}),
-        (agent_headers["work"], AGENT, None),
-    ):
-        got = await client.get(f"{base}/jobs/{job_id}", headers=headers, params=params)
-        assert err(got) == (404, "job_not_found")
-        cancel = await client.post(f"{base}/jobs/{job_id}/cancel", headers=headers, params=params)
-        assert err(cancel) == (404, "job_not_found")
-        listed = await client.get(f"{base}/jobs", headers=headers, params=params)
-        assert listed.json()["jobs"] == []
-    # 같은 scope 의 agent 는 owner 가 만든 personal job 을 본다
+    # 회사 엔진 세션(work pool)에서는 personal job이 보이지 않고 취소할 수도 없다(work engine pool 격리).
+    got = await client.get(f"{AGENT}/jobs/{job_id}", headers=agent_headers["work"])
+    assert err(got) == (404, "job_not_found")
+    cancel = await client.post(f"{AGENT}/jobs/{job_id}/cancel", headers=agent_headers["work"])
+    assert err(cancel) == (404, "job_not_found")
+    listed = await client.get(f"{AGENT}/jobs", headers=agent_headers["work"])
+    assert listed.json()["jobs"] == []
+
+    # 소유자(owner JWT)는 scope 파라미터와 무관하게 단일 도서관 전체 job을 조회/취소할 수 있다(단일 도서관 조회).
+    assert (await client.get(f"{OWNER}/jobs/{job_id}", headers=auth, params={"scope": "work"})).status_code == 200
+    owner_listed = await client.get(f"{OWNER}/jobs", headers=auth, params={"scope": "work"})
+    assert any(j["job_id"] == job_id for j in owner_listed.json()["jobs"])
+
+    # 같은 personal pool 의 agent 는 owner 가 만든 personal job 을 본다
     assert (await client.get(f"{AGENT}/jobs/{job_id}", headers=agent_headers["personal"])).status_code == 200
     async with sessionmaker()() as db:
         assert (await db.get(CollectorJob, uuid.UUID(job_id))).status == "queued"

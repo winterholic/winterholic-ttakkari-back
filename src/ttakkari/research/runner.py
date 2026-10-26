@@ -55,15 +55,14 @@ def _get_registry():
 
 async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
     """Signal cancellation to a running or queued run."""
-    ev = _CANCEL_EVENTS.get(run_id)
-    if ev:
-        ev.set()
-
     # Update DB status
     sm = sessionmaker()
     async with sm() as db:
-        run = await db.get(Run, run_id)
+        run = await db.get(Run, run_id, with_for_update=True)
         if run and run.status in ("queued", "running"):
+            ev = _CANCEL_EVENTS.get(run_id)
+            if ev:
+                ev.set()
             run.status = "cancelled"
             run.error_code = "cancelled"
             run.error_message = reason
@@ -76,31 +75,30 @@ async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
 async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) -> Run:
     """Execute a single run through its designated ExecutionAdapter."""
     reg = adapter_registry or _get_registry()
-    cancel_event = asyncio.Event()
-    _CANCEL_EVENTS[run_id] = cancel_event
-
     sm = sessionmaker()
     async with sm() as db:
-        run = await db.get(Run, run_id)
+        # Claim the queued row once, including across concurrent API requests.
+        # Terminal evidence and a live owner's cancellation signal must survive replay.
+        run = await db.get(Run, run_id, with_for_update=True)
         if not run:
             raise ValueError(f"Run {run_id} not found")
+        if run.status != "queued":
+            return run
 
         config = await db.get(Configuration, run.configuration_id)
         study = await db.get(Study, run.study_id)
         if not config or not study:
             raise ValueError(f"Configuration or Study missing for run {run_id}")
 
-        if cancel_event.is_set():
-            run.status = "cancelled"
-            run.error_code = "cancelled"
-            run.error_message = "Cancelled before start"
-            run.finished_at = utcnow()
-            await db.commit()
-            return run
-
+        cancel_event = asyncio.Event()
+        _CANCEL_EVENTS[run_id] = cancel_event
         run.status = "running"
         run.started_at = utcnow()
-        await db.commit()
+        try:
+            await db.commit()
+        except BaseException:
+            _CANCEL_EVENTS.pop(run_id, None)
+            raise
 
         # Find adapter
         adapter = None
@@ -113,6 +111,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             run.error_message = f"실행 어댑터 '{run.adapter_id}'가 레지스트리에 등록되어 있지 않습니다."
             run.finished_at = utcnow()
             await db.commit()
+            _CANCEL_EVENTS.pop(run_id, None)
             return run
 
         start_time = asyncio.get_event_loop().time()
@@ -127,15 +126,20 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             )
             elapsed = asyncio.get_event_loop().time() - start_time
 
-            run.status = adapter_res.status
+            # Cancellation may come from another request/process while the adapter
+            # finishes. Re-read the persisted status before publishing its result.
+            await db.refresh(run, with_for_update=True)
+            cancelled = run.status == "cancelled"
+            run.status = "cancelled" if cancelled else adapter_res.status
             run.raw_output = adapter_res.raw_output or {}
             run.environment_snapshot = adapter_res.environment_snapshot or {}
-            run.error_code = adapter_res.error_code
-            run.error_message = adapter_res.error_message
+            if not cancelled:
+                run.error_code = adapter_res.error_code
+                run.error_message = adapter_res.error_message
             run.wall_seconds = adapter_res.wall_seconds or elapsed
             run.finished_at = utcnow()
 
-            if adapter_res.status == "succeeded":
+            if run.status == "succeeded":
                 # Convert measurements and insert immutably
                 measurements = adapter.to_measurements(adapter_res, config.parameters)
                 for m in measurements:
@@ -256,6 +260,12 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                         )
                         db.add(art_row)
 
+                # The measurement checkpoint released our row lock. Honour a
+                # cancellation accepted during artifact copying before final commit.
+                with db.no_autoflush:
+                    await db.refresh(run, ["status", "error_code", "error_message"], with_for_update=True)
+                if run.status == "cancelled":
+                    raise asyncio.CancelledError
                 run.status = "succeeded"
                 run.finished_at = utcnow()
 
@@ -272,7 +282,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                 run.environment_snapshot = adapter_res.environment_snapshot or {}
             run.status = "cancelled"
             run.error_code = "cancelled"
-            run.error_message = "Task cancelled by system"
+            run.error_message = run.error_message or "Task cancelled by system"
             if cleanup_failures:
                 run.error_message += "; artifact cleanup failed: " + ", ".join(cleanup_failures)
             run.finished_at = utcnow()
@@ -343,8 +353,22 @@ async def run_experiment_batch(
                 run = await execute_run_instance(rid, adapter_registry=adapter_registry)
                 if run.status == "cancelled":
                     logger.info("Batch stopped due to run %s cancellation", rid)
+                    async with sm() as db:
+                        await db.execute(
+                            update(Run).where(
+                                Run.id.in_(run_ids),
+                                Run.experiment_id == experiment_id,
+                                Run.status == "queued",
+                            ).values(
+                                status="cancelled",
+                                error_code="batch_cancelled",
+                                error_message="Batch stopped after a run was cancelled",
+                                finished_at=utcnow(),
+                            )
+                        )
+                        await db.commit()
                     break
-            except Exception as e:
+            except Exception:
                 logger.exception("Failed to execute run instance %s", rid)
 
         # Update experiment state to completed or needs_verification
@@ -374,7 +398,7 @@ async def run_experiment_batch(
             async with sm() as db:
                 await analyze_experiment(db, experiment_id=experiment_id)
                 await db.commit()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - analysis failure must preserve completed execution
             logger.warning("Auto-analysis failed for experiment %s: %s", experiment_id, e)
 
 

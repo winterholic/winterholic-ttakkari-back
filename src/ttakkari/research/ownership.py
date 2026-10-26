@@ -61,7 +61,7 @@ class ExecutionOwner:
         from ttakkari.research.resources import RESOURCE_KEY, WORKERS_KEY
 
         value = {**(environment or {}), OWNER_KEY: self.metadata}
-        for key in (RESOURCE_KEY, WORKERS_KEY):
+        for key in (RESOURCE_KEY, WORKERS_KEY, "research_memory_guard"):
             value.pop(key, None)  # only the fenced checkpoint writer mints these fields
             resource = (previous or {}).get(key)
             if isinstance(resource, dict) and resource.get("owner_token") == self.metadata["token"]:

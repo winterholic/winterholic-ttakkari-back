@@ -336,7 +336,7 @@ flowchart LR
    - `fixed_inputs`: `JSONB NOT NULL DEFAULT '{}'` (프롬프트, 코퍼스/질의, 문장 목록 등)
    - `primary_metric`: `VARCHAR(64) NOT NULL DEFAULT 'recall_at_k'`
    - `secondary_metrics`: `JSONB NOT NULL DEFAULT '[]'`
-   - `budget`: `JSONB NOT NULL DEFAULT '{"max_runs": 20, "max_total_seconds": 300, "max_memory_mb": 4096}'`
+   - `budget`: `JSONB NOT NULL`. API 기본은 `{"max_runs": 20, "max_total_seconds": 300}`이며 `max_memory_mb`는 선택값이다. 명시하면 TTS 합성/STT의 각 모델 자식 RSS를 50ms 간격으로 관측해 초과 또는 관측 거절 시 중단한다. 단위는 MiB(1,048,576bytes)이며 OS 강제 상한·부모/자손/GPU 총량 제한은 아니다. 미지원 실행기·정규화 모드는 명시한 제한을 무시하지 않고 거절한다. 생략/null은 감시 꺼짐이며 화면과 저장 복원에서도 자동 기본값을 넣지 않는다.
    - `baseline_configuration_id`: `UUID NULL` (비교 기준이 되는 Configuration ID)
    - `source_study_id`: `UUID NULL REFERENCES research_studies(id) ON DELETE SET NULL` (재사용 원본 Study)
    - `source_experiment_id`: `UUID NULL REFERENCES research_experiments(id) ON DELETE SET NULL` (재사용 원본 Experiment)

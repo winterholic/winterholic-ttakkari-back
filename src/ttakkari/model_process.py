@@ -14,12 +14,91 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 _observations: ContextVar[Callable[[dict], Awaitable[None]] | None] = ContextVar(
     "model_worker_observations", default=None,
 )
+_memory_limit: ContextVar[WorkerMemoryGuard | None] = ContextVar("model_worker_memory_limit", default=None)
+
+
+class WorkerMemoryLimitError(RuntimeError):
+    """A sampled threshold or an unavailable observation stops owned inference."""
+
+
+@dataclass
+class WorkerMemoryGuard:
+    limit_mb: int
+    sampled_peak_rss_bytes: int = 0
+    samples: int = 0
+    error_code: str | None = None
+
+    def snapshot(self) -> dict:
+        return {"scope": "each_owned_model_child_rss", "limit_bytes": self.limit_mb * 1048576,
+                "sampled_peak_rss_bytes": self.sampled_peak_rss_bytes, "samples": self.samples,
+                "poll_seconds": 0.05, "hard_limit": False, "error_code": self.error_code}
+
+    def check(self, process: asyncio.subprocess.Process, *, allow_exit: bool = False) -> bool:
+        import psutil  # parent-only; optional ML runtimes import this module for the guard
+
+        if self.error_code:
+            raise WorkerMemoryLimitError(self.error_code)
+        try:
+            rss = _read_worker_rss(process.pid)
+        except psutil.NoSuchProcess as exc:
+            if allow_exit:
+                return False  # exit raced this sample; still require communicate/wait below
+            self.error_code = "memory_probe_unavailable"
+            raise WorkerMemoryLimitError(self.error_code) from exc
+        except (psutil.Error, OSError) as exc:
+            self.error_code = "memory_probe_unavailable"
+            raise WorkerMemoryLimitError(self.error_code) from exc
+        self.samples += 1
+        self.sampled_peak_rss_bytes = max(self.sampled_peak_rss_bytes, rss)
+        if rss > self.limit_mb * 1048576:
+            self.error_code = "memory_budget_exceeded"
+            raise WorkerMemoryLimitError(self.error_code)
+        return True
+
+
+def _read_worker_rss(pid: int) -> int:
+    import psutil
+
+    # Only a Process handle created and not yet reaped by this supervisor is queried.
+    return psutil.Process(pid).memory_info().rss
+
+
+@contextmanager
+def worker_memory_limit(limit_mb: int | None) -> Iterator[WorkerMemoryGuard | None]:
+    if limit_mb is not None and (type(limit_mb) is not int or limit_mb <= 0):
+        raise ValueError("max_memory_mb must be a positive integer")
+    guard = WorkerMemoryGuard(limit_mb) if limit_mb is not None else None
+    token = _memory_limit.set(guard)
+    try:
+        yield guard
+    finally:
+        _memory_limit.reset(token)
+
+
+async def _communicate_with_memory(process: asyncio.subprocess.Process, payload: bytes,
+                                   guard: WorkerMemoryGuard) -> None:
+    guard.check(process)  # fail closed before inference receives its request
+    communicate = asyncio.create_task(process.communicate(payload))
+    try:
+        while True:
+            done, _ = await asyncio.wait({communicate}, timeout=0.05)
+            if done:
+                communicate.result()
+                return
+            if process.returncode is None and not guard.check(process, allow_exit=True):
+                await communicate
+                return
+    finally:
+        if not communicate.done():
+            communicate.cancel()
+        await asyncio.gather(communicate, return_exceptions=True)
 
 
 @contextmanager
@@ -77,6 +156,9 @@ async def run_json_worker(
     python: Path | None = None,
     error_prefix: str = "model_worker",
 ) -> dict:
+    guard = _memory_limit.get()
+    if guard is not None and guard.error_code:
+        raise WorkerMemoryLimitError(guard.error_code)
     env = {
         key: os.environ[key]
         for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL")
@@ -134,7 +216,8 @@ async def run_json_worker(
             # No request payload reaches inference until the caller persists ownership.
             await _observe_worker(process, identity, exited=False)
             await asyncio.wait_for(
-                process.communicate(json.dumps(request).encode()),
+                (_communicate_with_memory(process, json.dumps(request).encode(), guard)
+                 if guard is not None else process.communicate(json.dumps(request).encode())),
                 timeout=timeout,
             )
             if process.returncode != 0 or not output.is_file():

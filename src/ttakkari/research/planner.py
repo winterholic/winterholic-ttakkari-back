@@ -429,6 +429,21 @@ def execution_budget_seconds(budget: dict[str, Any]) -> float:
     return float(seconds)
 
 
+def execution_memory_budget(budget: dict[str, Any], adapter_id: str, config: dict | None = None) -> int | None:
+    """Optional sampled RSS stop threshold, limited to disposable model children."""
+    value = budget.get("max_memory_mb")
+    if value is None:
+        return None
+    if type(value) is not int or value <= 0:
+        raise ValueError("max_memory_mb는 0보다 큰 정수여야 합니다. 감시를 끄려면 필드를 생략하세요.")
+    if adapter_id != "tts_synthesis" or (
+        config is not None and config.get("mode", "normalize_only") not in {"synthesize", "synthesize_and_stt"}
+    ):
+        raise ValueError("max_memory_mb는 현재 TTS 합성/STT의 모델 자식 RSS 감시만 지원합니다. "
+                         "호스트 GPU·검색·정규화의 메모리 제한은 미지원이므로 이 필드를 생략하세요.")
+    return value
+
+
 async def validate_experiment_plan(
     db,
     *,
@@ -457,6 +472,7 @@ async def validate_experiment_plan(
 
     try:
         execution_budget_seconds(budget)
+        execution_memory_budget(budget, adapter_id)
     except ValueError as exc:
         errors.append(str(exc))
 
@@ -505,6 +521,15 @@ async def validate_experiment_plan(
     )
     errors.extend(exp_errors)
     warnings.extend(exp_warnings)
+    for cfg in expanded_configs:
+        try:
+            execution_memory_budget(budget, adapter_id, cfg.get("parameters", cfg))
+        except ValueError as exc:
+            if str(exc) not in errors:
+                errors.append(str(exc))
+    if budget.get("max_memory_mb") is not None:
+        warnings.append("메모리 감시는 각 모델 자식 RSS를 50ms 간격으로 관측해 초과 시 중단합니다. "
+                        "OS 강제 상한이 아니며 샘플 사이의 초과, 부모·자손·GPU 메모리는 보장하지 않습니다.")
 
     # Validate expanded configurations against adapter constraints
     if local_dispatch:
@@ -556,6 +581,7 @@ async def validate_experiment_plan(
 
     est_sec_per_run = 15 if adapter_id == "llm_inference" else 3 if adapter_id == "retrieval_eval" else 5
     resource_estimate = {
+        "memory_budget_contract": 1,
         "total_runs": runs_count,
         # `estimated_seconds` is the contract name (adapters.base.ResourceEstimate); `estimated_total_seconds` stays for older callers.
         "estimated_seconds": runs_count * est_sec_per_run,

@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 
 from ttakkari import generation
 from ttakkari.db import sessionmaker
+from ttakkari.model_process import worker_memory_limit
 from ttakkari.models import utcnow
 from ttakkari.research.models import (
     Configuration,
@@ -106,6 +107,21 @@ async def execute_run_instance(
         if not config or not study:
             raise ValueError(f"Configuration or Study missing for run {run_id}")
 
+        from ttakkari.research.planner import execution_memory_budget
+
+        experiment = await db.get(Experiment, run.experiment_id)
+        try:
+            memory_mb = execution_memory_budget(experiment.budget or {}, run.adapter_id, config.parameters)
+        except ValueError as exc:
+            # Admission still holds the queued Run's row lock: a concurrent user
+            # cancellation cannot be overwritten after we release that lock.
+            run.status = "cancelled"
+            run.error_code = "budget_invalid"
+            run.error_message = str(exc)
+            run.finished_at = utcnow()
+            await db.commit()
+            return run
+
         cancel_event = asyncio.Event()
         own_lock = _owner is None
         owner = _owner or ExecutionOwner.acquire()
@@ -123,6 +139,7 @@ async def execute_run_instance(
 
         start_time = asyncio.get_event_loop().time()
         adapter_res = None
+        memory_guard = None
         created_copies: list[Path] = []
         execution_timeout = asyncio.timeout_at(deadline)
         from ttakkari.research.resources import (
@@ -154,7 +171,7 @@ async def execute_run_instance(
                 run.finished_at = utcnow()
                 await db.commit()
                 return run
-            with resource_checkpoints(write_resource):
+            with resource_checkpoints(write_resource), worker_memory_limit(memory_mb) as memory_guard:
                 async with execution_timeout:
                     adapter_res = await adapter.execute_run(
                         run_id=run.id,
@@ -163,6 +180,8 @@ async def execute_run_instance(
                         cancel_event=cancel_event,
                     )
             elapsed = asyncio.get_event_loop().time() - start_time
+            if memory_guard is not None and not memory_guard.samples and adapter_res.status == "succeeded":
+                memory_guard.error_code = "memory_probe_unavailable"
             budget_exhausted = execution_timeout.expired() or (
                 deadline is not None and asyncio.get_running_loop().time() >= deadline
             )
@@ -175,6 +194,9 @@ async def execute_run_instance(
             run.status = "cancelled" if cancelled else adapter_res.status
             run.raw_output = adapter_res.raw_output or {}
             run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+            if memory_guard is not None:
+                run.environment_snapshot = {**run.environment_snapshot,
+                    "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
             if not cancelled:
                 run.error_code = adapter_res.error_code
                 run.error_message = adapter_res.error_message
@@ -185,6 +207,10 @@ async def execute_run_instance(
                     run.status = "cancelled"
                     run.error_code = "budget_exceeded"
                     run.error_message = "Experiment max_total_seconds exhausted"
+                elif memory_guard is not None and memory_guard.error_code:
+                    run.status = "cancelled"
+                    run.error_code = memory_guard.error_code
+                    run.error_message = "Model worker RSS guard stopped this run: " + memory_guard.error_code
             run.wall_seconds = elapsed if budget_exhausted else adapter_res.wall_seconds or elapsed
             run.finished_at = utcnow()
 
@@ -336,6 +362,9 @@ async def execute_run_instance(
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
                 run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+            if memory_guard is not None:
+                run.environment_snapshot = {**run.environment_snapshot,
+                    "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
             run.status = "cancelled"
             run.error_code = "cancelled"
             run.error_message = run.error_message or "Task cancelled by system"
@@ -358,6 +387,9 @@ async def execute_run_instance(
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
                 run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+            if memory_guard is not None:
+                run.environment_snapshot = {**run.environment_snapshot,
+                    "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
             if run.status == "cancelled":
                 run.error_message = (
                     f"{run.error_message or 'Run cancelled'}; "
@@ -368,6 +400,10 @@ async def execute_run_instance(
                 run.status = "cancelled"
                 run.error_code = "budget_exceeded"
                 run.error_message = "Experiment max_total_seconds exhausted"
+            elif memory_guard is not None and memory_guard.error_code:
+                run.status = "cancelled"
+                run.error_code = memory_guard.error_code
+                run.error_message = "Model worker RSS guard stopped this run: " + memory_guard.error_code
             else:
                 run.status = "failed"
                 run.error_code = type(e).__name__

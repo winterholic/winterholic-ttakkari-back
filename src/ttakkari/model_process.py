@@ -6,6 +6,9 @@ import asyncio
 import json
 import logging
 import os
+import select
+import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -68,6 +71,17 @@ def _read_worker_rss(pid: int) -> int:
 
     # Only a Process handle created and not yet reaped by this supervisor is queried.
     return psutil.Process(pid).memory_info().rss
+
+
+@contextmanager
+def _owner_liveness_pipe():
+    """Only the supervisor retains the writer; owner death produces kernel EOF."""
+    read_fd, write_fd = os.pipe()
+    try:
+        yield read_fd
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
 
 
 @contextmanager
@@ -179,7 +193,7 @@ async def run_json_worker(
         }
     )
     started = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix="ttakkari-model-") as temp:
+    with tempfile.TemporaryDirectory(prefix="ttakkari-model-") as temp, _owner_liveness_pipe() as owner_fd:
         env.update(
             {
                 "HOME": temp,
@@ -187,6 +201,7 @@ async def run_json_worker(
                 "MPLCONFIGDIR": str(Path(temp) / "mpl"),
                 "XDG_CACHE_HOME": str(Path(temp) / "cache"),
                 "TORCH_HOME": str(Path(temp) / "torch"),
+                "TTAKKARI_MODEL_OWNER_FD": str(owner_fd),
             }
         )
         output = Path(temp) / "result.json"
@@ -201,6 +216,7 @@ async def run_json_worker(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
+            pass_fds=(owner_fd,),
         ))
         process = None
         result = None
@@ -245,7 +261,57 @@ async def run_json_worker(
                     result.setdefault("metrics", {})["lifecycle_receipt_error"] = receipt_error
 
 
-def start_parent_guard() -> threading.Event:
+class ParentGuard:
+    """Stop and reap this worker's stdlib-only fallback monitor on normal exit."""
+
+    def __init__(self, process: subprocess.Popen, stop_fd: int, thread_stop: threading.Event):
+        self.process, self.stop_fd, self.thread_stop = process, stop_fd, thread_stop
+
+    def set(self) -> None:
+        self.thread_stop.set()
+        if self.stop_fd is not None:
+            os.close(self.stop_fd)
+            self.stop_fd = None
+        try:
+            self.process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.process.kill()  # our own Popen handle, never an observed arbitrary PID
+            self.process.wait()
+
+
+def _start_native_parent_guard(owner_fd: int, stop: threading.Event) -> ParentGuard:
+    if owner_fd < 3 or not stat.S_ISFIFO(os.fstat(owner_fd).st_mode):
+        raise RuntimeError("model_owner_pipe_invalid")
+    stop_read, stop_write = os.pipe()
+    ready_read, ready_write = os.pipe()
+    process = None
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "ttakkari.model_process_guard", str(os.getpid()),
+             str(owner_fd), str(stop_read), str(ready_write)],
+            pass_fds=(owner_fd, stop_read, ready_write),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        os.close(ready_write)
+        ready_write = None
+        ready, _, _ = select.select([ready_read], [], [], 3)
+        if not ready or os.read(ready_read, 1) != b"1" or process.poll() is not None:
+            raise RuntimeError("model_owner_guard_unavailable")
+        return ParentGuard(process, stop_write, stop)
+    except BaseException:
+        os.close(stop_write)
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+        raise
+    finally:
+        for fd in (stop_read, ready_read, ready_write):
+            if fd is not None:
+                os.close(fd)
+
+
+def start_parent_guard() -> threading.Event | ParentGuard:
     """Reject a lost/malformed supervisor identity before loading any model."""
     raw = os.environ.get("TTAKKARI_MODEL_PARENT_PID")
     try:
@@ -256,8 +322,10 @@ def start_parent_guard() -> threading.Event:
         os._exit(74)
         raise SystemExit(74)  # reachable only with a replaced exit primitive
     stop = threading.Event()
+    raw_fd = os.environ.get("TTAKKARI_MODEL_OWNER_FD")
+    guard = _start_native_parent_guard(int(raw_fd), stop) if raw_fd is not None else stop
     threading.Thread(target=watch_parent, args=(parent_pid, stop), daemon=True).start()
-    return stop
+    return guard
 
 
 def watch_parent(parent_pid: int, stop: threading.Event) -> None:

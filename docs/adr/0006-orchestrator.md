@@ -87,6 +87,9 @@ Run 이 사용량 한도로 실패하면(출력·오류 문구 휴리스틱, 아
 대기 뒤의 진단 log/usage는 한도 대기를 취소하지 않는다. 재평가는 가장 최근의 `run.waiting`/`run.status` 전환으로 대기 종류를 판별하고, 새 restart/pool backoff·취소·소유 lease·strict_engine은 보존한다. `read_session`은 routing 제약과 Run의 resume_after/마지막 이벤트 종류/lease 유무를 제공하며 인계·진단 payload는 추가 노출하지 않는다. 격리 재현과 운영 미검증 범위는 [작업 기록](../work-history/2026-10-27-quota-wait-recovery.md)을 따른다.
 
 ## 알려진 한계
+
+`read_session.execution`은 관측 시각·현재 observer/claim owner·실행 lane의 lease 수/상한·세션 선두 Run을 읽기 전용으로 반환한다. `local_dispatch`의 태스크 유무·완료 여부·메모리 대기 시각은 이 API가 실제 claim owner일 때만 의미가 있다. 원격 실행기나 다른 coordinator의 메모리는 `null`로 표시한다. 대기 코루틴은 함수 이름 최대 8개만 반환하며 파일 경로·소스·인자·지역 변수·예외 repr는 반환하지 않는다. 순간 관측이므로 과거 거절 원인을 증명하지 않으며, 조회로 대기 타이머·소유권·라우팅을 변경하지 않는다.
+
 - 사용량 한도 판별은 문구 휴리스틱이다(`usage limit`, `hit your limit`, `rate limit`, `quota`, `429` 등). 엔진 문구가 바뀌면 폴백이 안 걸리고 그냥 실패한다(확인 필요: 실제 한도 도달 시 문구).
 - 쿨다운은 메모리에만 있다. 서버를 재시작하면 처음부터 다시 시도한다.
 - 프로필을 바꿀 때 최근 지시·답과 같은 Run에서 관측된 일부 도구 호출·결과를 넘긴다. 엔진 내부의 모든 도구 상태를 완전히 옮기지는 못한다.

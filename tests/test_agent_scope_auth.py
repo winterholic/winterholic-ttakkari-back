@@ -266,3 +266,119 @@ async def test_read_session_exposes_bounded_wait_diagnostics(client, setup_sessi
     assert turn["lease_owned"] is False
     assert "private provider progress" not in response.text
     assert "private diagnostic" not in response.text
+
+
+@pytest.mark.parametrize("generation_mode", [False, True])
+async def test_read_session_observes_local_dispatch_without_exposing_task_locals(
+    client, setup_sessions, monkeypatch, generation_mode,
+):
+    import asyncio
+    from types import SimpleNamespace
+
+    from ttakkari import generation
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+    from ttakkari.runs.manager import manager
+
+    personal, _ = setup_sessions
+    async with sessionmaker()() as db:
+        run = Run(session_id=personal.id, workspace_id=personal.workspace_id,
+                  engine="codex", status=RunStatus.queued, prompt="review")
+        db.add(run)
+        await db.commit()
+        rid = run.id
+    gate = asyncio.Event()
+
+    async def blocked_dispatch_probe():
+        secret = "task-local-private-progress"
+        await gate.wait()
+        return secret
+
+    task = asyncio.create_task(blocked_dispatch_probe())
+    await asyncio.sleep(0)
+    until = datetime.now(UTC) + timedelta(hours=1)
+    runtime = None
+    if generation_mode:
+        gid = uuid.uuid4()
+        async with sessionmaker()() as db:
+            db.add(RuntimeGeneration(id=gid, revision="a" * 40, api_url="http://test",
+                                    pid=0, process_started_at=0, state="active"))
+            await db.flush()
+            db.add(RuntimeControl(id=1, active_generation=gid))
+            await db.commit()
+        runtime = SimpleNamespace(id=gid, role="api", execution_mode="local", draining=False,
+                                  http_inflight=0)
+    monkeypatch.setattr(generation, "current", runtime)
+    monkeypatch.setattr(manager, "_runtime", None)
+    monkeypatch.setattr(manager, "_handles", {rid: SimpleNamespace(task=task)})
+    monkeypatch.setattr(manager, "_waiting", {rid: (until.timestamp(), personal.id)})
+    try:
+        response = await client.get(f"/api/agent/sessions/{personal.id}",
+            headers={"Authorization": f"Bearer {issue_token(personal.id)}"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["execution"]["local_coordinator"] is True
+        assert data["execution"]["head_run_id"] == str(rid)
+        assert data["execution"]["lane"] == "workers"
+        assert data["execution"]["lane_leases"] == 0
+        assert data["execution"]["lane_limit"] > 0
+        obs = data["turns"][0]["local_dispatch"]
+        assert obs["task_exists"] is True
+        assert obs["task_done"] is False
+        assert datetime.fromisoformat(obs["armed_until"]) == until
+        assert "blocked_dispatch_probe" in obs["await_chain"]
+        assert "wait" in obs["await_chain"]
+        assert len(obs["await_chain"]) <= 8
+        assert "task-local-private-progress" not in response.text
+        assert not task.done()
+        assert rid in manager._waiting
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("execution_mode", ["local", "remote"])
+async def test_read_session_does_not_claim_remote_task_absence(
+    client, setup_sessions, monkeypatch, execution_mode,
+):
+    from types import SimpleNamespace
+
+    from ttakkari import generation
+    from ttakkari.runs.manager import manager
+
+    personal, _ = setup_sessions
+    async with sessionmaker()() as db:
+        run = Run(session_id=personal.id, workspace_id=personal.workspace_id,
+                  engine="codex", status=RunStatus.queued, prompt="review")
+        db.add(run)
+        await db.commit()
+    runtime = SimpleNamespace(id=uuid.uuid4(), role="api", execution_mode=execution_mode, draining=False,
+                              http_inflight=0)
+    monkeypatch.setattr(generation, "current", runtime)
+    monkeypatch.setattr(manager, "_runtime", None)
+    response = await client.get(f"/api/agent/sessions/{personal.id}",
+        headers={"Authorization": f"Bearer {issue_token(personal.id)}"})
+    assert response.status_code == 200
+    assert response.json()["execution"]["local_coordinator"] is False
+    assert response.json()["turns"][0]["local_dispatch"] is None
+
+
+async def test_dispatch_await_chain_is_bounded():
+    import asyncio
+
+    from ttakkari.runs.diagnostics import _await_chain
+
+    gate = asyncio.Event()
+
+    async def descend(depth):
+        if depth:
+            await descend(depth - 1)
+        else:
+            await gate.wait()
+
+    task = asyncio.create_task(descend(20))
+    await asyncio.sleep(0)
+    try:
+        assert _await_chain(task) == ["descend"] * 8
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

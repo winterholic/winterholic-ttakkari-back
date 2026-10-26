@@ -3,7 +3,8 @@
 불변 규칙: kb_sources·kb_revisions·kb_passages·kb_evidence 행은 UPDATE 와 DELETE 를 거부한다.
 외래키 제약조건은 RESTRICT 로 결속되어 부모 삭제로 인한 연쇄 삭제(CASCADE)가 방지된다.
 정규화 및 오프셋 기준: legacy raw-v1은 NFKC, collector 추출 본문은 NFC, LF 줄바꿈('\n'), 0-based Unicode 코드포인트(char) 오프셋 기준.
-리비전의 현재성은 관측 ledger가 있으면 event_time 최신 관측, 없으면 문서별 최대 rev_no 로 정한다.
+검색 패시지의 현재성은 관측 ledger가 있으면 event_time 최신 관측, 없으면 문서별 최대 rev_no 로 정한다.
+온톨로지(주장·충돌·정본·그래프)의 문서 안 현재 리비전은 항상 최대 rev_no 다(kb_ontology.currency).
 kb_evidence 인용 구간은 INSERT 때 kb_passages.body 와 sha256 을 대조한다.
 아래 트리거 DDL 은 Alembic 0055 와 동기화한다(create_all 로 만드는 테스트 DB 용).
 """
@@ -26,6 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ttakkari.models import Base, utcnow
@@ -49,6 +51,11 @@ class KbSource(Base):
     byte_size: Mapped[int] = mapped_column(BigInteger)
     media_type: Mapped[str | None] = mapped_column(String(120))
     store_path: Mapped[str] = mapped_column(String(500))
+    blob_relpath: Mapped[str | None] = mapped_column(Text, default=None)
+    original_filename: Mapped[str | None] = mapped_column(String(500), default=None)
+    parser_name: Mapped[str] = mapped_column(String(60), default="plain_v1")
+    parser_version: Mapped[str] = mapped_column(String(60), default="1.0")
+    source_meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     collected_at: Mapped[datetime] = mapped_column(default=utcnow)
     origin_meta: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -58,9 +65,7 @@ class KbDocument(Base):
     """정규화 문서의 논리 묶음. 같은 doc_key(수집 계보)의 리비전을 모은다. 가변 껍데기다."""
 
     __tablename__ = "kb_documents"
-    __table_args__ = (
-        UniqueConstraint("doc_key", name="uq_kb_documents_doc_key"),
-    )
+    __table_args__ = (UniqueConstraint("doc_key", name="uq_kb_documents_doc_key"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     doc_key: Mapped[str] = mapped_column(String(500))
     title: Mapped[str] = mapped_column(String(500))
@@ -86,8 +91,12 @@ class KbRevision(Base):
         Index("ix_kb_revisions_supersedes_id", "supersedes_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_documents.id", ondelete="RESTRICT"))
-    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_sources.id", ondelete="RESTRICT"))
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("kb_documents.id", ondelete="RESTRICT")
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("kb_sources.id", ondelete="RESTRICT")
+    )
     rev_no: Mapped[int] = mapped_column(Integer)
     parser_version: Mapped[str] = mapped_column(String(60), default="raw-v1")
     body: Mapped[str] = mapped_column(Text)
@@ -95,7 +104,9 @@ class KbRevision(Base):
     char_count: Mapped[int] = mapped_column(Integer)
     valid_from: Mapped[datetime | None]
     valid_to: Mapped[datetime | None]
-    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("kb_revisions.id", ondelete="SET NULL"))
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("kb_revisions.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -109,16 +120,31 @@ class KbPassage(Base):
         CheckConstraint(
             "char_start >= 0 AND char_end > char_start", name="ck_kb_passage_span"
         ),
+        CheckConstraint(
+            "chunk_kind IN ('prose', 'code', 'table', 'list', 'transcript', 'heading')",
+            name="ck_kb_passage_chunk_kind",
+        ),
         Index("ix_kb_passages_revision_id", "revision_id"),
+        Index("ix_kb_passages_chunk_kind", "chunk_kind"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_revisions.id", ondelete="RESTRICT"))
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("kb_revisions.id", ondelete="RESTRICT")
+    )
     ord: Mapped[int] = mapped_column(Integer)
     heading: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     char_start: Mapped[int] = mapped_column(Integer)
     char_end: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
+    section_path: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    chunk_kind: Mapped[str] = mapped_column(String(24), default="prose")
+    page_no: Mapped[int | None] = mapped_column(Integer, default=None)
+    slide_no: Mapped[int | None] = mapped_column(Integer, default=None)
+    time_start_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    time_end_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    token_estimate: Mapped[int] = mapped_column(Integer, default=0)
+    search_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -127,14 +153,18 @@ class KbEvidence(Base):
 
     __tablename__ = "kb_evidence"
     __table_args__ = (
-        UniqueConstraint("passage_id", "span_start", "span_end", name="uq_kb_evidence_span"),
+        UniqueConstraint(
+            "passage_id", "span_start", "span_end", name="uq_kb_evidence_span"
+        ),
         CheckConstraint(
             "span_start >= 0 AND span_end > span_start", name="ck_kb_evidence_span"
         ),
         Index("ix_kb_evidence_passage_id", "passage_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    passage_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_passages.id", ondelete="RESTRICT"))
+    passage_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("kb_passages.id", ondelete="RESTRICT")
+    )
     span_start: Mapped[int] = mapped_column(Integer)
     span_end: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))

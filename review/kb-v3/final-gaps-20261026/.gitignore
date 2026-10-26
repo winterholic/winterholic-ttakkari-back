@@ -1,0 +1,4 @@
+.runtime/
+server.pid
+server.stop
+search-progress.json

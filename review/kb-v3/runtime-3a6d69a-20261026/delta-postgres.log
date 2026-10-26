@@ -1,0 +1,6 @@
+SHA 3a6d69a524d0f86399cf496d34e77676d50d9d9f + independent new PG tests
+COMMAND ['/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/.venv/bin/python', '-m', 'pytest', '-q', 'tests/test_kb_v3_contract_delta_realdb.py', 'unit_tests/test_kb_access_backfill_currency.py', 'unit_tests/test_kb_v3_contract_followup.py', 'tests/test_kb_v3_fixes_backfill.py', 'tests/test_kb_v3_backfill.py', 'tests/test_kb_v3_api_and_mcp.py', 'tests/test_kb_observations.py']
+EXIT 0
+..............................................................           [100%]
+db reset: 40 selective (avg 12.5/119 tables), 0 forced full, 0 fell back to full
+62 passed in 10.26s

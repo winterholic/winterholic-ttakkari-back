@@ -1,0 +1,22 @@
+{
+  "run_id": "20261026T015052-18f772",
+  "apply": true,
+  "status": "completed",
+  "examined": 36,
+  "by_action": {
+    "enqueue_only": 21,
+    "rechunk_same_body": 15
+  },
+  "batches": 4,
+  "passages_before": 36,
+  "passages_after": 235,
+  "single_passage_documents_before": 15,
+  "single_passage_documents_after": 0,
+  "errors": [],
+  "error_count": 0,
+  "elapsed_seconds": 0.3,
+  "cursor": {
+    "created_at": "2026-10-23T08:19:28.779384+00:00",
+    "document_id": "2731f585-a15a-4951-85b4-67fffc193755"
+  }
+}

@@ -87,16 +87,40 @@ async def deliver_item(db, outbox, item):
                      "item_id": str(item.id), "raw_handle": env["raw"]["blob_handle"], "rights": rights,
                      "collector_source_key": item.source_key,
                      "normalizer_version": normalized["normalizer_version"],
+                     "parser_version": normalized["parser_version"],
+                     "chunker_version": normalized["chunker_version"],
+                     "normalized_sha256": normalized["sha256"],
+                     "normalizer_steps": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "normalizer_steps", []
+                     ),
+                     "heading_structure": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "heading_structure"
+                     ),
                      "raw_alignment_handle": normalized["raw_alignment_handle"]},
     )
     access_row = await db.get(KbDocumentAccess, result.document_id)
+    origin_scope = "work" if item.scope == "work" else "personal"
+    visibility = "work_only" if item.scope == "work" else "global"
     if access_row is None:
-        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id=item.tenant_id, scope=item.scope))
+        db.add(
+            KbDocumentAccess(
+                document_id=result.document_id,
+                tenant_id=item.tenant_id,
+                scope=item.scope,
+                origin_scope=origin_scope,
+                visibility=visibility,
+            )
+        )
     elif (access_row.tenant_id, access_row.scope) != (item.tenant_id, item.scope):
         raise ValueError("delivery_existing_scope_mismatch")
     else:
         access_row.hidden = False
     await segment_revision(db, result.revision_id)
+    from ttakkari.kb_pipeline import enqueue_pipeline_job
+
+    await enqueue_pipeline_job(
+        db, document_id=result.document_id, revision_id=result.revision_id
+    )
     observed = await db.scalar(select(KbObservation.id).where(KbObservation.envelope_id == outbox.envelope_id))
     if observed is None:
         db.add(KbObservation(document_id=result.document_id, revision_id=result.revision_id,

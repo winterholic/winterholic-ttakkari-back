@@ -50,6 +50,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     "tests/test_collector_manage.py",
     "tests/test_collector_budget.py",
     "tests/test_kb_agent_api.py",
+    "tests/test_kb_v3_api_and_mcp.py",
     "tests/test_kb_retrieval.py",
     # 인증 세션 파기 (SEC2-AUTH)
     "tests/test_password_session_revocation.py",

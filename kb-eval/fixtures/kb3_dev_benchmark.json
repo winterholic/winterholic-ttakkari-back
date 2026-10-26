@@ -1,0 +1,531 @@
+{
+  "schema_version": "kb-e0-v1",
+  "kind": "fixture",
+  "corpus_id": "kb3-benchmark-dev",
+  "corpus_version": "1",
+  "sources": [
+    {
+      "doc_key": "k8s-deploy",
+      "source_revision_id": "r-k8s-deploy-v1",
+      "raw_sha256": "b8f4409acfc5c196ab1b4917b1223482fa1634cbf3e31757c2d846d04246d8d1",
+      "body_sha256": "b8f4409acfc5c196ab1b4917b1223482fa1634cbf3e31757c2d846d04246d8d1",
+      "body": "Kubernetes Deployment Rollback: To undo a rollout and return to the previous revision, run kubectl rollout undo deployment. Deployments manage ReplicaSets for declarative pod updates.",
+      "source_uri": "fixture://k8s-deploy",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "Kubernetes Deployment Rollback: To undo a rollout and return to the previous revision, run kubectl rollout undo deployment. Deployments manage ReplicaSets for declarative pod updates.",
+      "passages": [
+        {
+          "id": "p-deploy-rollback",
+          "start": 0,
+          "end": 183
+        }
+      ]
+    },
+    {
+      "doc_key": "k8s-hpa",
+      "source_revision_id": "r-k8s-hpa-v1",
+      "raw_sha256": "b39ff136d48458aa95f7390e1901bc05fe56c47c0c1dc8aed65960e8f1e669b4",
+      "body_sha256": "b39ff136d48458aa95f7390e1901bc05fe56c47c0c1dc8aed65960e8f1e669b4",
+      "body": "Horizontal Pod Autoscaler (HPA) automatically updates a workload resource such as a Deployment or StatefulSet with the aim of automatically scaling the workload to match demand.",
+      "source_uri": "fixture://k8s-hpa",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "Horizontal Pod Autoscaler (HPA) automatically updates a workload resource such as a Deployment or StatefulSet with the aim of automatically scaling the workload to match demand.",
+      "passages": [
+        {
+          "id": "p-hpa-scale",
+          "start": 0,
+          "end": 177
+        }
+      ]
+    },
+    {
+      "doc_key": "k8s-rs",
+      "source_revision_id": "r-k8s-rs-v1",
+      "raw_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+      "body_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+      "body": "A ReplicaSet controller ensures that a specified number of pod replicas are running at any given time. While Deployments manage ReplicaSets, ReplicaSets directly manage Pods.",
+      "source_uri": "fixture://k8s-rs",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "A ReplicaSet controller ensures that a specified number of pod replicas are running at any given time. While Deployments manage ReplicaSets, ReplicaSets directly manage Pods.",
+      "passages": [
+        {
+          "id": "p-rs-manage",
+          "start": 0,
+          "end": 174
+        }
+      ]
+    },
+    {
+      "doc_key": "k8s-ver-conflict-v1",
+      "source_revision_id": "r-k8s-ver-v1",
+      "raw_sha256": "f8eab974f8d56f0115a97809da729ef4e11911fd0414eff1d988a2592fe02f13",
+      "body_sha256": "f8eab974f8d56f0115a97809da729ef4e11911fd0414eff1d988a2592fe02f13",
+      "body": "Kubernetes minimum supported runtime requirement: CRI-O version 1.28 or containerd 1.6 is required for cluster installation.",
+      "source_uri": "fixture://k8s-ver-v1",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "Kubernetes minimum supported runtime requirement: CRI-O version 1.28 or containerd 1.6 is required for cluster installation.",
+      "passages": [
+        {
+          "id": "p-ver-v1",
+          "start": 0,
+          "end": 124
+        }
+      ]
+    },
+    {
+      "doc_key": "k8s-ver-conflict-v2",
+      "source_revision_id": "r-k8s-ver-v2",
+      "raw_sha256": "983174f91bd40a2ca7de35c8ce2e16ef04a14ca511efdd3bbc18f0f7702f496d",
+      "body_sha256": "983174f91bd40a2ca7de35c8ce2e16ef04a14ca511efdd3bbc18f0f7702f496d",
+      "body": "Kubernetes minimum supported runtime requirement: containerd 1.7 or CRI-O 1.30 is required. Older runtime 1.6 is deprecated and unsupported.",
+      "source_uri": "fixture://k8s-ver-v2",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "Kubernetes minimum supported runtime requirement: containerd 1.7 or CRI-O 1.30 is required. Older runtime 1.6 is deprecated and unsupported.",
+      "passages": [
+        {
+          "id": "p-ver-v2",
+          "start": 0,
+          "end": 140
+        }
+      ]
+    },
+    {
+      "doc_key": "unrelated-doc",
+      "source_revision_id": "r-unrelated-v1",
+      "raw_sha256": "f9105fb8165bf81a70a858a6c75d309cba106bec3ebcf6673b96360d0470295d",
+      "body_sha256": "f9105fb8165bf81a70a858a6c75d309cba106bec3ebcf6673b96360d0470295d",
+      "body": "This document discusses unrelated gardening techniques and seasonal plants for indoor cultivation.",
+      "source_uri": "fixture://unrelated",
+      "observed_at": "2026-10-25T00:00:00Z",
+      "raw_utf8": "This document discusses unrelated gardening techniques and seasonal plants for indoor cultivation.",
+      "passages": [
+        {
+          "id": "p-unrelated",
+          "start": 0,
+          "end": 98
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "q1-cross-lingual",
+      "group": "k8s-core",
+      "split": "dev",
+      "documents": [
+        "k8s-deploy"
+      ],
+      "answerable": true,
+      "relevance": {
+        "p-deploy-rollback": 3
+      },
+      "domain": "dev",
+      "types": [
+        "cross_lingual"
+      ],
+      "language_pair": "ko-en",
+      "query": "쿠버네티스 디플로이먼트 롤백 방법",
+      "verification": "draft",
+      "anchors": [
+        {
+          "doc_key": "k8s-deploy",
+          "source_revision_id": "r-k8s-deploy-v1",
+          "raw_sha256": "b8f4409acfc5c196ab1b4917b1223482fa1634cbf3e31757c2d846d04246d8d1",
+          "body_sha256": "b8f4409acfc5c196ab1b4917b1223482fa1634cbf3e31757c2d846d04246d8d1",
+          "source_uri": "fixture://k8s-deploy",
+          "observed_at": "2026-10-25T00:00:00Z",
+          "quote": "kubectl rollout undo deployment",
+          "quote_sha256": "ce538eb84f8a9a4fbab521390ef94ed442b00a44284e65a4d5370215b37c0ce3",
+          "context_before": "Kubernetes Deployment Rollback: To undo a rollout and return to the previous revision, run ",
+          "context_after": ". Deployments manage ReplicaSets for declarative pod updates.",
+          "answer_id": "a-rollback",
+          "match_normalization_version": "exact-v1"
+        }
+      ]
+    },
+    {
+      "id": "q2-abbreviation",
+      "group": "k8s-core",
+      "split": "dev",
+      "documents": [
+        "k8s-hpa"
+      ],
+      "answerable": true,
+      "relevance": {
+        "p-hpa-scale": 3
+      },
+      "domain": "dev",
+      "types": [
+        "abbreviation"
+      ],
+      "language_pair": "ko-en",
+      "query": "k8s HPA 자동확장 원리",
+      "verification": "draft",
+      "anchors": [
+        {
+          "doc_key": "k8s-hpa",
+          "source_revision_id": "r-k8s-hpa-v1",
+          "raw_sha256": "b39ff136d48458aa95f7390e1901bc05fe56c47c0c1dc8aed65960e8f1e669b4",
+          "body_sha256": "b39ff136d48458aa95f7390e1901bc05fe56c47c0c1dc8aed65960e8f1e669b4",
+          "source_uri": "fixture://k8s-hpa",
+          "observed_at": "2026-10-25T00:00:00Z",
+          "quote": "automatically scaling the workload to match demand",
+          "quote_sha256": "c5acc515efc63bf6e892bb8c6e03e5929aac25786c48dde33537962545fe70bf",
+          "context_before": "Horizontal Pod Autoscaler (HPA) automatically updates a workload resource such as a Deployment or StatefulSet with the aim of ",
+          "context_after": ".",
+          "answer_id": "a-hpa",
+          "match_normalization_version": "exact-v1"
+        }
+      ]
+    },
+    {
+      "id": "q3-synonym",
+      "group": "k8s-core",
+      "split": "dev",
+      "documents": [
+        "k8s-rs"
+      ],
+      "answerable": true,
+      "relevance": {
+        "p-rs-manage": 3
+      },
+      "domain": "dev",
+      "types": [
+        "synonym"
+      ],
+      "language_pair": "ko-en",
+      "query": "파드 복제본 관리 컨트롤러 사양",
+      "verification": "draft",
+      "anchors": [
+        {
+          "doc_key": "k8s-rs",
+          "source_revision_id": "r-k8s-rs-v1",
+          "raw_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+          "body_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+          "source_uri": "fixture://k8s-rs",
+          "observed_at": "2026-10-25T00:00:00Z",
+          "quote": "ReplicaSet controller ensures that a specified number of pod replicas are running",
+          "quote_sha256": "76c56dc90142ef657fe0ef9eef403639b943a21039d153282194b59121ac43fe",
+          "context_before": "A ",
+          "context_after": " at any given time. While Deployments manage ReplicaSets, ReplicaSets directly manage Pods.",
+          "answer_id": "a-rs",
+          "match_normalization_version": "exact-v1"
+        }
+      ]
+    },
+    {
+      "id": "q4-relation",
+      "group": "k8s-core",
+      "split": "dev",
+      "documents": [
+        "k8s-deploy",
+        "k8s-rs"
+      ],
+      "answerable": true,
+      "relevance": {
+        "p-deploy-rollback": 2,
+        "p-rs-manage": 3
+      },
+      "domain": "dev",
+      "types": [
+        "graph_relation"
+      ],
+      "language_pair": "ko-en",
+      "query": "디플로이먼트가 관리하는 리소스 오브젝트",
+      "verification": "draft",
+      "anchors": [
+        {
+          "doc_key": "k8s-rs",
+          "source_revision_id": "r-k8s-rs-v1",
+          "raw_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+          "body_sha256": "088b739adb7895da24363b58e0940d94fa54016d1514d11e981af6c8331f0f55",
+          "source_uri": "fixture://k8s-rs",
+          "observed_at": "2026-10-25T00:00:00Z",
+          "quote": "ReplicaSet controller ensures that a specified number of pod replicas are running",
+          "quote_sha256": "76c56dc90142ef657fe0ef9eef403639b943a21039d153282194b59121ac43fe",
+          "context_before": "A ",
+          "context_after": " at any given time. While Deployments manage ReplicaSets, ReplicaSets directly manage Pods.",
+          "answer_id": "a-rel",
+          "match_normalization_version": "exact-v1"
+        }
+      ]
+    },
+    {
+      "id": "q5-conflict",
+      "group": "k8s-core",
+      "split": "dev",
+      "documents": [
+        "k8s-ver-conflict-v1",
+        "k8s-ver-conflict-v2"
+      ],
+      "answerable": true,
+      "relevance": {
+        "p-ver-v1": 1,
+        "p-ver-v2": 3
+      },
+      "domain": "dev",
+      "types": [
+        "conflict"
+      ],
+      "language_pair": "ko-en",
+      "query": "쿠버네티스 최소 지원 런타임 버전 요구사항",
+      "verification": "draft",
+      "anchors": [
+        {
+          "doc_key": "k8s-ver-conflict-v2",
+          "source_revision_id": "r-k8s-ver-v2",
+          "raw_sha256": "983174f91bd40a2ca7de35c8ce2e16ef04a14ca511efdd3bbc18f0f7702f496d",
+          "body_sha256": "983174f91bd40a2ca7de35c8ce2e16ef04a14ca511efdd3bbc18f0f7702f496d",
+          "source_uri": "fixture://k8s-ver-v2",
+          "observed_at": "2026-10-25T00:00:00Z",
+          "quote": "containerd 1.7 or CRI-O 1.30 is required",
+          "quote_sha256": "ee5e3e3247d28e2f2a7b8bcd4ec8e7eeb8f5841ff974930a30dd05fe43f205b3",
+          "context_before": "Kubernetes minimum supported runtime requirement: ",
+          "context_after": ". Older runtime 1.6 is deprecated and unsupported.",
+          "answer_id": "a-conf",
+          "match_normalization_version": "exact-v1"
+        }
+      ]
+    }
+  ],
+  "predictions": {
+    "q1-cross-lingual": {
+      "ranked": [
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-ver-v1",
+        "p-hpa-scale",
+        "p-ver-v2",
+        "p-unrelated"
+      ],
+      "candidates": [
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-ver-v1",
+        "p-hpa-scale",
+        "p-ver-v2",
+        "p-unrelated"
+      ],
+      "coverage": "strong",
+      "score_bytes": [
+        "3fa3f7ced916872b",
+        "3f94e3bcd35a8588",
+        "3f9460aa64c2f838",
+        "3f941205bc01a36e",
+        "3f93dd97f62b6ae8",
+        "3f93a92a30553261"
+      ]
+    },
+    "q2-abbreviation": {
+      "ranked": [
+        "p-hpa-scale",
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-ver-v2",
+        "p-ver-v1",
+        "p-unrelated"
+      ],
+      "candidates": [
+        "p-hpa-scale",
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-ver-v2",
+        "p-ver-v1",
+        "p-unrelated"
+      ],
+      "coverage": "strong",
+      "score_bytes": [
+        "3fa566cf41f212d7",
+        "3f99b3d07c84b5dd",
+        "3f997f62b6ae7d56",
+        "3f98fc504816f007",
+        "3f98c7e28240b780",
+        "3f941205bc01a36e"
+      ]
+    },
+    "q3-synonym": {
+      "ranked": [
+        "p-rs-manage",
+        "p-deploy-rollback",
+        "p-ver-v1",
+        "p-unrelated",
+        "p-hpa-scale",
+        "p-ver-v2"
+      ],
+      "candidates": [
+        "p-rs-manage",
+        "p-deploy-rollback",
+        "p-ver-v1",
+        "p-unrelated",
+        "p-hpa-scale",
+        "p-ver-v2"
+      ],
+      "coverage": "strong",
+      "score_bytes": [
+        "3fa3b645a1cac083",
+        "3fa34d6a161e4f76",
+        "3f94e3bcd35a8588",
+        "3f9495182a9930be",
+        "3f9460aa64c2f838",
+        "3f93dd97f62b6ae8"
+      ]
+    },
+    "q4-relation": {
+      "ranked": [
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-hpa-scale",
+        "p-unrelated",
+        "p-ver-v1",
+        "p-ver-v2"
+      ],
+      "candidates": [
+        "p-deploy-rollback",
+        "p-rs-manage",
+        "p-hpa-scale",
+        "p-unrelated",
+        "p-ver-v1",
+        "p-ver-v2"
+      ],
+      "coverage": "strong",
+      "score_bytes": [
+        "3fa3f7ced916872b",
+        "3f94e3bcd35a8588",
+        "3f9460aa64c2f838",
+        "3f941205bc01a36e",
+        "3f93dd97f62b6ae8",
+        "3f93a92a30553261"
+      ]
+    },
+    "q5-conflict": {
+      "ranked": [
+        "p-deploy-rollback",
+        "p-ver-v1",
+        "p-ver-v2",
+        "p-hpa-scale",
+        "p-rs-manage",
+        "p-unrelated"
+      ],
+      "candidates": [
+        "p-deploy-rollback",
+        "p-ver-v1",
+        "p-ver-v2",
+        "p-hpa-scale",
+        "p-rs-manage",
+        "p-unrelated"
+      ],
+      "coverage": "weak",
+      "score_bytes": [
+        "3f94e3bcd35a8588",
+        "3f9495182a9930be",
+        "3f9460aa64c2f838",
+        "3f941205bc01a36e",
+        "3f93dd97f62b6ae8",
+        "3f93a92a30553261"
+      ]
+    }
+  },
+  "links": [
+    [
+      "k8s-deploy",
+      "k8s-rs"
+    ],
+    [
+      "k8s-ver-conflict-v1",
+      "k8s-ver-conflict-v2"
+    ]
+  ],
+  "rights": [
+    {
+      "component": "code",
+      "original_url": "fixture://authored-kb3",
+      "version": "1",
+      "checked_at": "2026-10-25T00:00:00Z",
+      "storage_allowed": true,
+      "transform_allowed": true,
+      "redistribute_allowed": true,
+      "status": "verified",
+      "basis": "locally authored synthetic fixture for kb3 search",
+      "provenance_kind": "synthetic"
+    },
+    {
+      "component": "data",
+      "original_url": "fixture://authored-kb3",
+      "version": "1",
+      "checked_at": "2026-10-25T00:00:00Z",
+      "storage_allowed": true,
+      "transform_allowed": true,
+      "redistribute_allowed": true,
+      "status": "verified",
+      "basis": "locally authored synthetic fixture for kb3 search",
+      "provenance_kind": "synthetic"
+    },
+    {
+      "component": "qrels",
+      "original_url": "fixture://authored-kb3",
+      "version": "1",
+      "checked_at": "2026-10-25T00:00:00Z",
+      "storage_allowed": true,
+      "transform_allowed": true,
+      "redistribute_allowed": true,
+      "status": "verified",
+      "basis": "locally authored synthetic fixture for kb3 search",
+      "provenance_kind": "synthetic"
+    },
+    {
+      "component": "corpus",
+      "original_url": "fixture://authored-kb3",
+      "version": "1",
+      "checked_at": "2026-10-25T00:00:00Z",
+      "storage_allowed": true,
+      "transform_allowed": true,
+      "redistribute_allowed": true,
+      "status": "verified",
+      "basis": "locally authored synthetic fixture for kb3 search",
+      "provenance_kind": "synthetic"
+    }
+  ],
+  "manifest": {
+    "code_sha": "ced451d3ca9a9ea12d889c78a34b85174c8e4d76",
+    "build_id": "kb3-search-dev-hash-embedding",
+    "model_id": "hash-embedder-deterministic",
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "analyzer_id": "exact-v1",
+    "analyzer_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "quantization": "none",
+    "query_policy_version": "kb3-v1",
+    "seed": 20261025,
+    "config": {
+      "N": 40,
+      "window": "none",
+      "role": "query"
+    }
+  },
+  "policy": {
+    "margin": 0.05,
+    "alpha": 0.05,
+    "bootstrap_replicates": 10000,
+    "live_tolerance": {
+      "version": "initial-unvalidated",
+      "cosine": 0.0001,
+      "logit": 0.001
+    }
+  },
+  "exposure": {
+    "benchmark_family": "none-synthetic",
+    "split_overlap": "unverified",
+    "checkpoint_lineage": "unverified"
+  },
+  "observations": {
+    "kind": "fixture",
+    "database_revision": null,
+    "events": [
+      {
+        "id": "obs-kb3-1",
+        "source_revision_id": "r-k8s-deploy-v1",
+        "event_at": "2026-10-25T00:00:00Z",
+        "received_at": "2026-10-25T00:01:00Z"
+      }
+    ]
+  }
+}

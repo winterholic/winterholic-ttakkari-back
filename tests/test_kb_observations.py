@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from ttakkari import kb_library as lib
 from ttakkari.collector.control_models import KbObservation
 from ttakkari.db import sessionmaker
+from ttakkari.kb_library import ensure_document_access
 from ttakkari.kb_store import ingest_source, segment_revision
 
 
@@ -14,6 +15,7 @@ async def test_observation_time_handles_a_b_a_and_late_old_snapshot():
             result = await ingest_source(db, source_key="observation:test", data=body.encode(),
                                          title="観測", normalized_body=body)
             await segment_revision(db, result.revision_id)
+            await ensure_document_access(db, result.document_id, scope="personal")
             db.add(KbObservation(document_id=result.document_id, revision_id=result.revision_id,
                                   envelope_id=uuid.uuid4(), event_time=start + timedelta(days=day)))
             await db.flush()

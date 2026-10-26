@@ -1,0 +1,58 @@
+F...............FF..................................                     [100%]
+=================================== FAILURES ===================================
+___________________ test_alembic_v3_single_head_and_lineage ____________________
+
+    def test_alembic_v3_single_head_and_lineage():
+        """Alembic 그래프가 단일 head이며 0072_kb_v3_schema_and_scope 가 0071 뒤에 정확히 연결되었는지 검증."""
+        config = Config(str(ROOT / "alembic.ini"))
+        config.set_main_option("script_location", str(ROOT / "alembic"))
+        script = ScriptDirectory.from_config(config)
+        heads = script.get_heads()
+        assert len(heads) == 1, f"Alembic heads must be exactly 1, got: {heads}"
+>       assert heads[0] == "0073_kb_l2_budget_ledger"
+E       AssertionError: assert '0074_kb_v3_research_merge' == '0073_kb_l2_budget_ledger'
+E         
+E         - 0073_kb_l2_budget_ledger
+E         + 0074_kb_v3_research_merge
+
+tests/test_kb_v3_schema_migration.py:65: AssertionError
+______ test_contract_declares_head_and_both_intermediate_revisions_online ______
+
+    def test_contract_declares_head_and_both_intermediate_revisions_online():
+        contract = json.loads((ROOT / "deploy/generation-contract.json").read_text())
+>       assert contract["schema_revision"] == HEAD
+E       AssertionError: assert '0074_kb_v3_research_merge' == '0073_kb_l2_budget_ledger'
+E         
+E         - 0073_kb_l2_budget_ledger
+E         + 0074_kb_v3_research_merge
+
+tests/test_kb_v3_generation_coexistence.py:34: AssertionError
+_______________ test_old_generation_writers_pass_on_head_schema ________________
+
+db = <test_kb_v3_schema_realdb.Db object at 0x1149efe00>
+
+    def test_old_generation_writers_pass_on_head_schema(db: Db):  # noqa: F811
+        db.alembic_ok("upgrade", "0071_library_platform_v2_merge")
+        assert db.version() == "0071_library_platform_v2_merge"
+        # 0071 시점에 이미 있던 문서(신규 컬럼 이전의 행)
+        legacy = uuid.uuid4()
+        db.execute(
+            "INSERT INTO kb_documents (id, doc_key, title, lang, created_at, updated_at) VALUES ($1, 'legacy:coexist', 'legacy', 'ko', now(), now())",
+            legacy,
+        )
+        db.execute("INSERT INTO kb_document_access (document_id, tenant_id, scope, hidden) VALUES ($1, 'owner', 'personal', false)", legacy)
+    
+        db.alembic_ok("upgrade", "head")
+>       assert db.version() == HEAD
+E       AssertionError: assert '0074_kb_v3_research_merge' == '0073_kb_l2_budget_ledger'
+E         
+E         - 0073_kb_l2_budget_ledger
+E         + 0074_kb_v3_research_merge
+
+tests/test_kb_v3_generation_coexistence.py:51: AssertionError
+db reset: 52 selective (avg 6.6/128 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_kb_v3_schema_migration.py::test_alembic_v3_single_head_and_lineage
+FAILED tests/test_kb_v3_generation_coexistence.py::test_contract_declares_head_and_both_intermediate_revisions_online
+FAILED tests/test_kb_v3_generation_coexistence.py::test_old_generation_writers_pass_on_head_schema
+3 failed, 49 passed in 22.90s

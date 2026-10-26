@@ -1,0 +1,55 @@
+{
+  "base_revision": "27ea2f44d24b84e0a5e57b05cacb626571376a76",
+  "environment": "Codex command sandbox; SQLite memory/DB I/O doubles only; no PostgreSQL, no network server",
+  "checks": [
+    {
+      "command": [
+        "env",
+        "-u",
+        "TTAKKARI_TEST_DB",
+        ".venv/bin/pytest",
+        "-q",
+        "unit_tests/test_kb_v3_provenance_policy.py",
+        "unit_tests/test_kb_v3_conflict_redetection.py",
+        "unit_tests/test_kb_access.py",
+        "unit_tests/test_kb_backfill_pure.py",
+        "unit_tests/test_kb_access_backfill_currency.py",
+        "unit_tests/test_kb_v3_contract_followup.py"
+      ],
+      "exit": 0,
+      "stdout_and_stderr": "green-final.log"
+    },
+    {
+      "command": [
+        ".venv/bin/ruff",
+        "check",
+        "src/ttakkari/kb_access_backfill.py",
+        "src/ttakkari/kb_v3_views.py",
+        "src/ttakkari/api/kb_library.py",
+        "unit_tests/test_kb_access_backfill_currency.py",
+        "unit_tests/test_kb_v3_contract_followup.py"
+      ],
+      "exit": 0,
+      "stdout_and_stderr": "ruff-final.log"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "stdout_and_stderr": "diff-check.log"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "exit": 0,
+      "stdout_and_stderr": "staged-diff-check.log"
+    }
+  ]
+}

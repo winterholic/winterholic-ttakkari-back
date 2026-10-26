@@ -7,6 +7,14 @@ from __future__ import annotations
 
 import math
 
+# These server-owned receipts identify execution and cleanup, not the conditions
+# under which a method failed. Preserve them in the returned original snapshot.
+# Unknown fields remain conditions; a research_* prefix alone grants no exemption.
+_EXECUTION_RECEIPT_FIELDS = frozenset({
+    "research_execution_owner", "research_external_resource", "research_model_workers",
+    "research_memory_guard", "research_resource_recovery",
+})
+
 
 def applicability(conditions: dict, environment: dict) -> dict:
     missing, mismatches = [], []
@@ -118,7 +126,8 @@ def rank_methods(
         failures = []
         for failure in stored_context.get("failures", []):
             declared = failure.get("declared_environment", {})
-            observed = failure.get("observed_environment", {})
+            snapshot = failure.get("observed_environment", {})
+            observed = {key: value for key, value in snapshot.items() if key not in _EXECUTION_RECEIPT_FIELDS}
             shared = {key: value for key, value in declared.items() if key in observed}
             conflicts = sorted(applicability(shared, observed)["mismatches"])
             fits = [applicability(conditions, environment) for conditions in (declared, observed) if conditions]
@@ -126,6 +135,7 @@ def rank_methods(
             status = ("unknown" if conflicts else "incompatible" if any(f["status"] == "incompatible" for f in fits)
                       else "unknown" if any(f["status"] == "unknown" for f in fits) else "applicable")
             failures.append({**failure, "environment_conflicts": conflicts,
+                             "execution_metadata_fields": sorted(snapshot.keys() & _EXECUTION_RECEIPT_FIELDS),
                              "applicability": {"status": status, "conditions": fits},
                              "affects_selection": status != "incompatible"})
         if failures:

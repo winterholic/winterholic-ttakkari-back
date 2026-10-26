@@ -3,6 +3,7 @@
 import json
 import os
 import uuid
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -84,10 +85,11 @@ async def test_real_failure_reappears_in_followup_selection_without_global_exclu
         path.write_text(json.dumps(receipts, ensure_ascii=False, indent=2) + "\n")
 
 
-def test_conflicting_declared_and_observed_environments_require_review():
+@pytest.mark.parametrize("metadata", [{}, {"research_execution_owner": {"contract": 1}}])
+def test_conflicting_declared_and_observed_environments_require_review(metadata):
     method = {"id": "method", "title": "Method", "conditions": {"backend": "cpu"}, "cost_seconds": 1,
               "research_context": {"failures": [{"declared_environment": {"dataset": "A"},
-                                                 "observed_environment": {"dataset": "B"}}]}}
+                                                 "observed_environment": {"dataset": "B", **metadata}}]}}
     row = rank_methods([method], {"backend": "cpu", "dataset": "B"}, 60)[0]
     assert row["eligibility"] == "needs_review"
     failure = row["reason"]["research_context"]["failures"][0]
@@ -180,3 +182,45 @@ async def test_registry_source_node_lineage_exposes_failed_run_only_once(compare
         await db.flush()
         bounded = await service.selection_context(db, [node], "personal", limit=1)
         assert bounded[str(node.id)]["truncated"] is True  # omitted registry identity may own failures
+
+
+@pytest.mark.parametrize('dataset,expected', [('A', 'applicable'), ('B', 'incompatible'), (None, 'unknown')])
+@pytest.mark.parametrize('metadata_key', [
+    'research_execution_owner', 'research_external_resource', 'research_model_workers',
+    'research_memory_guard', 'research_resource_recovery',
+])
+def test_failure_selection_preserves_execution_receipts_without_treating_them_as_conditions(dataset, expected, metadata_key):
+    observed = {metadata_key: {'contract': 1, 'token': 'run-specific-identity'}}
+    failure = {'declared_environment': {'dataset': 'A'}, 'observed_environment': observed}
+    before = deepcopy(failure)
+    method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
+              'research_context': {'failures': [failure]}}
+    environment = {'backend': 'cpu', **({'dataset': dataset} if dataset else {})}
+    result = rank_methods([method], environment, 60)[0]['reason']['research_context']['failures'][0]
+    assert result['observed_environment'] == before['observed_environment']
+    assert result['applicability']['status'] == expected
+    assert result['execution_metadata_fields'] == [metadata_key]
+    assert result['affects_selection'] == (dataset != 'B')
+    assert failure == before
+
+
+@pytest.mark.parametrize('observed', [{'hardware': 'cpu'}, {'research_custom_condition': 'x'}])
+def test_failure_selection_retains_unrecognized_observation_conditions(observed):
+    method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
+              'research_context': {'failures': [{'declared_environment': {'dataset': 'A'},
+                                                 'observed_environment': observed}]}}
+    failure = rank_methods([method], {'backend': 'cpu', 'dataset': 'A'}, 60)[0]['reason']['research_context']['failures'][0]
+    assert failure['applicability']['status'] == 'unknown'
+    assert failure['execution_metadata_fields'] == []
+    assert failure['applicability']['conditions'][-1]['missing'] == list(observed)
+
+
+def test_execution_receipts_alone_do_not_establish_failure_conditions():
+    observed = {'research_execution_owner': {'contract': 1, 'token': 'identity'}}
+    for declared in ({}, {'research_execution_owner': 'explicit-condition'}):
+        method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
+                  'research_context': {'failures': [{'declared_environment': declared,
+                                                     'observed_environment': observed}]}}
+        failure = rank_methods([method], {'backend': 'cpu'}, 60)[0]['reason']['research_context']['failures'][0]
+        assert failure['applicability']['status'] == 'unknown'
+        assert failure['affects_selection'] is True

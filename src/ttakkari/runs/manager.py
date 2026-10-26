@@ -14,7 +14,7 @@ import time
 import uuid
 from collections.abc import Iterable
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -637,6 +637,8 @@ class RunManager:
         계정을 계속 두드리지 않는다. 사용자에게 한 번 알리고(재시작 뒤 다시 대기해도 중복 알림 없음), 한도가 계속 반복되면
         max_limit_waits 번째에 실패로 끝낸다. handoff 는 중간에 멈춘 Run 의 진행·미완료 내용으로, 재개 때 새 계정에 실린다."""
         until = min(u for _, u in blocked)
+        capacity_wait = any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))
+                            for p, _ in blocked)
         run.resume_after = datetime.fromtimestamp(until, UTC)
         if handoff:
             run.resume_handoff = handoff
@@ -649,7 +651,7 @@ class RunManager:
                 RunEvent.run_id == run.id, RunEvent.type == "run.waiting")) or 0
             if waits >= get_settings().max_limit_waits:
                 await self._finish(db, run, RunStatus.failed,
-                                   error=f"사용량 한도 때문에 {waits}번 기다렸지만 끝내지 못했습니다. 한도 상태를 확인해 주세요.")
+                                   error=f"사용량 한도 또는 모델 혼잡 때문에 {waits}번 기다렸지만 끝내지 못했습니다. 계정·모델 상태를 확인해 주세요.")
                 return
             if run.status == RunStatus.running:
                 run.status = RunStatus.queued
@@ -659,6 +661,7 @@ class RunManager:
                 handoff = str((prev.payload or {}).get("handoff") or "")
             waiting_payload: dict[str, object] = {
                 "until": _iso(until),
+                "reason": "model_capacity" if capacity_wait else "usage_limit",
                 "accounts": [{"name": p.name, "engine": p.engine, "resets_at": _iso(u)}
                              for p, u in sorted(blocked, key=lambda b: b[1])],
                 "handoff": (handoff or "")[:WAIT_HANDOFF_CHARS],
@@ -671,7 +674,7 @@ class RunManager:
             events.append(db, run, "run.waiting", waiting_payload)
             run.resume_after = datetime.fromtimestamp(until, UTC)
             await self._commit(db, run)
-            _spawn(_notify_waiting(run, sess.title, until))
+            _spawn(_notify_waiting(run, sess.title, until, capacity_wait=capacity_wait))
         self._arm(run.id, sess.id, until)
 
     async def release_waiting(self) -> None:
@@ -1015,7 +1018,12 @@ class RunManager:
             profiles, blocked = await available_profiles()
         if not profiles:
             if blocked:
-                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
+                # Saturation is not evidence that every cloud account exhausted its allowance.
+                if any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))
+                       for p, _ in blocked):
+                    emergency, qwen_state = None, "ineligible"
+                else:
+                    emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
                 if emergency is None:
                     await self._wait_for_reset(db, run, sess, blocked, qwen_state=qwen_state)
                     return
@@ -1244,7 +1252,9 @@ class RunManager:
             last_fallback = {
                 "from": from_prof.name, "from_engine": from_prof.engine, "from_model": from_prof.model,
                 "to": prof.name, "to_engine": prof.engine, "to_model": prof.model,
-                "reason": "usage_limit", "fallback_tier": tier,
+                "reason": "model_capacity" if profiles_mod.cooldown_until(
+                    profiles_mod.model_capacity_key(from_prof.engine, from_prof.model)) else "usage_limit",
+                "fallback_tier": tier,
                 "detail": f"고정 엔진({from_prof.engine}/{from_prof.model}) 한도로 {prof.engine}/{prof.model}({prof.name}) 경로로 전환",
                 "reset_at": _iso(from_until),
                 "mode": "resume" if lookup_resume_id(prof) else "handoff",
@@ -1464,9 +1474,19 @@ class RunManager:
                         managed_cp.record_run, prof.config_dir, success=not failed,
                         error=" ".join(t for t in texts if t)[:2000] if failed else None,
                         is_system=prof.config_dir is None)
-            limited = (failed and prof.engine != "qwen-local"
+            model_capacity = (failed and not stopped and prof.engine == "codex"
+                              and profiles_mod.is_model_capacity(*texts))
+            limited = (failed and not model_capacity and prof.engine != "qwen-local"
                        and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
             reset_at: float | None = None
+            if model_capacity:
+                key = profiles_mod.model_capacity_key(prof.engine, model)
+                profiles_mod.cool_down(key, profiles_mod.MODEL_CAPACITY_COOLDOWN_SECONDS)
+                reset_at = profiles_mod.cooldown_until(key)
+                events.append(db, run, "engine.capacity", {
+                    "account": prof.name, "engine": prof.engine, "model": model,
+                    "retry_at": _iso(reset_at), "detail": (state.error or tail or "")[:300],
+                })
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
                 reset_at = state.limit_resets_at or profiles_mod.reset_epoch_from(*texts)
@@ -1495,6 +1515,8 @@ class RunManager:
                 })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
             remaining = [p for p in remaining if not profiles_mod.profile_limited_until(p)]
+            remaining = [p for p in remaining if not profiles_mod.cooldown_until(
+                profiles_mod.model_capacity_key(p.engine, _profile_model(sess, run, p, profiles[0], is_meeting)))]
             if missing and task_type:
                 # All models of an engine use the same executable. A different model cannot
                 # recover a missing binary; continue with a suitable different engine once.
@@ -1541,11 +1563,11 @@ class RunManager:
                     # 대기 사유에는 Qwen 실패를 정확히 남긴다(선택 당시 "ready"가 아님).
                     qwen_state = "qwen_attempt_failed"
                     break
-            if stopped or not failed or not (missing or limited or invalid_model or auth_failed) or not remaining:
+            if stopped or not failed or not (missing or limited or model_capacity or invalid_model or auth_failed) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
-                if limited and not stopped:
+                if (limited or model_capacity) and not stopped:
                     # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
@@ -1564,7 +1586,7 @@ class RunManager:
             last_fallback = {
                 "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
                 "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
-                "reason": "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "usage_limit",
+                "reason": "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "model_capacity" if model_capacity else "usage_limit",
                 "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄
@@ -2028,11 +2050,12 @@ async def _notify(run: Run, title: str | None) -> None:
         log.exception("push notification failed for run %s", run.id)
 
 
-async def _notify_waiting(run: Run, title: str | None, until: float) -> None:
+async def _notify_waiting(run: Run, title: str | None, until: float, *, capacity_wait: bool = False) -> None:
     try:
         when = datetime.fromtimestamp(until).astimezone().strftime("%m/%d %H:%M")
         name = (title or "새 세션")[:60]
-        await notify(PushKind.run_waiting, "작업 대기 · 사용량 한도", f"{name} · {when}에 이어서 진행",
+        reason = "모델 혼잡" if capacity_wait else "사용량 한도"
+        await notify(PushKind.run_waiting, f"작업 대기 · {reason}", f"{name} · {when}에 이어서 진행",
                      url=f"/chat/{run.session_id}", tag=f"{run.session_id}-waiting", target_id=run.id)
     except Exception:
         log.exception("push notification failed for run %s", run.id)
@@ -2228,6 +2251,25 @@ async def _qwen_adapter(db: AsyncSession) -> QwenLocalAdapter:
 
 
 async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
+    free, blocked = await _eligible_profiles(db, sess, run, is_meeting)
+    ready = []
+    for prof in free:
+        model = _profile_model(sess, run, prof, free[0], is_meeting)
+        until = profiles_mod.cooldown_until(profiles_mod.model_capacity_key(prof.engine, model))
+        if until:
+            blocked.append((replace(prof, model=model), until))
+        else:
+            ready.append(prof)
+    return ready, blocked
+
+
+def _profile_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile,
+                   first: profiles_mod.Profile, is_meeting: bool) -> str | None:
+    task, pinned, _ = _routing_policy(sess, run, is_meeting)
+    return prof.model if is_meeting or task or pinned else _launch_model(sess, run, prof, first)[0]
+
+
+async def _eligible_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
     from ttakkari.meetings import routing as meeting_routing
     from ttakkari.runs import worker_routing
     task, pinned, requested = _routing_policy(sess, run, is_meeting)

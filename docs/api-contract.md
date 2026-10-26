@@ -173,10 +173,11 @@ payload 는 `{title, body, url, tag}`:
   - 재생 평가: `uv run ttakkari desk-eval [--limit N] [--engine codex|claude]`. eval-set 을 지금 접수 지침·모델로 다시 분류해 정확도·오답·지연 중앙값을 출력한다. 계정 사용량을 쓴다.
   - 고정 벤치 API/MCP: 개인 오케스트레이터만 `start_luna_common30_v2()`로 시작하고 `luna_common30_v2_status(job_id)`로 체크포인트·raw 행을 읽는다. 요청 본문·모델·프롬프트·경로는 받지 않는다. 고정 `common30-v2.jsonl` 30개 × 3회, 개인 Codex 프로필의 `gpt-6-luna/high`만 사용한다. `luna_common30_v2_cancel(job_id)`는 취소하고 부분 결과를 저장한다. 엔드포인트는 `POST /api/orchestrator/luna-common30-v2`, `GET|DELETE /api/orchestrator/luna-common30-v2/{job_id}`. 응답은 실제 모델 호출 완료 상태를 포함하며 result rows는 raw output을 담는다.
 - 비서 지침: `GET|PUT|DELETE /api/assistant/instructions?role=common|desk|lead|worker`(기본 `common`) → `{text, role, is_default}`. DELETE 는 기본값으로 되돌린다(기본값은 접수만 있다).
-- Run 이벤트(사용량 한도, ADR 0006 "한도 전환·대기"):
+- Run 이벤트(사용량 한도·모델 혼잡, ADR 0006 "한도 전환·대기"):
   - `account.limited` `{account, engine, reset_at|null, detail}` 한도 감지. 그 계정은 `reset_at`(모르면 `profile_cooldown_seconds` 뒤)까지 쉰다.
-  - `engine.fallback` `{from, to, reason: usage_limit|missing, detail, reset_at, mode: resume|handoff}` 같은 Run 이 다음 계정으로 넘어감.
-  - `run.waiting` `{until, accounts:[{name, engine, resets_at}], handoff}` 쓸 수 있는 계정이 없다. Run 은 `queued` 로 남고 `until`(가장 이른 초기화)에 같은 Run 이 이어진다. `handoff` 는 재개용 내부 인계문이다.
+  - `engine.capacity` `{account, engine, model, retry_at, detail}` Codex의 `Selected model is at capacity` 감지. 같은 엔진·모델을 모든 계정에서 120초 제외하며 다른 모델의 사용량 한도는 소진 처리하지 않는다. 제외 시각은 재시작 후에도 유지한다.
+  - `engine.fallback` `{from, to, reason: usage_limit|model_capacity|missing|invalid_model|auth_failed, detail, reset_at, mode: resume|handoff}` 같은 Run 이 다음 계정·모델의 엔진 대화로 넘어감. 모델 혼잡도 기존 진행 인계와 중복 실행 방지 안내를 적용한다.
+  - `run.waiting` `{until, reason: usage_limit|model_capacity, accounts:[{name, engine, resets_at}], handoff}` 쓸 수 있는 계정·모델이 없다. Run 은 `queued` 로 남고 `until`(가장 이른 초기화 또는 혼잡 재시도 시각)에 같은 Run 이 이어진다. `handoff` 는 재개용 내부 인계문이다. 혼잡 대기도 기존 `max_limit_waits` 상한과 취소 규칙을 따른다. 이전 이벤트에는 `reason`이 없을 수 있다.
   - `run.resumed` `{account}` 대기 뒤 이어서 시작. 이어 받는 Run 은 `run.status`(`running`) 도 다시 남긴다.
   - 대기를 시작할 때 푸시(`push.run_waiting`) 한 번. 대기 중 취소는 일반 대기 Run 취소와 같다.
 

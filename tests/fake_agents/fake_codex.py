@@ -181,6 +181,15 @@ def main():
     if "CODEX_LIMIT" in prompt:
         emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit."}})
         return 1
+    if "CODEX_CAPACITY" in prompt and not ("CAPACITY_ONCE" in prompt and resume):
+        emit({"type": "item.completed", "item": {"id": "progress", "type": "agent_message",
+              "text": "Existing worker was already created; checkpoint alpha saved."}})
+        message = "Selected model is at capacity. Please try a different model."
+        if "CAPACITY_STDERR" in prompt:
+            print(message, file=sys.stderr)
+        else:
+            emit({"type": "turn.failed", "error": {"message": message}})
+        return 1
     if "FAIL" in prompt:
         emit({"type": "turn.failed", "error": {"message": "fake codex failure"}})
         return 1

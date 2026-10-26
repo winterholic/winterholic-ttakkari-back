@@ -50,6 +50,8 @@ AUTH_ERROR_RE = re.compile(
     r"sign in|re-authenticate|auth_expired|setup_required",
     re.IGNORECASE,
 )
+MODEL_CAPACITY_RE = re.compile(r"\bselected model is at capacity\b", re.IGNORECASE)
+MODEL_CAPACITY_COOLDOWN_SECONDS = 120
 
 # 한도 걸린 계정이 쉬는 시각(unix 초). 재시작해도 초기화 전에 다시 두드리지 않게 app_settings 에도 적는다.
 _cooldown: dict[uuid.UUID, float] = {}
@@ -688,6 +690,17 @@ def is_auth_error(*texts: str | None) -> bool:
     """인증 실패, 만료, 로그인 필요 오류인지 판별한다."""
     return any(AUTH_ERROR_RE.search(line) and not PERMISSION_ERROR_RE.search(line)
                for text in texts if text for line in text.splitlines())
+
+
+def is_model_capacity(*texts: str | None) -> bool:
+    """A saturated provider model is distinct from an account's usage allowance."""
+    return any(MODEL_CAPACITY_RE.search(line) and not PERMISSION_ERROR_RE.search(line)
+               for text in texts if text for line in text.splitlines())
+
+
+def model_capacity_key(engine: str, model: str | None) -> uuid.UUID:
+    """Persist a short model-wide cooldown without disabling unrelated account models."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:model-capacity:{engine}:{model or 'default'}")
 
 
 def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:

@@ -1,0 +1,82 @@
+[0068_library_intent] 보관함 분류 개편 완료: 내 보관함 유지 0건, AI 작업 파일로 이동 0건
+WARNI [ttakkari.config] env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+WARNI [ttakkari.config] cors_origins가 localhost/loopback 전용(http://localhost:5173,http://127.0.0.1:5173)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, initial
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, push subscriptions
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, orchestrator: session kind/parent, per-profile engine sessions, run origin/profile
+INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, engine accounts
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, transfer tokens
+INFO  [alembic.runtime.migration] Running upgrade 0005 -> 0006, assistant context: ontology + RAG (pgvector, pg_trgm)
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, app settings (key-value): temporary account priority etc.
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, account pools (personal | work) for accounts and sessions
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, memos and calendar events
+INFO  [alembic.runtime.migration] Running upgrade 0009 -> 0010, account pools -> one global order with a work group tag
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, calendar event reminders
+INFO  [alembic.runtime.migration] Running upgrade 0011 -> 0012, memo categories
+INFO  [alembic.runtime.migration] Running upgrade 0012 -> 0013, Model-free context library: scopes, project sources and lexical indexes.
+INFO  [alembic.runtime.migration] Running upgrade 0013 -> 0014, artifacts.area: 보관함 파일(files)과 에이전트 파일(agent) 분리
+INFO  [alembic.runtime.migration] Running upgrade 0014 -> 0015, account_usage_samples: 계정별 사용량 측정값(최신값 + 추세용 이력)
+INFO  [alembic.runtime.migration] Running upgrade 0015 -> 0016, meetings, meeting_items, meeting_proposals: 회의록(ADR 0010)
+INFO  [alembic.runtime.migration] Running upgrade 0016 -> 0017, work mode keeps its own on/off and order per account
+INFO  [alembic.runtime.migration] Running upgrade 0017 -> 0018, pms_projects, pms_tasks, pms_milestones, pms_notes: 프로젝트 관리 PMS·WBS(ADR 0012)
+INFO  [alembic.runtime.migration] Running upgrade 0018 -> 0019, persist Run heartbeat and bounded restart-resume state
+INFO  [alembic.runtime.migration] Running upgrade 0019 -> 0020, desk_feedback: 접수 분류에 대한 사용자 판정(ADR 0013)
+INFO  [alembic.runtime.migration] Running upgrade 0020 -> 0021, meeting_chunks(회의록 벡터), clovanote_notes, clovanote_jobs: 클로바노트 연동과 회의록 벡터 저장(ADR 0021)
+INFO  [alembic.runtime.migration] Running upgrade 0021 -> 0022, 회의록을 PMS 프로젝트에 연결한다. 기존 맥락 프로젝트 연결은 보존한다.
+INFO  [alembic.runtime.migration] Running upgrade 0022 -> 0023, per-account usage ceilings
+INFO  [alembic.runtime.migration] Running upgrade 0023 -> 0024, Daily checklists and recurring templates.
+Revision ID: 0024
+Revises: 0023
+INFO  [alembic.runtime.migration] Running upgrade 0024 -> 0025, On-demand local transcription attempts and immutable source segments.
+INFO  [alembic.runtime.migration] Running upgrade 0025 -> 0026, Retire the external integration without discarding source data (ADR 0027).
+INFO  [alembic.runtime.migration] Running upgrade 0026 -> 0027, Persist the direct source meeting independently of STT attempt records.
+INFO  [alembic.runtime.migration] Running upgrade 0027 -> 0028, Approved public capability snapshots, plus transactional source revocation.
+INFO  [alembic.runtime.migration] Running upgrade 0028 -> 0029_antigravity_usage_credits, Persist the separately measured Antigravity AI credit balance.
+INFO  [alembic.runtime.migration] Running upgrade 0029_antigravity_usage_credits -> 0030_runtime_generations, Add generation ownership without changing existing Run status values.
+INFO  [alembic.runtime.migration] Running upgrade 0030_runtime_generations -> 0031_notifications, Persist notifications independently of Web Push subscriptions.
+INFO  [alembic.runtime.migration] Running upgrade 0031_notifications -> 0032_weather_briefings, Store daily weather input, analysis status and generated briefings.
+INFO  [alembic.runtime.migration] Running upgrade 0032_weather_briefings -> 0033_weather_analysis_engine, Record which engine and model produced each weather briefing.
+INFO  [alembic.runtime.migration] Running upgrade 0033_weather_analysis_engine -> 0034_knowledge_ledger, Add immutable knowledge provenance and versioned assertion history.
+INFO  [alembic.runtime.migration] Running upgrade 0034_knowledge_ledger -> 0035_qwen_token_usage, Persist per-call token usage returned by llama.cpp for operational desk routing.
+INFO  [alembic.runtime.migration] Running upgrade 0035_qwen_token_usage -> 0036_system_resource_samples, Persist bounded GPU and CPU resource history.
+INFO  [alembic.runtime.migration] Running upgrade 0036_system_resource_samples -> 0037_worker_routing, Persist auto-worker task policy and strict-engine lock option on sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0037_worker_routing -> 0038_qwen_flash_usage, Persist standalone Flash Next token usage windows and samples.
+INFO  [alembic.runtime.migration] Running upgrade 0038_qwen_flash_usage -> 0039_ops_log_issues, Add operational log issues, events, hourly stats and ingest cursors (ADR 0033). New tables only.
+INFO  [alembic.runtime.migration] Running upgrade 0039_ops_log_issues -> 0040_ops_event_receipts, Preserve source event IDs independently of sampled details; additive only.
+INFO  [alembic.runtime.migration] Running upgrade 0040_ops_event_receipts -> 0041_reverse_jobs, Reverse-engineering jobs (ADR 0038); additive only.
+INFO  [alembic.runtime.migration] Running upgrade 0041_reverse_jobs -> 0042_artcraft_tasks, Add ArtCraft work tasks (ADR 0039). New table only.
+INFO  [alembic.runtime.migration] Running upgrade 0042_artcraft_tasks -> 0043_reverse_jobs_jsonb, Reverse jobs stages/result를 JSONB로 맞춘다(모델은 JSONB, ADR 0040). 0041은 손대지 않는다.
+INFO  [alembic.runtime.migration] Running upgrade 0043_reverse_jobs_jsonb -> 0044_reverse_reconstruction, 자연어 역분석 작업의 작업공간과 구현·검증 세션 연결. 이전 기록은 유지한다.
+INFO  [alembic.runtime.migration] Running upgrade 0044_reverse_reconstruction -> 0045_tossinvest_runs, 토스증권 연결 확인·동기화 기록. 금액·수량·쿠키는 저장하지 않는다(ADR 0044).
+INFO  [alembic.runtime.migration] Running upgrade 0045_tossinvest_runs -> 0046_notebooklm, NotebookLM 연동: 계정 상태·소스 중복 원장·작업. 쿠키와 토큰은 DB 에 두지 않는다(ADR 0045).
+INFO  [alembic.runtime.migration] Running upgrade 0046_notebooklm -> 0047_game_studio, 게임 스튜디오 최소 연결·빌드 기록(ADR 0046): game_projects, game_builds, game_feedbacks. 신규 표만 추가한다(online-safe).
+INFO  [alembic.runtime.migration] Running upgrade 0047_game_studio -> 0048_game_active_build, 게임 활성 빌드와 복구 출처(ADR 0050): 기존 표에 NULL 허용 컬럼 두 개만 추가한다(online-safe). active_build_id 는 순환 참조라 FK 없이 둔다.
+INFO  [alembic.runtime.migration] Running upgrade 0048_game_active_build -> 0049_google_accounts, Google 계정 공통 상태(ADR 0051). 신규 표만 추가하고 notebooklm_accounts 에서 계정 수준 상태를 복사한다.
+INFO  [alembic.runtime.migration] Running upgrade 0049_google_accounts -> 0050_login_throttle_shadow, 로그인 제한 S1 shadow 관측 표(SEC2-LGN-01): login_throttle, login_bucket, login_attempts. 신규 표만 추가한다(online-safe).
+INFO  [alembic.runtime.migration] Running upgrade 0050_login_throttle_shadow -> 0051_scope_memo_event, Memo·CalendarEvent scope 도입(SEC2-AUTHZ-01).
+INFO  [alembic.runtime.migration] Running upgrade 0051_scope_memo_event -> 0052_artifact_area_byproducts, 보관함 재분류: 파일 탭에 쌓인 에이전트 부산물을 에이전트 파일로 옮긴다.
+INFO  [alembic.runtime.migration] Running upgrade 0052_artifact_area_byproducts -> 0053_kb_core, 범용 지식 도서관 KB1: 원본·문서·리비전·패시지 테이블. 근거·트리거는 0054 에 둔다(ADR 0063).
+INFO  [alembic.runtime.migration] Running upgrade 0053_kb_core -> 0054_kb_evidence, 범용 지식 도서관 KB1: 근거 테이블 + 불변 트리거 + 인용 구간 해시 검증(ADR 0063).
+INFO  [alembic.runtime.migration] Running upgrade 0054_kb_evidence -> 0055_kb_immutability_hardening, 범용 지식 도서관 KB1 보완: DELETE 차단 불변 트리거 및 RESTRICT 외래키(검토 지적 1).
+INFO  [alembic.runtime.migration] Running upgrade 0055_kb_immutability_hardening -> 0056_research_lab, Independent Research Lab, reusing Knowledge Library KB1/KB2. Additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 0056_research_lab -> 0057_scheduled_actions, 영속 예약 작업 표(scheduled_actions): 재배포·세대 전환·재시작 뒤에도 살아남는 작업 큐. 신규 표만 추가한다(online-safe).
+INFO  [alembic.runtime.migration] Running upgrade 0057_scheduled_actions -> 0058_kb_immutability_truncate, 범용 지식 도서관 KB1·KB2 보완: TRUNCATE 차단, 리비전/패시지 본문·해시 불변식 트리거 및 안전한 다운그레이드 가드.
+INFO  [alembic.runtime.migration] Running upgrade 0058_kb_immutability_truncate -> 0059_collector_intake, 수집 플랫폼 1단계: 영속 수집 작업(collector_jobs) 및 전송 아웃박스(collector_outbox) 추가.
+INFO  [alembic.runtime.migration] Running upgrade 0059_collector_intake -> 0060_collector_job_runtime, 수집 플랫폼 S2-02: collector_jobs 에 claim·cursor·취소·오류 기록 컬럼 추가.
+INFO  [alembic.runtime.migration] Running upgrade 0060_collector_job_runtime -> 0061_local_tts, 로컬 TTS 표(tts_jobs, tts_cache). 신규 표만 추가한다(online-safe). 원문 컬럼은 두지 않는다(ADR 0062).
+INFO  [alembic.runtime.migration] Running upgrade 0061_local_tts -> 0062_delivery_change_sets, AI-native 파이프라인 change_sets 레지스트리 표 추가 (ADR 0066).
+INFO  [alembic.runtime.migration] Running upgrade 0062_delivery_change_sets -> 0063_collector_stage_items, 수집 플랫폼 S2-03/04/06: 출처 정책, 호스트 상태(robots·cooldown), fetch 캐시, 수집 항목, 중복 band 표.
+INFO  [alembic.runtime.migration] Running upgrade 0063_collector_stage_items -> 0064_run_executor, Independent executor ownership; additive while disabled, protocol2 activation.
+INFO  [alembic.runtime.migration] Running upgrade 0064_run_executor -> 0065_collector_delivery, Managed collection, scoped KB access, observations, shadow quality and vector projections. Additive only.
+INFO  [alembic.runtime.migration] Running upgrade 0065_collector_delivery -> 0066_collector_budget, Collector absolute spend ledger, scoped result cache and runtime flags. Additive only (CP-S2-05, CP-S2-10).
+INFO  [alembic.runtime.migration] Running upgrade 0066_collector_budget -> 0067_collector_outbox_retry, Delivery retry bookkeeping on the outbox. Additive: nullable or defaulted columns only (CP-S2-08).
+INFO  [alembic.runtime.migration] Running upgrade 0067_collector_outbox_retry -> 0068_tts_payload_chunks, TTS accepted work persistence chunks_json on tts_jobs (ADR 0066 / FND-01).
+INFO  [alembic.runtime.migration] Running upgrade 0068_tts_payload_chunks -> 0069_game_build_executor_handoff, Game build executor handoff marker on game_builds (Platform V2 Step 5).
+INFO  [alembic.runtime.migration] Running upgrade 0069_game_build_executor_handoff -> 0070_background_consumer_queue, Durable inputs for background consumers moved off the API process (platform v2 Step 6).
+INFO  [alembic.runtime.migration] Running upgrade 0067_collector_outbox_retry -> 0068_library_intent, 내 보관함 분류 체계 개편: 보관 의도(area)와 출처(origin) 분리, 카테고리(category) 추가.
+INFO  [alembic.runtime.migration] Running upgrade 0068_library_intent, 0070_background_consumer_queue -> 0071_library_platform_v2_merge, Converge the deployed library schema and platform V2 additions.
+INFO  [alembic.runtime.migration] Running upgrade 0071_library_platform_v2_merge -> 0072_collection_missions, Durable collection intent and links to the existing acquisition ledger. Additive.
+INFO  [alembic.runtime.migration] Running upgrade 0072_collection_missions -> 0073_collection_mission_runs, Run identity for periodic mission refresh so page budgets apply per run. Additive.
+INFO  [alembic.runtime.migration] Running upgrade 0073_collection_mission_runs -> 0074_collection_single_library, Single knowledge library (C2): access pool columns, document aliases and a merge ledger. Additive, online.

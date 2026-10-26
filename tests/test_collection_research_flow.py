@@ -247,8 +247,6 @@ async def test_empty_script_shell_is_unrenderable_with_an_explicit_reason_when_n
 
 @pytest.mark.skipif(render_runtime() is None, reason="playwright-core and Chromium are not installed")
 async def test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline(client, auth, env, monkeypatch):  # noqa: F811
-    from ttakkari.collector.netguard import normalize_url
-
     await open_source(client, auth, env, hosts=("docs.test",), key="spa-source")
     body = "The durable job runner fences attempts and records heartbeats for crawlers. " + prose("en", 301, 14)
     env.server.page("/spa", SPA)
@@ -257,16 +255,8 @@ async def test_script_shell_page_is_rendered_collected_and_searchable_through_th
     env.server.page("/api/page", json.dumps({"title": "Runner internals", "body": body}), "application/json")
     monkeypatch.setattr(render, "runtime", render_runtime)
 
-    def loopback_fetch(guard=None):
-        async def fetch(url):
-            response = await env.fetcher.fetch(normalize_url(url, allowed_schemes=("http",), allowed_ports=(env.server.port,), strip_tracking=False),
-                                               allowed_schemes=("http",), allowed_ports=(env.server.port,), accept="*/*")
-            return response.status, {"content-type": response.headers.get("content-type", "")}, response.body
-
-        async def close():
-            return None
-        return fetch, close
-    monkeypatch.setattr(render, "default_fetch", loopback_fetch)
+    # Use the pipeline's actual policy-aware fetcher, which already owns the
+    # fixture resolver. Replacing default_fetch hid its policy/polite contract.
     made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "러너 내부 구조", "urls": [env.server.url("/spa")]})).json()
     await drain(monkeypatch, env)
     detail = await mission(client, auth, made["id"])

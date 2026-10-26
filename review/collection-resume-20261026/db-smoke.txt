@@ -1,0 +1,3 @@
+................................................ss                       [100%]
+db reset: 48 selective (avg 12.1/120 tables), 0 forced full, 0 fell back to full
+48 passed, 2 skipped in 5.92s

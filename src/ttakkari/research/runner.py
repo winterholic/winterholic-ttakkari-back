@@ -276,7 +276,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
         except asyncio.CancelledError:
             await db.rollback()
             cleanup_failures = _remove_run_copies(created_copies)
-            run = await db.get(Run, run_id)
+            run = await db.get(Run, run_id, with_for_update=True, populate_existing=True)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
                 run.environment_snapshot = adapter_res.environment_snapshot or {}
@@ -294,13 +294,19 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             # A failed flush poisons the session; reset it so the run still reaches a terminal state.
             await db.rollback()
             cleanup_failures = _remove_run_copies(created_copies)
-            run = await db.get(Run, run_id)
+            run = await db.get(Run, run_id, with_for_update=True, populate_existing=True)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
                 run.environment_snapshot = adapter_res.environment_snapshot or {}
-            run.status = "failed"
-            run.error_code = type(e).__name__
-            run.error_message = str(e)
+            if run.status == "cancelled":
+                run.error_message = (
+                    f"{run.error_message or 'Run cancelled'}; "
+                    f"adapter error after cancellation: {type(e).__name__}: {e}"
+                )
+            else:
+                run.status = "failed"
+                run.error_code = type(e).__name__
+                run.error_message = str(e)
             if cleanup_failures:
                 run.error_message += "; artifact cleanup failed: " + ", ".join(cleanup_failures)
             run.wall_seconds = elapsed
@@ -311,12 +317,34 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             _CANCEL_EVENTS.pop(run_id, None)
 
 
+async def _finish_experiment_if_terminal(db, experiment_id: uuid.UUID) -> bool:
+    """Publish a terminal batch result only after every child Run is terminal."""
+    exp = await db.get(Experiment, experiment_id, with_for_update=True)
+    if exp is None:
+        return False
+    statuses = (await db.scalars(select(Run.status).where(Run.experiment_id == experiment_id))).all()
+    if not statuses:
+        return False
+    if any(status not in ("succeeded", "failed", "cancelled") for status in statuses):
+        exp.state = "queued" if all(status == "queued" for status in statuses) else "running"
+        exp.finished_at = None
+        return False
+    state = "failed" if "failed" in statuses else "cancelled" if "cancelled" in statuses else "completed"
+    if exp.state == state and exp.finished_at is not None:
+        return False
+    exp.state = state
+    exp.finished_at = utcnow()
+    return True
+
+
 async def run_experiment_batch(
     experiment_id: uuid.UUID,
     run_ids: list[uuid.UUID],
     adapter_registry: Any = None,
 ) -> None:
     """Execute a batch of runs under generation work context and auto-analyze."""
+    if not run_ids:
+        return
     async with generation.enter_accepted_work("research") as acquired:
         sm = sessionmaker()
         if not acquired:
@@ -324,33 +352,41 @@ async def run_experiment_batch(
                 "Generation rejected accepted work gate for experiment %s", experiment_id
             )
             async with sm() as db:
-                exp = await db.get(Experiment, experiment_id)
-                if exp:
-                    exp.state = "cancelled"
-                    exp.finished_at = utcnow()
-                    exp.receipt = {
+                cancelled = await db.execute(
+                    update(Run).where(
+                        Run.id.in_(run_ids), Run.experiment_id == experiment_id, Run.status == "queued",
+                    ).values(status="cancelled", error_code="GENERATION_REJECTED",
+                             error_message="Generation accepted-work gate rejected (not active or draining)",
+                             finished_at=utcnow())
+                )
+                exp = await db.get(Experiment, experiment_id, with_for_update=True)
+                if cancelled.rowcount and exp:
+                    exp.receipt = {**(exp.receipt or {}),
                         "error_code": "GENERATION_REJECTED",
                         "error_message": "Generation accepted-work gate rejected (not active or draining)",
                     }
-                for rid in run_ids:
-                    r = await db.get(Run, rid)
-                    if r and r.status == "queued":
-                        r.status = "cancelled"
-                        r.error_code = "GENERATION_REJECTED"
-                        r.error_message = "Generation accepted-work gate rejected (not active or draining)"
-                        r.finished_at = utcnow()
+                    await _finish_experiment_if_terminal(db, experiment_id)
                 await db.commit()
             return
         # Mark experiment as running
         async with sm() as db:
-            exp = await db.get(Experiment, experiment_id)
-            if exp:
-                exp.state = "running"
-                await db.commit()
+            exp = await db.get(Experiment, experiment_id, with_for_update=True)
+            pending = await db.scalar(select(Run.id).where(
+                Run.id.in_(run_ids), Run.experiment_id == experiment_id, Run.status == "queued",
+            ).limit(1))
+            if exp is None or pending is None:
+                return
+            exp.state = "running"
+            exp.finished_at = None
+            await db.commit()
 
         for rid in run_ids:
             try:
                 run = await execute_run_instance(rid, adapter_registry=adapter_registry)
+                if run.status == "running":
+                    # This is a replay while another batch owns the Run. Do not
+                    # steal its remaining configurations or publish partial analysis.
+                    return
                 if run.status == "cancelled":
                     logger.info("Batch stopped due to run %s cancellation", rid)
                     async with sm() as db:
@@ -371,25 +407,12 @@ async def run_experiment_batch(
             except Exception:
                 logger.exception("Failed to execute run instance %s", rid)
 
-        # Update experiment state to completed or needs_verification
+        # Another batch may still own a Run, or configurations may remain queued.
         async with sm() as db:
-            exp = await db.get(Experiment, experiment_id)
-            if exp:
-                runs_res = (
-                    await db.execute(
-                        select(Run.status).where(Run.experiment_id == experiment_id)
-                    )
-                ).scalars().all()
-                if all(s == "succeeded" for s in runs_res):
-                    exp.state = "completed"
-                elif any(s == "failed" for s in runs_res):
-                    exp.state = "failed"
-                elif any(s == "cancelled" for s in runs_res):
-                    exp.state = "cancelled"
-                else:
-                    exp.state = "completed"
-                exp.finished_at = utcnow()
-                await db.commit()
+            finished = await _finish_experiment_if_terminal(db, experiment_id)
+            await db.commit()
+        if not finished:
+            return
 
         # Trigger auto-analysis
         try:

@@ -194,3 +194,111 @@ async def test_cancel_during_artifact_copy_preserves_checkpoint_and_removes_copy
     async with sessionmaker()() as db:
         assert len((await db.scalars(select(Measurement).where(Measurement.run_id == ids[0]))).all()) == 1
         assert not (await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == ids[0]))).all()
+
+
+@pytest.mark.parametrize("cancel_first", [False, True])
+async def test_adapter_exception_preserves_accepted_cancellation(client, cancel_first):
+    _, ids = await seed_runs()
+    adapter = ProbeAdapter()
+
+    async def fail_after_stop(**kwargs):
+        if cancel_first:
+            assert await runner.cancel_run(kwargs["run_id"], "Researcher stopped this run")
+        raise RuntimeError("synthetic adapter exception")
+
+    adapter.execute_run = fail_after_stop
+    result = await runner.execute_run_instance(ids[0], adapter)
+    assert result.status == ("cancelled" if cancel_first else "failed")
+    assert result.error_code == ("cancelled" if cancel_first else "RuntimeError")
+    assert "synthetic adapter exception" in result.error_message
+    if cancel_first:
+        assert "Researcher stopped this run" in result.error_message
+    async with sessionmaker()() as db:
+        saved = await db.get(Run, ids[0])
+        assert (saved.status, saved.error_code, saved.error_message) == (
+            result.status, result.error_code, result.error_message)
+
+
+async def test_duplicate_batch_does_not_advance_or_finalize_live_owner(client):
+    from sqlalchemy import select
+
+    from ttakkari.research.models import Analysis
+
+    exp_id, ids = await seed_runs(2)
+    adapter = ProbeAdapter()
+    first = asyncio.create_task(runner.run_experiment_batch(exp_id, ids, adapter))
+    duplicate = None
+    try:
+        await asyncio.wait_for(adapter.entered.wait(), 2)
+        duplicate = asyncio.create_task(runner.run_experiment_batch(exp_id, ids, adapter))
+        await asyncio.wait_for(asyncio.shield(duplicate), 2)
+        async with sessionmaker()() as db:
+            exp = await db.get(Experiment, exp_id)
+            assert exp.state == "running" and exp.finished_at is None
+            assert (await db.get(Run, ids[1])).status == "queued"
+            assert not (await db.scalars(select(Analysis).where(Analysis.experiment_id == exp_id))).all()
+        assert adapter.calls == 1
+    finally:
+        adapter.release.set()
+        await asyncio.gather(first, *([duplicate] if duplicate else []), return_exceptions=True)
+    assert adapter.calls == 2
+    async with sessionmaker()() as db:
+        exp = await db.get(Experiment, exp_id)
+        assert exp.state == "completed" and exp.finished_at is not None
+        assert len((await db.scalars(select(Analysis).where(Analysis.experiment_id == exp_id))).all()) == 1
+
+
+@pytest.mark.parametrize("sibling_status", ["queued", "running"])
+async def test_partial_batch_does_not_finalize_pending_sibling(client, sibling_status):
+    from sqlalchemy import select
+
+    from ttakkari.research.models import Analysis
+
+    exp_id, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        sibling = await db.get(Run, ids[1])
+        sibling.status = sibling_status
+        await db.commit()
+    adapter = ProbeAdapter()
+    adapter.release.set()
+    await runner.run_experiment_batch(exp_id, ids[:1], adapter)
+    async with sessionmaker()() as db:
+        exp = await db.get(Experiment, exp_id)
+        assert exp.state == "running" and exp.finished_at is None
+        assert (await db.get(Run, ids[1])).status == sibling_status
+        assert not (await db.scalars(select(Analysis).where(Analysis.experiment_id == exp_id))).all()
+
+
+@pytest.mark.parametrize("gate_allowed", [False, True])
+async def test_completed_batch_replay_preserves_terminal_receipt_and_analysis(client, monkeypatch, gate_allowed):
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy import select
+
+    from ttakkari.research.models import Analysis
+
+    exp_id, ids = await seed_runs()
+    adapter = ProbeAdapter()
+    adapter.release.set()
+    await runner.run_experiment_batch(exp_id, ids, adapter)
+    async with sessionmaker()() as db:
+        exp = await db.get(Experiment, exp_id)
+        exp.receipt = {"original_result": "must remain"}
+        finished = exp.finished_at
+        analysis = await db.scalar(select(Analysis).where(Analysis.experiment_id == exp_id))
+        analyzed = analysis.created_at
+        await db.commit()
+
+    @asynccontextmanager
+    async def gate(*args, **kwargs):
+        yield gate_allowed
+
+    monkeypatch.setattr(runner.generation, "enter_accepted_work", gate)
+    await runner.run_experiment_batch(exp_id, ids, adapter)
+    async with sessionmaker()() as db:
+        exp = await db.get(Experiment, exp_id)
+        assert (exp.state, exp.finished_at, exp.receipt) == (
+            "completed", finished, {"original_result": "must remain"})
+        analysis = await db.scalar(select(Analysis).where(Analysis.experiment_id == exp_id))
+        assert analysis.created_at == analyzed
+    assert adapter.calls == 1

@@ -12,6 +12,26 @@ import time
 from pathlib import Path
 
 
+async def _settle_owned_task(task: asyncio.Task):
+    """Finish a spawn/reap already owned by us, even after repeated cancellation."""
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+    return task.result()
+
+
+async def _kill_and_wait(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass  # The child exited between the returncode check and signal.
+    await process.wait()
+
+
 async def run_json_worker(
     *,
     module: str,
@@ -35,6 +55,8 @@ async def run_json_worker(
             "DO_NOT_TRACK": "1",
             # The optional runtime contains dependencies, while workers use this release code.
             "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            # Bind before spawn; a reparented child must not adopt a new owner.
+            "TTAKKARI_MODEL_PARENT_PID": str(os.getpid()),
         }
     )
     started = time.perf_counter()
@@ -50,7 +72,7 @@ async def run_json_worker(
         )
         output = Path(temp) / "result.json"
         # stderr is a small fixed error code from worker.main; keep it off API output.
-        process = await asyncio.create_subprocess_exec(
+        spawn = asyncio.create_task(asyncio.create_subprocess_exec(
             str(python or sys.executable),
             "-m",
             module,
@@ -59,8 +81,17 @@ async def run_json_worker(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
-        )
+        ))
+        process = None
         try:
+            try:
+                process = await asyncio.shield(spawn)
+            except asyncio.CancelledError as cancelled:
+                try:
+                    process = await _settle_owned_task(spawn)
+                except Exception:  # noqa: BLE001 -- preserve cancellation after failed spawn
+                    raise cancelled from None
+                raise
             await asyncio.wait_for(
                 process.communicate(json.dumps(request).encode()),
                 timeout=timeout,
@@ -79,13 +110,32 @@ async def run_json_worker(
             )
             return result
         finally:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
+            if process is not None:
+                cleanup = asyncio.create_task(_kill_and_wait(process))
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await _settle_owned_task(cleanup)
+                    raise
+
+
+def start_parent_guard() -> threading.Event:
+    """Reject a lost/malformed supervisor identity before loading any model."""
+    raw = os.environ.get("TTAKKARI_MODEL_PARENT_PID")
+    try:
+        parent_pid = int(raw) if raw is not None else os.getppid()
+    except ValueError:
+        parent_pid = 1
+    if parent_pid <= 1 or os.getppid() != parent_pid:
+        os._exit(74)
+        raise SystemExit(74)  # reachable only with a replaced exit primitive
+    stop = threading.Event()
+    threading.Thread(target=watch_parent, args=(parent_pid, stop), daemon=True).start()
+    return stop
 
 
 def watch_parent(parent_pid: int, stop: threading.Event) -> None:
     while not stop.wait(1):
-        if os.getppid() != parent_pid or parent_pid == 1:
+        if os.getppid() != parent_pid or parent_pid <= 1:
             os._exit(74)
             return

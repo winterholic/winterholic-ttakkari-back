@@ -125,17 +125,24 @@ async def execute_run_instance(
         adapter_res = None
         created_copies: list[Path] = []
         execution_timeout = asyncio.timeout_at(deadline)
-        from ttakkari.research.resources import RESOURCE_KEY, resource_checkpoints
+        from ttakkari.research.resources import (
+            RESOURCE_KEY,
+            WORKERS_KEY,
+            merge_worker_checkpoint,
+            resource_checkpoints,
+        )
 
         async def write_resource(resource: dict) -> None:
             async with sm() as checkpoint_db:
                 checkpoint_run = await checkpoint_db.get(Run, run_id, with_for_update=True)
                 _fence_owner(checkpoint_run, owner)
-                checkpoint_run.environment_snapshot = {
-                    **checkpoint_run.environment_snapshot,
-                    RESOURCE_KEY: {**resource, "contract": 1, "owner_token": owner.metadata["token"],
-                                   "recorded_at": utcnow().isoformat()},
-                }
+                snapshot = checkpoint_run.environment_snapshot or {}
+                key = WORKERS_KEY if resource.get("kind") == "model_worker" else RESOURCE_KEY
+                value = (merge_worker_checkpoint(snapshot, resource, owner.metadata["token"])
+                         if key == WORKERS_KEY else {
+                             **resource, "contract": 1, "owner_token": owner.metadata["token"],
+                         })
+                checkpoint_run.environment_snapshot = {**snapshot, key: {**value, "recorded_at": utcnow().isoformat()}}
                 await checkpoint_db.commit()
 
         try:
@@ -669,12 +676,19 @@ async def _recover_orphaned_runs() -> int:
     the Python execution owner ended, not that external child resources are gone.
     """
     sm = sessionmaker()
-    from ttakkari.research.resources import RECOVERY_KEY, RESOURCE_KEY, recover_resource
+    from ttakkari.research.resources import (
+        RECOVERY_KEY,
+        RESOURCE_KEY,
+        WORKERS_KEY,
+        recover_model_workers,
+        recover_resource,
+    )
     async with sm() as db:
         candidates = list(await db.scalars(select(Run).where(
             Run.status.in_(("queued", "running")) | (
                 Run.status.in_(("succeeded", "failed", "cancelled"))
-                & Run.environment_snapshot[RESOURCE_KEY]["state"].astext.in_(("owned", "cleanup_unverified"))
+                & (Run.environment_snapshot[RESOURCE_KEY]["state"].astext.in_(("owned", "cleanup_unverified"))
+                   | (Run.environment_snapshot[WORKERS_KEY]["state"].astext == "owned"))
                 & ~Run.environment_snapshot.has_key(RECOVERY_KEY)
             ),
             Run.execution_origin == "local_measured",
@@ -696,10 +710,11 @@ async def _recover_orphaned_runs() -> int:
                 experiments = set()
                 for row in rows:
                     snapshot = row.environment_snapshot or {}
-                    resource = snapshot.get(RESOURCE_KEY)
+                    resource, workers = snapshot.get(RESOURCE_KEY), snapshot.get(WORKERS_KEY)
                     interrupted = row.status in ("queued", "running")
                     cleanup_pending = (
-                        isinstance(resource, dict) and resource.get("state") in ("owned", "cleanup_unverified")
+                        ((isinstance(resource, dict) and resource.get("state") in ("owned", "cleanup_unverified"))
+                         or (isinstance(workers, dict) and workers.get("state") == "owned"))
                         and RECOVERY_KEY not in snapshot
                     )
                     if (not (interrupted or cleanup_pending) or owner_token(snapshot) != token):
@@ -710,6 +725,8 @@ async def _recover_orphaned_runs() -> int:
                         if row.adapter_id == "llm_inference" and study and study.scope == "personal"
                         else {"status": "unverified", "reason": "unsupported_adapter_or_scope"}
                     )
+                    if row.adapter_id == "tts_synthesis" and study:
+                        cleanup = await recover_model_workers(snapshot)
                     row.environment_snapshot = {**snapshot, RECOVERY_KEY: {
                         **cleanup, "contract": 1, "owner_token": str(token), "checked_at": utcnow().isoformat(),
                     }}

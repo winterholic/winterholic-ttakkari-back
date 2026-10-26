@@ -58,13 +58,14 @@ class ExecutionOwner:
         return value
 
     def snapshot(self, environment: dict | None, *, previous: dict | None = None) -> dict:
-        from ttakkari.research.resources import RESOURCE_KEY
+        from ttakkari.research.resources import RESOURCE_KEY, WORKERS_KEY
 
         value = {**(environment or {}), OWNER_KEY: self.metadata}
-        value.pop(RESOURCE_KEY, None)  # only the fenced checkpoint writer mints this field
-        resource = (previous or {}).get(RESOURCE_KEY)
-        if isinstance(resource, dict) and resource.get("owner_token") == self.metadata["token"]:
-            value[RESOURCE_KEY] = resource
+        for key in (RESOURCE_KEY, WORKERS_KEY):
+            value.pop(key, None)  # only the fenced checkpoint writer mints these fields
+            resource = (previous or {}).get(key)
+            if isinstance(resource, dict) and resource.get("owner_token") == self.metadata["token"]:
+                value[key] = resource
         return value
 
     def close(self) -> None:

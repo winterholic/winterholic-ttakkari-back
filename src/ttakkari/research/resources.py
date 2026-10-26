@@ -15,6 +15,8 @@ from ttakkari.research.ownership import owner_token, probe
 logger = logging.getLogger(__name__)
 RESOURCE_KEY = "research_external_resource"
 RECOVERY_KEY = "research_resource_recovery"
+WORKERS_KEY = "research_model_workers"
+MODEL_MODULES = frozenset({"ttakkari.tts.worker_supertonic", "ttakkari.meetings.local_stt.worker"})
 _checkpoint: ContextVar[Callable[[dict], Awaitable[None]] | None] = ContextVar(
     "research_resource_checkpoint", default=None,
 )
@@ -22,9 +24,18 @@ _checkpoint: ContextVar[Callable[[dict], Awaitable[None]] | None] = ContextVar(
 
 @contextmanager
 def resource_checkpoints(write: Callable[[dict], Awaitable[None]]) -> Iterator[None]:
+    from ttakkari.model_process import worker_observations
+
+    async def observe_worker(event: dict) -> None:
+        if event.get("module") in MODEL_MODULES:
+            await write({**event, "kind": "model_worker"})
+        else:
+            logger.warning("No research receipt contract for model worker module %s", event.get("module"))
+
     token = _checkpoint.set(write)
     try:
-        yield
+        with worker_observations(observe_worker):
+            yield
     finally:
         _checkpoint.reset(token)
 
@@ -34,6 +45,61 @@ async def checkpoint_resource(resource: dict) -> None:
     write = _checkpoint.get()
     if write is not None:
         await write(resource)
+
+
+def merge_worker_checkpoint(previous: dict, event: dict, token: str) -> dict:
+    """Called under the Run's fenced row lock; concurrent children merge there."""
+    from ttakkari.host_gpu_guard import proc_start
+
+    worker_id = str(uuid.UUID(event["worker_id"]))
+    if (event.get("module") not in MODEL_MODULES
+            or any(type(event.get(k)) is not int or event[k] <= 0 for k in ("pid", "parent_pid"))
+            or event.get("state") not in ("running", "exited")
+            or (event["state"] == "exited" and type(event.get("returncode")) is not int)):
+        raise ValueError("Invalid model worker observation")
+    existing = previous.get(WORKERS_KEY) or {}
+    if existing and (existing.get("contract") != 1 or existing.get("owner_token") != token):
+        raise ValueError("Model worker checkpoint owner changed")
+    workers = dict(existing.get("workers") or {})
+    old = workers.get(worker_id) or {}
+    if old and any(old.get(k) != event[k] for k in ("module", "pid", "parent_pid")):
+        raise ValueError("Model worker identity changed")
+    if old.get("state") == "exited" and event["state"] != "exited":
+        raise ValueError("Model worker exit cannot be reversed")
+    workers[worker_id] = {k: event[k] for k in ("module", "pid", "parent_pid", "state", "returncode")}
+    workers[worker_id]["started_at"] = old.get("started_at") if old else proc_start(event["pid"])
+    return {"contract": 1, "owner_token": token, "workers": workers,
+            "state": "released" if all(w["state"] == "exited" for w in workers.values()) else "owned"}
+
+
+async def recover_model_workers(snapshot: dict) -> dict:
+    """Observe recorded children only; a released owner never authorizes PID signals."""
+    from ttakkari.host_gpu_guard import ProcState, process_state
+
+    resource, token = snapshot.get(WORKERS_KEY), owner_token(snapshot)
+    if (not isinstance(resource, dict) or type(resource.get("contract")) is not int
+            or resource["contract"] != 1 or token is None or resource.get("owner_token") != str(token)
+            or not isinstance(resource.get("workers"), dict) or not resource["workers"]):
+        return {"status": "unverified", "reason": "no_verified_model_worker_checkpoint"}
+    workers = resource["workers"]
+    for key, child in workers.items():
+        try:
+            uuid.UUID(key)
+        except (ValueError, TypeError, AttributeError):
+            return {"status": "unverified", "reason": "invalid_model_worker_identity"}
+        if (not isinstance(child, dict) or child.get("module") not in MODEL_MODULES
+                or any(type(child.get(k)) is not int or child[k] <= 0 for k in ("pid", "parent_pid"))
+                or child.get("state") not in ("running", "exited")
+                or (child["state"] == "exited" and type(child.get("returncode")) is not int)):
+            return {"status": "unverified", "reason": "invalid_model_worker_identity"}
+    evidence = {}
+    for key, child in workers.items():
+        observed = (ProcState.ABSENT if child["state"] == "exited"
+                    else await asyncio.to_thread(process_state, child["pid"], child.get("started_at")))
+        evidence[key] = {"pid": child["pid"], "module": child["module"], "state": observed.value,
+                         "basis": "owned_process_wait" if child["state"] == "exited" else "recorded_process_observation"}
+    return {"status": "verified" if all(e["state"] == "absent" for e in evidence.values()) else "unverified",
+            "evidence": {"workers": evidence, "signals_sent": False}}
 
 
 def observe_execution_owners(rows, *, truncated: bool) -> tuple[list[dict], dict]:

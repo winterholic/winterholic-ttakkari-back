@@ -4,12 +4,49 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
 import threading
 import time
+import uuid
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+_observations: ContextVar[Callable[[dict], Awaitable[None]] | None] = ContextVar(
+    "model_worker_observations", default=None,
+)
+
+
+@contextmanager
+def worker_observations(write: Callable[[dict], Awaitable[None]]) -> Iterator[None]:
+    """Optional caller-owned receipts; the model worker has no DB/app dependency."""
+    token = _observations.set(write)
+    try:
+        yield
+    finally:
+        _observations.reset(token)
+
+
+async def _observe_worker(process: asyncio.subprocess.Process, identity: dict, *, exited: bool) -> None:
+    write = _observations.get()
+    if write is not None:
+        await write({**identity, "pid": process.pid, "state": "exited" if exited else "running",
+                     "returncode": process.returncode if exited else None})
+
+
+async def _reap_and_observe(process: asyncio.subprocess.Process, identity: dict) -> str | None:
+    await _kill_and_wait(process)
+    try:
+        await _observe_worker(process, identity, exited=True)
+    except Exception as exc:
+        logger.exception("Model worker exit receipt failed after process wait")
+        return type(exc).__name__
+    return None
 
 
 async def _settle_owned_task(task: asyncio.Task):
@@ -71,6 +108,7 @@ async def run_json_worker(
             }
         )
         output = Path(temp) / "result.json"
+        identity = {"worker_id": str(uuid.uuid4()), "module": module, "parent_pid": os.getpid()}
         # stderr is a small fixed error code from worker.main; keep it off API output.
         spawn = asyncio.create_task(asyncio.create_subprocess_exec(
             str(python or sys.executable),
@@ -83,6 +121,7 @@ async def run_json_worker(
             env=env,
         ))
         process = None
+        result = None
         try:
             try:
                 process = await asyncio.shield(spawn)
@@ -92,6 +131,8 @@ async def run_json_worker(
                 except Exception:  # noqa: BLE001 -- preserve cancellation after failed spawn
                     raise cancelled from None
                 raise
+            # No request payload reaches inference until the caller persists ownership.
+            await _observe_worker(process, identity, exited=False)
             await asyncio.wait_for(
                 process.communicate(json.dumps(request).encode()),
                 timeout=timeout,
@@ -111,12 +152,14 @@ async def run_json_worker(
             return result
         finally:
             if process is not None:
-                cleanup = asyncio.create_task(_kill_and_wait(process))
+                cleanup = asyncio.create_task(_reap_and_observe(process, identity))
                 try:
-                    await asyncio.shield(cleanup)
+                    receipt_error = await asyncio.shield(cleanup)
                 except asyncio.CancelledError:
                     await _settle_owned_task(cleanup)
                     raise
+                if receipt_error and result is not None:
+                    result.setdefault("metrics", {})["lifecycle_receipt_error"] = receipt_error
 
 
 def start_parent_guard() -> threading.Event:

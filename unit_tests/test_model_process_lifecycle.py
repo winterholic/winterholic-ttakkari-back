@@ -169,6 +169,48 @@ async def test_spawn_failure_after_cancel_preserves_cancellation(monkeypatch):
         await asyncio.wait_for(task, 5)
 
 
+async def test_observer_rejection_reaps_child_before_any_input(tmp_path):
+    executable = tmp_path / "worker"
+    received = tmp_path / "received"
+    executable.write_text(
+        f"#!{sys.executable}\nimport json,sys\nfrom pathlib import Path\n"
+        f"json.load(sys.stdin)\nPath({str(received)!r}).touch()\n"
+    )
+    executable.chmod(0o755)
+    observations = []
+
+    async def reject_start(event):
+        observations.append(event)
+        if event["state"] == "running":
+            raise RuntimeError("synthetic checkpoint rejection")
+
+    with model_process.worker_observations(reject_start), pytest.raises(RuntimeError, match="checkpoint rejection"):
+        await model_process.run_json_worker(module="unused", python=executable, request={}, timeout=5)
+    assert [e["state"] for e in observations] == ["running", "exited"]
+    assert observations[0]["worker_id"] == observations[1]["worker_id"]
+    assert observations[1]["returncode"] is not None
+    assert not received.exists()
+
+
+async def test_exit_receipt_failure_preserves_completed_output_and_marks_receipt(tmp_path, caplog):
+    executable = tmp_path / "worker"
+    executable.write_text(
+        f"#!{sys.executable}\nimport json,sys\nfrom pathlib import Path\n"
+        "r=json.load(sys.stdin)\nPath(sys.argv[-1]).write_text(json.dumps({'text':'saved result','metrics':{}}))\n"
+    )
+    executable.chmod(0o755)
+
+    async def fail_exit(event):
+        if event["state"] == "exited":
+            raise OSError("synthetic exit checkpoint failure")
+
+    with model_process.worker_observations(fail_exit):
+        result = await model_process.run_json_worker(module="unused", python=executable, request={}, timeout=5)
+    assert result["text"] == "saved result" and result["metrics"]["process_exited"] is True
+    assert result["metrics"]["lifecycle_receipt_error"] == "OSError"
+    assert "exit receipt" in caplog.text
+
+
 async def _wait_file(path):
     async with asyncio.timeout(6):
         while not path.exists():

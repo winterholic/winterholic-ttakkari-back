@@ -29,16 +29,18 @@ async def wait_file(path):
             await asyncio.sleep(.01)
 
 
-def executable(tmp_path):
+def executable(tmp_path, *, native=False):
     path = tmp_path / "model-free-child"
     path.write_text(
         f"#!{sys.executable}\n"
-        "import json,sys,threading,time\nfrom pathlib import Path\n"
+        "import ctypes,json,sys,threading,time\nfrom pathlib import Path\n"
         "from ttakkari.model_process import start_parent_guard\n"
         "stop=start_parent_guard()\nr=json.load(sys.stdin)\n"
         "Path(r['ready']).write_text('inference began after checkpoint')\n"
-        "deadline=time.monotonic()+15\n"
-        "while not Path(r['release']).exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+        + ("ctypes.PyDLL(None).sleep(9)\n" if native else
+           "deadline=time.monotonic()+15\n"
+           "while not Path(r['release']).exists() and time.monotonic()<deadline: time.sleep(.01)\n")
+        +
         "Path(sys.argv[-1]).write_text(json.dumps({'metrics':{},'text':'model-free'}))\n"
         "stop.set()\n"
     )
@@ -183,7 +185,8 @@ async def test_recovery_observes_only_fenced_child_and_never_signals(client, aut
 
 @pytest.mark.parametrize("module", [TTS, STT])
 @pytest.mark.parametrize("user_cancelled", [False, True])
-async def test_actual_owner_death_recovers_persisted_child_without_replay(client, auth, tmp_path, monkeypatch, module, user_cancelled):
+@pytest.mark.parametrize("native", [False, True])
+async def test_actual_owner_death_recovers_persisted_child_without_replay(client, auth, tmp_path, monkeypatch, module, user_cancelled, native):
     # The app's periodic recovery must not race the explicitly staged observation.
     foreground, recover = asyncio.current_task(), runner._recover_orphaned_runs
 
@@ -197,7 +200,7 @@ async def test_actual_owner_death_recovers_persisted_child_without_replay(client
         row.adapter_id, row.raw_output = "tts_synthesis", {"saved": "original"}
         await db.commit()
     ready, release = tmp_path / "ready", tmp_path / "release"
-    child_python = executable(tmp_path)
+    child_python = executable(tmp_path, native=native)
     source = (
         "import asyncio,uuid\nfrom pathlib import Path\n"
         "from ttakkari.model_process import run_json_worker\n"

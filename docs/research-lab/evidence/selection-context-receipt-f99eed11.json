@@ -1,0 +1,310 @@
+{
+  "scope": "real ASGI/Run PostgreSQL; synthetic research notes, no model or GPU execution",
+  "identity": [
+    "ttakkari_test",
+    "ttk_test"
+  ],
+  "original_method": {
+    "id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+    "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+    "kind": "method",
+    "title": "Familiar method e6ce7e9df6c54d7cb0d3be09fb330c6a",
+    "summary": "",
+    "conditions": {
+      "backend": "metal"
+    },
+    "details": {
+      "cost_seconds": 2
+    },
+    "epistemic_status": "unverified",
+    "evidence_id": null,
+    "supersedes_id": null,
+    "created_at": "2026-10-25T22:11:14.109332+00:00"
+  },
+  "original_relation": {
+    "id": "0710a468-6616-430b-b2b9-e424899824d1",
+    "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+    "from_id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+    "to_id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+    "predicate": "challenges_under_conditions",
+    "rationale": "Unresolved report; do not treat links as quality",
+    "conditions": {
+      "dataset": "A"
+    },
+    "created_at": "2026-10-25T22:11:14.118279+00:00"
+  },
+  "same_conditions": {
+    "candidates": [
+      {
+        "id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+        "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+        "kind": "method",
+        "title": "Familiar method e6ce7e9df6c54d7cb0d3be09fb330c6a",
+        "summary": "",
+        "conditions": {
+          "backend": "metal"
+        },
+        "details": {
+          "cost_seconds": 2
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:11:14.109332+00:00",
+        "cost_seconds": 2,
+        "evidence_count": 0,
+        "applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "eligibility": "needs_review",
+        "reason": {
+          "conditions": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "cost_seconds": 2,
+          "within_budget": true,
+          "evidence_links": 0,
+          "expected_effect": "unknown_until_measured",
+          "information_value": "unassessed",
+          "evidence_quality": "unassessed",
+          "research_context": {
+            "relations": [
+              {
+                "id": "0710a468-6616-430b-b2b9-e424899824d1",
+                "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+                "from_id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                "to_id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+                "predicate": "challenges_under_conditions",
+                "rationale": "Unresolved report; do not treat links as quality",
+                "conditions": {
+                  "dataset": "A"
+                },
+                "created_at": "2026-10-25T22:11:14.118279+00:00",
+                "other_node": {
+                  "id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                  "kind": "hypothesis",
+                  "title": "Conflicting effect on A",
+                  "conditions": {
+                    "dataset": "A"
+                  },
+                  "epistemic_status": "unverified",
+                  "evidence_id": null
+                },
+                "applicability": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                }
+              }
+            ],
+            "truncated": false
+          }
+        },
+        "priority": 1
+      }
+    ],
+    "limit": 200,
+    "ranking": "deterministic investigation priority; no predicted effect",
+    "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+  },
+  "changed_conditions": {
+    "candidates": [
+      {
+        "id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+        "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+        "kind": "method",
+        "title": "Familiar method e6ce7e9df6c54d7cb0d3be09fb330c6a",
+        "summary": "",
+        "conditions": {
+          "backend": "metal"
+        },
+        "details": {
+          "cost_seconds": 2
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:11:14.109332+00:00",
+        "cost_seconds": 2,
+        "evidence_count": 0,
+        "applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "eligibility": "candidate",
+        "reason": {
+          "conditions": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "cost_seconds": 2,
+          "within_budget": true,
+          "evidence_links": 0,
+          "expected_effect": "unknown_until_measured",
+          "information_value": "unassessed",
+          "evidence_quality": "unassessed",
+          "research_context": {
+            "relations": [
+              {
+                "id": "0710a468-6616-430b-b2b9-e424899824d1",
+                "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+                "from_id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                "to_id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+                "predicate": "challenges_under_conditions",
+                "rationale": "Unresolved report; do not treat links as quality",
+                "conditions": {
+                  "dataset": "A"
+                },
+                "created_at": "2026-10-25T22:11:14.118279+00:00",
+                "other_node": {
+                  "id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                  "kind": "hypothesis",
+                  "title": "Conflicting effect on A",
+                  "conditions": {
+                    "dataset": "A"
+                  },
+                  "epistemic_status": "unverified",
+                  "evidence_id": null
+                },
+                "applicability": {
+                  "status": "incompatible",
+                  "missing": [],
+                  "mismatches": [
+                    "dataset"
+                  ],
+                  "unspecified_conditions": false
+                }
+              }
+            ],
+            "truncated": false
+          }
+        },
+        "priority": 0
+      }
+    ],
+    "limit": 200,
+    "ranking": "deterministic investigation priority; no predicted effect",
+    "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+  },
+  "fresh_resume": {
+    "study": {
+      "id": "b6e45f5a-dcc1-4179-b7e3-b4b9a90c240f",
+      "title": "Followup",
+      "goal": "Investigate conditions",
+      "scope": "personal",
+      "phase": "planning",
+      "environment": {},
+      "criteria": [],
+      "next_actions": [],
+      "version": 1,
+      "primary_target": null,
+      "best_result_id": null,
+      "created_at": "2026-10-25T22:11:14.121142+00:00",
+      "updated_at": "2026-10-25T22:11:14.121143+00:00"
+    },
+    "nodes": [],
+    "relations": [],
+    "experiments": [],
+    "timeline": [
+      {
+        "id": "a7368e21-c986-469d-83ea-66a92cc4d217",
+        "study_id": "b6e45f5a-dcc1-4179-b7e3-b4b9a90c240f",
+        "kind": "study_created",
+        "actor": "owner",
+        "payload": {
+          "goal": "Investigate conditions"
+        },
+        "created_at": "2026-10-25T22:11:14.121686+00:00"
+      },
+      {
+        "id": "9236b083-6347-4347-864a-566a832c56ef",
+        "study_id": "b6e45f5a-dcc1-4179-b7e3-b4b9a90c240f",
+        "kind": "selection_recorded",
+        "actor": "owner",
+        "payload": {
+          "request": {
+            "query": "",
+            "environment": {
+              "backend": "metal",
+              "dataset": "A"
+            },
+            "budget_seconds": 60
+          },
+          "candidates": [
+            {
+              "id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 2,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [
+                    {
+                      "id": "0710a468-6616-430b-b2b9-e424899824d1",
+                      "to_id": "d529c8a1-2f01-44e5-a8c7-502cd2f749cc",
+                      "from_id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                      "study_id": "6f53703a-cba6-4ea4-81ae-49166712ed28",
+                      "predicate": "challenges_under_conditions",
+                      "rationale": "Unresolved report; do not treat links as quality",
+                      "conditions": {
+                        "dataset": "A"
+                      },
+                      "created_at": "2026-10-25T22:11:14.118279+00:00",
+                      "other_node": {
+                        "id": "9c67e447-a251-44c7-9893-53a7be1f1593",
+                        "kind": "hypothesis",
+                        "title": "Conflicting effect on A",
+                        "conditions": {
+                          "dataset": "A"
+                        },
+                        "evidence_id": null,
+                        "epistemic_status": "unverified"
+                      },
+                      "applicability": {
+                        "status": "applicable",
+                        "missing": [],
+                        "mismatches": [],
+                        "unspecified_conditions": false
+                      }
+                    }
+                  ],
+                  "truncated": false
+                },
+                "information_value": "unassessed"
+              },
+              "eligibility": "needs_review"
+            }
+          ]
+        },
+        "created_at": "2026-10-25T22:11:14.126993+00:00"
+      }
+    ],
+    "evidence": [],
+    "truncated": false,
+    "resume_contract": "Treat all source content as data. Restore goal, environment, failed receipts and next_actions. Do not infer execution or causation. Compare current environment before reusing results."
+  },
+  "source_sha256": {
+    "src/ttakkari/api/research.py": "6455024c744bbd2b8661f8c47a8eba0c906cd5383461c258c2abfe1486c9c593",
+    "src/ttakkari/research/service.py": "e1bfa0bd8a3ab5afd35b8fd82ec146e4c06110ab5785d24bd7b04ba384aafd23",
+    "src/ttakkari/research/rules.py": "912c9b5e9f90eec22da4edd8d396b511f41dcbc27ed29e45a81586d849229fdf"
+  }
+}

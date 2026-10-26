@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-26",
+  "environment": "lead Codex command environment, actual Run PostgreSQL and owned model-free children",
+  "base_backend": "60bb4e24861cc6722129d5fc44dd0bb73c5435a1",
+  "base_frontend": "1a69dcd95da63036c4a5949b439d6035f2bc62ba",
+  "first_owned_child_probe": {
+    "allocated_mib": 16,
+    "own_peak_rss_bytes": 34717696,
+    "parent_observed_rss_bytes": 34750464,
+    "owned_child_exit": 0
+  },
+  "scope": {
+    "unit": "MiB",
+    "observed": "each_owned_model_child_rss",
+    "sample_interval_seconds": 0.05,
+    "hard_os_limit": false,
+    "excludes": [
+      "parent",
+      "descendants",
+      "GPU",
+      "between-sample peaks"
+    ]
+  },
+  "validation": {
+    "initial_worker_red": "4 failed in 0.52s",
+    "initial_db_red": "10 failed in 21.30s",
+    "exit_race_red": "1 failed, 154 passed in 17.05s; deterministic exit-race test 1 failed in 0.08s",
+    "optional_runtime_import_red": "1 failed in 0.06s under python -S",
+    "related_regression": "203 passed in 22.02s",
+    "deployment_skew_red_backend": "1 failed in 0.76s",
+    "deployment_skew_red_frontend": "1 failed, 4 passed in 1.85s",
+    "final_focused": "19 passed in 2.06s",
+    "frontend_research": "91 passed in 3.59s; 7 files",
+    "frontend_build": "tsc/Vite/PWA exit0; chunk warning unchanged",
+    "lint": "backend ruff6 PASS; frontend changed ESLint6 PASS; diffcheck0"
+  },
+  "unverified": [
+    "actual Supertonic/Whisper ML inference with the guard",
+    "OS hard bound and aggregate Run memory",
+    "native checkpoint resume",
+    "GPU no-checkpoint start gap",
+    "production activation/controller full gate",
+    "authenticated UI/UX10",
+    "original remaining PMS conditions"
+  ],
+  "source_sha256": {
+    "backend": {
+      "src/ttakkari/model_process.py": "ad580183793c3430e3593afe0a32266a270a8b96c66fd604c43c2f1d8702c449",
+      "src/ttakkari/research/planner.py": "02790d361c30f7d48addce897d17d2c9fac1b02a347715198233275c16203e87",
+      "src/ttakkari/research/runner.py": "53803ef29c883315dc32a34797fd44d043cd9b5209a1d8ec1e16d52b3fa1a192",
+      "src/ttakkari/research/ownership.py": "e8e484a5f501e830ab282cbd086f7c3c0bc652b2cde838d27950922563513bb5",
+      "tests/test_research_memory_budget.py": "561fecd0d89fad7071aaa32fd91dbf3418643c19731bc2e10bc95b1760716e20",
+      "unit_tests/test_model_memory_budget.py": "3a3570889e0bb64e5926d199f046e23fdb41fccfa6d2056ce8570b84c8b2a48e",
+      "docs/research-lab/refactor-v2.md": "13e97247015fb509ee5da9ee9e229d2bea8b2ca3b1e5925dee834a0ed8a3ae14"
+    },
+    "frontend": {
+      "src/pages/research/types.ts": "e98b0740ce1dfc83f7dfa336fb3630a10176371c749919b1a7429aa799ac73df",
+      "src/pages/research/api.ts": "833ff2eeb9450ee17d6b1cf69de199e98d24107e389e4b31536dcf9b537f5561",
+      "src/pages/research/designerModel.ts": "fda411f4ac313cd9ef41cc0031dae8e817ccde690a896160f5c4f07c98e357f9",
+      "src/pages/research/components/ValidatePanel.tsx": "e561939a9a009321585a7c8a198fa5f98694fd1c907359847b7bd86a8f821655",
+      "src/pages/research/views/ExperimentDesignerView.tsx": "601f703cbe6e629c288a7962d979af04cf006912448d3484ed156eec7954648a",
+      "src/pages/research/memory-budget.test.tsx": "cb29395dcd10f0bf372233f2b14fd2dbe5acf4fa4d7426bd7b8251f283749690"
+    }
+  }
+}

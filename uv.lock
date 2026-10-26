@@ -1026,6 +1026,19 @@ http = [
 ]
 
 [[package]]
+name = "github-copilot-sdk"
+version = "1.0.26"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "python-dateutil" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/3e/d9d1e86ade8143b98516c3b9b3cb061d984993658e1f43766d4a58d75a62/github_copilot_sdk-1.0.26-py3-none-any.whl", hash = "sha256:0854a5a34e3d89a8392ddafff5de78df2071937354f97c4865536b3c5ba15abe", size = 924388, upload-time = "2026-10-22T16:34:28.245Z" },
+]
+
+[[package]]
 name = "googleapis-common-protos"
 version = "1.75.5"
 source = { registry = "https://pypi.org/simple" }
@@ -4279,6 +4292,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "fastapi" },
     { name = "fastembed" },
+    { name = "github-copilot-sdk" },
     { name = "holidays" },
     { name = "httpx" },
     { name = "imageio-ffmpeg" },
@@ -4344,6 +4358,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", specifier = ">=0.9.0" },
     { name = "faster-whisper", marker = "extra == 'stt'", specifier = "==1.2.1" },
+    { name = "github-copilot-sdk", specifier = "==1.0.26" },
     { name = "holidays", specifier = ">=0.106" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0,<0.7" },

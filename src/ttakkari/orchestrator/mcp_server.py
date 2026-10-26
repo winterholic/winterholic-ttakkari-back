@@ -69,7 +69,8 @@ async def manage_research(operation: Literal['list', 'create', 'resume', 'update
                           data: dict[str, Any] | None = None) -> str:
     """Research Lab: discover public papers, preserve source revisions and exact quotes, record methods/claims/
     hypotheses, select methods by environment and cost, plan/execute bounded experiments and restore research.
-    Start with list, dashboard, or catalog_search. data schemas: create(title,goal,environment,criteria); update(expected_version,
+    Start with list, dashboard, or catalog_search. resume data: offset=0,limit=500 (1..500); pagination gives totals/has_more.
+    Page each collection beyond a truncated snapshot; tail pages are still partial. data schemas: create(title,goal,environment,criteria); update(expected_version,
     phase,next_actions); source(source_key,title,locator,body); node(kind,title,summary,conditions,details,
     unit_id,start,quote,supersedes_id); relation(from_id,to_id,predicate,rationale,conditions);
     select(query,budget_seconds,environment); experiment(title,hypothesis,rationale,adapter,config,environment,

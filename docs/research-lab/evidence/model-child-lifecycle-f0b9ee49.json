@@ -1,0 +1,41 @@
+{
+  "base_revision": "f0b9ee49790ff821de6b7403b0b1e197b0c05cf9",
+  "engine": "codex command environment",
+  "independent_verification": false,
+  "scope": "model-free disposable TTS/STT child lifecycle; production main with inference stubs",
+  "red": {
+    "failed": 10,
+    "seconds": 0.41
+  },
+  "actual_parent_death_cases": 4,
+  "new_tests": 19,
+  "final_related_regression": {
+    "passed": 119,
+    "seconds": 9.65,
+    "command": "PYTHONPATH=src .venv/bin/python -m pytest unit_tests/test_model_process_lifecycle.py tests/test_local_stt_runner.py tests/test_local_stt_worker.py tests/test_tts_queue.py tests/test_research_adapters.py -q --timeout=25 --tb=short"
+  },
+  "intermediate_fixture_pollution": {
+    "failed": 1,
+    "passed": 118,
+    "seconds": 10.44,
+    "resolution": "isolate disposable STT main environment in new in-process positive control"
+  },
+  "ruff": "All checks passed!",
+  "diff_check": "exit0",
+  "optional_runtime_python311_ast": "3 production files parsed; not actual model runtime execution",
+  "sha256": {
+    "src/ttakkari/model_process.py": "b30c92488d1dc4c974b78280b04e76dc8a1571b959b2d499defa49d49599e261",
+    "src/ttakkari/tts/worker_supertonic.py": "ed13bf56baf07bd49d6c87d0698fe80df4718eee8c097241f3d34df13a6805f1",
+    "src/ttakkari/meetings/local_stt/worker.py": "ac7d09f7b2e8a9f4b3469a0b9727d6f2d02623e8c4ef600a37e837053fbdbb7c",
+    "unit_tests/test_model_process_lifecycle.py": "c3250d9872b8ac27605c3b4439f6fc8684e5dbc127db5c208a7817d5e79c1fc7",
+    "docs/research-lab/evidence/model-child-lifecycle-f0b9ee49.md": "187dff93ff4af54e9aa7212bee7b9b51d278d665eb84f6addc79e9ab0d20b5b0"
+  },
+  "unverified": [
+    "actual native/GIL blocking inference",
+    "real memory cap",
+    "native checkpoint resume",
+    "durable research DB child cleanup receipts",
+    "GPU pre-checkpoint startup crash",
+    "production activation/Metal/RuntimeLease/authenticated UI/legacy92/full controller gate"
+  ]
+}

@@ -1,0 +1,275 @@
+{
+  "db_identity_query": "select current_database(), current_user",
+  "db_identity": [
+    "ttakkari_test",
+    "ttk_test"
+  ],
+  "scope_relation_direction_and_endpoint_conditions": [
+    {
+      "case": "method_as_from_id",
+      "request": {
+        "environment": {
+          "backend": "metal",
+          "dataset": "B"
+        }
+      },
+      "relation": {
+        "id": "527e8e1b-f12e-48e1-8bb0-77bbca4518ea",
+        "study_id": "2d1d3d12-7e65-44de-80c8-9dee4a7fbf80",
+        "from_id": "d2b381a6-27cc-4eeb-b73b-9d46ef39837c",
+        "to_id": "22348230-ddbe-43c7-99d6-c39fdbb5a71d",
+        "predicate": "challenges_under_conditions",
+        "rationale": "method as source",
+        "conditions": {
+          "dataset": "B"
+        },
+        "created_at": "2026-10-25T22:15:14.503701+00:00"
+      },
+      "method_candidate": {
+        "id": "d2b381a6-27cc-4eeb-b73b-9d46ef39837c",
+        "study_id": "2d1d3d12-7e65-44de-80c8-9dee4a7fbf80",
+        "kind": "method",
+        "title": "raw-method-59b584bab50a44daa3b71390b1c51a4d",
+        "summary": "",
+        "conditions": {
+          "backend": "metal"
+        },
+        "details": {
+          "cost_seconds": 1
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:15:14.494741+00:00",
+        "cost_seconds": 1,
+        "evidence_count": 0,
+        "applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "eligibility": "needs_review",
+        "reason": {
+          "conditions": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "cost_seconds": 1,
+          "within_budget": true,
+          "evidence_links": 0,
+          "expected_effect": "unknown_until_measured",
+          "information_value": "unassessed",
+          "evidence_quality": "unassessed",
+          "research_context": {
+            "relations": [
+              {
+                "id": "527e8e1b-f12e-48e1-8bb0-77bbca4518ea",
+                "study_id": "2d1d3d12-7e65-44de-80c8-9dee4a7fbf80",
+                "from_id": "d2b381a6-27cc-4eeb-b73b-9d46ef39837c",
+                "to_id": "22348230-ddbe-43c7-99d6-c39fdbb5a71d",
+                "predicate": "challenges_under_conditions",
+                "rationale": "method as source",
+                "conditions": {
+                  "dataset": "B"
+                },
+                "created_at": "2026-10-25T22:15:14.503701+00:00",
+                "other_node": {
+                  "id": "22348230-ddbe-43c7-99d6-c39fdbb5a71d",
+                  "kind": "hypothesis",
+                  "title": "raw-hyp-a6929580e8f44870afb96a153bd4d76b",
+                  "conditions": {
+                    "dataset": "B"
+                  },
+                  "epistemic_status": "unverified",
+                  "evidence_id": null
+                },
+                "applicability": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                }
+              }
+            ],
+            "truncated": false
+          }
+        },
+        "priority": 1
+      }
+    },
+    {
+      "case": "relation_condition_B_endpoint_node_condition_A",
+      "request": {
+        "environment": {
+          "backend": "metal",
+          "dataset": "B"
+        }
+      },
+      "other_node": {
+        "id": "1177aeff-368a-48e4-873b-500190920549",
+        "study_id": "2a725381-3c8f-4a7f-b28a-58b336b770c1",
+        "kind": "hypothesis",
+        "title": "raw-hyp-834776dc0beb4f7996bcc4c7efd38550",
+        "summary": "",
+        "conditions": {
+          "dataset": "A"
+        },
+        "details": {},
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:15:14.516240+00:00"
+      },
+      "relation": {
+        "id": "9e7ca69e-5daf-4dd4-a6eb-10e21a56e6fb",
+        "study_id": "2a725381-3c8f-4a7f-b28a-58b336b770c1",
+        "from_id": "1177aeff-368a-48e4-873b-500190920549",
+        "to_id": "ba32a3d2-559b-4eb5-9057-c230320dd093",
+        "predicate": "challenges_under_conditions",
+        "rationale": "node says A, edge says B",
+        "conditions": {
+          "dataset": "B"
+        },
+        "created_at": "2026-10-25T22:15:14.518437+00:00"
+      },
+      "method_candidate": {
+        "id": "ba32a3d2-559b-4eb5-9057-c230320dd093",
+        "study_id": "2a725381-3c8f-4a7f-b28a-58b336b770c1",
+        "kind": "method",
+        "title": "raw-method-1ccf3add0d5b404c9f9c093f0ee21b9e",
+        "summary": "",
+        "conditions": {
+          "backend": "metal"
+        },
+        "details": {
+          "cost_seconds": 1
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:15:14.514426+00:00",
+        "cost_seconds": 1,
+        "evidence_count": 0,
+        "applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "eligibility": "needs_review",
+        "reason": {
+          "conditions": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "cost_seconds": 1,
+          "within_budget": true,
+          "evidence_links": 0,
+          "expected_effect": "unknown_until_measured",
+          "information_value": "unassessed",
+          "evidence_quality": "unassessed",
+          "research_context": {
+            "relations": [
+              {
+                "id": "9e7ca69e-5daf-4dd4-a6eb-10e21a56e6fb",
+                "study_id": "2a725381-3c8f-4a7f-b28a-58b336b770c1",
+                "from_id": "1177aeff-368a-48e4-873b-500190920549",
+                "to_id": "ba32a3d2-559b-4eb5-9057-c230320dd093",
+                "predicate": "challenges_under_conditions",
+                "rationale": "node says A, edge says B",
+                "conditions": {
+                  "dataset": "B"
+                },
+                "created_at": "2026-10-25T22:15:14.518437+00:00",
+                "other_node": {
+                  "id": "1177aeff-368a-48e4-873b-500190920549",
+                  "kind": "hypothesis",
+                  "title": "raw-hyp-834776dc0beb4f7996bcc4c7efd38550",
+                  "conditions": {
+                    "dataset": "A"
+                  },
+                  "epistemic_status": "unverified",
+                  "evidence_id": null
+                },
+                "applicability": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                }
+              }
+            ],
+            "truncated": false
+          }
+        },
+        "priority": 1
+      }
+    }
+  ],
+  "truncation_boundary": {
+    "exactly_200": {
+      "returned": 200,
+      "truncated": false
+    },
+    "at_201": {
+      "returned": 200,
+      "truncated": true
+    }
+  },
+  "popularity_saturation": {
+    "hidden_relation_id": "d0a4d7cc-17ce-41d2-9c04-92d2f9734ab4",
+    "popular_method_id": "61d1f7fc-7f41-4ad5-9a8c-01d25139192d",
+    "popular_context_relation_count": 100,
+    "rare_method_id": "9f5ea8e2-5fe7-4796-8e91-0771a1b5185b",
+    "rare_candidate": {
+      "id": "9f5ea8e2-5fe7-4796-8e91-0771a1b5185b",
+      "study_id": "9a8834c7-a9d0-404e-ab08-62d3feaffd33",
+      "kind": "method",
+      "title": "rare-b0271f5973684c4f826ef966b605655d",
+      "summary": "",
+      "conditions": {
+        "backend": "metal"
+      },
+      "details": {
+        "cost_seconds": 1
+      },
+      "epistemic_status": "unverified",
+      "evidence_id": null,
+      "supersedes_id": null,
+      "created_at": "2026-10-25T22:15:14.917223+00:00",
+      "cost_seconds": 1,
+      "evidence_count": 0,
+      "applicability": {
+        "status": "applicable",
+        "missing": [],
+        "mismatches": [],
+        "unspecified_conditions": false
+      },
+      "eligibility": "needs_review",
+      "reason": {
+        "conditions": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "cost_seconds": 1,
+        "within_budget": true,
+        "evidence_links": 0,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "research_context": {
+          "relations": [],
+          "truncated": true
+        }
+      },
+      "priority": 1
+    }
+  }
+}

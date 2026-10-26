@@ -1,0 +1,290 @@
+[
+  {
+    "outbound": true,
+    "node_dataset": "B",
+    "method": {
+      "id": "1f63d1a0-5e75-40ce-b6f1-63399e07a468",
+      "study_id": "d116b686-a4a6-4ef6-a630-e1a4f8ab47d5",
+      "kind": "method",
+      "title": "Method",
+      "summary": "",
+      "conditions": {
+        "backend": "metal"
+      },
+      "details": {
+        "cost_seconds": 1
+      },
+      "epistemic_status": "unverified",
+      "evidence_id": null,
+      "supersedes_id": null,
+      "created_at": "2026-10-25T22:20:30.082040+00:00"
+    },
+    "other_node": {
+      "id": "959e0b19-7dda-45c0-9d7e-b73873c29d2b",
+      "study_id": "d116b686-a4a6-4ef6-a630-e1a4f8ab47d5",
+      "kind": "hypothesis",
+      "title": "Condition-bound claim",
+      "summary": "",
+      "conditions": {
+        "dataset": "B"
+      },
+      "details": {},
+      "epistemic_status": "unverified",
+      "evidence_id": null,
+      "supersedes_id": null,
+      "created_at": "2026-10-25T22:20:30.084487+00:00"
+    },
+    "relation": {
+      "id": "63307e34-6ac7-45dc-942d-654c45abe439",
+      "study_id": "d116b686-a4a6-4ef6-a630-e1a4f8ab47d5",
+      "from_id": "1f63d1a0-5e75-40ce-b6f1-63399e07a468",
+      "to_id": "959e0b19-7dda-45c0-9d7e-b73873c29d2b",
+      "predicate": "challenges_under_conditions",
+      "rationale": "Do not reverse direction or overwrite the node condition",
+      "conditions": {
+        "dataset": "B"
+      },
+      "created_at": "2026-10-25T22:20:30.087307+00:00"
+    },
+    "fresh_selection": {
+      "candidates": [
+        {
+          "id": "1f63d1a0-5e75-40ce-b6f1-63399e07a468",
+          "study_id": "d116b686-a4a6-4ef6-a630-e1a4f8ab47d5",
+          "kind": "method",
+          "title": "Method",
+          "summary": "",
+          "conditions": {
+            "backend": "metal"
+          },
+          "details": {
+            "cost_seconds": 1
+          },
+          "epistemic_status": "unverified",
+          "evidence_id": null,
+          "supersedes_id": null,
+          "created_at": "2026-10-25T22:20:30.082040+00:00",
+          "cost_seconds": 1,
+          "evidence_count": 0,
+          "applicability": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "eligibility": "candidate",
+          "reason": {
+            "conditions": {
+              "status": "applicable",
+              "missing": [],
+              "mismatches": [],
+              "unspecified_conditions": false
+            },
+            "cost_seconds": 1,
+            "within_budget": true,
+            "evidence_links": 0,
+            "expected_effect": "unknown_until_measured",
+            "information_value": "unassessed",
+            "evidence_quality": "unassessed",
+            "research_context": {
+              "relations": [
+                {
+                  "id": "63307e34-6ac7-45dc-942d-654c45abe439",
+                  "study_id": "d116b686-a4a6-4ef6-a630-e1a4f8ab47d5",
+                  "from_id": "1f63d1a0-5e75-40ce-b6f1-63399e07a468",
+                  "to_id": "959e0b19-7dda-45c0-9d7e-b73873c29d2b",
+                  "predicate": "challenges_under_conditions",
+                  "rationale": "Do not reverse direction or overwrite the node condition",
+                  "conditions": {
+                    "dataset": "B"
+                  },
+                  "created_at": "2026-10-25T22:20:30.087307+00:00",
+                  "other_node": {
+                    "id": "959e0b19-7dda-45c0-9d7e-b73873c29d2b",
+                    "kind": "hypothesis",
+                    "title": "Condition-bound claim",
+                    "conditions": {
+                      "dataset": "B"
+                    },
+                    "epistemic_status": "unverified",
+                    "evidence_id": null
+                  },
+                  "relation_applicability": {
+                    "status": "applicable",
+                    "missing": [],
+                    "mismatches": [],
+                    "unspecified_conditions": false
+                  },
+                  "other_node_applicability": {
+                    "status": "applicable",
+                    "missing": [],
+                    "mismatches": [],
+                    "unspecified_conditions": false
+                  },
+                  "applicability": {
+                    "status": "applicable",
+                    "missing": [],
+                    "mismatches": [],
+                    "unspecified_conditions": false
+                  },
+                  "affects_selection": false
+                }
+              ],
+              "truncated": false
+            }
+          },
+          "priority": 0
+        }
+      ],
+      "limit": 200,
+      "ranking": "deterministic investigation priority; no predicted effect",
+      "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+    }
+  },
+  {
+    "outbound": false,
+    "node_dataset": "A",
+    "method": {
+      "id": "e4f08a5d-fa46-454c-abe5-9125a265263b",
+      "study_id": "9c02d41e-b5d5-4cc8-9b9f-a378b990831b",
+      "kind": "method",
+      "title": "Method",
+      "summary": "",
+      "conditions": {
+        "backend": "metal"
+      },
+      "details": {
+        "cost_seconds": 1
+      },
+      "epistemic_status": "unverified",
+      "evidence_id": null,
+      "supersedes_id": null,
+      "created_at": "2026-10-25T22:20:30.125686+00:00"
+    },
+    "other_node": {
+      "id": "695b34bd-e2bf-4f4b-b434-30cf131bc974",
+      "study_id": "9c02d41e-b5d5-4cc8-9b9f-a378b990831b",
+      "kind": "hypothesis",
+      "title": "Condition-bound claim",
+      "summary": "",
+      "conditions": {
+        "dataset": "A"
+      },
+      "details": {},
+      "epistemic_status": "unverified",
+      "evidence_id": null,
+      "supersedes_id": null,
+      "created_at": "2026-10-25T22:20:30.128253+00:00"
+    },
+    "relation": {
+      "id": "2968a8d2-02d8-4a1c-90d8-8b34f19a512e",
+      "study_id": "9c02d41e-b5d5-4cc8-9b9f-a378b990831b",
+      "from_id": "695b34bd-e2bf-4f4b-b434-30cf131bc974",
+      "to_id": "e4f08a5d-fa46-454c-abe5-9125a265263b",
+      "predicate": "challenges_under_conditions",
+      "rationale": "Do not reverse direction or overwrite the node condition",
+      "conditions": {
+        "dataset": "B"
+      },
+      "created_at": "2026-10-25T22:20:30.131208+00:00"
+    },
+    "fresh_selection": {
+      "candidates": [
+        {
+          "id": "e4f08a5d-fa46-454c-abe5-9125a265263b",
+          "study_id": "9c02d41e-b5d5-4cc8-9b9f-a378b990831b",
+          "kind": "method",
+          "title": "Method",
+          "summary": "",
+          "conditions": {
+            "backend": "metal"
+          },
+          "details": {
+            "cost_seconds": 1
+          },
+          "epistemic_status": "unverified",
+          "evidence_id": null,
+          "supersedes_id": null,
+          "created_at": "2026-10-25T22:20:30.125686+00:00",
+          "cost_seconds": 1,
+          "evidence_count": 0,
+          "applicability": {
+            "status": "applicable",
+            "missing": [],
+            "mismatches": [],
+            "unspecified_conditions": false
+          },
+          "eligibility": "candidate",
+          "reason": {
+            "conditions": {
+              "status": "applicable",
+              "missing": [],
+              "mismatches": [],
+              "unspecified_conditions": false
+            },
+            "cost_seconds": 1,
+            "within_budget": true,
+            "evidence_links": 0,
+            "expected_effect": "unknown_until_measured",
+            "information_value": "unassessed",
+            "evidence_quality": "unassessed",
+            "research_context": {
+              "relations": [
+                {
+                  "id": "2968a8d2-02d8-4a1c-90d8-8b34f19a512e",
+                  "study_id": "9c02d41e-b5d5-4cc8-9b9f-a378b990831b",
+                  "from_id": "695b34bd-e2bf-4f4b-b434-30cf131bc974",
+                  "to_id": "e4f08a5d-fa46-454c-abe5-9125a265263b",
+                  "predicate": "challenges_under_conditions",
+                  "rationale": "Do not reverse direction or overwrite the node condition",
+                  "conditions": {
+                    "dataset": "B"
+                  },
+                  "created_at": "2026-10-25T22:20:30.131208+00:00",
+                  "other_node": {
+                    "id": "695b34bd-e2bf-4f4b-b434-30cf131bc974",
+                    "kind": "hypothesis",
+                    "title": "Condition-bound claim",
+                    "conditions": {
+                      "dataset": "A"
+                    },
+                    "epistemic_status": "unverified",
+                    "evidence_id": null
+                  },
+                  "relation_applicability": {
+                    "status": "applicable",
+                    "missing": [],
+                    "mismatches": [],
+                    "unspecified_conditions": false
+                  },
+                  "other_node_applicability": {
+                    "status": "incompatible",
+                    "missing": [],
+                    "mismatches": [
+                      "dataset"
+                    ],
+                    "unspecified_conditions": false
+                  },
+                  "applicability": {
+                    "status": "incompatible",
+                    "missing": [],
+                    "mismatches": [
+                      "dataset"
+                    ],
+                    "unspecified_conditions": false
+                  },
+                  "affects_selection": false
+                }
+              ],
+              "truncated": false
+            }
+          },
+          "priority": 0
+        }
+      ],
+      "limit": 200,
+      "ranking": "deterministic investigation priority; no predicted effect",
+      "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+    }
+  }
+]

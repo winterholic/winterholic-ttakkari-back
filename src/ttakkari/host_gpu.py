@@ -231,6 +231,7 @@ def _health(port: int, timeout: float = 2.0) -> bool:
 
 
 _EVIDENCE = re.compile(r"offload|MTL|Metal|GPU|\bdevice\b|ggml_metal|Apple", re.IGNORECASE)
+_PLACEMENT_EVIDENCE = re.compile(r"offload|(?:model|KV|compute) buffer size", re.IGNORECASE)
 
 
 def device_evidence(log: Path, limit: int = 8) -> list[str]:
@@ -243,7 +244,11 @@ def device_evidence(log: Path, limit: int = 8) -> list[str]:
     except OSError:
         return []
     lines = [ln.strip()[:200] for ln in text.splitlines() if _EVIDENCE.search(ln)]
-    return lines[:limit]
+    # Initialization can emit many device-capability lines before actual placement.
+    # Keep the literal placement reports first, including zero-layer offload reports.
+    placement = [line for line in lines if _PLACEMENT_EVIDENCE.search(line)]
+    initialization = [line for line in lines if not _PLACEMENT_EVIDENCE.search(line)]
+    return (placement + initialization)[:limit]
 
 
 # 서버 후보의 시작 시각 하한 여유. 시계가 뒤로 감기면 서버 create_time 이 감독자 시작 기록보다 이르게 보일 수 있다.

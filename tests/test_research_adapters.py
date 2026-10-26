@@ -7,6 +7,7 @@ import contextlib
 import inspect
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,12 +19,8 @@ import pytest
 from ttakkari.host_gpu import Busy, GpuError, HostGpu, LaunchMismatch
 from ttakkari.meetings.local_stt import runner as stt_runner
 from ttakkari.research.adapters import (
-    AdapterEnvironmentStatus,
-    AdapterRegistry,
     AdapterRunResult,
     ExecutionAdapter,
-    MeasurementRecord,
-    ResourceEstimate,
     get_adapter_registry,
 )
 from ttakkari.research.adapters.external_report import ExternalReportAdapter
@@ -33,7 +30,12 @@ from ttakkari.research.adapters.retrieval_eval import RetrievalEvalAdapter
 from ttakkari.research.adapters.tts_synthesis import TtsSynthesisAdapter
 from ttakkari.research.readiness import compute_execution_status
 from ttakkari.tts import service as tts_service
-from ttakkari.tts.providers import ProviderAvailability, ProviderState, TtsChunkResult, TtsResult
+from ttakkari.tts.providers import (
+    ProviderAvailability,
+    ProviderState,
+    TtsChunkResult,
+    TtsResult,
+)
 from ttakkari.tts.supertonic import SupertonicProvider
 
 
@@ -646,6 +648,108 @@ async def test_llm_cleanup_runs_on_cancellation_after_start() -> None:
     assert result.raw_output["cleanup"]["success"] is True
 
 
+@pytest.mark.asyncio
+async def test_llm_runner_persists_launch_and_cleanup_checkpoint(client, auth) -> None:
+    from test_research_runner_lifecycle import seed_runs
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.research import runner
+    from ttakkari.research.models import Configuration, Run
+    from ttakkari.research.resources import RESOURCE_KEY
+
+    _, ids = await seed_runs()
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        row.adapter_id = "llm_inference"
+        (await db.get(Configuration, row.configuration_id)).parameters = dict(_LLM_CONFIG)
+        await db.commit()
+    live = {"launch_id": uuid4().hex, "phase": "ready", "supervisor_pid": 1234, "supervisor_start": 123.5,
+            "server_pid": 1235, "server_start": 124.5}
+    registry = SimpleNamespace(get_adapter=lambda _: LlmInferenceAdapter())
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)):
+        result = await runner.execute_run_instance(ids[0], registry)
+    assert result.status == "succeeded"
+    saved = (await client.get(f"/api/research/runs/{ids[0]}", headers=auth)).json()
+    resource = saved["environment_snapshot"][RESOURCE_KEY]
+    assert resource["launch"]["launch_id"] == live["launch_id"]
+    assert resource["state"] == "released" and resource["cleanup"]["success"] is True
+    assert resource["owner_token"] == saved["environment_snapshot"]["research_execution_owner"]["token"]
+    assert saved["environment_snapshot"]["execution_path"] == "host_gpu"
+
+
+def test_llm_lease_probe_failure_stays_unknown(monkeypatch, tmp_path):
+    from ttakkari import config, host_gpu
+
+    settings = SimpleNamespace(host_gpu_enabled=True, host_gpu_server_path=str(tmp_path / "missing-server"),
+                               host_gpu_models={}, data_dir=tmp_path)
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+
+    def unavailable(path):
+        raise PermissionError("synthetic lock probe refusal")
+
+    monkeypatch.setattr(host_gpu, "_lock_held", unavailable)
+    status = LlmInferenceAdapter().check_environment(scope="personal")
+    assert status.details["lease_currently_held"] is None
+
+
+@pytest.mark.asyncio
+async def test_llm_task_cancel_during_start_waits_for_owner_then_cleans() -> None:
+    live = {"launch_id": "launch-A", "phase": "ready"}
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+
+    def pending_start(self, req):
+        entered.set()
+        try:
+            assert release.wait(2)
+            return {"ready": True}
+        finally:
+            returned.set()
+
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)) as m:
+        m.start.side_effect = pending_start
+        task = asyncio.create_task(LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal"))
+        try:
+            assert await asyncio.to_thread(entered.wait, 1)
+            task.cancel()
+            await asyncio.sleep(0.01)
+            assert not task.done(), "startup thread still owns an unobserved launch"
+        finally:
+            release.set()
+            result = (await asyncio.gather(task, return_exceptions=True))[0]
+            assert await asyncio.to_thread(returned.wait, 1)
+        assert isinstance(result, AdapterRunResult)
+        assert result.status == "cancelled"
+        assert result.raw_output["cleanup"]["success"] is True
+        assert m.stop.call_count == 1
+        assert m.bench.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_tts_cancel_awaits_synthesis_child_cleanup() -> None:
+    from ttakkari.research.adapters.tts_synthesis import _await_unless_cancelled
+
+    entered, cleanup, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def synthesis():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup.set()
+            await release.wait()
+
+    child = asyncio.create_task(synthesis())
+    parent = asyncio.create_task(_await_unless_cancelled(child, None))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        parent.cancel()
+        await asyncio.wait_for(cleanup.wait(), 1)
+        assert not parent.done(), "provider cleanup must finish before the adapter releases ownership"
+    finally:
+        release.set()
+        await asyncio.gather(parent, child, return_exceptions=True)
+
+
 def test_llm_inference_parameter_rejections_and_quant_type_mapping() -> None:
     adapter = LlmInferenceAdapter()
 
@@ -845,12 +949,14 @@ async def test_tts_cancel_while_waiting_for_execution_lock_never_synthesizes() -
 
 
 @pytest.mark.asyncio
-async def test_tts_cancel_during_synthesis_stops_provider_and_frees_lock() -> None:
+@pytest.mark.parametrize("cancel_mode", ["event", "task"])
+async def test_tts_cancel_during_synthesis_stops_provider_and_frees_lock(cancel_mode) -> None:
     cancel_event = asyncio.Event()
     started = asyncio.Event()
     state = {"cancelled": False}
 
     async def blocking_synthesize(self, chunks, *, voice, speed, lang, out_dir):
+        state["out_dir"] = out_dir
         started.set()
         try:
             await asyncio.Event().wait()
@@ -864,13 +970,17 @@ async def test_tts_cancel_during_synthesis_stops_provider_and_frees_lock() -> No
             TtsSynthesisAdapter().execute_run(uuid4(), config, scope="personal", cancel_event=cancel_event)
         )
         await asyncio.wait_for(started.wait(), timeout=3)
-        cancel_event.set()
+        if cancel_mode == "task":
+            task.cancel()
+        else:
+            cancel_event.set()
         result = await asyncio.wait_for(task, timeout=3)
 
     assert result.status == "cancelled"
-    assert result.raw_output["reason"] == "cancelled_during_synthesis"
+    assert result.raw_output["reason"] == ("task_cancelled" if cancel_mode == "task" else "cancelled_during_synthesis")
     assert state["cancelled"] is True
     assert not tts_service._execution_lock.locked()
+    assert not Path(state["out_dir"]).exists()
 
 
 def test_tts_synthesis_unsupported_parameters_and_methods_audit() -> None:

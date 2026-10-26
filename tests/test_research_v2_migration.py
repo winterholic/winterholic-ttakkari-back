@@ -2,22 +2,43 @@
 
 import asyncio
 import json
+import logging
 import uuid
+from pathlib import Path
+
 import pytest
 from alembic.config import Config
-from alembic import command
 from sqlalchemy import text
 
-from ttakkari.db import sessionmaker
+from alembic import command
 from ttakkari.config import get_settings
-from ttakkari.research.models import Study, Experiment, Configuration, Run
+from ttakkari.db import sessionmaker
+from ttakkari.research.models import Configuration, Experiment, Run, Study
 
 
 def get_alembic_config():
     settings = get_settings()
-    cfg = Config("alembic.ini")
+    # These commands share pytest's process. A file config calls logging.fileConfig
+    # in env.py, which replaces capture handlers and disables application loggers.
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     return cfg
+
+
+async def test_embedded_migration_preserves_application_logging(caplog):
+    logger = logging.getLogger("uvicorn.error.transfer")
+    caplog.set_level(logging.INFO, logger=logger.name)
+    root_handlers = tuple(logging.getLogger().handlers)
+    assert not logger.disabled
+
+    await asyncio.to_thread(command.stamp, get_alembic_config(), "head")
+
+    assert not logger.disabled, "embedded migrations must not disable application loggers"
+    assert tuple(logging.getLogger().handlers) == root_handlers
+    logger.info("migration logging continuity probe")
+    assert any(rec.name == logger.name and rec.message == "migration logging continuity probe"
+               for rec in caplog.records)
 
 
 async def test_migration_0072_upgrade_downgrade_and_v1_data_preservation():

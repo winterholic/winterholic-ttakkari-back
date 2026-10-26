@@ -1,0 +1,33 @@
+{
+  "base_revision": "e6b4fd0df9513058f9e30845c08f4b0c9172b095",
+  "environment": "Codex Run sandbox; isolated actual PostgreSQL; synthetic adapter; real flock subprocess killed with SIGKILL; no production process stopped",
+  "source_sha256": {
+    "src/ttakkari/research/ownership.py": "b55d33b44632021430d0c120e58174e7179c30114ddc5566d7c3878b2b593d33",
+    "src/ttakkari/research/runner.py": "9a706db5f25a7306c5a9ee1ca92720145f6c38e1d07b4d369cdbfe7e3a225f18",
+    "src/ttakkari/generation.py": "39982f10fa207b95f43fb31fc6adfe1b0c4c27945cdef297ef4d711245fb3b23",
+    "src/ttakkari/generation_service.py": "659a3a34b48008c19a98c03a896945c1bd026101a8308a2ca3d292b85f6dc4dc",
+    "tests/test_research_runner_lifecycle.py": "37ef02d1e2f0915156ec536b6dfcb74ffb92063ee228309af62d2b71d60e0c6a",
+    "tests/test_research_v2_api_contract.py": "1d36d71ca36c7ba734a6fe995c3d4d00c49412adcabbcd92fa3699b3534eddea",
+    "docs/research-lab/refactor-v2.md": "58bcfd0eb95117282119d27cca78efaa49b70b36b44637e4b1b19ea4ed826f82"
+  },
+  "checks": [
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_research_runner_lifecycle.py -k 'durable or owner_process_exit or recovery_does_not_guess or reserved_research or recovery_is_wired or before_background or stale_research or generation_cutover or batch_rejects_reservation' -q --timeout=15 --tb=short",
+      "result": "9 passed, 34 deselected in 1.04s"
+    },
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_generation_deployment.py -k 'retire or cutover or overlapping or controller_cuts' -q --timeout=30 --tb=short",
+      "result": "6 passed, 43 deselected in 0.68s"
+    }
+  ],
+  "unverified": [
+    "production activation",
+    "preserved same A launch layer placement",
+    "authenticated production UI and original UX10",
+    "native training checkpoint resume",
+    "external GPU/TTS child cleanup after owner crash",
+    "actual memory enforcement",
+    "legacy92 and remaining PMS7.x acceptance",
+    "independent worker review"
+  ]
+}

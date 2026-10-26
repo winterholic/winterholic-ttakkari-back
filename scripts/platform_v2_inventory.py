@@ -2067,7 +2067,7 @@ def classify_source_file(rel_path: str) -> str:
         "/api/accounts" in p
         or "antigravity_accounts" in p
         or "account_usage" in p
-        or p.endswith(("/copilot_accounts.py", "/opencode_accounts.py"))
+        or p.endswith(("/runs/copilot_usage.py", "/copilot_accounts.py", "/opencode_accounts.py"))
     ):
         return "core.accounts_quota"
     if (

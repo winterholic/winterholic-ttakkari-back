@@ -1,0 +1,358 @@
+{
+  "scope": "actual ASGI + Run PostgreSQL; synthetic research records only",
+  "db_identity": [
+    "ttakkari_test",
+    "ttk_test"
+  ],
+  "cases": [
+    {
+      "case": "outbound",
+      "expected_eligibility": "candidate",
+      "observed": {
+        "eligibility": "candidate",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "f93f6787-3ca0-42ef-a7ed-dfc6c955b8b2",
+          "to_id": "d158ea2c-d798-4563-b58b-de1a7112b983",
+          "conditions": {
+            "dataset": "B"
+          },
+          "other_node_conditions": {
+            "dataset": "B"
+          }
+        },
+        "relation_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "affects_selection": false,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "node_edge_mismatch",
+      "expected_eligibility": "candidate",
+      "observed": {
+        "eligibility": "candidate",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "11a53e62-bddf-41ac-9bab-595938919f2e",
+          "to_id": "6f6e4867-4480-4f82-adb5-22335a1df631",
+          "conditions": {
+            "dataset": "B"
+          },
+          "other_node_conditions": {
+            "dataset": "A"
+          }
+        },
+        "relation_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "incompatible",
+          "missing": [],
+          "mismatches": [
+            "dataset"
+          ],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "incompatible",
+          "missing": [],
+          "mismatches": [
+            "dataset"
+          ],
+          "unspecified_conditions": false
+        },
+        "affects_selection": false,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "edge_node_mismatch",
+      "expected_eligibility": "candidate",
+      "observed": {
+        "eligibility": "candidate",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "850b20d0-3162-467a-80cf-eaaaa1fbe5f5",
+          "to_id": "c106228f-9f0b-466c-ba77-61949fd9ef4b",
+          "conditions": {
+            "dataset": "A"
+          },
+          "other_node_conditions": {
+            "dataset": "B"
+          }
+        },
+        "relation_applicability": {
+          "status": "incompatible",
+          "missing": [],
+          "mismatches": [
+            "dataset"
+          ],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "incompatible",
+          "missing": [],
+          "mismatches": [
+            "dataset"
+          ],
+          "unspecified_conditions": false
+        },
+        "affects_selection": false,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "empty_edge",
+      "expected_eligibility": "needs_review",
+      "observed": {
+        "eligibility": "needs_review",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "003e9c8c-256c-4a72-b549-bda1988a1733",
+          "to_id": "b80e2a7e-afc9-4b91-a6e6-5aa17e8d85e1",
+          "conditions": {},
+          "other_node_conditions": {
+            "dataset": "A"
+          }
+        },
+        "relation_applicability": {
+          "status": "unknown",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": true
+        },
+        "other_node_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "affects_selection": true,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "both_empty",
+      "expected_eligibility": "needs_review",
+      "observed": {
+        "eligibility": "needs_review",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "cd31abc2-6900-4c50-9421-11a44227868b",
+          "to_id": "e988fc40-b4c3-495d-b52f-86698ab6818f",
+          "conditions": {},
+          "other_node_conditions": {}
+        },
+        "relation_applicability": {
+          "status": "unknown",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": true
+        },
+        "other_node_applicability": {
+          "status": "unknown",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": true
+        },
+        "combined_applicability": {
+          "status": "unknown",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": true
+        },
+        "affects_selection": true,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "missing_hardware",
+      "expected_eligibility": "needs_review",
+      "observed": {
+        "eligibility": "needs_review",
+        "relation": {
+          "predicate": "challenges_under_conditions",
+          "from_id": "b8ef902b-9d48-4857-ad4d-5f7a35764f3d",
+          "to_id": "dc70c48a-6c45-4165-87e5-882bb0b12c05",
+          "conditions": {
+            "dataset": "A"
+          },
+          "other_node_conditions": {
+            "dataset": "A",
+            "hardware": "m5"
+          }
+        },
+        "relation_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "unknown",
+          "missing": [
+            "hardware"
+          ],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "unknown",
+          "missing": [
+            "hardware"
+          ],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "affects_selection": true,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "symmetric",
+      "expected_eligibility": "needs_review",
+      "observed": {
+        "eligibility": "needs_review",
+        "relation": {
+          "predicate": "contradicts",
+          "from_id": "2e99829a-6cdc-4025-80ca-a36950e8e1d2",
+          "to_id": "208c9bf2-e99b-4511-940e-6ac34a2b45a1",
+          "conditions": {
+            "dataset": "A"
+          },
+          "other_node_conditions": {
+            "dataset": "A"
+          }
+        },
+        "relation_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "affects_selection": true,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    },
+    {
+      "case": "symmetric_conflicts_with",
+      "expected_eligibility": "needs_review",
+      "observed": {
+        "eligibility": "needs_review",
+        "relation": {
+          "predicate": "conflicts_with",
+          "from_id": "acbb6b7a-804a-4246-9a9b-5e0ecfc11fa7",
+          "to_id": "34fccfe4-6b6c-41e8-abef-a785af421a00",
+          "conditions": {
+            "dataset": "A"
+          },
+          "other_node_conditions": {
+            "dataset": "A"
+          }
+        },
+        "relation_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "other_node_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "combined_applicability": {
+          "status": "applicable",
+          "missing": [],
+          "mismatches": [],
+          "unspecified_conditions": false
+        },
+        "affects_selection": true,
+        "expected_effect": "unknown_until_measured",
+        "information_value": "unassessed",
+        "evidence_quality": "unassessed",
+        "context_truncated": false
+      }
+    }
+  ],
+  "verification": {
+    "branch": "research-v2",
+    "commit": "2da5482cd0320e7177165964b6949d1cff72efc6",
+    "command": "SELECTION_DIRECTION_RAW=docs/research-lab/evidence/selection-direction-review-2da5482-raw.json PYTHONPATH=src .venv/bin/python scripts/pytest_slots.py --timeout 180 -- .venv/bin/python -m pytest tests/test_selection_direction_independent_temp.py unit_tests/test_research_rules.py -q -s --tb=short",
+    "pytest_output": "20 passed in 0.92s; db reset: 1 selective (avg 3.0/115 tables), 0 forced full, 0 fell back to full",
+    "api_counterexample_cases": 8,
+    "unit_rule_checks": "unit_tests/test_research_rules.py ran in the same invocation",
+    "source_sha256": {
+      "src/ttakkari/research/rules.py": "cd1dc8088b56765652a129fdb119c7cd3d5f8c1f309f2e7dc1ddc46c0cae0dc0",
+      "src/ttakkari/research/service.py": "e1bfa0bd8a3ab5afd35b8fd82ec146e4c06110ab5785d24bd7b04ba384aafd23",
+      "src/ttakkari/api/research.py": "6455024c744bbd2b8661f8c47a8eba0c906cd5383461c258c2abfe1486c9c593"
+    },
+    "scope_note": "Synthetic research notes only; no effect, information-value, evidence-quality, model, GPU, UI, suite-wide or deployment conclusion."
+  }
+}

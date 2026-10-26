@@ -1,0 +1,79 @@
+{
+  "base_revision": "3e38ecf378256ae66fbd41bf76e5b202177f3443",
+  "backend_source_sha256": {
+    "src/ttakkari/api/research.py": "4adf1ac5f5b4cda311dc30f6b52b2e316d9679258d5f011362ed27ee9c7f182b",
+    "src/ttakkari/research/runner.py": "95f71be82f15c35aa39d75a9ae8c419902c05f1bc1ca7e9b20ffafc7772b722f",
+    "src/ttakkari/research/ownership.py": "afd6bf7a20bdfbd69a5a566706006e87968eb8a8250bde1b698de666b10ee475",
+    "src/ttakkari/research/resources.py": "82f1f2a3457668150f3b96a30da6f5e05f335db05c23bdb92868b9cc18dc84b5",
+    "src/ttakkari/research/service.py": "fa4662521a69f8709ab7fa65f13366a315db4be51b39d8f9564ff0579aac7deb",
+    "src/ttakkari/research/adapters/llm_inference.py": "edf5d6a83f004ecc3fdf0f4261268b62ad49ccb26617c7791be0de1a4336436a",
+    "tests/test_research_external_resources.py": "b165abeea2cafac1428f1d8ea2743f1bf30cd918f0e53e44d44efa3310d942c2",
+    "tests/test_research_v2_api_contract.py": "745b6978519c4777c490d72fad8c9d622233b4902e3e72ca0295fe3f8e354954",
+    "tests/test_research_runner_lifecycle.py": "413064ba941732478563b645c55bc64228c6068597ae2e0da822497fb22d7f6c",
+    "tests/test_research_adapters.py": "faebdb35ad88bc0f6c580731d0b6ecc3ee83d592ac3da5bbc458a1731159b599",
+    "tests/test_scenario_b_artifacts.py": "eb55575b129e7e03c9293b4829b3c61a31237c3bfc8f37b004192f502334cff3"
+  },
+  "frontend_revision": "1a69dcd95da63036c4a5949b439d6035f2bc62ba",
+  "frontend_source_sha256": {
+    "src/pages/research/types.ts": "43be63f6be246091c8c46fe150c2a7e0c6d57ca2f6a9800cce7f1837f1321aa5",
+    "src/pages/research/labels.ts": "4cba30089b83215da3ff5d17bb28f5e4a2ee31d1a2bd8dbf74b124e9a7a872f3",
+    "src/pages/research/views/ExperimentMonitorView.tsx": "dbd3c47aea5925ae111bfceea86ec6e4e6d1cd8e745f3a7ba29fbc63eeabd75f",
+    "src/pages/research/monitor-ownership.test.tsx": "1c9ab5dc07e17664f660a1b7f508b426793b824f7ec1e535e5e6daa34df00f91",
+    "src/pages/research/views/ExperimentDesignerView.tsx": "b8fd479530b54646a24d88dbc9e2b1e2f36e339564a787c419e196c346804277",
+    "src/pages/research/components/ValidatePanel.tsx": "77979b1df75a80645b92cf8fdd48fd6d6fc042ff898824cf1c5d683442fa851d"
+  },
+  "environment": "lead Codex; actual isolated Run PostgreSQL and OS flock/SIGKILL test child; synthetic GPU process/provider probes; JSDOM frontend",
+  "tests": [
+    {
+      "scope": "initial resource/API cases",
+      "red": "8 failed in 1.03s",
+      "green": "8 passed in 0.95s"
+    },
+    {
+      "scope": "intermediate runner/resources/API/adapters",
+      "green": "173 passed in 8.67s",
+      "later_changes": "terminal cleanup, GPU unknown and artifact contract follow-up; final push hook supersedes this source scope"
+    },
+    {
+      "scope": "terminal cancel/SIGKILL recovery",
+      "red": "2 failed in 0.69s",
+      "green": "3 passed in 1.03s"
+    },
+    {
+      "scope": "inherited artifact environment contract",
+      "red": "8 failed, 15 passed in 2.72s",
+      "green": "14 passed in 1.04s; includes two negative controls"
+    },
+    {
+      "scope": "GPU unknown adapter/API",
+      "red": "2 failed in 0.96s",
+      "green": "2 passed in 0.72s"
+    },
+    {
+      "scope": "research frontend",
+      "green": "86 passed across 6 files; 3.90s"
+    },
+    {
+      "scope": "frontend build/lint",
+      "green": "exit0; PWA93; ui-lint baseline138 unchanged"
+    },
+    {
+      "scope": "changed Python11 files ruff",
+      "green": "All checks passed!"
+    }
+  ],
+  "operating_frontend_prior": {
+    "revision": "dc7ac7baab93db660ce2170d785f903041d4feac",
+    "production_deployment_id": 7329057358,
+    "observed_state": "success"
+  },
+  "not_verified": [
+    "actual operating GPU cleanup",
+    "TTS/STT orphan child identity cleanup",
+    "native checkpoint resume and actual memory guard",
+    "operating authenticated browser",
+    "same historical A Metal placement",
+    "final backend controller gate"
+  ],
+  "counts_overlap_do_not_sum": true
+}

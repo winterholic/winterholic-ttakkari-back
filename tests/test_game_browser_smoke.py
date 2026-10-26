@@ -53,7 +53,7 @@ async def build_smoke_game(client, auth, slug: str) -> dict:
     assert (await client.post(f"/api/games/{game['id']}/lock/approve", headers=auth)).status_code == 200
     started = await client.post(f"/api/games/{game['id']}/builds", json={}, headers=auth)
     done = await wait_build(client, auth, game["id"], started.json()["id"], timeout=600)
-    assert done["status"] == "succeeded", done["error"]
+    assert done["status"] == "succeeded", (done["error"], done["log_tail"])
     return {"game": game, "build": done}
 
 

@@ -36,12 +36,27 @@ _tasks: set[asyncio.Task] = set()
 
 def _sig(u: usage_mod.Usage) -> tuple:
     return (tuple((w.key, w.percent, w.resets_at, w.remaining_percent) for w in u.windows),
-            u.credits_balance, u.credits_error)
+            u.credits_balance, u.credits_error, tuple(sorted(u.quota_unlimited.items())))
+
+
+def _window_payload(u: usage_mod.Usage) -> list[dict]:
+    return [{"key": w.key, "label": w.label, "percent": w.percent, "resets_at": w.resets_at,
+             "remaining_percent": w.remaining_percent} for w in u.windows] + [
+        {"key": key, "label": label, "unlimited": True} for key, label in u.quota_unlimited.items()]
+
+
+def _decode_windows(payload: list) -> tuple[list[usage_mod.Window], dict[str, str]]:
+    windows = [usage_mod.Window(w["key"], w.get("label") or usage_mod.label_of(w["key"]), int(w["percent"]),
+                                w.get("resets_at"), w.get("remaining_percent"))
+               for w in payload if isinstance(w, dict) and "key" in w and "percent" in w and w.get("unlimited") is not True]
+    unlimited = {w["key"]: w.get("label") or usage_mod.label_of(w["key"]) for w in payload
+                 if isinstance(w, dict) and isinstance(w.get("key"), str) and w.get("unlimited") is True}
+    return windows, unlimited
 
 
 async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
     """측정값 한 개를 남긴다. 거의 같은 값이 막 남았으면 건너뛴다(True 면 남김)."""
-    if not u.windows:
+    if not (u.windows or u.quota_unlimited):
         return False
     from ttakkari import generation
     now = time.time()
@@ -55,8 +70,7 @@ async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
     async with sessionmaker()() as db:
         db.add(AccountUsageSample(
             account_id=account_id, measured_at=datetime.fromtimestamp(u.updated_at or now, UTC), source=u.source or "api",
-            plan=u.plan, windows=[{"key": w.key, "label": w.label, "percent": w.percent, "resets_at": w.resets_at,
-                                   "remaining_percent": w.remaining_percent} for w in u.windows],
+            plan=u.plan, windows=_window_payload(u),
             credits_balance=u.credits_balance, credits_error=u.credits_error))
         if generation.current:
             await generation.wake(db)
@@ -112,15 +126,13 @@ async def load_latest(db: AsyncSession, *, refresh: bool = False) -> int:
     rows = list(await db.scalars(select(AccountUsageSample).join(
         newest, (AccountUsageSample.account_id == newest.c.account_id) & (AccountUsageSample.measured_at == newest.c.m))))
     for r in rows:
-        windows = [usage_mod.Window(w["key"], w.get("label") or usage_mod.label_of(w["key"]), int(w["percent"]), w.get("resets_at"),
-                                    w.get("remaining_percent"))
-                   for w in r.windows or [] if isinstance(w, dict) and "key" in w and "percent" in w]
+        windows, unlimited = _decode_windows(r.windows or [])
         usage_mod.seed(r.account_id, usage_mod.Usage(windows=windows, source=r.source, plan=r.plan,
                                                       credits_balance=r.credits_balance,
                                                       credits_error=r.credits_error,
-                                                      updated_at=r.measured_at.timestamp()), refresh=refresh)
+                                                      quota_unlimited=unlimited, updated_at=r.measured_at.timestamp()), refresh=refresh)
         _last[r.account_id] = (r.measured_at.timestamp(), _sig(usage_mod.Usage(
-            windows=windows, credits_balance=r.credits_balance, credits_error=r.credits_error)))
+            windows=windows, quota_unlimited=unlimited, credits_balance=r.credits_balance, credits_error=r.credits_error)))
     return len(rows)
 
 

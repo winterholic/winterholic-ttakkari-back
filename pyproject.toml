@@ -10,6 +10,7 @@ dependencies = [
     "asyncpg>=0.32.0",
     "fastapi>=0.115",
     "fastembed>=0.9.0",
+    "github-copilot-sdk==1.0.26",
     "holidays>=0.106",
     "httpx>=0.28.1",
     "imageio-ffmpeg>=0.6.0,<0.7",

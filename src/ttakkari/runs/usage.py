@@ -72,6 +72,7 @@ class Usage:
     error: str | None = None
     updated_at: float | None = None
     login: str | None = None  # official read-only account state, when supplied by the provider
+    quota_unlimited: dict[str, str] = field(default_factory=dict)  # key -> label; no invented percentage
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -99,7 +100,7 @@ def set_sink(fn: Callable[[uuid.UUID, Usage], None] | None) -> None:
 
 
 def _emit(account_id: uuid.UUID, u: Usage) -> None:
-    if _sink is not None and u.windows and u.source in ("api", "stream", "antigravity_cli", "muse_cli"):
+    if _sink is not None and (u.windows or u.quota_unlimited) and u.source in ("api", "stream", "antigravity_cli", "muse_cli", "copilot_sdk"):
         with contextlib.suppress(Exception):
             _sink(account_id, u)
 
@@ -730,6 +731,7 @@ def codex_usage(config_dir: str | None) -> Usage:
 # ---- 묶기
 
 _agy_cache_roots: dict[uuid.UUID, str | None] = {}
+_copilot_cache_roots: dict[uuid.UUID, tuple[str, str | None]] = {}
 
 
 # 같은 계정을 동시에 읽는 호출(수집기·화면·재시도)은 조회 하나를 같이 기다린다. 요청이 먼저 끝나도(시간 초과·탭 닫힘) 조회는 이어져 캐시를 채운다.
@@ -755,6 +757,8 @@ def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, ref
             return Usage(error="Antigravity isolation: profile is not ready; default quota was not queried")
     hit = _cache.get(account_id)
     if engine == "antigravity" and _agy_cache_roots.get(account_id) != config_dir:
+        hit = None
+    if engine in {"opencode", "copilot"} and _copilot_cache_roots.get(account_id) != (engine, config_dir):
         hit = None
     # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
     ttl = max(TTL, get_settings().usage_poll_seconds)
@@ -815,11 +819,13 @@ async def _fetch_live_bounded(account_id: uuid.UUID, engine: str, config_dir: st
 async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:
     observed_now = True
     if engine in {"opencode", "copilot"}:
-        from ttakkari.runs.profiles import identity
-        login, _ = identity(engine, config_dir)
-        # No provider quota observation: never query or borrow another engine's subscription.
-        u = Usage(source=f"{engine}_cli", login=login,
-                  error="Copilot 잔여 사용량 미확인 · 한도 오류 발생 시 계정 대기")
+        from ttakkari.runs.copilot_usage import fetch_usage
+        u = await fetch_usage(account_id, engine, config_dir)
+        prior = cached(account_id) if _copilot_cache_roots.get(account_id) == (engine, config_dir) else None
+        _copilot_cache_roots[account_id] = (engine, config_dir)
+        if u.error and not (u.windows or u.quota_unlimited) and prior and prior.source == "copilot_sdk":
+            u = replace(prior, error=f"{u.error} · 마지막 관측값")
+            observed_now = False
     elif engine == "muse":
         u = await _fetch_muse(config_dir)
         if MUSE_PING and not u.windows and u.login == "ok":
@@ -871,7 +877,7 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
     else:
         u = await _codex_usage_or_log(config_dir)
     _cache[account_id] = (time.time(), u)
-    if observed_now and u.source in ("api", "antigravity_cli", "muse_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
+    if observed_now and u.source in ("api", "antigravity_cli", "muse_cli", "copilot_sdk"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
         _emit(account_id, u)
     return u
 
@@ -1107,11 +1113,13 @@ def cached(account_id: uuid.UUID) -> Usage | None:
 def forget(account_id: uuid.UUID) -> None:
     _cache.pop(account_id, None)
     _stream.pop(account_id, None)
+    _copilot_cache_roots.pop(account_id, None)
 
 
 def clear_cache() -> None:
     _cache.clear()
     _stream.clear()
+    _copilot_cache_roots.clear()
 
 
 def exhausted_until(account_id: uuid.UUID) -> float | None:

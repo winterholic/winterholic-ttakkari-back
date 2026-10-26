@@ -13,15 +13,19 @@ import uuid
 from pathlib import Path
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
-from ttakkari.main import app
 from ttakkari.models import Artifact
 from ttakkari.research import runner
 from ttakkari.research.adapters.base import AdapterRunResult, MeasurementRecord
-from ttakkari.research.models import Configuration, Experiment, ResearchArtifact, Run, Study
+from ttakkari.research.models import (
+    Configuration,
+    Experiment,
+    ResearchArtifact,
+    Run,
+    Study,
+)
 
 
 class DummyAudioProducerAdapter:
@@ -464,11 +468,45 @@ async def _assert_failed_with_evidence(run_id: uuid.UUID, error_code: str) -> No
         assert run.error_code == error_code
         assert run.finished_at is not None
         assert run.raw_output.get("transcript") == "kept"
-        assert run.environment_snapshot == {"engine": "test"}
+        _assert_environment_with_owner(run.environment_snapshot)
         ms = (await db.scalars(select(Measurement).where(Measurement.run_id == run_id))).all()
         assert [m.metric_key for m in ms] == ["rtf"]
         links = (await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == run_id))).all()
         assert links == []
+
+
+def _assert_environment_with_owner(snapshot: dict) -> None:
+    from datetime import datetime
+
+    from ttakkari.research.ownership import OWNER_KEY, owner_token, probe
+
+    owner = snapshot.get(OWNER_KEY)
+    assert isinstance(owner, dict)
+    assert snapshot == {"engine": "test", OWNER_KEY: owner}
+    assert set(owner) == {"contract", "token", "generation_id", "accepted_at"}
+    assert owner["contract"] == 1 and owner["generation_id"] is None
+    token = owner_token(snapshot)
+    assert token is not None
+    assert datetime.fromisoformat(owner["accepted_at"]).tzinfo is not None
+    handle = probe(token)
+    assert handle is not None  # the finished/failed Run released execution ownership
+    handle.close()
+
+
+@pytest.mark.parametrize("bad_field", ["engine", "owner"])
+def test_environment_assertion_rejects_lost_evidence(bad_field):
+    from ttakkari.research.ownership import OWNER_KEY, ExecutionOwner
+
+    owner = ExecutionOwner.acquire()
+    snapshot = owner.snapshot({"engine": "test"})
+    owner.close()
+    _assert_environment_with_owner(snapshot)
+    if bad_field == "engine":
+        snapshot["engine"] = "lost"
+    else:
+        snapshot.pop(OWNER_KEY)
+    with pytest.raises(AssertionError):
+        _assert_environment_with_owner(snapshot)
 
 
 @pytest.mark.asyncio
@@ -578,7 +616,7 @@ async def test_artifact_registration_failure_keeps_measurements_and_removes_only
         assert run.status == ("cancelled" if failure_stage == "cancelled" else "failed")
         assert run.finished_at is not None
         assert run.raw_output == {"transcript": "kept"}
-        assert run.environment_snapshot == {"engine": "test"}
+        _assert_environment_with_owner(run.environment_snapshot)
         rows = list(await db.scalars(select(Measurement).where(Measurement.run_id == run_id)))
         assert [m.value for m in rows] == [0.2]
         assert list(await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == run_id))) == []

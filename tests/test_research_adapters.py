@@ -649,6 +649,50 @@ async def test_llm_cleanup_runs_on_cancellation_after_start() -> None:
 
 
 @pytest.mark.asyncio
+async def test_llm_runner_persists_launch_and_cleanup_checkpoint(client, auth) -> None:
+    from test_research_runner_lifecycle import seed_runs
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.research import runner
+    from ttakkari.research.models import Configuration, Run
+    from ttakkari.research.resources import RESOURCE_KEY
+
+    _, ids = await seed_runs()
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        row.adapter_id = "llm_inference"
+        (await db.get(Configuration, row.configuration_id)).parameters = dict(_LLM_CONFIG)
+        await db.commit()
+    live = {"launch_id": uuid4().hex, "phase": "ready", "supervisor_pid": 1234, "supervisor_start": 123.5,
+            "server_pid": 1235, "server_start": 124.5}
+    registry = SimpleNamespace(get_adapter=lambda _: LlmInferenceAdapter())
+    with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)):
+        result = await runner.execute_run_instance(ids[0], registry)
+    assert result.status == "succeeded"
+    saved = (await client.get(f"/api/research/runs/{ids[0]}", headers=auth)).json()
+    resource = saved["environment_snapshot"][RESOURCE_KEY]
+    assert resource["launch"]["launch_id"] == live["launch_id"]
+    assert resource["state"] == "released" and resource["cleanup"]["success"] is True
+    assert resource["owner_token"] == saved["environment_snapshot"]["research_execution_owner"]["token"]
+    assert saved["environment_snapshot"]["execution_path"] == "host_gpu"
+
+
+def test_llm_lease_probe_failure_stays_unknown(monkeypatch, tmp_path):
+    from ttakkari import config, host_gpu
+
+    settings = SimpleNamespace(host_gpu_enabled=True, host_gpu_server_path=str(tmp_path / "missing-server"),
+                               host_gpu_models={}, data_dir=tmp_path)
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+
+    def unavailable(path):
+        raise PermissionError("synthetic lock probe refusal")
+
+    monkeypatch.setattr(host_gpu, "_lock_held", unavailable)
+    status = LlmInferenceAdapter().check_environment(scope="personal")
+    assert status.details["lease_currently_held"] is None
+
+
+@pytest.mark.asyncio
 async def test_llm_task_cancel_during_start_waits_for_owner_then_cleans() -> None:
     live = {"launch_id": "launch-A", "phase": "ready"}
     entered, release, returned = threading.Event(), threading.Event(), threading.Event()

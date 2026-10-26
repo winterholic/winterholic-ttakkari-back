@@ -19,12 +19,10 @@ from ttakkari.kb_models import KbRevision as KnowledgeRevision
 from ttakkari.kb_models import KbSource
 from ttakkari.models import utcnow
 from ttakkari.research.models import (
-    Analysis,
     BestResult,
     Configuration,
     Event,
     Experiment,
-    Measurement,
     Method,
     MethodRelation,
     Node,
@@ -32,7 +30,6 @@ from ttakkari.research.models import (
     ResearchArtifact,
     Run,
     Study,
-    TaxonomyTerm,
 )
 from ttakkari.research.readiness import compute_execution_status
 
@@ -1147,7 +1144,8 @@ async def adapter_readiness(
             )
         status[adapter.id] = info
         if adapter.id == "llm_inference" and "lease_currently_held" in info["details"]:
-            gpu_lease = {"held": bool(info["details"]["lease_currently_held"])}
+            observed = info["details"]["lease_currently_held"]
+            gpu_lease = {"held": observed if isinstance(observed, bool) else None}
     return status, gpu_lease
 
 

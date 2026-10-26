@@ -727,7 +727,7 @@ async def test_runs_list_names_runs_and_reports_gpu_state_and_locks(client, auth
     assert gpu is None or {"ready", "reason", "available_models", "lease_held"} <= set(gpu)
 
 
-async def test_runs_list_active_locks_follow_running_runs(client, auth):
+async def test_runs_list_does_not_infer_resource_locks_from_running_status(client, auth):
     study_id = await make_study(client, auth)
     exp = await make_experiment(client, auth, study_id, adapter_id="llm_inference")
     sm = sessionmaker()
@@ -738,8 +738,61 @@ async def test_runs_list_active_locks_follow_running_runs(client, auth):
             study_id=uuid.UUID(study_id), adapter_id="llm_inference", status="running",
         ))
         await db.commit()
-    locks = (await client.get(f"{API}/runs?study_id={study_id}", headers=auth)).json()["active_locks"]
-    assert {"lock": "host_gpu_lease", "adapter_id": "llm_inference", "run_id": str(run_id), "experiment_id": exp["id"]} in locks
+    body = (await client.get(f"{API}/runs?study_id={study_id}", headers=auth)).json()
+    assert body["active_locks"] == []
+    assert body["lock_observations"]["unverified_run_ids"] == [str(run_id)]
+
+
+async def test_runs_list_observes_live_owner_even_after_run_cancelled(client, auth):
+    from ttakkari.research.ownership import ExecutionOwner
+
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(client, auth, study_id, adapter_id="llm_inference")
+    owner = ExecutionOwner.acquire()
+    try:
+        async with sessionmaker()() as db:
+            run = Run(experiment_id=uuid.UUID(exp["id"]), configuration_id=uuid.UUID(exp["configurations"][0]["id"]),
+                      study_id=uuid.UUID(study_id), adapter_id="llm_inference", status="cancelled",
+                      environment_snapshot=owner.snapshot({}))
+            db.add(run)
+            await db.commit()
+            run_id = run.id
+        body = (await client.get(f"{API}/runs?study_id={study_id}", headers=auth)).json()
+        assert len(body["active_locks"]) == 1
+        assert body["active_locks"][0]["lock"] == "research_execution_owner"
+        assert body["active_locks"][0]["run_id"] == str(run_id)
+        assert body["active_locks"][0]["evidence"] == "os_lock_observed"
+    finally:
+        owner.close()
+    body = (await client.get(f"{API}/runs?study_id={study_id}", headers=auth)).json()
+    assert body["active_locks"] == []
+
+
+async def test_lock_observation_scope_reports_500_candidate_truncation(client, auth):
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(client, auth, study_id, adapter_id="external_report")
+    async with sessionmaker()() as db:
+        db.add_all([Run(experiment_id=uuid.UUID(exp["id"]), configuration_id=uuid.UUID(exp["configurations"][0]["id"]),
+                        study_id=uuid.UUID(study_id), adapter_id="retrieval_eval", status="running") for _ in range(501)])
+        await db.commit()
+    body = (await client.get(f"{API}/runs?study_id={study_id}", headers=auth)).json()
+    assert len(body["runs"]) == 50
+    assert body["active_locks"] == []
+    assert body["lock_observations"]["truncated"] is True
+    assert body["lock_observations"]["candidate_limit"] == 500
+    assert len(body["lock_observations"]["unverified_run_ids"]) == 500
+
+
+async def test_runs_list_keeps_unknown_gpu_lease_distinct_from_free(client, auth, monkeypatch):
+    from ttakkari.api import research
+
+    async def readiness(*args, **kwargs):
+        return {"llm_inference": {"ready": False, "reason": "synthetic probe unavailable", "available_models": [],
+                                  "details": {"lease_currently_held": None}}}, {"held": False}
+
+    monkeypatch.setattr(research.svc, "adapter_readiness", readiness)
+    body = (await client.get(f"{API}/runs", headers=auth)).json()
+    assert body["host_gpu_status"]["lease_held"] is None
 
 
 async def test_cancel_run_returns_the_cancelled_run(client, auth):

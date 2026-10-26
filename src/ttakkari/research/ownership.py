@@ -1,8 +1,9 @@
 """Single-host research ownership, independent of agent RuntimeLease rows.
 
 The OS lock covers adapter execution and cleanup, including DB outages. A free
-lock permits recording interruption, never replaying work or claiming that an
-external GPU/TTS child was stopped. No heartbeat timeout steals a live owner.
+lock permits recording interruption, never replaying work. External cleanup
+requires its own resource checkpoint and guard evidence. No heartbeat timeout
+steals a live owner.
 """
 from __future__ import annotations
 
@@ -56,8 +57,15 @@ class ExecutionOwner:
         _RESERVATIONS[str(token)] = value.metadata["generation_id"]
         return value
 
-    def snapshot(self, environment: dict | None) -> dict:
-        return {**(environment or {}), OWNER_KEY: self.metadata}
+    def snapshot(self, environment: dict | None, *, previous: dict | None = None) -> dict:
+        from ttakkari.research.resources import RESOURCE_KEY
+
+        value = {**(environment or {}), OWNER_KEY: self.metadata}
+        value.pop(RESOURCE_KEY, None)  # only the fenced checkpoint writer mints this field
+        resource = (previous or {}).get(RESOURCE_KEY)
+        if isinstance(resource, dict) and resource.get("owner_token") == self.metadata["token"]:
+            value[RESOURCE_KEY] = resource
+        return value
 
     def close(self) -> None:
         self.handle.close()

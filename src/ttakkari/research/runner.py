@@ -125,6 +125,19 @@ async def execute_run_instance(
         adapter_res = None
         created_copies: list[Path] = []
         execution_timeout = asyncio.timeout_at(deadline)
+        from ttakkari.research.resources import RESOURCE_KEY, resource_checkpoints
+
+        async def write_resource(resource: dict) -> None:
+            async with sm() as checkpoint_db:
+                checkpoint_run = await checkpoint_db.get(Run, run_id, with_for_update=True)
+                _fence_owner(checkpoint_run, owner)
+                checkpoint_run.environment_snapshot = {
+                    **checkpoint_run.environment_snapshot,
+                    RESOURCE_KEY: {**resource, "contract": 1, "owner_token": owner.metadata["token"],
+                                   "recorded_at": utcnow().isoformat()},
+                }
+                await checkpoint_db.commit()
+
         try:
             adapter = reg.get_adapter(run.adapter_id) if reg is not None and hasattr(reg, "get_adapter") else None
             if adapter is None:
@@ -134,13 +147,14 @@ async def execute_run_instance(
                 run.finished_at = utcnow()
                 await db.commit()
                 return run
-            async with execution_timeout:
-                adapter_res = await adapter.execute_run(
-                    run_id=run.id,
-                    config=config.parameters,
-                    scope=study.scope,
-                    cancel_event=cancel_event,
-                )
+            with resource_checkpoints(write_resource):
+                async with execution_timeout:
+                    adapter_res = await adapter.execute_run(
+                        run_id=run.id,
+                        config=config.parameters,
+                        scope=study.scope,
+                        cancel_event=cancel_event,
+                    )
             elapsed = asyncio.get_event_loop().time() - start_time
             budget_exhausted = execution_timeout.expired() or (
                 deadline is not None and asyncio.get_running_loop().time() >= deadline
@@ -153,7 +167,7 @@ async def execute_run_instance(
             cancelled = run.status == "cancelled"
             run.status = "cancelled" if cancelled else adapter_res.status
             run.raw_output = adapter_res.raw_output or {}
-            run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
+            run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
             if not cancelled:
                 run.error_code = adapter_res.error_code
                 run.error_message = adapter_res.error_message
@@ -314,7 +328,7 @@ async def execute_run_instance(
             _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
+                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
             run.status = "cancelled"
             run.error_code = "cancelled"
             run.error_message = run.error_message or "Task cancelled by system"
@@ -336,7 +350,7 @@ async def execute_run_instance(
             _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
+                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
             if run.status == "cancelled":
                 run.error_message = (
                     f"{run.error_message or 'Run cancelled'}; "
@@ -644,15 +658,25 @@ async def start_experiment_runs(
 
 
 async def recover_orphaned_runs() -> int:
+    async with generation.enter_accepted_work("research-recovery") as acquired:
+        return await _recover_orphaned_runs() if acquired else 0
+
+
+async def _recover_orphaned_runs() -> int:
     """Record owner death without replaying adapters or discarding checkpoints.
 
     Unknown legacy owners remain untouched. A released OS lock proves only that
     the Python execution owner ended, not that external child resources are gone.
     """
     sm = sessionmaker()
+    from ttakkari.research.resources import RECOVERY_KEY, RESOURCE_KEY, recover_resource
     async with sm() as db:
         candidates = list(await db.scalars(select(Run).where(
-            Run.status.in_(("queued", "running")),
+            Run.status.in_(("queued", "running")) | (
+                Run.status.in_(("succeeded", "failed", "cancelled"))
+                & Run.environment_snapshot[RESOURCE_KEY]["state"].astext.in_(("owned", "cleanup_unverified"))
+                & ~Run.environment_snapshot.has_key(RECOVERY_KEY)
+            ),
             Run.execution_origin == "local_measured",
             Run.environment_snapshot.has_key(OWNER_KEY),
         )))
@@ -671,19 +695,41 @@ async def recover_orphaned_runs() -> int:
                 rows = list(await db.scalars(select(Run).where(Run.id.in_(ids)).order_by(Run.id).with_for_update()))
                 experiments = set()
                 for row in rows:
-                    if row.status not in ("queued", "running") or owner_token(row.environment_snapshot or {}) != token:
+                    snapshot = row.environment_snapshot or {}
+                    resource = snapshot.get(RESOURCE_KEY)
+                    interrupted = row.status in ("queued", "running")
+                    cleanup_pending = (
+                        isinstance(resource, dict) and resource.get("state") in ("owned", "cleanup_unverified")
+                        and RECOVERY_KEY not in snapshot
+                    )
+                    if (not (interrupted or cleanup_pending) or owner_token(snapshot) != token):
                         continue
-                    row.status = "failed" if row.status == "running" else "cancelled"
-                    row.error_code = "owner_lost"
-                    row.error_message = "실행을 맡은 프로세스가 종료되었습니다. 저장된 측정은 보존했습니다. 외부 자원 정리는 미확인입니다."
-                    row.finished_at = utcnow()
-                    db.add(Event(study_id=row.study_id, kind="execution_finished", actor="system", payload={
+                    study = await db.get(Study, row.study_id)
+                    cleanup = (
+                        await recover_resource(row.environment_snapshot or {})
+                        if row.adapter_id == "llm_inference" and study and study.scope == "personal"
+                        else {"status": "unverified", "reason": "unsupported_adapter_or_scope"}
+                    )
+                    row.environment_snapshot = {**snapshot, RECOVERY_KEY: {
+                        **cleanup, "contract": 1, "owner_token": str(token), "checked_at": utcnow().isoformat(),
+                    }}
+                    if interrupted:
+                        row.status = "failed" if row.status == "running" else "cancelled"
+                        row.error_code = "owner_lost"
+                        row.error_message = (
+                            "실행을 맡은 프로세스가 종료되었습니다. 저장된 측정은 보존했습니다. "
+                            + ("기록된 외부 자원의 정리를 확인했습니다." if cleanup["status"] == "verified"
+                               else "외부 자원 정리는 미확인입니다.")
+                        )
+                        row.finished_at = utcnow()
+                        experiments.add(row.experiment_id)
+                    db.add(Event(study_id=row.study_id,
+                                 kind="execution_finished" if interrupted else "resource_recovery", actor="system", payload={
                         "id": str(row.experiment_id), "run_id": str(row.id), "state": row.status,
                         "error_code": row.error_code, "error_message": row.error_message,
                         "owner": row.environment_snapshot[OWNER_KEY],
-                        "checkpoint_preserved": True, "external_resource_cleanup": "unverified",
+                        "checkpoint_preserved": True, "external_resource_cleanup": cleanup["status"],
                     }))
-                    experiments.add(row.experiment_id)
                     recovered += 1
                 for experiment_id in sorted(experiments):
                     await _finish_experiment_if_terminal(db, experiment_id)

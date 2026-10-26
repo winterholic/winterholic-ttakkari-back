@@ -21,18 +21,14 @@ from ttakkari.api.agent import _session
 from ttakkari.api.deps import Db
 from ttakkari.models import utcnow
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
-from ttakkari.research import benchmark
-from ttakkari.research import catalog_loader
+from ttakkari.research import analyzer, benchmark, catalog_loader, planner, runner
 from ttakkari.research import service as svc
-from ttakkari.research import planner, runner, analyzer
 from ttakkari.research.models import (
     Analysis,
-    BestResult,
     Configuration,
     Experiment,
     Measurement,
     Method,
-    MethodRelation,
     Node,
     Relation,
     ResearchArtifact,
@@ -568,7 +564,7 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         effective_fixed_inputs = body.fixed_inputs or body.config or {}
 
     # Expand configurations and validate plan
-    expanded_configs, exp_errors, exp_warnings = planner.expand_configurations(
+    expanded_configs, exp_errors, _exp_warnings = planner.expand_configurations(
         strategy=body.strategy,
         search_space=body.search_space or ({"default": [body.config]} if body.config else {}),
         fixed_inputs=effective_fixed_inputs,
@@ -878,7 +874,7 @@ async def sync_catalog(_: User, db: Db, force: bool = Query(False)):
 async def dashboard(
     _: User,
     db: Db,
-    study_id: uuid.UUID | None = Query(None),
+    study_id: Annotated[uuid.UUID | None, Query()] = None,
     scope: Literal["personal", "work"] = Query("personal"),
 ):
     """Aggregate dashboard view: counts, readiness, recent runs, best results, and templates."""
@@ -940,15 +936,15 @@ async def create_taxonomy_term(body: TaxonomyTermIn, _: User, db: Db):
 async def list_methods(
     _: User,
     db: Db,
-    q: str | None = Query(None),
-    target: list[str] | None = Query(None),
-    layer: list[str] | None = Query(None),
-    goal: list[str] | None = Query(None),
-    intervention: list[str] | None = Query(None),
-    research_method: list[str] | None = Query(None),
-    execution_status: list[str] | None = Query(None),
-    lifecycle_status: list[str] | None = Query(None),
-    origin: list[str] | None = Query(None),
+    q: Annotated[str | None, Query()] = None,
+    target: Annotated[list[str] | None, Query()] = None,
+    layer: Annotated[list[str] | None, Query()] = None,
+    goal: Annotated[list[str] | None, Query()] = None,
+    intervention: Annotated[list[str] | None, Query()] = None,
+    research_method: Annotated[list[str] | None, Query()] = None,
+    execution_status: Annotated[list[str] | None, Query()] = None,
+    lifecycle_status: Annotated[list[str] | None, Query()] = None,
+    origin: Annotated[list[str] | None, Query()] = None,
     scope: Literal["personal", "work"] = Query("personal"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -1168,8 +1164,8 @@ async def run_experiment(
 async def list_runs(
     _: User,
     db: Db,
-    study_id: uuid.UUID | None = Query(None),
-    experiment_id: uuid.UUID | None = Query(None),
+    study_id: Annotated[uuid.UUID | None, Query()] = None,
+    experiment_id: Annotated[uuid.UUID | None, Query()] = None,
     status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -1194,33 +1190,22 @@ async def list_runs(
         )
     ).all()
 
-    # Locks held right now: one entry per running run, named after what that adapter needs exclusively.
-    lock_names = {
-        "llm_inference": "host_gpu_lease",
-        "tts_synthesis": "tts_lock",
-        "retrieval_eval": "cpu_lock",
-    }
-    running = (
-        await db.execute(select(Run).where(Run.status == "running"))
-    ).scalars().all()
-    active_locks = [
-        {
-            "lock": lock_names[r.adapter_id],
-            "adapter_id": r.adapter_id,
-            "run_id": str(r.id),
-            "experiment_id": str(r.experiment_id),
-        }
-        for r in running
-        if r.adapter_id in lock_names
-    ]
-    gpu_probe, gpu_lease = await svc.adapter_readiness("personal", only={"llm_inference"})
+    # Persisted status cannot prove resource ownership (including during cleanup).
+    from ttakkari.research.ownership import OWNER_KEY
+    from ttakkari.research.resources import observe_execution_owners
+
+    candidates = list(await db.scalars(select(Run).where(
+        Run.environment_snapshot.has_key(OWNER_KEY) | Run.status.in_(("queued", "running")),
+    ).order_by(Run.created_at.desc(), Run.id).limit(501)))
+    active_locks, lock_observations = observe_execution_owners(candidates[:500], truncated=len(candidates) > 500)
+    gpu_probe, _gpu_lease = await svc.adapter_readiness("personal", only={"llm_inference"})
     llm = gpu_probe.get("llm_inference")
     host_gpu_status = (
         {
             "ready": llm["ready"],
             "reason": llm["reason"],
             "available_models": llm["available_models"],
-            "lease_held": bool(gpu_lease and gpu_lease.get("held")),
+            "lease_held": (llm.get("details") or {}).get("lease_currently_held"),
         }
         if llm
         else None
@@ -1238,6 +1223,7 @@ async def list_runs(
         ],
         "host_gpu_status": host_gpu_status,
         "active_locks": active_locks,
+        "lock_observations": lock_observations,
     }
 
 
@@ -1456,7 +1442,7 @@ async def compare_series_endpoint(
     experiment_id: uuid.UUID,
     _: User,
     db: Db,
-    baseline_config_id: uuid.UUID | None = Query(None),
+    baseline_config_id: Annotated[uuid.UUID | None, Query()] = None,
     primary_metric: str | None = Query(None),
     secondary_metric: str | None = Query(None),
     pareto_x_metric: str | None = Query(None),

@@ -469,13 +469,15 @@ async def test_running_research_owner_is_durable_and_live_owner_is_not_recovered
         assert first.environment_snapshot["execution"] == "synthetic_adapter"
 
 
-async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client, auth, tmp_path):
+async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client, auth, tmp_path, monkeypatch):
     import signal
     import subprocess
     import sys
 
     from ttakkari.config import get_settings
+    from ttakkari.research.adapters.llm_inference import LlmInferenceAdapter
     from ttakkari.research.models import Measurement
+    from ttakkari.research.resources import RESOURCE_KEY
 
     exp_id, ids = await seed_runs(3)
     token = uuid.uuid4()
@@ -488,6 +490,15 @@ async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client
     )
     child = await asyncio.to_thread(subprocess.Popen, [sys.executable, "-c", script, str(lock_path)],
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    cleanup_calls = []
+
+    def cleanup(host, data_dir, launch):
+        assert child.poll() == -signal.SIGKILL
+        cleanup_calls.append(launch["launch_id"])
+        return {"success": True, "attempted": True, "stopped": True, "launch_id": launch["launch_id"]}
+
+    monkeypatch.setattr(LlmInferenceAdapter, "_cleanup_owned_launch", staticmethod(cleanup))
+    launch_id = uuid.uuid4().hex
     try:
         assert await asyncio.to_thread(child.stdout.readline) == "locked\n"
         async with sessionmaker()() as db:
@@ -496,14 +507,23 @@ async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client
                 row.status = ["succeeded", "running", "queued"][i]
                 row.raw_output = {"checkpoint": i}
                 row.environment_snapshot = {"research_execution_owner": owner, "device": "synthetic"}
+                if i == 1:
+                    row.adapter_id = "llm_inference"
+                    row.environment_snapshot = {**row.environment_snapshot, RESOURCE_KEY: {
+                        "contract": 1, "owner_token": str(token), "kind": "host_gpu", "state": "owned",
+                        "launch": {"launch_id": launch_id, "supervisor_pid": 1234, "supervisor_start": 123.5,
+                                   "server_pid": 1235, "server_start": 124.5},
+                    }}
             db.add(Measurement(run_id=ids[1], experiment_id=exp_id,
                                configuration_id=row.configuration_id, metric_key="saved",
                                metric_label="saved", value=7))
             await db.commit()
         assert await runner.recover_orphaned_runs() == 0
+        assert cleanup_calls == []
         child.kill()  # Abrupt owner death: no Python finally/cleanup runs in the child.
         assert await asyncio.to_thread(child.wait, 3) == -signal.SIGKILL
         assert await runner.recover_orphaned_runs() == 2
+        assert cleanup_calls == [launch_id]
         async with sessionmaker()() as db:
             rows = [await db.get(Run, rid) for rid in ids]
             assert [r.status for r in rows] == ["succeeded", "failed", "cancelled"]
@@ -526,7 +546,8 @@ async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client
         interruptions = [event for event in restored_study.json()["timeline"]
                          if event["kind"] == "execution_finished" and event["payload"].get("error_code") == "owner_lost"]
         assert {event["payload"]["run_id"] for event in interruptions} == set(map(str, ids[1:]))
-        assert all(event["payload"]["external_resource_cleanup"] == "unverified" for event in interruptions)
+        cleanup_states = {event["payload"]["run_id"]: event["payload"]["external_resource_cleanup"] for event in interruptions}
+        assert cleanup_states == {str(ids[1]): "verified", str(ids[2]): "unverified"}
         assert await runner.recover_orphaned_runs() == 0
         adapter = ProbeAdapter()
         adapter.release.set()

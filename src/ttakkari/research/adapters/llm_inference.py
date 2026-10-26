@@ -19,6 +19,7 @@ from ttakkari.research.adapters.base import (
     MeasurementRecord,
     ResourceEstimate,
 )
+from ttakkari.research.resources import checkpoint_resource
 
 # quant_type은 사전 양자화 GGUF 모델 별칭을 고르는 키다. 등록된 정확한 값만 받고 별칭("Q2K" 등)은 받지 않는다.
 QUANT_TYPE_MODELS: dict[str, str] = {
@@ -136,7 +137,7 @@ class LlmInferenceAdapter:
             reason = "호스트 GPU 경로 (llama-server) 사용 가능"
 
         # Check lease status
-        lease_held = False
+        lease_held = None
         try:
             from ttakkari.host_gpu import _lock_held, state_dir
             s_dir = state_dir(s.data_dir)
@@ -362,6 +363,7 @@ class LlmInferenceAdapter:
                 raise
             server_started = True
             launch = await asyncio.to_thread(self._read_launch, host_gpu)
+            await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
 
         try:
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
@@ -401,6 +403,7 @@ class LlmInferenceAdapter:
                         fresh = await asyncio.to_thread(self._read_launch, host_gpu)
                         if fresh.get("launch_id") == launch["launch_id"]:
                             launch = fresh
+                            await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
                 if st.get("ready"):
                     ready = True
                     break
@@ -473,6 +476,13 @@ class LlmInferenceAdapter:
         finally:
             if server_started:
                 cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch)
+                try:
+                    await checkpoint_resource({"kind": "host_gpu", "launch": launch,
+                                               "state": "released" if cleanup_info["success"] else "cleanup_unverified",
+                                               "cleanup": cleanup_info})
+                except Exception:
+                    logger.warning("LLM cleanup checkpoint was not persisted", exc_info=True)
+                    cleanup_info["checkpoint_persisted"] = False
             elif start_ownership_error:
                 cleanup_info = {
                     "attempted": False, "success": False, "stopped": False, "ownership": "unverified",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,6 +12,8 @@ from ttakkari.models import (
     CtxEntity,
     CtxMemory,
     CtxRelation,
+    Run,
+    RunStatus,
     Workspace,
 )
 from ttakkari.orchestrator.runtime import issue_token
@@ -235,3 +237,32 @@ async def test_agent_work_artifacts_are_workspace_and_session_scoped(client, set
     personal_names = {item["filename"] for item in personal_resp.json()["artifacts"]}
     assert personal_names == {"personal-private.txt", "work-allowed.txt", "shared-workspace.txt",
                               "unowned-orphan.txt", "other-workspace.txt"}
+async def test_read_session_exposes_bounded_wait_diagnostics(client, setup_sessions):
+    from ttakkari.runs import events
+
+    personal, _ = setup_sessions
+    until = datetime.now(UTC) + timedelta(days=4)
+    async with sessionmaker()() as db:
+        sess = await db.get(ChatSession, personal.id)
+        sess.strict_engine = True
+        run = Run(session_id=sess.id, workspace_id=sess.workspace_id, engine="codex",
+                  status=RunStatus.queued, prompt="review", resume_after=until,
+                  resume_handoff="private provider progress")
+        db.add(run)
+        await db.flush()
+        events.append(db, run, "run.waiting", {"reason": "usage_limit", "handoff": "private provider progress"})
+        events.append(db, run, "log", {"text": "private diagnostic"})
+        await db.commit()
+        rid = run.id
+    response = await client.get(f"/api/agent/sessions/{personal.id}",
+                                headers={"Authorization": f"Bearer {issue_token(personal.id)}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["routing"]["strict_engine"] is True
+    turn = data["turns"][0]
+    assert turn["id"] == str(rid)
+    assert datetime.fromisoformat(turn["resume_after"]) == until
+    assert turn["last_event_type"] == "log"
+    assert turn["lease_owned"] is False
+    assert "private provider progress" not in response.text
+    assert "private diagnostic" not in response.text

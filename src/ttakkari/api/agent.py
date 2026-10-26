@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from ttakkari import sysinfo
 from ttakkari.api.deps import Db, broker_http
@@ -52,7 +52,9 @@ from ttakkari.models import (
     Memo,
     PreviewStatus,
     Run,
+    RunEvent,
     RunStatus,
+    RuntimeLease,
     Workspace,
     utcnow,
 )
@@ -489,8 +491,20 @@ async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: i
         raise HTTPException(status.HTTP_403_FORBIDDEN, "회사 세션에서는 개인 세션을 열람할 수 없습니다.")
     runs = list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.desc())
                                  .limit(min(last, 50))))
-    return {"title": s.title, "kind": s.kind, "turns": [
-        {"at": r.created_at.isoformat(), "origin": r.origin, "prompt": r.prompt[:2000],
+    run_ids = [r.id for r in runs]
+    last_seq = select(RunEvent.run_id, func.max(RunEvent.seq).label("seq")).where(
+        RunEvent.run_id.in_(run_ids)).group_by(RunEvent.run_id).subquery()
+    latest_types = dict((await db.execute(select(RunEvent.run_id, RunEvent.type).join(last_seq, and_(
+        RunEvent.run_id == last_seq.c.run_id, RunEvent.seq == last_seq.c.seq)))).all()) if run_ids else {}
+    leased = set(await db.scalars(select(RuntimeLease.run_id).where(RuntimeLease.run_id.in_(run_ids)))) if run_ids else set()
+    return {"title": s.title, "kind": s.kind,
+        "routing": {"engine": s.engine, "model": s.model, "task_type": s.worker_task_type,
+                    "strict_engine": s.strict_engine, "pool": s.pool}, "turns": [
+        {"id": str(r.id), "at": r.created_at.isoformat(), "origin": r.origin,
+         "engine": r.engine, "model": r.model,
+         "resume_after": r.resume_after.isoformat() if r.resume_after else None,
+         "last_event_type": latest_types.get(r.id), "lease_owned": r.id in leased,
+         "prompt": r.prompt[:2000],
          "result": (r.result_text or r.error or "")[:2000], "status": r.status} for r in reversed(runs)]}
 
 

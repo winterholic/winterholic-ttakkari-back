@@ -27,7 +27,7 @@ def run(cmd, env_extra=None, input_text=None):
     env.setdefault("LC_ALL", "C.UTF-8")
     return subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8",
-        input=input_text, env=env, timeout=120)
+        input=input_text, env=env, timeout=120, check=False)
 
 
 @pytest.fixture()
@@ -199,7 +199,7 @@ def test_rehearsal_rejects_remote_database_url_before_database_tools(tmp_path: P
 
 def test_rehearsal_detects_row_count_mismatch(tmp_path: Path, stubs) -> None:
     """복원 뒤 행 수가 달라지면 리허설이 실패한다."""
-    env, log = stubs
+    env, _log = stubs
     out = tmp_path / "bk"
     r = run([str(BACKUP_SH), "--dir", str(out),
              "--db-url", "postgresql://localhost/ttakkari"], env)

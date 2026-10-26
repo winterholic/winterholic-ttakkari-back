@@ -615,7 +615,7 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
     assert len(hits) == 1
 
     # [유한 retention 경계 실증 - consume_pending_once 관점]: 유한 retention 문서의 import 차단 및 불변 보존
-    _, finite_mission, finite_item = await _make_held_mission(
+    _, _finite_mission, finite_item = await _make_held_mission(
         client,
         auth,
         env,

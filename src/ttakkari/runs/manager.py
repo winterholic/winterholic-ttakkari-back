@@ -352,16 +352,18 @@ class RunManager:
             from ttakkari.runs.agent_control import drop_suppressed_reports
             rows = await drop_suppressed_reports(db, rows)
             nxt = rows[0] if rows else None
-            now_ts = time.time()
             now_dt = utcnow()
             if nxt is not None:
-                is_armed = self._waiting.get(nxt.id, (0.0, nxt.id))[0] > now_ts
                 is_future = bool(nxt.resume_after and nxt.resume_after > now_dt)
-                if is_armed or is_future:
+                if is_future:
                     await db.rollback()
                     return None
                 if nxt.resume_after and nxt.resume_after <= now_dt:
                     nxt.resume_after = None
+                # A stale startup scan can re-arm an old in-memory deadline
+                # after recovery committed its removal. Only the stored wait
+                # may veto dispatch; keep future DB backoff intact above.
+                self._disarm(nxt.id)
             # A scheduled task can lock Run before this transaction flushes
             # resume_after, then wait on the ChatSession lock we still hold.
             # Commit first to avoid that lock cycle and never launch on a failed
@@ -673,7 +675,10 @@ class RunManager:
                 waiting_payload["qwen_local"] = {"ready": False, "reason": qwen_state}
             events.append(db, run, "run.waiting", waiting_payload)
             run.resume_after = datetime.fromtimestamp(until, UTC)
-            await self._commit(db, run)
+        # Notification deduplication must not skip persisting a renewed wait.
+        # Otherwise rollback leaves DB=NULL while the memory timer blocks it.
+        await self._commit(db, run)
+        if not repeat:
             _spawn(_notify_waiting(run, sess.title, until, capacity_wait=capacity_wait))
         self._arm(run.id, sess.id, until)
 

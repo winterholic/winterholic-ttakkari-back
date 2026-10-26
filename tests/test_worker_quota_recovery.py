@@ -311,6 +311,82 @@ async def test_past_resume_after_is_cleared_on_resume_queued():
         assert updated.resume_after is None
 
 
+@pytest.mark.parametrize("stored_wait", ["cleared", "expired", "future_backoff"])
+async def test_dispatch_uses_committed_wait_instead_of_stale_memory(new_session, monkeypatch, stored_wait):
+    from ttakkari.runs.manager import RunManager
+
+    ws, session = await new_session()
+    sid = uuid.UUID(session["id"])
+    deadline = {"cleared": None, "expired": utcnow() - timedelta(seconds=1),
+                "future_backoff": utcnow() + timedelta(hours=1)}[stored_wait]
+    async with sessionmaker()() as db:
+        row = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="resume",
+                  engine="antigravity", model="claude-sonnet-5-5-high", status=RunStatus.queued,
+                  resume_after=deadline, resume_handoff="keep the original progress")
+        db.add(row)
+        await db.commit()
+        rid = row.id
+    m = RunManager()
+    started = []
+    monkeypatch.setattr(m, "start", lambda rid: started.append(rid) or True)
+    m._arm(rid, sid, (utcnow() + timedelta(days=4)).timestamp())
+    waker = m._wakers[rid]
+    try:
+        result = await m.dispatch(sid)
+        if stored_wait == "future_backoff":
+            assert result is None and started == []
+            assert m.is_waiting(rid)
+        else:
+            assert result == rid and started == [rid]
+            assert not m.is_waiting(rid)
+        async with sessionmaker()() as db:
+            saved = await db.get(Run, rid)
+            assert saved.resume_handoff == "keep the original progress"
+            assert saved.resume_after == (deadline if stored_wait == "future_backoff" else None)
+    finally:
+        m._disarm(rid)
+        await asyncio.gather(waker, return_exceptions=True)
+
+
+async def test_repeated_wait_commits_timer_even_when_notification_is_deduplicated(new_session):
+    from sqlalchemy import func, select
+
+    from ttakkari.models import RunEvent
+    from ttakkari.runs import events as run_events
+    from ttakkari.runs.manager import RunManager
+    from ttakkari.runs.profiles import Profile
+
+    ws, session = await new_session()
+    sid = uuid.UUID(session["id"])
+    until = utcnow() + timedelta(days=4)
+    async with sessionmaker()() as db:
+        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="review", engine="antigravity",
+                  status=RunStatus.queued, resume_after=None, resume_handoff="same progress")
+        db.add(run)
+        await db.flush()
+        run_events.append(db, run, "run.waiting", {"until": until.isoformat(), "handoff": "same progress"})
+        await db.commit()
+        rid = run.id
+    m = RunManager()
+    profile = Profile(uuid.uuid4(), "blocked account", "antigravity", model="claude-sonnet-5-5-high")
+    try:
+        async with sessionmaker()() as db:
+            run, sess = await db.get(Run, rid), await db.get(ChatSession, sid)
+            await m._wait_for_reset(db, run, sess, [(profile, until.timestamp())])
+            # No caller commit: _wait_for_reset must persist before arming, even on a repeat.
+        async with sessionmaker()() as db:
+            saved = await db.get(Run, rid)
+            assert saved.resume_after == until
+            assert saved.resume_handoff == "same progress"
+            assert await db.scalar(select(func.count()).select_from(RunEvent).where(
+                RunEvent.run_id == rid, RunEvent.type == "run.waiting")) == 1
+    finally:
+        waker = m._wakers.get(rid)
+        m._disarm(rid)
+        if waker:
+            await asyncio.gather(waker, return_exceptions=True)
+
+
 async def test_quota_status_is_consistent_and_progress_summary_hides_payload_data(
     client, auth, make_dir,
 ):

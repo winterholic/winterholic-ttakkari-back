@@ -398,11 +398,14 @@ def _autospecced_host_gpu(*, owner_states, stop_result=None, stop_error=None, lo
     launch id and the supervisor/server process identity of its own launch.
     """
     pending = list(owner_states)
+    planned_id = pending[0].get("launch_id") if pending else None
 
     def next_state(self):
         return pending.pop(0) if len(pending) > 1 else (pending[0] if pending else None)
 
-    with patch.object(HostGpu, "start", autospec=True, return_value={"ready": True}) as start, \
+    with patch("ttakkari.research.adapters.llm_inference.uuid4",
+               return_value=SimpleNamespace(hex=planned_id or uuid4().hex)), \
+         patch.object(HostGpu, "start", autospec=True, return_value={"ready": True}) as start, \
          patch.object(HostGpu, "status", autospec=True, return_value={"ready": True}), \
          patch.object(HostGpu, "bench", autospec=True, return_value=dict(_BENCH_RESULT)) as bench, \
          patch.object(HostGpu, "_current", autospec=True, side_effect=next_state) as current, \
@@ -628,8 +631,12 @@ async def test_llm_start_rejected_or_dead_supervisor_has_nothing_to_clean(start_
     assert m.stop.call_count == 0
     cleanup = result.raw_output["cleanup"]
     assert cleanup["attempted"] is False
-    assert cleanup["success"] is True
-    assert cleanup["skipped_reason"] == "server_not_started"
+    if isinstance(start_error, Busy):
+        assert cleanup["success"] is True
+        assert cleanup["skipped_reason"] == "server_not_started"
+    else:
+        assert cleanup["success"] is False
+        assert cleanup["ownership"] == "unverified"
 
 
 @pytest.mark.asyncio
@@ -637,7 +644,7 @@ async def test_llm_cleanup_runs_on_cancellation_after_start() -> None:
     live = {"launch_id": "launch-A", "phase": "ready"}
     cancel_event = asyncio.Event()
     with _autospecced_host_gpu(owner_states=[live, live], stop_result=dict(_STOPPED)) as m:
-        m.start.side_effect = lambda self, req: cancel_event.set() or {"ready": True}
+        m.start.side_effect = lambda self, req, **kwargs: cancel_event.set() or {"ready": True}
         result = await LlmInferenceAdapter().execute_run(
             uuid4(), _LLM_CONFIG, scope="personal", cancel_event=cancel_event
         )
@@ -697,7 +704,7 @@ async def test_llm_task_cancel_during_start_waits_for_owner_then_cleans() -> Non
     live = {"launch_id": "launch-A", "phase": "ready"}
     entered, release, returned = threading.Event(), threading.Event(), threading.Event()
 
-    def pending_start(self, req):
+    def pending_start(self, req, **kwargs):
         entered.set()
         try:
             assert release.wait(2)

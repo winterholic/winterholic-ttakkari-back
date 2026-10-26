@@ -11,7 +11,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any, ClassVar
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from ttakkari.research.adapters.base import (
     AdapterEnvironmentStatus,
@@ -27,9 +27,6 @@ QUANT_TYPE_MODELS: dict[str, str] = {
     "Q2_K": "qwen3.8-flash-next-q2k",
 }
 _LIVE_PHASES = ("starting", "ready")
-# HostGpu.start raises this when the supervisor wrote no state within 20s. The supervisor may still come up
-# afterwards, and its launch id (generated inside start) is unknown to us, so we cannot prove or stop it.
-_START_STATE_TIMEOUT_MARKER = "did not report a state"
 logger = logging.getLogger(__name__)
 
 
@@ -292,7 +289,7 @@ class LlmInferenceAdapter:
             )
 
         from ttakkari.config import get_settings
-        from ttakkari.host_gpu import GpuError, HostGpu, StartRequest
+        from ttakkari.host_gpu import Busy, GpuError, HostGpu, StartRequest
 
         s = get_settings()
         host_gpu = HostGpu(s)
@@ -348,22 +345,38 @@ class LlmInferenceAdapter:
         server_started = False
         launch: dict[str, Any] = {}
         start_ownership_error: str | None = None
+        intent_committed = False
         cleanup_info: dict[str, Any] = {
             "attempted": False, "success": True, "stopped": False, "skipped_reason": "server_not_started",
         }
         run_result: AdapterRunResult | None = None
 
         async def start_owned_launch() -> None:
-            nonlocal server_started, launch, start_ownership_error
+            nonlocal server_started, launch, start_ownership_error, intent_committed
+            planned_id = uuid4().hex
+            await checkpoint_resource({"kind": "host_gpu", "launch": {"launch_id": planned_id}, "state": "starting"})
+            intent_committed = True
+            launch = {"launch_id": planned_id}
             try:
-                await asyncio.to_thread(host_gpu.start, start_req)
-            except GpuError as start_exc:
-                if _START_STATE_TIMEOUT_MARKER in str(start_exc):
+                await asyncio.to_thread(host_gpu.start, start_req, launch_id=planned_id)
+                fresh = await asyncio.to_thread(self._read_launch, host_gpu)
+                if fresh.get("launch_id") != planned_id:
+                    raise GpuError("ownership_unverified: started launch identity is missing or replaced")
+                launch = fresh
+                server_started = True
+                await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
+            except BaseException as start_exc:
+                if not isinstance(start_exc, Busy):
                     start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                    # A timeout or failed post-start commit can leave our supervisor alive.
+                    # The precommitted UUID fences this observation; never adopt a replacement.
+                    try:
+                        fresh = await asyncio.to_thread(self._read_launch, host_gpu)
+                        if fresh.get("launch_id") == planned_id:
+                            launch, server_started = fresh, True
+                    except Exception:
+                        logger.warning("LLM startup identity observation failed", exc_info=True)
                 raise
-            server_started = True
-            launch = await asyncio.to_thread(self._read_launch, host_gpu)
-            await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
 
         try:
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
@@ -486,9 +499,16 @@ class LlmInferenceAdapter:
             elif start_ownership_error:
                 cleanup_info = {
                     "attempted": False, "success": False, "stopped": False, "ownership": "unverified",
-                    "error": f"{start_ownership_error} — 감독자가 뒤늦게 뜰 수 있으나 launch_id를 알 수 없어 "
-                             "다른 프로세스를 건드리지 않도록 stop을 호출하지 않았습니다.",
+                    "error": f"{start_ownership_error} — 기록된 시작 의도와 일치하는 실행 신원은 미확인입니다.",
                 }
+            if intent_committed and not server_started:
+                try:
+                    await checkpoint_resource({"kind": "host_gpu", "launch": launch,
+                                               "state": "cleanup_unverified" if start_ownership_error else "released",
+                                               "cleanup": cleanup_info})
+                except Exception:
+                    logger.warning("LLM startup cleanup checkpoint was not persisted", exc_info=True)
+                    cleanup_info["checkpoint_persisted"] = False
             if run_result is not None and isinstance(run_result.raw_output, dict):
                 run_result.raw_output["cleanup"] = cleanup_info
 

@@ -217,3 +217,158 @@ async def test_shared_readiness_keeps_unknown_lease_for_dashboard(client, monkey
     monkeypatch.setattr(registry, "get_adapter_registry", lambda: SimpleNamespace(list_adapters=lambda: [adapter]))
     _, lease = await service.adapter_readiness("personal")
     assert lease == {"held": None}
+
+
+@pytest.mark.parametrize("reject_intent", [False, True])
+async def test_gpu_intent_commits_before_any_start(client, monkeypatch, reject_intent):
+    from ttakkari import host_gpu
+    from ttakkari.research.adapters.llm_inference import LlmInferenceAdapter
+    from ttakkari.research.models import Configuration
+    from ttakkari.research.resources import RESOURCE_KEY
+
+    _, ids = await seed_runs()
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        row.adapter_id = "llm_inference"
+        (await db.get(Configuration, row.configuration_id)).parameters = {"model": "qwen3.5-4b-q4_k_m"}
+        await db.commit()
+    events, observed = [], {}
+    loop = asyncio.get_running_loop()
+
+    async def read_intent():
+        async with sessionmaker()() as db:
+            row = await db.get(Run, ids[0])
+            return row.environment_snapshot[RESOURCE_KEY]
+
+    def start(self, request, *, launch_id=None):
+        events.append("start")
+        receipt = asyncio.run_coroutine_threadsafe(read_intent(), loop).result(2)
+        assert receipt["state"] == "starting"
+        assert uuid.UUID(receipt["launch"]["launch_id"]) == uuid.UUID(launch_id)
+        observed.update(launch_identity(), launch_id=launch_id)
+        raise host_gpu.GpuError("supervisor did not report a state within 20s")
+
+    def cleanup(host, data_dir, launch):
+        events.append("cleanup")
+        assert launch == observed
+        return {"success": True, "stopped": True}
+
+    monkeypatch.setattr(host_gpu.HostGpu, "start", start)
+    monkeypatch.setattr(LlmInferenceAdapter, "_read_launch", staticmethod(lambda host: dict(observed)))
+    monkeypatch.setattr(LlmInferenceAdapter, "_cleanup_owned_launch", staticmethod(cleanup))
+    if reject_intent:
+        async def refuse(resource):
+            if resource.get("state") == "starting":
+                raise RuntimeError("synthetic intent commit refused")
+        monkeypatch.setattr("ttakkari.research.adapters.llm_inference.checkpoint_resource", refuse)
+    adapter = type("Registry", (), {"get_adapter": lambda self, _: LlmInferenceAdapter()})()
+    result = await runner.execute_run_instance(ids[0], adapter)
+    assert result.status == "failed"
+    assert events == ([] if reject_intent else ["start", "cleanup"])
+    if not reject_intent:
+        saved = await read_intent()
+        assert saved["state"] == "released"
+        assert saved["launch"] == observed
+
+
+@pytest.mark.parametrize("shape", ["same", "other", "missing", "invalid_identity", "wrong_token"])
+async def test_recover_pre_spawn_intent_requires_same_launch_and_identity(monkeypatch, shape):
+    from ttakkari.research.adapters.llm_inference import LlmInferenceAdapter
+    from ttakkari.research.resources import RESOURCE_KEY, recover_resource
+
+    launch, token, calls = launch_identity(), str(uuid.uuid4()), []
+    intent = {"contract": 1, "owner_token": token, "kind": "host_gpu", "state": "starting",
+              "launch": {"launch_id": launch["launch_id"]}}
+    current = dict(launch)
+    if shape == "other":
+        current["launch_id"] = uuid.uuid4().hex
+    elif shape == "missing":
+        current = {}
+    elif shape == "invalid_identity":
+        current["supervisor_start"] = None
+    elif shape == "wrong_token":
+        intent["owner_token"] = str(uuid.uuid4())
+    monkeypatch.setattr(LlmInferenceAdapter, "_read_launch", staticmethod(lambda host: current))
+
+    def cleanup(host, data_dir, recorded):
+        calls.append(recorded)
+        return {"success": True, "stopped": True}
+
+    monkeypatch.setattr(LlmInferenceAdapter, "_cleanup_owned_launch", staticmethod(cleanup))
+    result = await recover_resource({"research_execution_owner": {"contract": 1, "token": token}, RESOURCE_KEY: intent})
+    assert calls == ([launch] if shape == "same" else [])
+    assert result["status"] == ("verified" if shape == "same" else "unverified")
+    if shape == "same":
+        assert result["evidence"]["startup_identity"] == launch
+
+
+async def test_cancelled_run_with_starting_intent_is_recovered_once(client, auth, monkeypatch):
+    from ttakkari.research.adapters.llm_inference import LlmInferenceAdapter
+    from ttakkari.research.resources import RESOURCE_KEY
+
+    _, ids = await seed_runs()
+    launch, token, calls = launch_identity(), str(uuid.uuid4()), []
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        row.adapter_id, row.status = "llm_inference", "cancelled"
+        row.error_code, row.error_message, row.raw_output = "cancelled", "Researcher stop", {"saved": True}
+        row.environment_snapshot = {"research_execution_owner": {"contract": 1, "token": token}, RESOURCE_KEY: {
+            "contract": 1, "owner_token": token, "kind": "host_gpu", "state": "starting",
+            "launch": {"launch_id": launch["launch_id"]},
+        }}
+        await db.commit()
+    monkeypatch.setattr(LlmInferenceAdapter, "_read_launch", staticmethod(lambda host: launch))
+    def cleanup(host, data_dir, recorded):
+        calls.append(recorded)
+        return {"success": True, "stopped": True}
+    monkeypatch.setattr(LlmInferenceAdapter, "_cleanup_owned_launch", staticmethod(cleanup))
+    assert await runner.recover_orphaned_runs() == 1
+    assert await runner.recover_orphaned_runs() == 0
+    saved = (await client.get(f"/api/research/runs/{ids[0]}", headers=auth)).json()
+    assert saved["status"] == saved["error_code"] == "cancelled"
+    assert saved["error_message"] == "Researcher stop" and saved["raw_output"] == {"saved": True}
+    assert saved["environment_snapshot"]["research_resource_recovery"]["status"] == "verified"
+    assert calls == [launch]
+
+
+@pytest.mark.parametrize("shape", ["replaced", "owned_commit_refused"])
+async def test_gpu_poststart_identity_and_checkpoint_failure_do_not_bench(client, monkeypatch, shape):
+    from ttakkari import host_gpu
+    from ttakkari.research.adapters import llm_inference
+    from ttakkari.research.resources import resource_checkpoints
+
+    current, receipts, calls = {}, [], []
+
+    def start(self, req, *, launch_id):
+        current.update(launch_identity(), launch_id=uuid.uuid4().hex if shape == "replaced" else launch_id)
+
+    async def write(resource):
+        if resource["state"] == "owned" and shape == "owned_commit_refused":
+            raise RuntimeError("synthetic post-start commit refusal")
+        receipts.append(resource)
+
+    def cleanup(host, data_dir, recorded):
+        calls.append(recorded)
+        return {"success": True, "stopped": True}
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("unowned or unrecorded launch reached benchmark")
+
+    monkeypatch.setattr(host_gpu.HostGpu, "start", start)
+    monkeypatch.setattr(host_gpu.HostGpu, "bench", forbidden)
+    monkeypatch.setattr(llm_inference.LlmInferenceAdapter, "_read_launch", staticmethod(lambda host: dict(current)))
+    monkeypatch.setattr(llm_inference.LlmInferenceAdapter, "_cleanup_owned_launch", staticmethod(cleanup))
+    with resource_checkpoints(write):
+        result = await llm_inference.LlmInferenceAdapter().execute_run(
+            uuid.uuid4(), {"model": "qwen3.5-4b-q4_k_m"}, scope="personal",
+        )
+    assert result.status == "failed"
+    planned_id = receipts[0]["launch"]["launch_id"]
+    assert receipts[0]["state"] == "starting"
+    if shape == "replaced":
+        assert planned_id != current["launch_id"] and calls == []
+        assert receipts[-1]["launch"]["launch_id"] == planned_id
+        assert receipts[-1]["state"] == "cleanup_unverified"
+    else:
+        assert planned_id == current["launch_id"] and calls == [current]
+        assert receipts[-1]["state"] == "released"

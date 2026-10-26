@@ -1,0 +1,50 @@
+{
+  "base_revision": "6a994c2b576b99ec8e982bfbe0d8826b4c2267fd",
+  "scope": "Codex direct; real isolated PG with synthetic host probes; no GPU launch/model/browser",
+  "source_sha256": {
+    "src/ttakkari/host_gpu.py": "fbace87c0b73fb7b7bd11b8db66577c6e9101b644749f51cd26ce1bd7c3e162f",
+    "src/ttakkari/research/adapters/llm_inference.py": "84758c948691e9e7bd4893c4f4efe295be87c534f64051ce088fce5654ce3441",
+    "src/ttakkari/research/resources.py": "6efa9d4b6b24b47da92e5aa69d97639c91933cae0ff731bff4b044d33ff9e114",
+    "src/ttakkari/research/runner.py": "e7305bf0cf434b22f1c7839dbd123a3b57707411ee14d812e7ce4579e6529738",
+    "src/ttakkari/games/builds.py": "23b1e836955839a02361d2cec7d5943b45f8d0c9a24d7b8b906bc0efa223f526",
+    "tests/test_research_adapters.py": "4aec7a033debe82c5936d50e479756cec3b637c59f6377b27ee369ce588443bb",
+    "tests/test_research_external_resources.py": "fc5d7effcd88be94235316f77974f34f937f7c09f4434578f0d36486088f4496",
+    "tests/test_host_gpu_launch_identity.py": "c8655dc515659db70aeb15ca72be25d673db1da1f525de9a3a7318f3ad560a98",
+    "tests/test_game_build_failure_log.py": "ddd596af9871ef44855a9a3b80156d26f29f548e08a852314d550a989c261a95",
+    "unit_tests/test_game_build_failure_diagnostics.py": "83bac0ef3ae56082c91c8344a6b630100661e70796a59335c013dec2d2db7fde"
+  },
+  "validation": [
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_research_external_resources.py tests/test_research_adapters.py tests/test_host_gpu_launch_identity.py tests/test_game_build_failure_log.py unit_tests/test_game_build_failure_diagnostics.py -q --timeout=30 --tb=short",
+      "result": "88 passed in 8.52s"
+    },
+    {
+      "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_host_gpu_launch_identity.py tests/test_game_build_failure_log.py unit_tests/test_game_build_failure_diagnostics.py -q --timeout=30 --tb=short",
+      "result": "8 passed in 7.23s; after lint-only import/check changes"
+    }
+  ],
+  "interrupted_validation": {
+    "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_research_external_resources.py tests/test_research_adapters.py tests/test_research_runner_lifecycle.py tests/test_host_gpu.py -q --timeout=30 --tb=short",
+    "result": "4 failed, 133 passed in 52.07s; KeyboardInterrupt",
+    "failures": [
+      "test_supervisor_runs_until_stopped_and_cleans_up: ready timeout",
+      "test_only_one_supervisor_can_own_an_instance: ready timeout",
+      "test_instance_stops_at_the_max_runtime: supervisor_error OSError",
+      "test_server_that_never_gets_healthy_is_stopped_at_the_start_timeout: supervisor_error OSError"
+    ],
+    "not_retried": true,
+    "cause": "unverified; code-path inference only"
+  },
+  "unverified": [
+    "actual new GPU launch/owner crash",
+    "native checkpoint/resume",
+    "whole Run/OS/parent/descendant/GPU memory bound",
+    "research-specific RuntimeLease",
+    "authenticated operating UI/UX10",
+    "full controller gate",
+    "mount-source failure root cause",
+    "legacy92 and PMS original conditions"
+  ],
+  "operating_same_A": "operating-A-metal-6a994c2b.json",
+  "deployment_failure": "deploy-mount-failure-8bf8f04a.json"
+}

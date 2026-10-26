@@ -1,0 +1,20 @@
+{
+  "job_id": "8bf8f04a-6808-4536-b178-12d868218186",
+  "revision": "6a994c2b576b99ec8e982bfbe0d8826b4c2267fd",
+  "status": "failed",
+  "strategy": "generations",
+  "created_at": "2026-10-26T11:39:33.344009+00:00",
+  "updated_at": "2026-10-26T11:42:59.612379+00:00",
+  "error": "release stage pytest failed (exit 1); last 12 log lines:\ntests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\ntests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n  /Users/winterholic/.ttakkari/deploy/releases/6a994c2b576b99ec8e982bfbe0d8826b4c2267fd/.venv/lib/python3.13/site-packages/pydant",
+  "log": {
+    "exists": true,
+    "bytes": 6515,
+    "lines": 99,
+    "clipped_head": false
+  },
+  "stage": "pytest",
+  "cause": "FAILED tests/test_e2e_game_studio.py::test_game_studio_flow_with_recorded_worker_output",
+  "from_line": 64,
+  "text": "64| tests/test_e2e_game_studio.py:82: \n65| _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n66| \n67|     async def build() -> dict:\n68|         started = await client.post(f\"/api/games/{gid}/builds\", json={}, headers=auth)\n69|         assert started.status_code == 202, started.text\n70|         done = await wait_build(client, auth, gid, started.json()[\"id\"], timeout=600)\n71| >       assert done[\"status\"] == \"succeeded\", (done[\"error\"], done[\"log_tail\"])\n72| E       AssertionError: ('의존성 설치 실패(exit 127)', \"== install (exit=127, 0.9s) ==\n73| E         docker: Error response from daemon: error while creating moun...ter/f13c2417-1497-437d-89dc-642200835582: no such file or directory\n74| E         \n75| E         Run 'docker run --help' for more information\n76| E         \")\n77| E       assert 'failed' == 'succeeded'\n78| E         \n79| E         - succeeded\n80| E         + failed\n81| ",
+  "next_offset": 82
+}

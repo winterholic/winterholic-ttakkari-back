@@ -1,0 +1,54 @@
+{
+  "execution_path": "host_gpu",
+  "measured_on": "host_gpu_path",
+  "note": "Measured on the host GPU path: a llama-server child run by the backend outside any engine sandbox, started through the host_gpu tools. Report it as such, with the request settings below.",
+  "phase": "stopped",
+  "running": false,
+  "model": "qwen3.5-4b-q4_k_m",
+  "request": {
+    "model": "qwen3.5-4b-q4_k_m",
+    "gpu_layers": 999,
+    "cpu_moe": false,
+    "n_cpu_moe": null,
+    "ctx_size": 4096,
+    "threads": 6,
+    "batch_size": null,
+    "ubatch_size": null,
+    "flash_attn": "on",
+    "device": "default",
+    "spec_type": "none",
+    "parallel": 1,
+    "cache_type_k": "q8_0",
+    "cache_type_v": "f16",
+    "rope_scaling": "none",
+    "max_seconds": 120
+  },
+  "port": 19301,
+  "stop_reason": "requested",
+  "started_at": 1792992954.600136,
+  "stopped_at": 1792992958.460334,
+  "server_exit_code": 0,
+  "slot_ctx_size": 4096,
+  "context": {
+    "total": 4096,
+    "per_slot": 4096,
+    "parallel_slots": 1
+  },
+  "elapsed_seconds": 3.9,
+  "swap": {
+    "baseline_bytes": 43513872384,
+    "limit_bytes": 1073741824,
+    "peak_growth_bytes": 0
+  },
+  "ready": false,
+  "device_evidence": [
+    "0.00.477.103 I load_tensors: offloading output layer to GPU",
+    "0.00.477.107 I load_tensors: offloading 31 repeating layers to GPU",
+    "0.00.477.107 I load_tensors: offloaded 33/33 layers to GPU",
+    "0.00.477.109 I load_tensors:  MTL0_Mapped model buffer size =  2571.63 MiB",
+    "0.00.481.222 I llama_kv_cache:       MTL0 KV buffer size =    98.00 MiB",
+    "0.00.493.743 I sched_reserve:       MTL0 compute buffer size =    79.27 MiB",
+    "0.00.009.937 I ggml_metal_device_init: testing tensor API for f16 support",
+    "0.00.011.277 I ggml_metal_device_init: testing tensor API for bfloat support"
+  ]
+}

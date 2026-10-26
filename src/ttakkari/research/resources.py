@@ -156,13 +156,32 @@ def _owned_gpu_launch(snapshot: dict) -> dict | None:
 
 async def recover_resource(snapshot: dict) -> dict:
     """Never stop by status, model name, PID alone, or an unknown resource kind."""
-    launch = _owned_gpu_launch(snapshot)
-    if launch is None:
-        return {"status": "unverified", "reason": "no_verified_host_gpu_checkpoint"}
     from ttakkari.host_gpu import HostGpu
     from ttakkari.research.adapters.llm_inference import LlmInferenceAdapter
 
     settings = get_settings()
+    launch = _owned_gpu_launch(snapshot)
+    observed_intent = False
+    if launch is None:
+        resource, token = snapshot.get(RESOURCE_KEY), owner_token(snapshot)
+        if (not isinstance(resource, dict) or type(resource.get("contract")) is not int
+                or resource["contract"] != 1 or token is None or resource.get("owner_token") != str(token)
+                or resource.get("kind") != "host_gpu" or resource.get("state") not in ("starting", "cleanup_unverified")
+                or not isinstance(resource.get("launch"), dict)):
+            return {"status": "unverified", "reason": "no_verified_host_gpu_checkpoint"}
+        planned_id = resource["launch"].get("launch_id")
+        try:
+            uuid.UUID(planned_id)
+            current = await asyncio.to_thread(LlmInferenceAdapter._read_launch, HostGpu(settings))
+        except Exception as exc:
+            logger.warning("Research startup intent observation failed", exc_info=True)
+            return {"status": "unverified", "reason": type(exc).__name__}
+        if current.get("launch_id") != planned_id:
+            return {"status": "unverified", "reason": "startup_launch_missing_or_replaced"}
+        launch = _owned_gpu_launch({**snapshot, RESOURCE_KEY: {**resource, "launch": current}})
+        if launch is None:
+            return {"status": "unverified", "reason": "startup_process_identity_unverified"}
+        observed_intent = True
     try:
         result = await asyncio.to_thread(
             LlmInferenceAdapter._cleanup_owned_launch, HostGpu(settings), settings.data_dir, launch,
@@ -170,4 +189,6 @@ async def recover_resource(snapshot: dict) -> dict:
     except Exception as exc:
         logger.warning("Research orphan resource cleanup could not be verified", exc_info=True)
         return {"status": "unverified", "reason": type(exc).__name__, "launch_id": launch["launch_id"]}
+    if observed_intent:
+        result = {**result, "startup_identity": launch, "basis": "precommitted_launch_id_and_process_identity"}
     return {"status": "verified" if result.get("success") is True else "unverified", "evidence": result}

@@ -1,0 +1,122 @@
+# Raw verification transcript
+
+Checkout: `/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-deploy-regression-20261027`
+
+## Identity
+
+Command: `git rev-parse HEAD`
+
+```text
+52e6c12cb140f545bee13d788650f6afbc125415
+```
+
+Command: `git rev-parse ec8e9658735f29da5311fd37e0db665b2d863654`
+
+```text
+ec8e9658735f29da5311fd37e0db665b2d863654
+```
+
+Command: `git status --short --branch` (before review files)
+
+```text
+## fix/kb-v3-deploy-regression-20261027
+```
+
+Command: `git diff --exit-code ec8e9658735f29da5311fd37e0db665b2d863654 HEAD -- src/ttakkari/kb_access.py src/ttakkari/kb_library.py src/ttakkari/kb_retrieval.py src/ttakkari/api/kb_agent.py src/ttakkari/api/kb_library.py src/ttakkari/collector/scope_merge.py`
+
+Exit: 0; stdout/stderr empty.
+
+Command: `git diff --check ec8e9658735f29da5311fd37e0db665b2d863654^ ec8e9658735f29da5311fd37e0db665b2d863654`
+
+Exit: 0; stdout/stderr empty.
+
+## Run-owned test DB preflight
+
+Safe fields only; DSN password omitted.
+
+```text
+run_id=3e8620a1-b4c8-4479-a97d-686b1f605acc
+configured_db=postgresql+asyncpg://ttk_test@127.0.0.1:61291/ttakkari_test
+marker_count=2
+marker=/tmp/ttakkari-run-test-92353-5022afaa/run-test-cluster.marker run_id=a79b6d13-dc02-4309-8da2-f6c65157f1fa port=58757
+marker=/tmp/ttakkari-run-test-92353-de5584d5/run-test-cluster.marker run_id=3e8620a1-b4c8-4479-a97d-686b1f605acc port=61291
+```
+
+Marker files use key=value text, not JSON. Run ID and port matched before any database test.
+
+## Narrow unit test
+
+Command: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short unit_tests/test_kb_access.py`
+
+Exit: 0
+
+```text
+........                                                                 [100%]
+8 passed in 0.28s
+```
+
+## Delta, head guard, and access unit tests
+
+Command: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_v3_collection_access_delta.py tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes unit_tests/test_kb_access.py`
+
+Exit: 0
+
+```text
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_kb_v3_collection_access_delta.py::test_work_agent_grant_then_revoke_blocks_list_search_detail_and_evidence
+tests/test_kb_v3_collection_access_delta.py::test_engine_grant_preserves_source_provenance_and_personal_visibility
+tests/test_kb_v3_collection_access_delta.py::test_owner_single_library_includes_work_material_without_opening_personal_agent
+tests/test_kb_v3_collection_access_delta.py::test_revocation_filters_derived_entities_assertions_and_relations
+  /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-deploy-regression-20261027/src/ttakkari/api/kb_library.py:131: DeprecationWarning: deprecated
+    locator=body.locator, pool=pool_for_scope(body.scope),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+db reset: 11 selective (avg 6.9/133 tables), 0 forced full, 0 fell back to full
+19 passed, 4 warnings in 1.32s
+```
+
+## Alias/canonical and graph privacy counterexamples
+
+Command: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_retrieval.py::test_entity_alias_graph_and_canonical_paths_use_source_evidence tests/test_kb_v3_api_and_mcp.py::test_personal_context_hides_work_entities_aliases_and_graph_while_owner_can_read`
+
+Exit: 0
+
+```text
+..                                                                       [100%]
+=============================== warnings summary ===============================
+tests/test_kb_retrieval.py::test_entity_alias_graph_and_canonical_paths_use_source_evidence
+tests/test_kb_retrieval.py::test_entity_alias_graph_and_canonical_paths_use_source_evidence
+tests/test_kb_v3_api_and_mcp.py::test_personal_context_hides_work_entities_aliases_and_graph_while_owner_can_read
+  /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-deploy-regression-20261027/src/ttakkari/api/kb_library.py:131: DeprecationWarning: deprecated
+    locator=body.locator, pool=pool_for_scope(body.scope),
+
+db reset: 2 selective (avg 9.5/133 tables), 0 forced full, 0 fell back to full
+2 passed, 3 warnings in 1.34s
+```
+
+## Pure SQL-expression counterexamples
+
+Command: inline Python using `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/python`; it compiled access clauses without opening a DB. Assertions checked owner/personal/work contexts, unclassified-document denial for work, and tenant/hidden plus explicit-work-or-legacy-work predicates on document/entity/alias/assertion/relation filters.
+
+Exit: 0
+
+```text
+PASS document: tenant + hidden + (explicit work pool OR legacy work scope)
+PASS entity: tenant + hidden + (explicit work pool OR legacy work scope)
+PASS alias: tenant + hidden + (explicit work pool OR legacy work scope)
+PASS assertion: tenant + hidden + (explicit work pool OR legacy work scope)
+PASS relation: tenant + hidden + (explicit work pool OR legacy work scope)
+PASS contexts: owner global+work_only; personal global-only; work excludes unclassified
+```
+
+## Final checkout check (before writing this review)
+
+Commands: `git status --short --branch`, `git rev-parse HEAD`, `git diff --check ec8e9658735f29da5311fd37e0db665b2d863654^ ec8e9658735f29da5311fd37e0db665b2d863654`, and the product-source `git diff --exit-code ec8e9658735f29da5311fd37e0db665b2d863654 HEAD -- ...` above.
+
+```text
+## fix/kb-v3-deploy-regression-20261027
+52e6c12cb140f545bee13d788650f6afbc125415
+(empty diff-check output; exit 0)
+(empty source-diff output; exit 0)
+```

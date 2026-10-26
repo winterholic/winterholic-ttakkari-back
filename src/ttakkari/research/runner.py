@@ -17,12 +17,14 @@ from ttakkari.db import sessionmaker
 from ttakkari.models import utcnow
 from ttakkari.research.models import (
     Configuration,
+    Event,
     Experiment,
     Measurement,
     ResearchArtifact,
     Run,
     Study,
 )
+from ttakkari.research.ownership import OWNER_KEY, ExecutionOwner, owner_token, probe
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,11 @@ def _get_registry():
         return None
 
 
+def _fence_owner(run: Run, owner: ExecutionOwner) -> None:
+    if (run.environment_snapshot or {}).get(OWNER_KEY) != owner.metadata:
+        raise generation.OwnershipLost(str(run.id))
+
+
 async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
     """Signal cancellation to a running or queued run."""
     # Update DB status
@@ -74,6 +81,7 @@ async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
 
 async def execute_run_instance(
     run_id: uuid.UUID, adapter_registry: Any = None, *, deadline: float | None = None,
+    _owner: ExecutionOwner | None = None,
 ) -> Run:
     """Execute a single run through its designated ExecutionAdapter."""
     reg = adapter_registry or _get_registry()
@@ -87,12 +95,21 @@ async def execute_run_instance(
         if run.status != "queued":
             return run
 
+        # A reserved queued Run belongs to its accepting batch even before its
+        # first adapter call. Direct/replayed dispatch must not replace that owner.
+        reserved = (run.environment_snapshot or {}).get(OWNER_KEY)
+        if reserved is not None and (_owner is None or reserved != _owner.metadata):
+            return run
+
         config = await db.get(Configuration, run.configuration_id)
         study = await db.get(Study, run.study_id)
         if not config or not study:
             raise ValueError(f"Configuration or Study missing for run {run_id}")
 
         cancel_event = asyncio.Event()
+        own_lock = _owner is None
+        owner = _owner or ExecutionOwner.acquire()
+        run.environment_snapshot = owner.snapshot(run.environment_snapshot)
         _CANCEL_EVENTS[run_id] = cancel_event
         run.status = "running"
         run.started_at = utcnow()
@@ -100,27 +117,23 @@ async def execute_run_instance(
             await db.commit()
         except BaseException:
             _CANCEL_EVENTS.pop(run_id, None)
+            if own_lock:
+                owner.close()
             raise
-
-        # Find adapter
-        adapter = None
-        if reg is not None and hasattr(reg, "get_adapter"):
-            adapter = reg.get_adapter(run.adapter_id)
-
-        if adapter is None:
-            run.status = "failed"
-            run.error_code = "adapter_not_found"
-            run.error_message = f"실행 어댑터 '{run.adapter_id}'가 레지스트리에 등록되어 있지 않습니다."
-            run.finished_at = utcnow()
-            await db.commit()
-            _CANCEL_EVENTS.pop(run_id, None)
-            return run
 
         start_time = asyncio.get_event_loop().time()
         adapter_res = None
         created_copies: list[Path] = []
         execution_timeout = asyncio.timeout_at(deadline)
         try:
+            adapter = reg.get_adapter(run.adapter_id) if reg is not None and hasattr(reg, "get_adapter") else None
+            if adapter is None:
+                run.status = "failed"
+                run.error_code = "adapter_not_found"
+                run.error_message = f"실행 어댑터 '{run.adapter_id}'가 레지스트리에 등록되어 있지 않습니다."
+                run.finished_at = utcnow()
+                await db.commit()
+                return run
             async with execution_timeout:
                 adapter_res = await adapter.execute_run(
                     run_id=run.id,
@@ -136,10 +149,11 @@ async def execute_run_instance(
             # Cancellation may come from another request/process while the adapter
             # finishes. Re-read the persisted status before publishing its result.
             await db.refresh(run, with_for_update=True)
+            _fence_owner(run, owner)
             cancelled = run.status == "cancelled"
             run.status = "cancelled" if cancelled else adapter_res.status
             run.raw_output = adapter_res.raw_output or {}
-            run.environment_snapshot = adapter_res.environment_snapshot or {}
+            run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
             if not cancelled:
                 run.error_code = adapter_res.error_code
                 run.error_message = adapter_res.error_message
@@ -277,7 +291,8 @@ async def execute_run_instance(
                 # The measurement checkpoint released our row lock. Honour a
                 # cancellation accepted during artifact copying before final commit.
                 with db.no_autoflush:
-                    await db.refresh(run, ["status", "error_code", "error_message"], with_for_update=True)
+                    await db.refresh(run, ["status", "error_code", "error_message", "environment_snapshot"], with_for_update=True)
+                _fence_owner(run, owner)
                 if run.status == "cancelled":
                     raise asyncio.CancelledError
                 run.status = "succeeded"
@@ -287,13 +302,19 @@ async def execute_run_instance(
             created_copies.clear()
             return run
 
+        except generation.OwnershipLost:
+            await db.rollback()
+            _remove_run_copies(created_copies)
+            logger.warning("Discarded stale research owner result for Run %s", run_id)
+            return await db.get(Run, run_id, populate_existing=True)
         except asyncio.CancelledError:
             await db.rollback()
             cleanup_failures = _remove_run_copies(created_copies)
             run = await db.get(Run, run_id, with_for_update=True, populate_existing=True)
+            _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = adapter_res.environment_snapshot or {}
+                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
             run.status = "cancelled"
             run.error_code = "cancelled"
             run.error_message = run.error_message or "Task cancelled by system"
@@ -312,9 +333,10 @@ async def execute_run_instance(
             await db.rollback()
             cleanup_failures = _remove_run_copies(created_copies)
             run = await db.get(Run, run_id, with_for_update=True, populate_existing=True)
+            _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = adapter_res.environment_snapshot or {}
+                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot)
             if run.status == "cancelled":
                 run.error_message = (
                     f"{run.error_message or 'Run cancelled'}; "
@@ -337,6 +359,8 @@ async def execute_run_instance(
             return run
         finally:
             _CANCEL_EVENTS.pop(run_id, None)
+            if own_lock:
+                owner.close()
 
 
 async def _finish_experiment_if_terminal(db, experiment_id: uuid.UUID) -> bool:
@@ -371,11 +395,42 @@ async def run_experiment_batch(
     experiment_id: uuid.UUID,
     run_ids: list[uuid.UUID],
     adapter_registry: Any = None,
+    *, _owner: ExecutionOwner | None = None,
 ) -> None:
     """Execute a batch of runs under generation work context and auto-analyze."""
     if not run_ids:
+        if _owner is not None:
+            _owner.close()
         return
-    async with generation.enter_accepted_work("research") as acquired:
+    owner = _owner
+    try:
+        if owner is None:
+            # Reserve every queued sibling before dispatch. One DB transaction
+            # protects this batch against a replay taking its later Run first.
+            async with sessionmaker()() as db:
+                rows = list(await db.scalars(select(Run).where(
+                    Run.id.in_(run_ids), Run.experiment_id == experiment_id,
+                ).order_by(Run.id).with_for_update()))
+                if any(row.status == "running" for row in rows):
+                    return
+                queued = [row for row in rows if row.status == "queued"]
+                if not queued or any((row.environment_snapshot or {}).get(OWNER_KEY) is not None for row in queued):
+                    return
+                owner = ExecutionOwner.acquire()
+                for row in queued:
+                    row.environment_snapshot = owner.snapshot(row.environment_snapshot)
+                await db.commit()
+        await _run_owned_batch(experiment_id, run_ids, adapter_registry, owner)
+    finally:
+        if owner is not None:
+            owner.close()
+
+
+async def _run_owned_batch(experiment_id, run_ids, adapter_registry, owner) -> None:
+    accepted_id = owner.metadata["generation_id"]
+    async with generation.enter_accepted_work(
+        "research", accepted_generation_id=uuid.UUID(accepted_id) if accepted_id else None,
+    ) as acquired:
         sm = sessionmaker()
         if not acquired:
             logger.warning(
@@ -430,7 +485,7 @@ async def run_experiment_batch(
                 )
                 break
             try:
-                run = await execute_run_instance(rid, adapter_registry=adapter_registry, deadline=deadline)
+                run = await execute_run_instance(rid, adapter_registry=adapter_registry, deadline=deadline, _owner=owner)
                 if run.status == "running":
                     # This is a replay while another batch owns the Run. Do not
                     # steal its remaining configurations or publish partial analysis.
@@ -544,20 +599,97 @@ async def start_experiment_runs(
             db.add(run_row)
             created_runs.append(run_row)
 
-    await db.commit()
+    # Reservation is committed with the new Runs, before create_task. A crash
+    # between commit and scheduling is therefore recoverable as an interruption.
+    owner = ExecutionOwner.acquire()
+    for row in created_runs:
+        row.environment_snapshot = owner.snapshot(row.environment_snapshot)
+    try:
+        await db.commit()
+    except BaseException:
+        owner.close()
+        raise
 
     run_ids = [r.id for r in created_runs]
     if background:
-        task = asyncio.create_task(
-            run_experiment_batch(
-                experiment_id, run_ids, adapter_registry=adapter_registry
-            )
+        batch = run_experiment_batch(
+            experiment_id, run_ids, adapter_registry=adapter_registry, _owner=owner,
         )
+        try:
+            task = asyncio.create_task(batch)
+        except BaseException:
+            batch.close()
+            owner.close()
+            raise
         _ACTIVE_TASKS[experiment_id] = task
+
+        def finished(done):
+            # A task cancelled before its first instruction never enters the
+            # coroutine's finally block. Release its reservation here as well.
+            owner.close()
+            if _ACTIVE_TASKS.get(experiment_id) is done:
+                _ACTIVE_TASKS.pop(experiment_id, None)
+            if not done.cancelled() and done.exception() is not None:
+                logger.error("Research batch %s ended with an error", experiment_id,
+                             exc_info=done.exception())
+
+        task.add_done_callback(finished)
     else:
         # Synchronous execution for tests / quick evaluations
         await run_experiment_batch(
-            experiment_id, run_ids, adapter_registry=adapter_registry
+            experiment_id, run_ids, adapter_registry=adapter_registry, _owner=owner,
         )
 
     return created_runs
+
+
+async def recover_orphaned_runs() -> int:
+    """Record owner death without replaying adapters or discarding checkpoints.
+
+    Unknown legacy owners remain untouched. A released OS lock proves only that
+    the Python execution owner ended, not that external child resources are gone.
+    """
+    sm = sessionmaker()
+    async with sm() as db:
+        candidates = list(await db.scalars(select(Run).where(
+            Run.status.in_(("queued", "running")),
+            Run.execution_origin == "local_measured",
+            Run.environment_snapshot.has_key(OWNER_KEY),
+        )))
+    groups: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for row in candidates:
+        token = owner_token(row.environment_snapshot or {})
+        if token is not None:
+            groups.setdefault(token, []).append(row.id)
+    recovered = 0
+    for token, ids in groups.items():
+        handle = probe(token)
+        if handle is None:
+            continue
+        try:
+            async with sm() as db:
+                rows = list(await db.scalars(select(Run).where(Run.id.in_(ids)).order_by(Run.id).with_for_update()))
+                experiments = set()
+                for row in rows:
+                    if row.status not in ("queued", "running") or owner_token(row.environment_snapshot or {}) != token:
+                        continue
+                    row.status = "failed" if row.status == "running" else "cancelled"
+                    row.error_code = "owner_lost"
+                    row.error_message = "실행을 맡은 프로세스가 종료되었습니다. 저장된 측정은 보존했습니다. 외부 자원 정리는 미확인입니다."
+                    row.finished_at = utcnow()
+                    db.add(Event(study_id=row.study_id, kind="execution_finished", actor="system", payload={
+                        "id": str(row.experiment_id), "run_id": str(row.id), "state": row.status,
+                        "error_code": row.error_code, "error_message": row.error_message,
+                        "owner": row.environment_snapshot[OWNER_KEY],
+                        "checkpoint_preserved": True, "external_resource_cleanup": "unverified",
+                    }))
+                    experiments.add(row.experiment_id)
+                    recovered += 1
+                for experiment_id in sorted(experiments):
+                    await _finish_experiment_if_terminal(db, experiment_id)
+                await db.commit()
+        finally:
+            handle.close()
+    if recovered:
+        logger.warning("Recorded %d orphaned research Runs; no adapters replayed", recovered)
+    return recovered

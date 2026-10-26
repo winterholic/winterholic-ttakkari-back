@@ -935,7 +935,7 @@ def batch_calls(monkeypatch):
 
     calls = []
 
-    async def fake_batch(experiment_id, run_ids, adapter_registry=None):
+    async def fake_batch(experiment_id, run_ids, adapter_registry=None, *, _owner=None):
         calls.append((str(experiment_id), len(run_ids)))
 
     monkeypatch.setattr(runner, "run_experiment_batch", fake_batch)
@@ -1237,8 +1237,8 @@ async def test_source_reuse_run_lineage_and_allows_failed_run(client, auth):
     other_cfg_id = uuid.uuid4()
 
     from ttakkari.db import sessionmaker
-    from ttakkari.research.models import Configuration, Run
     from ttakkari.models import utcnow
+    from ttakkari.research.models import Configuration, Run
 
     async with sessionmaker()() as db:
         other_cfg = Configuration(

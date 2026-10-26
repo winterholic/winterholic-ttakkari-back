@@ -68,6 +68,9 @@ async def _commands(runtime, manager) -> None:
 
 async def coordinate_runs(runtime, manager, state) -> None:
     if manager.remote:
+        if state == "active" and not getattr(runtime, "draining", False):
+            from ttakkari.research.runner import recover_orphaned_runs
+            await recover_orphaned_runs()
         return
     await _commands(runtime, manager)
     if state == "active" and not getattr(runtime, "draining", False):
@@ -363,6 +366,7 @@ async def ready(runtime) -> dict:
 def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     """주기 작업 목록. 운영은 이 경로로만 도니 새 주기 작업(날씨 scan 등)은 여기에 등록한다."""
     from ttakkari.creative.render import scan as creative_scan
+    from ttakkari.research.runner import recover_orphaned_runs
     from ttakkari.runs import lead_archive
     from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
 
@@ -370,6 +374,7 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
         ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2),
         ("schedules", _schedules, s.runtime_poll_seconds),
+        ("research-recovery", recover_orphaned_runs, s.runtime_poll_seconds),
         # 원격 API 가 접수한 일을 순차로 끝낸다. 로컬 모드 API 도 같은 주기 작업을 돌려 모드 전환 때 대기 요청이 남지 않는다.
         ("creative-assets", _creative_assets, s.runtime_poll_seconds), ("game-builds", _game_builds, s.runtime_poll_seconds)]
     if s.collector_consume_enabled:
@@ -402,8 +407,10 @@ def start_legacy_queued_consumers(interval: float) -> list[asyncio.Task]:
     세대 런타임이 없는 프로세스는 maintenance_jobs 를 돌리지 않는다. 두 소비자는 조건부 claim 이라
     같은 대기분을 실행부와 함께 가져가도 한쪽만 실행한다.
     """
+    from ttakkari.research.runner import recover_orphaned_runs
     return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
-            for name, operation in (("creative-assets", _creative_assets), ("game-builds", _game_builds))]
+            for name, operation in (("creative-assets", _creative_assets), ("game-builds", _game_builds),
+                                    ("research-recovery", recover_orphaned_runs))]
 
 
 SHUTDOWN_DRAIN_SECONDS = 1800.0

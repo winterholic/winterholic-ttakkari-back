@@ -239,8 +239,10 @@ class ExecutionAdapter(Protocol):
 
 ### 4.2 백그라운드 실행 및 취소 메커니즘 (신규 상시 데몬 금지 준수)
 - 실험 시작(`POST /api/research/experiments/{id}/run`) 시:
-  - 단일 빠른 실행(`estimated_seconds <= 15`인 `retrieval_eval`, `external_report`)은 요청 내에서 즉시 실행하거나 백그라운드 태스크로 전환한다.
+  - 단일 빠른 실행(`estimated_seconds <= 15`인 `retrieval_eval`)은 요청 내에서 즉시 실행하거나 백그라운드 태스크로 전환한다. `external_report`는 외부 결과 등록 전용이며 로컬 Run으로 dispatch하지 않는다.
   - 다중 Configuration Sweep 또는 `llm_inference`, `tts_synthesis`처럼 수초~수분이 걸리는 실행은 현재 프로세스의 `asyncio.create_task`로 백그라운드 코루틴(`src/ttakkari/research/runner.py`)을 띄우되, 반드시 `generation.enter_accepted_work("research")` 컨텍스트로 감싸서 3슬롯 배포 전환(`draining`) 시 작업이 중간에 잘리지 않고 안전하게 마무리되게 한다.
+  - 위 컨텍스트는 정상 drain을 보호한다. 별도로 Run 생성 transaction에서 `environment_snapshot.research_execution_owner`에 소유 세대·토큰을 저장하고, 배치 전체의 OS 파일 잠금을 수락부터 어댑터 정리까지 유지한다. 태스크 시작 전 예약도 세대 퇴역을 막는다. 에이전트 Run을 참조하는 `RuntimeLease`와 구분한다.
+  - active API 및 legacy lifecycle의 복구는 해당 잠금이 실제 해제된 소유자의 queued/running Run만 `owner_lost`로 중단 처리한다. 기존 성공·측정·원본·환경을 보존하며 불변 타임라인에 남긴다. 무소유 legacy/알 수 없는 계약은 건드리지 않고, heartbeat 시간 경과만으로 빼앗지 않는다. 외부 GPU/TTS 자식 정리는 미확인이며 어댑터 자동 재실행·학습 checkpoint의 native 재개를 뜻하지 않는다.
   - 진행 중인 Run별 `asyncio.Event`(`_CANCEL_EVENTS[run_id]`)를 메모리에 유지하여 `POST /api/research/runs/{run_id}/cancel` 호출 시 즉시 취소 플래그를 세우고, 다음 Configuration 실행을 중단하며, 실행 중인 `host_gpu`는 `stop()`을 호출한다.
   - 실행기에서 세분화된 진행률을 제공하지 않으면 Run 단위 완료 개수(`completed_runs / total_runs`)만 보고하고 개별 Run 내부의 `progress`는 `null`로 반환한다(가짜 퍼센트 생성 금지).
 
@@ -566,6 +568,7 @@ front-research-v2/src/pages/research/
 2. **기동 시간(Cold Start) 보호**: `src/ttakkari/research/adapters/` 하위 모듈은 백엔드 앱 import 시점에 `onnxruntime`, `faster_whisper`, `fastembed` 등을 절대 import하지 않는다.
 3. **3슬롯 무중단 전환(Draining) 호환**:
    - 실행 중인 실험 러너(`runner.py`)는 `generation.enter_accepted_work("research")` 컨텍스트를 유지하여 새 세대 배포 시 기존 세대가 `draining` 상태에서 현재 실행 중인 Configuration Run을 안전하게 마치고 종료하도록 보장한다.
+   - `ownership.py`의 미종료 예약도 `can_retire()`에서 확인한다. 프로세스 비정상 종료 뒤에는 §4.2의 영속 소유권과 OS 잠금으로 중단을 기록하며, 정상 drain의 완료 보장과 구분한다. 이 메타데이터는 기존 JSONB 필드에 추가하므로 스키마 변경·기존 Run backfill은 없다.
    - `deploy/generation-contract.json`에 `"0072_research_lab_v2"`와 `"online_migration_from": ["0071_library_platform_v2_merge"]`를 등록해 온라인 배포 조건을 충족한다.
 
 ---

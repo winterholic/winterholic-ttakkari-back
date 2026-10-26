@@ -188,7 +188,9 @@ async def test_budget_expiry_preserves_adapter_cleanup_output(client):
         assert [row.status for row in rows] == ["cancelled", "cancelled"]
         assert all(row.error_code == "budget_exceeded" for row in rows)
         assert rows[0].raw_output == {"cleanup": "done"}
-        assert rows[0].environment_snapshot == {"execution": "synthetic_adapter"}
+        assert rows[0].environment_snapshot == {"execution": "synthetic_adapter",
+            "research_execution_owner": rows[0].environment_snapshot["research_execution_owner"]}
+    assert uuid.UUID(rows[0].environment_snapshot["research_execution_owner"]["token"])
     assert adapter.calls == 1
 
 
@@ -262,7 +264,9 @@ async def test_cancel_request_survives_late_success_with_raw_evidence(client):
     assert result.error_code == "cancelled"
     assert result.error_message == "Stop requested by researcher"
     assert result.raw_output == {"probe": "completed"}
-    assert result.environment_snapshot == {"execution": "synthetic_adapter"}
+    assert result.environment_snapshot == {"execution": "synthetic_adapter",
+            "research_execution_owner": result.environment_snapshot["research_execution_owner"]}
+    assert uuid.UUID(result.environment_snapshot["research_execution_owner"]["token"])
     async with sessionmaker()() as db:
         persisted = await db.get(Run, ids[0])
         assert persisted.status == "cancelled"
@@ -321,7 +325,9 @@ async def test_cancel_during_artifact_copy_preserves_checkpoint_and_removes_copy
     assert result.status == "cancelled"
     assert result.error_message == "Stop during artifact copy"
     assert result.raw_output == {"observed": True}
-    assert result.environment_snapshot == {"execution": "synthetic_adapter"}
+    assert result.environment_snapshot == {"execution": "synthetic_adapter",
+            "research_execution_owner": result.environment_snapshot["research_execution_owner"]}
+    assert uuid.UUID(result.environment_snapshot["research_execution_owner"]["token"])
     assert original.read_text(encoding="utf-8") == "keep original"
     assert copies and all(not path.exists() for path in copies)
     async with sessionmaker()() as db:
@@ -435,3 +441,296 @@ async def test_completed_batch_replay_preserves_terminal_receipt_and_analysis(cl
         analysis = await db.scalar(select(Analysis).where(Analysis.experiment_id == exp_id))
         assert analysis.created_at == analyzed
     assert adapter.calls == 1
+
+
+async def test_running_research_owner_is_durable_and_live_owner_is_not_recovered(client):
+    exp_id, ids = await seed_runs(2)
+    adapter = ProbeAdapter()
+    task = asyncio.create_task(runner.run_experiment_batch(exp_id, ids, adapter))
+    try:
+        await asyncio.wait_for(adapter.entered.wait(), 1)
+        async with sessionmaker()() as db:
+            first, second = [await db.get(Run, rid) for rid in ids]
+            owner = first.environment_snapshot.get("research_execution_owner")
+            assert owner and uuid.UUID(owner["token"])
+            assert owner["generation_id"] is None
+            assert second.environment_snapshot["research_execution_owner"] == owner
+        assert await runner.recover_orphaned_runs() == 0
+        async with sessionmaker()() as db:
+            assert (await db.get(Run, ids[0])).status == "running"
+            assert (await db.get(Run, ids[1])).status == "queued"
+    finally:
+        adapter.release.set()
+        await task
+    async with sessionmaker()() as db:
+        first = await db.get(Run, ids[0])
+        assert first.status == "succeeded"
+        assert first.environment_snapshot["research_execution_owner"] == owner
+        assert first.environment_snapshot["execution"] == "synthetic_adapter"
+
+
+async def test_owner_process_exit_recovers_checkpoint_without_reexecution(client, auth, tmp_path):
+    import signal
+    import subprocess
+    import sys
+
+    from ttakkari.config import get_settings
+    from ttakkari.research.models import Measurement
+
+    exp_id, ids = await seed_runs(3)
+    token = uuid.uuid4()
+    owner = {"token": str(token), "generation_id": None, "contract": 1}
+    lock_path = get_settings().home / "runtime" / "research" / f"{token}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    script = (
+        "import fcntl,sys; f=open(sys.argv[1],'a'); "
+        "fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); print('locked',flush=True); sys.stdin.read()"
+    )
+    child = await asyncio.to_thread(subprocess.Popen, [sys.executable, "-c", script, str(lock_path)],
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert await asyncio.to_thread(child.stdout.readline) == "locked\n"
+        async with sessionmaker()() as db:
+            for i, rid in enumerate(ids):
+                row = await db.get(Run, rid)
+                row.status = ["succeeded", "running", "queued"][i]
+                row.raw_output = {"checkpoint": i}
+                row.environment_snapshot = {"research_execution_owner": owner, "device": "synthetic"}
+            db.add(Measurement(run_id=ids[1], experiment_id=exp_id,
+                               configuration_id=row.configuration_id, metric_key="saved",
+                               metric_label="saved", value=7))
+            await db.commit()
+        assert await runner.recover_orphaned_runs() == 0
+        child.kill()  # Abrupt owner death: no Python finally/cleanup runs in the child.
+        assert await asyncio.to_thread(child.wait, 3) == -signal.SIGKILL
+        assert await runner.recover_orphaned_runs() == 2
+        async with sessionmaker()() as db:
+            rows = [await db.get(Run, rid) for rid in ids]
+            assert [r.status for r in rows] == ["succeeded", "failed", "cancelled"]
+            assert rows[1].error_code == rows[2].error_code == "owner_lost"
+            assert [r.raw_output for r in rows] == [{"checkpoint": i} for i in range(3)]
+            assert all(r.environment_snapshot["device"] == "synthetic" for r in rows)
+            assert all(r.environment_snapshot["research_execution_owner"] == owner for r in rows)
+            assert (await db.get(Experiment, exp_id)).state == "failed"
+            saved = (await db.execute(text("select value from research_measurements where run_id=:id"),
+                                      {"id": ids[1]})).scalar_one()
+            assert saved == 7
+            study_id = rows[1].study_id
+        restored = await client.get(f"/api/research/runs/{ids[1]}", headers=auth)
+        assert restored.status_code == 200
+        assert restored.json()["environment_snapshot"]["research_execution_owner"] == owner
+        assert restored.json()["raw_output"] == {"checkpoint": 1}
+        assert restored.json()["measurements"][0]["value"] == 7
+        restored_study = await client.get(f"/api/research/studies/{study_id}/resume", headers=auth)
+        assert restored_study.status_code == 200
+        interruptions = [event for event in restored_study.json()["timeline"]
+                         if event["kind"] == "execution_finished" and event["payload"].get("error_code") == "owner_lost"]
+        assert {event["payload"]["run_id"] for event in interruptions} == set(map(str, ids[1:]))
+        assert all(event["payload"]["external_resource_cleanup"] == "unverified" for event in interruptions)
+        assert await runner.recover_orphaned_runs() == 0
+        adapter = ProbeAdapter()
+        adapter.release.set()
+        await runner.run_experiment_batch(exp_id, ids, adapter)
+        assert adapter.calls == 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+            await asyncio.to_thread(child.wait)
+        child.stdout.close()
+        child.stdin.close()
+
+
+async def test_recovery_does_not_guess_legacy_or_malformed_ownership(client):
+    _, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        (await db.get(Run, ids[0])).status = "running"
+        second = await db.get(Run, ids[1])
+        second.status = "running"
+        second.environment_snapshot = {"research_execution_owner": {"token": "../unknown", "contract": 1}}
+        await db.commit()
+    assert await runner.recover_orphaned_runs() == 0
+    async with sessionmaker()() as db:
+        assert [(await db.get(Run, rid)).status for rid in ids] == ["running", "running"]
+
+
+async def test_reserved_research_owner_blocks_retirement_before_task_enters_gate(client, tmp_path, monkeypatch):
+    from ttakkari.generation import GenerationRuntime
+    from ttakkari.models import RuntimeGeneration
+    from ttakkari.research.ownership import ExecutionOwner
+
+    runtime = GenerationRuntime(tmp_path, revision="a" * 40, api_url="http://127.0.0.1:18791")
+    await runtime.register()
+    monkeypatch.setattr(runner.generation, "current", runtime)
+    async with sessionmaker()() as db:
+        (await db.get(RuntimeGeneration, runtime.id)).state = "draining"
+        await db.commit()
+    owner = ExecutionOwner.acquire()
+    try:
+        assert owner.metadata["generation_id"] == str(runtime.id)
+        assert not await runtime.can_retire()
+    finally:
+        owner.close()
+    try:
+        assert await runtime.can_retire()
+    finally:
+        await runtime.close()
+
+
+async def test_research_recovery_is_wired_for_remote_api_and_legacy_lifecycles(client, monkeypatch):
+    from ttakkari import generation_service
+    from ttakkari.config import get_settings
+
+    operations = [op for _, op, _ in generation_service.maintenance_jobs(get_settings())]
+    assert runner.recover_orphaned_runs in operations
+    calls = []
+
+    async def recovered():
+        calls.append("recovered")
+
+    monkeypatch.setattr(runner, "recover_orphaned_runs", recovered)
+    from types import SimpleNamespace
+    # Research executes in the API even when the agent executor is remote.
+    remote = SimpleNamespace(remote=True)
+    runtime = SimpleNamespace(draining=False)
+    await generation_service.coordinate_runs(runtime, remote, "standby")
+    await generation_service.coordinate_runs(runtime, remote, "draining")
+    assert calls == []
+    await generation_service.coordinate_runs(runtime, remote, "active")
+    assert calls == ["recovered"]
+
+
+async def test_cancel_before_background_task_starts_leaves_recoverable_reservation(client, monkeypatch):
+    from types import SimpleNamespace
+
+    from ttakkari.research import planner
+    from ttakkari.research.ownership import owner_token, probe
+
+    exp_id, existing = await seed_runs()
+    async with sessionmaker()() as db:
+        (await db.get(Run, existing[0])).status = "succeeded"
+        await db.commit()
+
+    async def valid_plan(*args, **kwargs):
+        return SimpleNamespace(valid=True)
+
+    monkeypatch.setattr(planner, "validate_experiment_plan", valid_plan)
+    original_create = asyncio.create_task
+    tasks = []
+
+    def cancel_before_first_instruction(coro):
+        task = original_create(coro)
+        if coro.__name__ == "run_experiment_batch":
+            task.cancel()
+            tasks.append(task)
+        return task
+
+    with monkeypatch.context() as m:
+        m.setattr(asyncio, "create_task", cancel_before_first_instruction)
+        async with sessionmaker()() as db:
+            rows = await runner.start_experiment_runs(db, exp_id)
+            rid = rows[0].id
+            token = owner_token(rows[0].environment_snapshot)
+            assert token is not None
+            assert probe(token) is None  # held before the background coroutine runs
+    await asyncio.gather(*tasks, return_exceptions=True)
+    handle = probe(token)
+    assert handle is not None
+    handle.close()
+    assert exp_id not in runner._ACTIVE_TASKS
+    assert await runner.recover_orphaned_runs() == 1
+    async with sessionmaker()() as db:
+        row = await db.get(Run, rid)
+        assert row.status == "cancelled" and row.error_code == "owner_lost"
+        assert row.started_at is None
+
+
+async def test_stale_research_owner_cannot_publish_over_changed_token(client):
+    _, ids = await seed_runs()
+    adapter = ProbeAdapter()
+    task = asyncio.create_task(runner.execute_run_instance(ids[0], adapter))
+    try:
+        await asyncio.wait_for(adapter.entered.wait(), 1)
+        replacement = {"contract": 1, "token": str(uuid.uuid4()), "generation_id": None}
+        async with sessionmaker()() as db:
+            row = await db.get(Run, ids[0])
+            row.environment_snapshot = {"research_execution_owner": replacement, "new_owner": True}
+            row.raw_output = {"new_checkpoint": True}
+            await db.commit()
+    finally:
+        adapter.release.set()
+        await task
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        assert row.status == "running"
+        assert row.environment_snapshot == {"research_execution_owner": replacement, "new_owner": True}
+        assert row.raw_output == {"new_checkpoint": True}
+
+
+async def test_generation_cutover_preserves_research_owner_until_batch_finishes(client, tmp_path, monkeypatch):
+    from ttakkari.generation import GenerationRuntime, activate
+    from ttakkari.models import RuntimeLease
+
+    a = GenerationRuntime(tmp_path, revision="a" * 40, api_url="http://127.0.0.1:18791")
+    b = GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+    await a.register()
+    await b.register()
+    await activate(a.id, expected=None)
+    monkeypatch.setattr(runner.generation, "current", a)
+    exp_id, ids = await seed_runs(2)
+    adapter = ProbeAdapter()
+    task = asyncio.create_task(runner.run_experiment_batch(exp_id, ids, adapter))
+    try:
+        await asyncio.wait_for(adapter.entered.wait(), 1)
+        await activate(b.id, expected=a.id)
+        assert await a.refresh() == "draining"
+        assert not await a.can_retire()
+        assert await runner.recover_orphaned_runs() == 0
+        async with sessionmaker()() as db:
+            assert await db.get(RuntimeLease, ids[0]) is None
+            owner = (await db.get(Run, ids[0])).environment_snapshot["research_execution_owner"]
+            assert owner["generation_id"] == str(a.id)
+    finally:
+        adapter.release.set()
+        await task
+    try:
+        assert await a.can_retire()
+        async with sessionmaker()() as db:
+            for rid in ids:
+                row = await db.get(Run, rid)
+                assert row.status == "succeeded"
+                assert row.environment_snapshot["research_execution_owner"]["generation_id"] == str(a.id)
+        assert adapter.calls == 2
+    finally:
+        await b.close()
+        await a.close()
+
+
+async def test_batch_rejects_reservation_from_another_generation(client, tmp_path, monkeypatch):
+    from ttakkari.generation import GenerationRuntime, activate
+    from ttakkari.research.ownership import ExecutionOwner
+
+    a = GenerationRuntime(tmp_path, revision="a" * 40, api_url="http://127.0.0.1:18791")
+    b = GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+    await a.register()
+    await b.register()
+    await activate(b.id, expected=None)
+    monkeypatch.setattr(runner.generation, "current", a)
+    exp_id, ids = await seed_runs()
+    owner = ExecutionOwner.acquire()
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        row.environment_snapshot = owner.snapshot({})
+        await db.commit()
+    monkeypatch.setattr(runner.generation, "current", b)
+    adapter = ProbeAdapter()
+    adapter.release.set()
+    try:
+        await runner.run_experiment_batch(exp_id, ids, adapter, _owner=owner)
+        assert adapter.calls == 0
+        async with sessionmaker()() as db:
+            row = await db.get(Run, ids[0])
+            assert row.status == "cancelled" and row.error_code == "GENERATION_REJECTED"
+    finally:
+        owner.close()
+        await b.close()
+        await a.close()

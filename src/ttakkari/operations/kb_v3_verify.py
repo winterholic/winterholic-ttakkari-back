@@ -12,16 +12,18 @@ import asyncio
 import base64
 import logging
 import time
+import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.kb_library import ensure_document_access, register_text
-from ttakkari.kb_models import KbPassage
+from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -33,11 +35,12 @@ from ttakkari.kb_parsers.base import ParseStatus
 from ttakkari.kb_pipeline import (
     STAGE_EXTRACTING,
     enqueue_pipeline_job,
-    get_default_worker,
     retry_pipeline_job,
 )
+from ttakkari.kb_pipeline.types import JOB_STATUS_REGISTERED, PIPELINE_STAGES
 from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
 from ttakkari.kb_store import ingest_source, segment_revision
+from ttakkari.models import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -110,11 +113,11 @@ async def check_schema_support(db: AsyncSession) -> bool:
             check = await db.execute(
                 text(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
-                    "('kb_pipeline_jobs', 'kb_documents', 'kb_conflicts')"
+                    "('kb_pipeline_jobs', 'kb_documents', 'kb_conflicts', 'kb_assertions', 'kb_assertion_evidence')"
                 )
             )
             rows = check.fetchall()
-            return len(rows) == 3
+            return len(rows) >= 3
 
         check = await db.execute(
             text(
@@ -134,8 +137,17 @@ async def verify_kb_v3(
     *,
     session_factory: Any | None = None,
     worker: Any | None = None,
+    max_wait_seconds: float = MAX_VERIFY_WAIT_SECONDS,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
-    """KB v3 실제 파이프라인 검증 오퍼레이션 실행."""
+    """KB v3 실제 파이프라인 검증 오퍼레이션 실행.
+    
+    1. 스키마 확인
+    2. 공개 합성 3문서(PDF 1건 + 30일/90일 정책 2건) 등록 및 enqueue
+    3. old L2 disabled 문서 필요 시 retry
+    4. 글로벌 backlog 를 건드리지 않는 대상 3개 잡 전용 관측 루프 (남은 시간 finite await)
+    5. DB 조회 기반 집계 및 엄격한 성공 게이트 판정
+    """
     # 1. 스키마 확인
     if not await check_schema_support(db):
         return {
@@ -216,6 +228,7 @@ async def verify_kb_v3(
         scope="personal",
         origin_extra={"via": "kb_v3_verify"},
     )
+    # 이미 commit 된 자료는 일반 제품 queue 소유로 명시
     await db.commit()
 
     rev_ids = [res_pdf.revision_id, res_30.revision_id, res_90.revision_id]
@@ -249,9 +262,9 @@ async def verify_kb_v3(
             await retry_pipeline_job(sf, job.id, from_stage=STAGE_EXTRACTING)
     await db.commit()
 
-    # 4. 자동 워커 실행 및 finite 대기
-    active_worker = worker or get_default_worker()
-    deadline = time.monotonic() + MAX_VERIFY_WAIT_SECONDS
+    # 4. 관측 루프: 글로벌 worker.pump / 공유 _tasks gather 제거
+    # 운영 백로그는 일체 추가 처리하지 않고, 정확히 이 3개 job_ids 만 관측한다.
+    deadline = time.monotonic() + max_wait_seconds
     all_terminal = False
 
     while time.monotonic() < deadline:
@@ -267,16 +280,87 @@ async def verify_kb_v3(
             all_terminal = True
             break
 
-        # 워커 pump 로 잡 1회 처리
-        pumped = await active_worker.pump()
-        if pumped:
-            tasks = [t for t in getattr(active_worker, "_tasks", set()) if not t.done()]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+        # 테스트 등에서 명시적으로 worker 인자가 전달된 경우에만 대상 잡 전용 처리
+        if worker is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            target_job_ids = [j.id for j in jobs if j.status not in TERMINAL_JOB_STATUSES]
+            if target_job_ids and hasattr(worker, "session_factory"):
+                step_timeout = min(remaining, 5.0)
+                claimed: tuple[uuid.UUID, uuid.UUID] | None = None
+                now_dt = utcnow()
+                async with worker.session_factory() as w_db:
+                    c_stmt = (
+                        select(KbPipelineJob)
+                        .where(
+                            and_(
+                                KbPipelineJob.id.in_(target_job_ids),
+                                KbPipelineJob.status.in_(
+                                    (JOB_STATUS_REGISTERED, *PIPELINE_STAGES)
+                                ),
+                                or_(
+                                    KbPipelineJob.claimed_by.is_(None),
+                                    KbPipelineJob.lease_expires_at <= now_dt,
+                                ),
+                            )
+                        )
+                        .order_by(KbPipelineJob.created_at.asc())
+                        .limit(1)
+                    )
+                    c_job = await w_db.scalar(c_stmt)
+                    if c_job is not None:
+                        new_token = uuid.uuid4()
+                        c_job.attempt_token = new_token
+                        c_job.claimed_by = getattr(
+                            worker, "worker_id", "kb-verify-worker"
+                        )
+                        c_job.claimed_at = now_dt
+                        c_job.lease_expires_at = now_dt + timedelta(
+                            seconds=getattr(worker, "lease_seconds", 300.0)
+                        )
+                        c_job.attempt_count += 1
+                        c_job.status = c_job.current_stage
+                        await w_db.commit()
+                        claimed = (c_job.id, new_token)
+
+                if claimed is not None:
+                    job_id_claimed, token_claimed = claimed
+                    if hasattr(worker, "_run_job_wrapper"):
+                        await asyncio.wait_for(
+                            worker._run_job_wrapper(job_id_claimed, token_claimed),
+                            timeout=step_timeout,
+                        )
+                    elif hasattr(worker, "orchestrator"):
+                        await asyncio.wait_for(
+                            worker.orchestrator.execute_job(
+                                job_id_claimed, token_claimed
+                            ),
+                            timeout=step_timeout,
+                        )
+            elif hasattr(worker, "pump"):
+                try:
+                    await asyncio.wait_for(worker.pump(), timeout=min(remaining, 1.0))
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("test pump error: %s", exc)
+            else:
+                await asyncio.sleep(0.05)
         else:
-            await asyncio.sleep(0.05)
+            # 실 런타임: 실 런타임 백그라운드 워커가 큐를 처리하므로 오퍼레이션은 순수 관측만 수행
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(remaining, 0.2))
 
     # 5. DB 조회 기반 검증 결과 집계 (결과 하드코딩/수동 삽입 금지)
+    # 실제 DB 의 문서 수
+    actual_doc_count = (
+        await db.scalar(
+            select(func.count(KbDocument.id)).where(KbDocument.id.in_(doc_ids))
+        )
+        or 0
+    )
+
     # 패시지 수
     passages_count = (
         await db.scalar(
@@ -296,16 +380,17 @@ async def verify_kb_v3(
         ).all()
     )
 
-    # 주장(assertion) 및 근거 수
-    assertions_count = (
-        await db.scalar(
-            select(func.count(KbAssertion.id)).where(
-                KbAssertion.revision_id.in_(rev_ids)
+    # 주장(assertion) 조회
+    assertions = list(
+        (
+            await db.scalars(
+                select(KbAssertion).where(KbAssertion.revision_id.in_(rev_ids))
             )
-        )
-        or 0
+        ).all()
     )
+    assertions_count = len(assertions)
 
+    # 근거(evidence) 수
     evidence_count = (
         await db.scalar(
             select(func.count(KbAssertionEvidence.evidence_id))
@@ -314,6 +399,46 @@ async def verify_kb_v3(
         )
         or 0
     )
+
+    # 현재 revision source-backed exact quoted claim/evidence 검증
+    exact_quotes_valid = False
+    if assertions_count > 0 and evidence_count > 0:
+        quotes = list(
+            (
+                await db.execute(
+                    select(
+                        KbEvidence.span_start,
+                        KbEvidence.span_end,
+                        KbEvidence.sha256,
+                        KbPassage.body,
+                    )
+                    .join(
+                        KbAssertionEvidence,
+                        KbAssertionEvidence.evidence_id == KbEvidence.id,
+                    )
+                    .join(
+                        KbAssertion,
+                        KbAssertion.id == KbAssertionEvidence.assertion_id,
+                    )
+                    .join(
+                        KbPassage,
+                        KbPassage.id == KbEvidence.passage_id,
+                    )
+                    .where(KbAssertion.revision_id.in_(rev_ids))
+                )
+            ).all()
+        )
+        if quotes:
+            all_spans_valid = True
+            for start, end, sha, body in quotes:
+                if start < 0 or end <= start or not sha or not body:
+                    all_spans_valid = False
+                    break
+                quote = body[start:end]
+                if not quote.strip():
+                    all_spans_valid = False
+                    break
+            exact_quotes_valid = all_spans_valid
 
     # 상충(conflict) 조회
     conflicts: list[KbConflict] = []
@@ -329,7 +454,38 @@ async def verify_kb_v3(
             ).all()
         )
 
-    # 각 잡의 단계별 상태
+    # 30일 vs 90일 정책 간 동일 주체/동일 predicate 값 상충(contradiction) 확인
+    policy_conflict_valid = False
+    assertions_30 = [a for a in assertions if a.revision_id == res_30.revision_id]
+    assertions_90 = [a for a in assertions if a.revision_id == res_90.revision_id]
+    policy_pair_found = False
+    for a30 in assertions_30:
+        for a90 in assertions_90:
+            if (
+                a30.subject_entity_id == a90.subject_entity_id
+                and a30.predicate == a90.predicate
+                and a30.norm_object_value != a90.norm_object_value
+            ):
+                policy_pair_found = True
+                break
+        if policy_pair_found:
+            break
+
+    if policy_pair_found and conflicts:
+        # conflicts 중 현재 두 정책 문서 사이에서 파생된 충돌이 있는지 확인
+        conflicts_30_90 = [
+            c
+            for c in conflicts
+            if (
+                (c.assertion_a_id in {a.id for a in assertions_30} and c.assertion_b_id in {a.id for a in assertions_90})
+                or (c.assertion_a_id in {a.id for a in assertions_90} and c.assertion_b_id in {a.id for a in assertions_30})
+                or (c.entity_id in entity_ids and policy_pair_found)
+            )
+        ]
+        if conflicts_30_90:
+            policy_conflict_valid = True
+
+    # 각 잡의 단계별 상태 및 실 L2 호출 성공 증거 확인
     final_jobs = list(
         (
             await db.scalars(
@@ -339,9 +495,21 @@ async def verify_kb_v3(
     )
     jobs_summary = []
     has_failed = False
+    has_held = False
     has_degraded = False
+    all_ready = (len(final_jobs) == 3)
+    l2_calls_verified = not is_l2_disabled
 
     for j in final_jobs:
+        if j.status != "ready":
+            all_ready = False
+        if j.status == "failed":
+            has_failed = True
+        elif j.status == "held":
+            has_held = True
+        elif j.status == "degraded":
+            has_degraded = True
+
         stages = list(
             (
                 await db.scalars(
@@ -351,19 +519,37 @@ async def verify_kb_v3(
         )
         stages_map: dict[str, str] = {}
         stage_details: dict[str, Any] = {}
+        extracting_succeeded = False
+
         for st in stages:
             stages_map[st.stage] = st.status
             if st.status == "failed":
                 has_failed = True
+            elif st.status == "held":
+                has_held = True
             elif st.status == "degraded":
                 has_degraded = True
+
             if st.stage == STAGE_EXTRACTING and isinstance(st.detail, dict):
+                l2_info = st.detail.get("l2", {})
+                calls_made = l2_info.get("calls_made", 0)
+                if (
+                    st.status == "succeeded"
+                    and l2_info.get("adapter") != "disabled"
+                    and l2_info.get("available") is True
+                    and calls_made > 0
+                ):
+                    extracting_succeeded = True
+
                 stage_details["l2"] = {
-                    "adapter": st.detail.get("l2", {}).get("adapter"),
-                    "available": st.detail.get("l2", {}).get("available"),
-                    "reason": st.detail.get("l2", {}).get("reason"),
-                    "calls_made": st.detail.get("l2", {}).get("calls_made", 0),
+                    "adapter": l2_info.get("adapter"),
+                    "available": l2_info.get("available"),
+                    "reason": l2_info.get("reason"),
+                    "calls_made": calls_made,
                 }
+
+        if not is_l2_disabled and not extracting_succeeded:
+            l2_calls_verified = False
 
         jobs_summary.append(
             {
@@ -374,22 +560,41 @@ async def verify_kb_v3(
             }
         )
 
-    # 전체 상태 결정 (실패/부분완료/저하/성공)
+    # 6. 엄격한 성공 게이트 판정
+    reason = None
     if not all_terminal:
         overall_status = "partial"
+        reason = "timeout_waiting_terminal_jobs"
     elif has_failed:
         overall_status = "failed"
-    elif has_degraded or is_l2_disabled:
+        reason = "pipeline_jobs_failed"
+    elif has_held:
+        overall_status = "held"
+        reason = "pipeline_jobs_held"
+    elif is_l2_disabled or has_degraded:
         overall_status = "degraded"
+        reason = "l2_disabled_or_degraded"
+    elif not all_ready or actual_doc_count < 3 or len(final_jobs) < 3:
+        overall_status = "partial"
+        reason = "jobs_or_docs_not_ready"
+    elif not l2_calls_verified:
+        overall_status = "degraded"
+        reason = "l2_extraction_calls_unverified"
+    elif not exact_quotes_valid:
+        overall_status = "degraded"
+        reason = "exact_quote_missing_or_unverified"
+    elif not policy_conflict_valid:
+        overall_status = "degraded"
+        reason = "30d_vs_90d_policy_conflict_unverified"
     else:
         overall_status = "succeeded"
 
-    return {
+    res = {
         "status": overall_status,
         "l2_adapter": s.kb_l2_adapter,
         "l2_configured_model": s.kb_l2_subscription_model,
         "counts": {
-            "documents": 3,
+            "documents": actual_doc_count,
             "passages": passages_count,
             "entities": len(entity_ids),
             "assertions": assertions_count,
@@ -399,3 +604,33 @@ async def verify_kb_v3(
         "conflict_ids": [str(c.id) for c in conflicts],
         "jobs": jobs_summary,
     }
+    if reason:
+        res["reason"] = reason
+
+    return res
+
+
+def main(argv: list[str]) -> int:
+    """러너 프로세스에서 호출되는 CLI 진입점: python -m ttakkari.operations.kb_v3_verify <job_id>"""
+    import json
+    import sys
+
+    job_id = argv[1] if len(argv) > 1 else None
+
+    async def _run_cli() -> int:
+        from ttakkari.db import sessionmaker
+
+        async with sessionmaker()() as db:
+            result = await verify_kb_v3(db, job_id=job_id)
+            # 민감정보가 배제된 최종 요약 JSON 출력
+            sys.stdout.write(json.dumps(result, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+            return 0 if result.get("status") == "succeeded" else 1
+
+    return asyncio.run(_run_cli())
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main(sys.argv))

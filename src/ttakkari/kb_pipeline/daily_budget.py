@@ -32,6 +32,14 @@ class BudgetGrant:
     remaining_calls: int
 
 
+def _to_aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def _utc_now(now: datetime | None) -> datetime:
     dt = now or datetime.now(UTC)
     if dt.tzinfo is None:
@@ -159,7 +167,11 @@ async def reserve_daily_budget(
         .with_for_update()
     )
     if existing is not None:
-        if existing.budget_date != day or existing.status != "active" or existing.lease_expires_at <= dt:
+        if (
+            existing.budget_date != day
+            or existing.status != "active"
+            or (_to_aware(existing.lease_expires_at) or dt) <= dt
+        ):
             return BudgetGrant(existing.id, 0, max(0, max_budget - baseline - await _committed_calls(db, day)))
         held = baseline + await _committed_calls(db, day)
         return BudgetGrant(existing.id, existing.reserved_calls, max(0, max_budget - held))
@@ -211,7 +223,7 @@ async def begin_budgeted_call(
         reservation is None
         or reservation.status != "active"
         or reservation.budget_date != dt.date()
-        or reservation.lease_expires_at <= dt
+        or (_to_aware(reservation.lease_expires_at) or dt) <= dt
     ):
         raise DailyBudgetExhausted("L2 reservation lease is no longer active")
     in_use = int(

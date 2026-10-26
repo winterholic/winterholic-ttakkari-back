@@ -114,4 +114,8 @@ async def run(kind: str, db: AsyncSession) -> dict:
         return await runtime_report(db)
     if kind == "performance_baseline":
         return await performance_baseline(db)
+    if kind == "kb_v3_verify":
+        from ttakkari.operations.kb_v3_verify import verify_kb_v3
+
+        return await asyncio.wait_for(verify_kb_v3(db), timeout=90)
     return backup_state()

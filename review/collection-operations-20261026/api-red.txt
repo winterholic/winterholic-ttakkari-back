@@ -1,0 +1,17 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_collection_scope_operation_is_personal_and_uses_the_guarded_domain[collection_scope_preview-False] _
+tests/test_host_operations.py:111: in test_collection_scope_operation_is_personal_and_uses_the_guarded_domain
+    assert work.status_code == 403
+E   assert 422 == 403
+E    +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+_ test_collection_scope_operation_is_personal_and_uses_the_guarded_domain[collection_scope_apply-True] _
+tests/test_host_operations.py:111: in test_collection_scope_operation_is_personal_and_uses_the_guarded_domain
+    assert work.status_code == 403
+E   assert 422 == 403
+E    +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+db reset: 2 selective (avg 5.5/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_host_operations.py::test_collection_scope_operation_is_personal_and_uses_the_guarded_domain[collection_scope_preview-False]
+FAILED tests/test_host_operations.py::test_collection_scope_operation_is_personal_and_uses_the_guarded_domain[collection_scope_apply-True]
+2 failed, 73 deselected in 0.79s

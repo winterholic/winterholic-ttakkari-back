@@ -11,14 +11,18 @@
    - collection_scope_ledger: 감사 추적 행 기록
 3. 병합 후 통합 도서관 검색 및 회사 엔진 pool 격리 검증
 """
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 from test_collector_stage_migration import _load
 
 from ttakkari.collector import scope_merge
@@ -41,9 +45,134 @@ from ttakkari.kb_library import (
 )
 from ttakkari.models import Base
 
+pytestmark = [pytest.mark.security]
+
 TABLES_0074 = {
     "kb_document_aliases", "collection_scope_ledger", "collector_jobs", "collector_sources", "kb_document_access",
 }
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _restore_schema_version(_schema_and_app):
+    """The ORM fixture does not own alembic_version; leave other tests' state intact."""
+    async with sessionmaker()() as db:
+        existed = bool(await db.scalar(text("SELECT to_regclass('alembic_version')")))
+        versions = list(await db.scalars(text("SELECT version_num FROM alembic_version"))) if existed else []
+    yield
+    async with sessionmaker()() as db:
+        if existed:
+            await db.execute(text("DELETE FROM alembic_version"))
+            for version in versions:
+                await db.execute(text("INSERT INTO alembic_version VALUES (:version)"), {"version": version})
+        else:
+            await db.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        await db.commit()
+
+
+async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0075_collection_research_merge"):
+    from ttakkari import generation
+    from ttakkari.config import get_settings
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    current = uuid.uuid4()
+    revision = "a" * 40
+    monkeypatch.setattr(get_settings(), "release_revision", revision)
+    monkeypatch.setattr(generation, "current", SimpleNamespace(id=current))
+    async with sessionmaker()() as db:
+        db.add(RuntimeGeneration(id=current, revision=revision, role="api", state="active",
+                                 api_url="http://127.0.0.1:1", pid=1, process_started_at=0))
+        if previous:
+            previous_id = uuid.uuid4()
+            db.add(RuntimeGeneration(id=previous_id, revision="b" * 40, role="api",
+                                     state="offline" if previous == "offline_executor" else previous,
+                                     api_url="http://127.0.0.1:2", pid=2, process_started_at=0))
+        await db.flush()
+        db.add(RuntimeControl(id=1, active_generation=current if active else None, epoch=1,
+                              executor_generation=previous_id if previous == "offline_executor" else None))
+        await db.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num varchar(64) PRIMARY KEY)"))
+        await db.execute(text("DELETE FROM alembic_version"))
+        await db.execute(text("INSERT INTO alembic_version VALUES (:version)"), {"version": version})
+        db.add(CollectorSource(tenant_id="owner", scope="work", pool="work", source_key="operated-source",
+                               title="Existing work source", request={}))
+        await db.commit()
+
+
+async def test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent(monkeypatch):
+    await _operation_generation(monkeypatch, previous="offline")
+    async with sessionmaker()() as db:
+        preview = await scope_merge.operate(db, apply=False)
+        assert preview["applied"] is False and preview["tables"]["collector_sources"]["normalized"] == 1
+        assert await db.scalar(select(CollectorSource.scope)) == "work"
+        assert not list(await db.scalars(select(CollectionScopeLedger)))
+        await db.rollback()
+        applied = await scope_merge.operate(db, apply=True)
+        assert applied["applied"] is True
+        assert await db.scalar(select(CollectorSource.scope)) == LIBRARY_SCOPE
+        assert await db.scalar(select(CollectorSource.pool)) == "work"
+        await db.rollback()
+        repeated = await scope_merge.operate(db, apply=True)
+        assert repeated["tables"]["collector_sources"]["normalized"] == 0
+
+
+@pytest.mark.parametrize("previous,active,version,reason", [
+    ("draining", True, "0075_collection_research_merge", "previous_generation_not_drained"),
+    ("standby", True, "0075_collection_research_merge", "previous_generation_not_drained"),
+    ("offline_executor", True, "0075_collection_research_merge", "previous_generation_not_drained"),
+    (None, False, "0075_collection_research_merge", "inactive_generation"),
+    (None, True, "0073_research_reuse_source", "schema_not_ready"),
+])
+async def test_operational_merge_refuses_unsafe_runtime_without_changes(monkeypatch, previous, active, version, reason):
+    await _operation_generation(monkeypatch, previous=previous, active=active, version=version)
+    async with sessionmaker()() as db:
+        with pytest.raises(RuntimeError, match=reason):
+            await scope_merge.operate(db, apply=True)
+        assert await db.scalar(select(CollectorSource.scope)) == "work"
+        assert not list(await db.scalars(select(CollectionScopeLedger)))
+
+
+async def test_operational_merge_unresolved_apply_rolls_back_all_partial_changes(monkeypatch):
+    await _operation_generation(monkeypatch)
+    merge = scope_merge.merge_scopes
+
+    async def unresolved(db):
+        report = await merge(db)
+        report["unresolved"].append({"table": "collector_outbox", "reason": "envelope_in_two_scopes"})
+        return report
+
+    monkeypatch.setattr(scope_merge, "merge_scopes", unresolved)
+    async with sessionmaker()() as db:
+        with pytest.raises(RuntimeError, match="collection_scope_merge_unresolved"):
+            await scope_merge.operate(db, apply=True)
+        assert await db.scalar(select(CollectorSource.scope)) == "work"
+        assert not list(await db.scalars(select(CollectionScopeLedger)))
+
+
+async def test_operational_merge_holds_the_cutover_control_row_until_rollback(monkeypatch):
+    from ttakkari.models import RuntimeControl
+
+    await _operation_generation(monkeypatch)
+    entered, release = asyncio.Event(), asyncio.Event()
+    merge = scope_merge.merge_scopes
+
+    async def held(db):
+        entered.set()
+        await asyncio.wait_for(release.wait(), 5)
+        return await merge(db)
+
+    monkeypatch.setattr(scope_merge, "merge_scopes", held)
+    async with sessionmaker()() as first:
+        task = asyncio.create_task(scope_merge.operate(first, apply=False))
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            async with sessionmaker()() as second:
+                with pytest.raises(DBAPIError) as error:
+                    await second.scalar(select(RuntimeControl).where(RuntimeControl.id == 1).with_for_update(nowait=True))
+                assert error.value.orig.sqlstate == "55P03"
+                await second.rollback()
+        finally:
+            release.set()
+            result = await asyncio.wait_for(task, 5)
+        assert result["applied"] is False
 
 
 async def test_0074_migration_roundtrip_matches_models():

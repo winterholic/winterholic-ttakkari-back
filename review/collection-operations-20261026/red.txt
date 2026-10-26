@@ -1,0 +1,35 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+______ test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent _______
+tests/test_collection_scope_merge.py:78: in test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent
+    preview = await scope_merge.operate(db, apply=False)
+                    ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.collector.scope_merge' has no attribute 'operate'
+_ test_operational_merge_refuses_unsafe_runtime_without_changes[draining-True-0075_collection_research_merge-previous_generation_not_drained] _
+tests/test_collection_scope_merge.py:102: in test_operational_merge_refuses_unsafe_runtime_without_changes
+    await scope_merge.operate(db, apply=True)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.collector.scope_merge' has no attribute 'operate'
+_ test_operational_merge_refuses_unsafe_runtime_without_changes[standby-True-0075_collection_research_merge-previous_generation_not_drained] _
+tests/test_collection_scope_merge.py:102: in test_operational_merge_refuses_unsafe_runtime_without_changes
+    await scope_merge.operate(db, apply=True)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.collector.scope_merge' has no attribute 'operate'
+_ test_operational_merge_refuses_unsafe_runtime_without_changes[None-False-0075_collection_research_merge-inactive_generation] _
+tests/test_collection_scope_merge.py:102: in test_operational_merge_refuses_unsafe_runtime_without_changes
+    await scope_merge.operate(db, apply=True)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.collector.scope_merge' has no attribute 'operate'
+_ test_operational_merge_refuses_unsafe_runtime_without_changes[None-True-0073_research_reuse_source-schema_not_ready] _
+tests/test_collection_scope_merge.py:102: in test_operational_merge_refuses_unsafe_runtime_without_changes
+    await scope_merge.operate(db, apply=True)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.collector.scope_merge' has no attribute 'operate'
+db reset: 5 selective (avg 3.8/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes[draining-True-0075_collection_research_merge-previous_generation_not_drained]
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes[standby-True-0075_collection_research_merge-previous_generation_not_drained]
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes[None-False-0075_collection_research_merge-inactive_generation]
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes[None-True-0073_research_reuse_source-schema_not_ready]
+5 failed, 4 deselected in 0.70s

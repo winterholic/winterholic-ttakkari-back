@@ -47,6 +47,8 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     "tests/test_collector_control.py",
     "tests/test_collection_missions.py",
     "tests/test_collection_mission_stage2.py",
+    "tests/test_collection_scope_merge.py",
+    "tests/test_collection_scope_operations.py",
     "tests/test_collection_research_flow.py",
     "tests/test_collector_product_flow.py",
     "tests/test_collector_integration.py",

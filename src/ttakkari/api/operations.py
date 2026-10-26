@@ -26,13 +26,15 @@ DESCRIPTIONS = {
     "data_snapshot": "앱 data 디렉터리 암호화 스냅샷 새 사본(설정·계정·키는 포함하지 않음)",
     "restore_rehearsal": "최근 DB 백업을 격리 임시 DB 에 복원해 테이블 행 수를 대조하고 임시 DB 를 지움(운영 DB 불변)",
     "snapshot_verify": "최근 데이터 스냅샷을 격리 임시 위치에 풀어 파일 해시를 대조하고 지움",
+    "collection_scope_preview": "스키마·활성 세대·이전 세대 종료를 확인하고 단일 도서관 통합을 실행한 뒤 롤백",
+    "collection_scope_apply": "이전 세대 종료 후 기존 이력·접근 pool을 보존해 단일 도서관 통합 적용",
 }
 
 
 class StartIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db", "data_snapshot",
-                  "restore_rehearsal", "snapshot_verify"]
+                  "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply"]
 
 
 async def personal(sid: uuid.UUID, db: Db) -> None:

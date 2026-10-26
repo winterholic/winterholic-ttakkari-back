@@ -15,7 +15,7 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from ttakkari.collector.control_models import (
     CollectionScopeLedger,
@@ -34,6 +34,59 @@ from ttakkari.collector_models import CollectorFetchCache, CollectorSourcePolicy
 
 LOCK_KEY = "collection-scope-merge"
 REQUEST_KEY_MAX = 256
+
+
+async def operate(db, *, apply: bool = False) -> dict[str, Any]:
+    """Run the existing merge only in the active, fully drained schema generation.
+
+    The control-row lock fences cutover until the transaction finishes. Preview
+    executes the same statements and rolls them back; it never grants permission.
+    """
+    from ttakkari import generation
+    from ttakkari.config import get_settings
+    from ttakkari.models import (
+        RuntimeControl,
+        RuntimeGeneration,
+        RuntimeLease,
+        RuntimeProcessGroup,
+    )
+
+    try:
+        await db.execute(text("SET LOCAL lock_timeout = '2000'"))
+        await db.execute(text("SET LOCAL statement_timeout = '30000'"))
+        if not await db.scalar(text("SELECT to_regclass('alembic_version')")):
+            raise RuntimeError("schema_not_ready")
+        heads = list(await db.scalars(text("SELECT version_num FROM alembic_version")))
+        if heads != ["0075_collection_research_merge"]:
+            raise RuntimeError("schema_not_ready")
+        control = await db.scalar(select(RuntimeControl).where(RuntimeControl.id == 1).with_for_update())
+        current = generation.current
+        if current is None or control is None or control.active_generation != current.id:
+            raise RuntimeError("inactive_generation")
+        allowed = {control.active_generation}
+        if control.executor_generation is not None:
+            allowed.add(control.executor_generation)
+        live = list(await db.scalars(select(RuntimeGeneration).where(RuntimeGeneration.state != "offline")))
+        revision = get_settings().release_revision
+        if not any(row.id == current.id and row.state == "active" for row in live):
+            raise RuntimeError("inactive_generation")
+        if {row.id for row in live} != allowed or any(row.revision != revision or row.state != "active" for row in live):
+            raise RuntimeError("previous_generation_not_drained")
+        for model in (RuntimeLease, RuntimeProcessGroup):
+            remaining = await db.scalar(select(func.count()).select_from(model).where(model.generation_id.not_in(allowed)))
+            if remaining:
+                raise RuntimeError("previous_generation_not_drained")
+        report = await merge_scopes(db)
+        if apply and report["unresolved"]:
+            raise RuntimeError("collection_scope_merge_unresolved")
+        if apply:
+            await db.commit()
+        else:
+            await db.rollback()
+        return {**report, "applied": apply, "revision": revision, "generation_id": str(current.id)}
+    except BaseException:
+        await db.rollback()
+        raise
 
 
 def _ledger(db, run_id: str, table: str, row_key: str, action: str, before: dict | None = None, after: dict | None = None):

@@ -1,0 +1,11 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_operational_merge_refuses_unsafe_runtime_without_changes[offline_executor-True-0075_collection_research_merge-previous_generation_not_drained] _
+tests/test_collection_scope_merge.py:105: in test_operational_merge_refuses_unsafe_runtime_without_changes
+    with pytest.raises(RuntimeError, match=reason):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE RuntimeError
+db reset: 1 selective (avg 3.0/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_collection_scope_merge.py::test_operational_merge_refuses_unsafe_runtime_without_changes[offline_executor-True-0075_collection_research_merge-previous_generation_not_drained]
+1 failed, 10 deselected in 0.65s

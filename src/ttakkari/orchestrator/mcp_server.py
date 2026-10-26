@@ -892,7 +892,8 @@ async def backend_deploy_status(job_id: str) -> str:
 
 @server.tool()
 async def host_operation_start(kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db",
-                                            "data_snapshot", "restore_rehearsal", "snapshot_verify"]) -> str:
+                                            "data_snapshot", "restore_rehearsal", "snapshot_verify",
+                                            "collection_scope_preview", "collection_scope_apply"]) -> str:
     """Run one approved host operation through the backend (no shell, paths or DB URLs; only `kind`).
     Read-only and instant: runtime_report (execution ownership, generations, leases), performance_baseline
     (short synthetic DB/event-loop/host probe), backup_status. Background: backup_db (read-only pg_dump, new
@@ -900,7 +901,9 @@ async def host_operation_start(kind: Literal["runtime_report", "performance_base
     restore_rehearsal (restore the latest DB backup into a temporary isolated database, compare row counts,
     drop it; production is never touched) and snapshot_verify (unpack the latest data snapshot in an isolated
     temp dir, compare hashes, delete). One heavy job runs at a time; repeating the same kind returns the running
-    job. Poll host_operation_status; results hold counts/hashes/times only, never dumps or keys. Personal sessions."""
+    job. collection_scope_preview and collection_scope_apply run the existing library merge with schema and
+    generation/drain guards; preview rolls back and apply preserves history and access pools. These have a 60s cap.
+    Poll host_operation_status; results hold counts/hashes/times only, never dumps or keys. Personal sessions."""
     return await _agent("POST", "/operations", {"kind": kind})
 
 

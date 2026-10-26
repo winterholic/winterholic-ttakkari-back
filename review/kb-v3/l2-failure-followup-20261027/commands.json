@@ -1,0 +1,14 @@
+{
+  "head": "a873a2a650e4ae3e627346056a82a67826e41e97",
+  "operation_source_diff_to_f774": 0,
+  "command": [
+    ".venv/bin/python",
+    "../back-kb-v3-l2-activation-20261027/review/kb-v3/l2-independent-20261027/probe-target-f774928b.py"
+  ],
+  "script_sha256": "fa0fcde0bbe3fff546dcffaa1e125f12924f42aff3f6854f541055a7f4788c97",
+  "exit": 0,
+  "scope": "current candidate operation code equals f774; SQLite in-memory and actual PDF; no CLI/production/PG",
+  "raw_log_sha256": "77eecbe9ee4eae9747913279149fbe36eb070efdae756c3a9011521f16b708e4",
+  "raw_log_file": "root-probe.log.gz",
+  "raw_log_encoding": "gzip-lossless"
+}

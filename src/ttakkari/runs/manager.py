@@ -2326,7 +2326,10 @@ async def _reconsider_quota_waits() -> None:
         ).with_for_update(skip_locked=True)))
         now = utcnow()
         for run in rows:
-            latest = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id)
+            # Telemetry can arrive after run.waiting. Only a newer lifecycle
+            # transition (for example restart/pool backoff) supersedes that wait.
+            latest = await db.scalar(select(RunEvent).where(
+                RunEvent.run_id == run.id, RunEvent.type.in_(("run.waiting", "run.status")))
                                      .order_by(RunEvent.seq.desc()).limit(1))
             if latest is None or latest.type != "run.waiting":
                 continue

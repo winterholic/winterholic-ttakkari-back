@@ -6,6 +6,7 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from conftest import AGENT_LOG, agent_calls
@@ -234,6 +235,48 @@ async def test_quota_wait_saves_handoff_and_frees_slot_and_dispatches_when_recov
     # Wait for the run to complete
     done = await wait_run(client, auth, str(run_id))
     assert done["status"] == "succeeded"
+
+
+@pytest.mark.parametrize("trailing", ["log", "usage", "run.status"])
+async def test_recovered_account_rechecks_wait_after_diagnostic_events(
+    new_session, accounts, monkeypatch, trailing,
+):
+    from ttakkari.models import SessionKind
+    from ttakkari.runs import events as run_events
+
+    ws, session = await new_session()
+    until = utcnow() + timedelta(days=4)
+    handoff = "previous progress must survive"
+    async with sessionmaker()() as db:
+        sess = await db.get(ChatSession, uuid.UUID(session["id"]))
+        sess.kind, sess.engine, sess.worker_task_type = SessionKind.worker, "auto", "verification"
+        run = Run(session_id=sess.id, workspace_id=uuid.UUID(ws["id"]), prompt="review",
+                  engine="antigravity", model="claude-sonnet-5-5-high", status=RunStatus.queued,
+                  resume_after=until, resume_handoff=handoff)
+        db.add(run)
+        await db.flush()
+        run_events.append(db, run, "run.waiting", {"until": until.isoformat(), "handoff": handoff})
+        payload = {"status": "queued", "pool_timeout_retry": True} if trailing == "run.status" else {"text": "diagnostic"}
+        run_events.append(db, run, trailing, payload)
+        await db.commit()
+        rid, sid = run.id, sess.id
+    dispatch = AsyncMock()
+    monkeypatch.setattr(manager, "dispatch", dispatch)
+    manager._arm(rid, sid, until.timestamp())
+
+    await _reconsider_quota_waits()
+
+    async with sessionmaker()() as db:
+        saved = await db.get(Run, rid)
+        assert saved.resume_handoff == handoff
+        assert saved.status == RunStatus.queued
+        if trailing == "run.status":
+            assert saved.resume_after == until  # A newer retry backoff is not a quota wait.
+            dispatch.assert_not_awaited()
+        else:
+            assert saved.resume_after is None
+            assert not manager.is_waiting(rid)
+            dispatch.assert_awaited_once_with(sid)
 
 
 async def test_past_resume_after_is_cleared_on_resume_queued():

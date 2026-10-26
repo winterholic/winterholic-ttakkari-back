@@ -353,7 +353,7 @@ async def test_quota_wait_persists_resume_after_across_restart(new_session):
         accounts = await profiles.accounts(db)
         for a in accounts:
             profiles.cool_down(a.id, 900)
-        prof = type("FakeProfile", (), {"name": "claude-main", "engine": "claude"})()
+        prof = profiles.Profile(id=uuid.uuid4(), name="claude-main", engine="claude")
         await manager._wait_for_reset(db, run, chat_sess, [(prof, future_until)], handoff="test handoff")
 
     # DB에 resume_after 가 저장되었는지 확인

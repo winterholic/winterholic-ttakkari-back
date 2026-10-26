@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
+import logging
 import re
 import shutil
 import tempfile
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from ttakkari.research.adapters.base import (
     AdapterEnvironmentStatus,
     AdapterRunResult,
-    ExecutionAdapter,
     MeasurementRecord,
     ResourceEstimate,
 )
@@ -25,6 +24,7 @@ from ttakkari.research.adapters.presets import load_tts_preset
 from ttakkari.tts.providers import TtsResult
 
 VALID_MODES = {"normalize_only", "synthesize", "synthesize_and_stt"}
+logger = logging.getLogger(__name__)
 VALID_VOICES = {"M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"}
 
 # Voice preset mapping from seed to Supertonic voice IDs
@@ -123,17 +123,17 @@ class TtsSynthesisAdapter:
     id: str = "tts_synthesis"
     version: str = "1.0.0"
     name_ko: str = "로컬 TTS 음성 합성 및 발음 평가 어댑터"
-    domains: list[str] = ["tts", "stt"]
+    domains: ClassVar[list[str]] = ["tts", "stt"]
 
     # Explicit whitelist: exactly match methods implemented by this adapter
-    supported_methods: list[str] = [
+    supported_methods: ClassVar[list[str]] = [
         "tts_korean_text_normalization",
         "tts_pronunciation_dictionary",
         "tts_sentence_segmentation",
     ]
 
     # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
-    supported_parameters: list[str] = [
+    supported_parameters: ClassVar[list[str]] = [
         # Catalog seed parameter keys (tts.json)
         "handle_measure_units",
         "english_acronym_mode",
@@ -154,7 +154,7 @@ class TtsSynthesisAdapter:
         "preset_id",
         "texts",
     ]
-    required_inputs: list[str] = ["preset_id"]
+    required_inputs: ClassVar[list[str]] = ["preset_id"]
 
     def check_environment(self, *, scope: str) -> AdapterEnvironmentStatus:
         """Check Supertonic 3 model, runtime venv, and STT availability."""
@@ -189,7 +189,7 @@ class TtsSynthesisAdapter:
                 if Path(stt_py).is_file():
                     stt_ready = True
             except Exception:
-                pass
+                logger.warning("TTS STT runtime inspection failed", exc_info=True)
             details["stt_ready"] = stt_ready
 
             return AdapterEnvironmentStatus(
@@ -203,6 +203,7 @@ class TtsSynthesisAdapter:
                 details=details,
             )
         except Exception as exc:
+            logger.warning("TTS environment inspection failed", exc_info=True)
             return AdapterEnvironmentStatus(
                 adapter_id=self.id,
                 ready=False,
@@ -594,6 +595,7 @@ class TtsSynthesisAdapter:
                             "wer_vs_raw": rates_raw.get("wer"),
                         })
                     except Exception as stt_exc:
+                        logger.warning("TTS pronunciation transcription chunk failed", exc_info=True)
                         stt_failures += 1
                         stt_eval_results.append({
                             "chunk_index": idx,
@@ -677,6 +679,7 @@ class TtsSynthesisAdapter:
                 result.environment_snapshot["temp_dir"] = temp_dir
             return result
         except Exception as exc:
+            logger.warning("TTS execution failed", exc_info=True)
             total_wall = time.monotonic() - started_wall
             return AdapterRunResult(
                 status="failed",

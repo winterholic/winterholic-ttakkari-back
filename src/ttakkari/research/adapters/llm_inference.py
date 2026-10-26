@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import platform
 import shutil
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from ttakkari.research.adapters.base import (
     AdapterEnvironmentStatus,
     AdapterRunResult,
-    ExecutionAdapter,
     MeasurementRecord,
     ResourceEstimate,
 )
@@ -29,6 +29,7 @@ _LIVE_PHASES = ("starting", "ready")
 # HostGpu.start raises this when the supervisor wrote no state within 20s. The supervisor may still come up
 # afterwards, and its launch id (generated inside start) is unknown to us, so we cannot prove or stop it.
 _START_STATE_TIMEOUT_MARKER = "did not report a state"
+logger = logging.getLogger(__name__)
 
 
 class LlmInferenceAdapter:
@@ -37,10 +38,10 @@ class LlmInferenceAdapter:
     id: str = "llm_inference"
     version: str = "1.0.0"
     name_ko: str = "로컬 LLM 추론 및 GPU 가속 벤치마크 어댑터"
-    domains: list[str] = ["llm"]
+    domains: ClassVar[list[str]] = ["llm"]
 
     # Explicit whitelist: exactly match methods implemented by this adapter
-    supported_methods: list[str] = [
+    supported_methods: ClassVar[list[str]] = [
         "kv_cache_quantization",
         "prompt_context_length_tuning",
         "cpu_gpu_offloading",
@@ -49,7 +50,7 @@ class LlmInferenceAdapter:
     ]
 
     # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
-    supported_parameters: list[str] = [
+    supported_parameters: ClassVar[list[str]] = [
         # Catalog seed parameter keys (llm_inference.json, systems.json)
         "cache_type_k",
         "cache_type_v",
@@ -79,7 +80,7 @@ class LlmInferenceAdapter:
         "repetitions",
         "max_seconds",
     ]
-    required_inputs: list[str] = ["model"]
+    required_inputs: ClassVar[list[str]] = ["model"]
 
     def check_environment(self, *, scope: str) -> AdapterEnvironmentStatus:
         """Probe real host GPU environment, llama-server binary, and model files."""
@@ -97,6 +98,7 @@ class LlmInferenceAdapter:
             from ttakkari.config import get_settings
             s = get_settings()
         except Exception as exc:
+            logger.warning("LLM environment inspection failed", exc_info=True)
             return AdapterEnvironmentStatus(
                 adapter_id=self.id,
                 ready=False,
@@ -140,7 +142,7 @@ class LlmInferenceAdapter:
             s_dir = state_dir(s.data_dir)
             lease_held = _lock_held(s_dir)
         except Exception:
-            pass
+            logger.warning("LLM lease status inspection failed", exc_info=True)
 
         is_darwin_arm64 = platform.system() == "Darwin" and platform.machine() in ("arm64", "aarch64")
         hardware = "apple_silicon_metal" if is_darwin_arm64 else ("cuda" if shutil.which("nvidia-smi") else "cpu")
@@ -224,7 +226,7 @@ class LlmInferenceAdapter:
                     f"허용되지 않은 모델 별칭: '{model}'. 허용 목록: {sorted(models_dict.keys())}"
                 )
         except Exception:
-            pass
+            logger.warning("LLM model inventory inspection failed", exc_info=True)
 
         # Check gpu_layers / n_gpu_layers
         gpu_layers_val = config.get("n_gpu_layers") if "n_gpu_layers" in config else config.get("gpu_layers")
@@ -456,6 +458,7 @@ class LlmInferenceAdapter:
             )
             return run_result
         except Exception as exc:
+            logger.warning("LLM execution failed", exc_info=True)
             total_wall = time.monotonic() - started_wall
             run_result = AdapterRunResult(
                 status="failed",
@@ -534,6 +537,7 @@ class LlmInferenceAdapter:
             try:
                 absent, evidence = LlmInferenceAdapter._launch_processes_absent(launch)
             except Exception as probe_exc:
+                logger.warning("LLM launch identity probe failed during cleanup", exc_info=True)
                 info["error"] = f"termination_unverified: {type(probe_exc).__name__}: {probe_exc}"
                 return info
             info["process_evidence"] = evidence
@@ -544,6 +548,7 @@ class LlmInferenceAdapter:
             else:
                 info["error"] = f"termination_unverified: {evidence} — 종료를 관측하지 못했습니다."
         except Exception as exc:
+            logger.warning("LLM owned launch cleanup failed", exc_info=True)
             info["error"] = f"{type(exc).__name__}: {exc}"
         return info
 

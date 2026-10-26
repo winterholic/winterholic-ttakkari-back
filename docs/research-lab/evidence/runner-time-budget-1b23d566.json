@@ -4,11 +4,11 @@
   "environment": "lead Codex sandbox; actual isolated Run PostgreSQL; synthetic adapter/host/provider fixtures",
   "source_sha256": {
     "src/ttakkari/research/runner.py": "7811a167af4ae8a7c53fceb37ea1345616a48954bd780392146ffbf148efe850",
-    "src/ttakkari/research/planner.py": "363e0ce243b4ba38049b9646c6650d1bfa6a4f46c854cebe7ca12f7a33c1fdf9",
-    "src/ttakkari/research/adapters/llm_inference.py": "35c0682d892479d8caa485ab4e1ff57a20d44c03901331d5bbde4feeac293563",
-    "src/ttakkari/research/adapters/tts_synthesis.py": "e1f3ea94f473bd5886f553169bc9554d878788c0970849fc428ea466a80c7941",
+    "src/ttakkari/research/planner.py": "bccfc0ef4801dde8c9dcb922a932263b805e661096d162d3d5dce02173120d36",
+    "src/ttakkari/research/adapters/llm_inference.py": "c7bd45fbff8c084017d37ab8b06327951e5949f057348f25cb234c9162d7d26b",
+    "src/ttakkari/research/adapters/tts_synthesis.py": "2f97a759c8344aeae62b23e7e1a841e8f524228793b0abdf240583f8acc56bac",
     "tests/test_research_runner_lifecycle.py": "9ac6a25cfc4f24677e68fe9165773c2fe04eb407486d412743393c2b24cba48e",
-    "tests/test_research_adapters.py": "790b50e672446780055f93e92d3a95d1666f1aeaca43a8c044cbc6a15ae5cc24"
+    "tests/test_research_adapters.py": "ed691c3aa20ae9845d37b607d825ea94d9eb448b2340d0673df08437a69dda18"
   },
   "validation": [
     {
@@ -22,6 +22,14 @@
     {
       "suite": "final budget + cancellation subset",
       "result": "23 passed, 63 deselected in 2.02s"
+    },
+    {
+      "suite": "after lint cleanup: planner core + CPU combination",
+      "result": "11 passed in 2.06s"
+    },
+    {
+      "suite": "ruff six changed Python files after cleanup",
+      "result": "All checks passed!"
     }
   ],
   "not_verified": [
@@ -30,5 +38,12 @@
     "actual memory budgets",
     "full deploy controller"
   ],
-  "overlapping_counts_must_not_be_added": true
+  "overlapping_counts_must_not_be_added": true,
+  "first_pre_push": {
+    "commit_prefix": "2a0e5bce",
+    "push": "rejected; existing 32 ruff diagnostics",
+    "contract": "84 passed, 5421 deselected in 13.23s",
+    "changed_tests": "86 passed in 2.77s",
+    "bypassed": false
+  }
 }

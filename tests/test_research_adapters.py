@@ -19,12 +19,8 @@ import pytest
 from ttakkari.host_gpu import Busy, GpuError, HostGpu, LaunchMismatch
 from ttakkari.meetings.local_stt import runner as stt_runner
 from ttakkari.research.adapters import (
-    AdapterEnvironmentStatus,
-    AdapterRegistry,
     AdapterRunResult,
     ExecutionAdapter,
-    MeasurementRecord,
-    ResourceEstimate,
     get_adapter_registry,
 )
 from ttakkari.research.adapters.external_report import ExternalReportAdapter
@@ -34,7 +30,12 @@ from ttakkari.research.adapters.retrieval_eval import RetrievalEvalAdapter
 from ttakkari.research.adapters.tts_synthesis import TtsSynthesisAdapter
 from ttakkari.research.readiness import compute_execution_status
 from ttakkari.tts import service as tts_service
-from ttakkari.tts.providers import ProviderAvailability, ProviderState, TtsChunkResult, TtsResult
+from ttakkari.tts.providers import (
+    ProviderAvailability,
+    ProviderState,
+    TtsChunkResult,
+    TtsResult,
+)
 from ttakkari.tts.supertonic import SupertonicProvider
 
 

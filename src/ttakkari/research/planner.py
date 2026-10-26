@@ -238,8 +238,7 @@ def expand_configurations(
                 )
                 return configs, errors, warnings
 
-            idx = 0
-            for combo in itertools.product(*sweep_values):
+            for idx, combo in enumerate(itertools.product(*sweep_values)):
                 params = dict(fixed_part)
                 label_parts = []
                 for k, val in zip(sweep_keys, combo):
@@ -256,7 +255,6 @@ def expand_configurations(
                         "ablation_factor": None,
                     }
                 )
-                idx += 1
 
     elif strategy == "random":
         sweep_keys = []
@@ -523,6 +521,7 @@ async def validate_experiment_plan(
                     "Adapter registry lookup for '%s' failed: %s",
                     adapter_id,
                     type(exc).__name__,
+                    exc_info=True,
                 )
                 errors.append(
                     f"어댑터 '{adapter_id}' 조회 중 오류가 발생했습니다: {type(exc).__name__}"
@@ -544,6 +543,7 @@ async def validate_experiment_plan(
                             "Adapter '%s' validate_config failed: %s",
                             adapter_id,
                             type(exc).__name__,
+                            exc_info=True,
                         )
                         err_msg = f"어댑터 '{adapter_id}' 설정 검증 중 오류가 발생했습니다: {type(exc).__name__}"
                         if err_msg not in errors:

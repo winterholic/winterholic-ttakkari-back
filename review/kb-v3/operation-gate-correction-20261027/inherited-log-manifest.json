@@ -1,0 +1,42 @@
+{
+  "fixture-diagnosis.log": {
+    "stored": "fixture-diagnosis.log.gz",
+    "raw_sha256": "7db4bf62f947a6abc1250ce3b752a0fc54350b6846241471bea237696c1a438e",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "green-final.log": {
+    "stored": "green-final.log.gz",
+    "raw_sha256": "91a41885e925793bea83e5a2de2cbb66b19eb912716b32c2ef02bfeb8e187776",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "green-status-aware.log": {
+    "stored": "green-status-aware.log.gz",
+    "raw_sha256": "dedfae08c7a33daae87e3f975fbee9a43caf41d85a52962a42b00e26ec0e57f2",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "green.log": {
+    "stored": "green.log.gz",
+    "raw_sha256": "2dd0526006a57ca72933b9cb958b3049ea5d0dc2e4dcc02e359bcca2eaea3d3d",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "policy-input-red.log": {
+    "stored": "policy-input-red.log.gz",
+    "raw_sha256": "309d3cc09a350cd00449fb1c276698d38d79a2ebe62092d91442d5334f772cdb",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "red-behavior.log": {
+    "stored": "red-behavior.log.gz",
+    "raw_sha256": "3afe09d688387cbfcbd5a233c297078897f68f65b15e58d824189228eb5f3b4b",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "red-fixture-corrected.log": {
+    "stored": "red-fixture-corrected.log.gz",
+    "raw_sha256": "363e48229feee1668a7376e64d17be3f4d2f7e6b67d0e1c30c88ef9f8571345c",
+    "original_command": "not retained; account handoff and captured log only"
+  },
+  "red.log": {
+    "stored": "red.log.gz",
+    "raw_sha256": "b76ea1d00f53fd8c255f2b42477017dc057764966323fbc6820056703b4331d6",
+    "original_command": "not retained; account handoff and captured log only"
+  }
+}

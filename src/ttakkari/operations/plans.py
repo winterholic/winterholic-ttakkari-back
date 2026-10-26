@@ -306,7 +306,7 @@ def make_plan(kind: str, job_id: str) -> Plan:
             argv += ["--passphrase-file", str(key)]
         return Plan(kind, argv, env, timeout, {"target_db": target, "manifest": manifest.name})
     if kind == "kb_v3_verify":
-        _need()
+        # Python operation; backup-only OpenSSL checks do not apply.
         env["TTAKKARI_DATABASE_URL"] = get_settings().database_url
         python_bin = str(BACK / ".venv/bin/python") if (BACK / ".venv/bin/python").is_file() else sys.executable
         argv = [python_bin, "-m", "ttakkari.operations.kb_v3_verify", job_id]

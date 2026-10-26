@@ -373,79 +373,8 @@ async def test_verify_kb_v3_idempotent_reexecution(mem_db, monkeypatch):
     assert doc_count == 3
 
 
-@pytest.mark.asyncio
-async def test_verify_gate_rejects_held_and_zero_l2(mem_db, monkeypatch):
-    """3개 잡이 held 이거나 실제 L2 extraction 호출이 0회일 때 succeeded 로 판정하지 않는다."""
-    session, session_factory = mem_db
-
-    s = Settings(
-        kb_l2_adapter="subscription_cli",
-        kb_l2_subscription_model="gpt-6-luna",
-        _env_file=None,
-    )
-    monkeypatch.setattr("ttakkari.operations.kb_v3_verify.get_settings", lambda: s)
-
-    # worker 없이 실행하면 잡들이 ready가 되지 않고 finite timeout 이후 partial 혹은 held 상태가 됨
-    result = await verify_kb_v3(
-        session, session_factory=session_factory, worker=None, max_wait_seconds=0.1
-    )
-
-    # held / 0 L2 인 상황에서 절대로 succeeded 가 나와선 안 된다
-    assert result["status"] != "succeeded"
-    assert result["status"] in ("held", "degraded", "partial", "failed")
-    # 1e5 하드코딩 오류 제거 검증 (제품 응답에 섞지 않음)
-    assert "verification_required" not in result
-    assert "recommended_verifier" not in result
 
 
-@pytest.mark.asyncio
-async def test_verify_gate_rejects_unrelated_or_stale_conflict(mem_db, monkeypatch):
-    """무관한 엔터티의 conflict나 stale conflict만으로는 30일 vs 90일 상충 검증을 통과할 수 없다."""
-    session, session_factory = mem_db
-
-    s = Settings(
-        kb_l2_adapter="subscription_cli",
-        kb_l2_subscription_model="gpt-6-luna",
-        _env_file=None,
-    )
-    monkeypatch.setattr("ttakkari.operations.kb_v3_verify.get_settings", lambda: s)
-
-    # 무관한 엔터티 및 conflict 주입
-    unrelated_entity = KbEntity(
-        tenant_id="default",
-        visibility="global",
-        origin_scope="personal",
-        entity_kind="system",
-        canonical_name="UnrelatedSystem",
-        norm_name="unrelatedsystem",
-        status="active",
-    )
-    session.add(unrelated_entity)
-    await session.flush()
-
-    unrelated_conflict = KbConflict(
-        visibility="global",
-        conflict_kind="value_contradiction",
-        entity_id=unrelated_entity.id,
-        predicate="version",
-        status="open",
-    )
-    session.add(unrelated_conflict)
-    await session.commit()
-
-    # 가짜 워커: 잡을 강제로 ready 로 만들지만 30일 vs 90일 conflict는 생성하지 않음
-    class EmptyWorker:
-        async def pump(self):
-            return 0
-
-    result = await verify_kb_v3(
-        session,
-        session_factory=session_factory,
-        worker=EmptyWorker(),
-        max_wait_seconds=0.1,
-    )
-    # 30일 vs 90일 동일 주체/동일 predicate 상충이 없으므로 succeeded 불가
-    assert result["status"] != "succeeded"
 
 
 @pytest.mark.asyncio
@@ -492,31 +421,6 @@ async def test_verify_does_not_claim_unrelated_backlog(mem_db, monkeypatch):
     assert unrelated_job.claimed_by == orig_claimed_by
 
 
-@pytest.mark.asyncio
-async def test_verify_gate_rejects_missing_exact_quote(mem_db, monkeypatch):
-    """주장(assertion)이 있더라도 근거(evidence)에 exact_quote가 없거나 빈 값이면 succeeded로 승인하지 않는다."""
-    session, session_factory = mem_db
-
-    s = Settings(
-        kb_l2_adapter="subscription_cli",
-        kb_l2_subscription_model="gpt-6-luna",
-        _env_file=None,
-    )
-    monkeypatch.setattr("ttakkari.operations.kb_v3_verify.get_settings", lambda: s)
-
-    # 3개 잡을 모두 ready 로 만들지만 evidence 에 exact_quote 가 없도록 설정하는 시나리오
-    # verify_kb_v3 는 quote 가 유효하지 않으면 degraded 또는 failed 처리해야 함
-    class QuoteMissingWorker:
-        async def pump(self):
-            return 0
-
-    result = await verify_kb_v3(
-        session,
-        session_factory=session_factory,
-        worker=QuoteMissingWorker(),
-        max_wait_seconds=0.1,
-    )
-    assert result["status"] != "succeeded"
 
 
 @pytest.mark.asyncio
@@ -537,82 +441,6 @@ async def test_actual_db_counts_reported(mem_db, monkeypatch):
     assert result["counts"]["documents"] == 3
 
 
-@pytest.mark.asyncio
-async def test_verify_gate_full_success_when_all_conditions_met(mem_db, monkeypatch):
-    """모든 계약 조건(3문서, 3ready, L2 calls 성공 증거, 인용구 보장, 30d vs 90d 동일 엔터티/술어 상충) 충족 시 정직하게 succeeded 보고."""
-    session, session_factory = mem_db
-
-    # Fake L2: L2 추출 시 엔터티 및 인용된 주장 반환 (calls_made 카운트 증가)
-    async def fake_l2_call(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "entities": [{"name": "반품 규정", "category": "policy"}],
-            "assertions": [
-                {
-                    "subject": "반품 규정",
-                    "predicate": "refund_period",
-                    "value": "30일",
-                    "quote": "30일 이내에 환불을 보장",
-                }
-            ],
-            "relations": [],
-        }
-
-    class FakeAdapter:
-        name = "subscription_cli"
-        retry_after = None
-
-        async def availability(self):
-            return True, None
-
-        async def __call__(self, prompt, schema):
-            return await fake_l2_call(prompt, schema)
-
-    orchestrator = KbPipelineOrchestrator(session_factory=session_factory)
-    from ttakkari.kb_pipeline.stages import ExtractingProcessor
-    from ttakkari.kb_pipeline.types import StageResult
-
-    class FakeIndexingProcessor:
-        async def __call__(self, ctx):
-            return StageResult.success(detail={"lexical_ready": True, "vectors_created": 1})
-
-    orchestrator.registry.register(
-        "extracting",
-        ExtractingProcessor(adapter_factory=lambda: FakeAdapter()),
-    )
-    orchestrator.registry.register("indexing", FakeIndexingProcessor())
-    worker = KbPipelineWorker(
-        session_factory=session_factory, orchestrator=orchestrator
-    )
-
-    s = Settings(
-        kb_l2_adapter="subscription_cli",
-        kb_l2_subscription_model="gpt-6-luna",
-        _env_file=None,
-    )
-    monkeypatch.setattr("ttakkari.operations.kb_v3_verify.get_settings", lambda: s)
-    monkeypatch.setattr("ttakkari.kb_pipeline.stages.get_settings", lambda: s)
-
-    result = await verify_kb_v3(
-        session,
-        session_factory=session_factory,
-        worker=worker,
-        max_wait_seconds=5.0,
-    )
-
-    assert result["status"] == "succeeded", f"Unexpected status: {result.get('status')}, reason: {result.get('reason')}, jobs: {result.get('jobs')}"
-    assert result["counts"]["documents"] == 3
-    assert result["counts"]["passages"] > 0
-    assert result["counts"]["assertions"] >= 2
-    assert result["counts"]["conflicts"] >= 1
-    assert len(result["conflict_ids"]) >= 1
-
-    # 잡의 extracting 단계에서 실제 calls_made > 0 검증
-    for j_summary in result["jobs"]:
-        details = j_summary["details"]
-        assert "l2" in details
-        assert details["l2"]["adapter"] == "subscription_cli"
-        assert details["l2"]["available"] is True
-        assert details["l2"]["calls_made"] > 0
 
 
 def test_heavy_lifecycle_dedup_and_conflict_guard(tmp_path, monkeypatch):
@@ -673,3 +501,142 @@ def test_runner_summarize_kb_v3_verify():
     status, summary, err = runner._summarize(plan, "succeeded", "Traceback...", None)
     assert status == "failed"
     assert "kb_v3_verify 요약 JSON을 찾을 수 없습니다" in err
+
+
+async def _policy_worker(session_factory, monkeypatch, mutation):
+    """Exercise registration/extraction/persistence; change only persisted outcomes."""
+    from sqlalchemy import delete
+
+    from ttakkari.kb_pipeline.stages import ExtractingProcessor
+    from ttakkari.kb_pipeline.types import StageResult
+
+    settings = Settings(kb_l2_adapter="subscription_cli", _env_file=None)
+    monkeypatch.setattr("ttakkari.operations.kb_v3_verify.get_settings", lambda: settings)
+    monkeypatch.setattr("ttakkari.kb_pipeline.stages.get_settings", lambda: settings)
+
+    prompts = []
+
+    class Adapter:
+        name = "subscription_cli"
+        retry_after = None
+
+        async def availability(self):
+            return True, None
+
+        async def __call__(self, prompt, schema):
+            prompts.append(prompt)
+            assertions = []
+            for days in (30, 90):
+                # Return only source-present evidence, with the actual L2 field names.
+                import re
+                match = re.search(r"반품 규정\(Return Policy\)(?:은| refers to)[^\n]*" + str(days) + r"(?:일| days)[^\n]*", prompt)
+                if match:
+                    assertions.append({
+                        "subject": "반품 규정", "predicate": "refund_period",
+                        "object_entity": None, "object_value": f"{days}일",
+                        "modality": "fact", "polarity": "positive",
+                        "applies_version": None, "evidence_quote": match.group(),
+                    })
+            return {"entities": [], "assertions": assertions, "relations": []}
+
+    class Indexer:
+        async def __call__(self, ctx):
+            return StageResult.success(detail={"lexical_ready": True, "vectors_created": 1})
+
+    orchestrator = KbPipelineOrchestrator(session_factory=session_factory)
+    orchestrator.registry.register("extracting", ExtractingProcessor(adapter_factory=Adapter))
+    orchestrator.registry.register("indexing", Indexer())
+    worker = KbPipelineWorker(session_factory=session_factory, orchestrator=orchestrator)
+    run_job = worker._run_job_wrapper
+    observed = {}
+
+    async def run_and_mutate(job_id, token):
+        await run_job(job_id, token)
+        async with session_factory() as db:
+            jobs = list((await db.scalars(select(KbPipelineJob))).all())
+            if len(jobs) != 3 or not all(j.status == "ready" for j in jobs):
+                return
+            assertions = list((await db.scalars(select(KbAssertion))).all())
+            policies = [a for a in assertions if a.predicate == "refund_period"]
+            # These preconditions make partial/timeout incapable of hiding a broken gate.
+            assert len(policies) == 2, ([(a.predicate, a.object_value) for a in assertions], prompts)
+            assert {a.norm_object_value for a in policies} == {"30일", "90일"}
+            assert all(a.extractor_tier == "L2" for a in policies)
+            stages = list((await db.scalars(select(KbPipelineStage).where(KbPipelineStage.stage == "extracting"))).all())
+            assert all(st.status == "succeeded" and st.detail["l2"]["calls_made"] > 0 for st in stages)
+            evidence = list((await db.scalars(select(KbEvidence).join(KbAssertionEvidence).where(KbAssertionEvidence.assertion_id.in_([a.id for a in policies])))).all())
+            assert len(evidence) == 2
+            if mutation == "held":
+                for j in jobs:
+                    j.status = "held"
+            elif mutation == "zero_l2":
+                for st in stages:
+                    st.detail = {**st.detail, "l2": {**st.detail["l2"], "calls_made": 0}}
+            elif mutation == "missing_quote":
+                await db.execute(delete(KbAssertionEvidence).where(KbAssertionEvidence.assertion_id == policies[0].id))
+            elif mutation == "bad_digest":
+                evidence[0].sha256 = "0" * 64
+            elif mutation == "out_of_bounds":
+                passage = await db.get(KbPassage, evidence[0].passage_id)
+                evidence[0].span_end = len(passage.body) + 100
+            elif mutation == "wrong_revision":
+                passage = await db.get(KbPassage, evidence[0].passage_id)
+                other = next(a for a in policies if a.revision_id != passage.revision_id)
+                await db.execute(delete(KbAssertionEvidence).where(KbAssertionEvidence.assertion_id == other.id))
+                db.add(KbAssertionEvidence(assertion_id=other.id, evidence_id=evidence[0].id, relation="supports"))
+            elif mutation in ("unrelated_conflict", "wrong_pair", "definition_only"):
+                await db.execute(delete(KbConflict))
+                definitions = [a for a in assertions if a.predicate == "definition"]
+                if mutation == "definition_only":
+                    await db.execute(delete(KbAssertionEvidence).where(KbAssertionEvidence.assertion_id.in_([a.id for a in policies])))
+                    for a in policies:
+                        await db.delete(a)
+                db.add(KbConflict(
+                    visibility="global", conflict_kind="value_contradiction",
+                    entity_id=policies[0].subject_entity_id,
+                    predicate="refund_period" if mutation == "wrong_pair" else "unrelated",
+                    assertion_a_id=definitions[0].id if mutation == "wrong_pair" else None,
+                    assertion_b_id=definitions[1].id if mutation == "wrong_pair" else None,
+                    status="open",
+                ))
+            await db.commit()
+            observed.update(ready=True, mutation=mutation)
+
+    worker._run_job_wrapper = run_and_mutate
+    return worker, observed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation,reason", [
+    (None, None),
+    ("held", "pipeline_jobs_held"),
+    ("zero_l2", "l2_extraction_calls_unverified"),
+    ("missing_quote", "exact_quote_missing_or_unverified"),
+    ("bad_digest", "exact_quote_missing_or_unverified"),
+    ("out_of_bounds", "exact_quote_missing_or_unverified"),
+    ("wrong_revision", "exact_quote_missing_or_unverified"),
+    ("unrelated_conflict", "30d_vs_90d_policy_conflict_unverified"),
+    ("wrong_pair", "30d_vs_90d_policy_conflict_unverified"),
+    ("definition_only", "30d_vs_90d_policy_conflict_unverified"),
+])
+async def test_terminal_policy_gate(mem_db, monkeypatch, mutation, reason):
+    session, sf = mem_db
+    worker, observed = await _policy_worker(sf, monkeypatch, mutation)
+    result = await verify_kb_v3(session, session_factory=sf, worker=worker, max_wait_seconds=5)
+    assert observed.get("ready"), "fixture never reached all three ready jobs"
+    assert result["counts"]["documents"] == 3
+    assert len(result["jobs"]) == 3
+    assert all(j["status"] == ("held" if mutation == "held" else "ready") for j in result["jobs"])
+    if reason:
+        assert result["status"] not in ("succeeded", "partial"), result
+        assert result["reason"] == reason, result
+    else:
+        assert result["status"] == "succeeded", result
+    assert "verification_required" not in result
+
+
+def test_verify_plan_does_not_need_backup_tools(monkeypatch):
+    original = plans.shutil.which
+    monkeypatch.setattr(plans.shutil, "which", lambda name, **kw: None if name == "openssl" else original(name, **kw))
+    plan = plans.make_plan("kb_v3_verify", "00000000-0000-0000-0000-000000000001")
+    assert plan.argv[1:3] == ["-m", "ttakkari.operations.kb_v3_verify"]

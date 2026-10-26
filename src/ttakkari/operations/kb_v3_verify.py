@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
+import re
 import time
 import uuid
 from datetime import timedelta
@@ -78,14 +80,14 @@ TEXT_POLICY_30D = """# 반품 규정 (30일 정책)
 
 반품 규정(Return Policy) refers to standard customer service guarantee allowing refunds within 30 days.
 
-반품 규정(Return Policy)은 구매일로부터 30일 이내에 환불을 보장하는 표준 고객 규정이다.
+반품 규정(Return Policy)은 구매일로부터 30일 이내에 반드시 환불을 보장하는 표준 고객 규정이다.
 """
 
 TEXT_POLICY_90D = """# 반품 규정 (90일 정책)
 
-반품 규정(Return Policy) refers to extended enterprise guarantee allowing refunds within 90 days.
+반품 규정(Return Policy) refers to standard customer service guarantee allowing refunds within 90 days.
 
-반품 규정(Return Policy)은 구매일로부터 90일 이내에 환불을 보장하는 확장 고객 규정이다.
+반품 규정(Return Policy)은 구매일로부터 90일 이내에 반드시 환불을 보장하는 표준 고객 규정이다.
 """
 
 TERMINAL_JOB_STATUSES = ("ready", "degraded", "failed", "held")
@@ -400,90 +402,80 @@ async def verify_kb_v3(
         or 0
     )
 
-    # 현재 revision source-backed exact quoted claim/evidence 검증
-    exact_quotes_valid = False
-    if assertions_count > 0 and evidence_count > 0:
-        quotes = list(
-            (
-                await db.execute(
-                    select(
-                        KbEvidence.span_start,
-                        KbEvidence.span_end,
-                        KbEvidence.sha256,
-                        KbPassage.body,
-                    )
-                    .join(
-                        KbAssertionEvidence,
-                        KbAssertionEvidence.evidence_id == KbEvidence.id,
-                    )
-                    .join(
-                        KbAssertion,
-                        KbAssertion.id == KbAssertionEvidence.assertion_id,
-                    )
-                    .join(
-                        KbPassage,
-                        KbPassage.id == KbEvidence.passage_id,
-                    )
-                    .where(KbAssertion.revision_id.in_(rev_ids))
-                )
-            ).all()
+    # Verify the intended L2 policy claims, not arbitrary definition sentences.
+    def policy_claim(a: KbAssertion, revision_id: uuid.UUID, days: int) -> bool:
+        day_value = rf"{days}\s*(?:일|days?|d)?"
+        return (
+            a.revision_id == revision_id
+            and a.predicate in {"refund_period", "refund_period_days"}
+            and a.status in {"active", "disputed"}
+            and a.extractor_tier == "L2"
+            and a.polarity == "positive"
+            and a.modality in {"fact", "requirement"}
+            and a.object_entity_id is None
+            and re.fullmatch(day_value, a.object_value.strip(), re.IGNORECASE) is not None
+            and re.fullmatch(day_value, a.norm_object_value.strip(), re.IGNORECASE) is not None
         )
-        if quotes:
-            all_spans_valid = True
-            for start, end, sha, body in quotes:
-                if start < 0 or end <= start or not sha or not body:
-                    all_spans_valid = False
-                    break
-                quote = body[start:end]
-                if not quote.strip():
-                    all_spans_valid = False
-                    break
-            exact_quotes_valid = all_spans_valid
 
-    # 상충(conflict) 조회
+    assertions_30 = [a for a in assertions if policy_claim(a, res_30.revision_id, 30)]
+    assertions_90 = [a for a in assertions if policy_claim(a, res_90.revision_id, 90)]
+    policy_days = {a.id: days for claims, days in ((assertions_30, 30), (assertions_90, 90)) for a in claims}
+    supported_claims: set[uuid.UUID] = set()
+    exact_quotes_valid = False
+    quotes = list((await db.execute(
+        select(
+            KbAssertion.id, KbAssertion.revision_id, KbAssertionEvidence.relation,
+            KbEvidence.span_start, KbEvidence.span_end, KbEvidence.sha256,
+            KbPassage.body, KbPassage.revision_id,
+        )
+        .select_from(KbAssertion)
+        .join(KbAssertionEvidence, KbAssertionEvidence.assertion_id == KbAssertion.id)
+        .join(KbEvidence, KbEvidence.id == KbAssertionEvidence.evidence_id)
+        .join(KbPassage, KbPassage.id == KbEvidence.passage_id)
+        .where(KbAssertion.revision_id.in_(rev_ids))
+    )).all())
+    all_spans_valid = bool(quotes)
+    for assertion_id, revision_id, relation, start, end, sha, body, passage_revision in quotes:
+        if (
+            not body or start is None or end is None
+            or not 0 <= start < end <= len(body)
+            or passage_revision != revision_id
+        ):
+            all_spans_valid = False
+            continue
+        quote = body[start:end]
+        if not quote.strip() or hashlib.sha256(quote.encode("utf-8")).hexdigest() != sha:
+            all_spans_valid = False
+            continue
+        # Evidence must support this claim and contain the refund period it asserts.
+        days = policy_days.get(assertion_id)
+        if (
+            days is not None and relation == "supports"
+            and re.search(rf"(?<!\d){days}\s*(?:일|days?\b)", quote, re.IGNORECASE)
+            and re.search(r"환불|refund", quote, re.IGNORECASE)
+        ):
+            supported_claims.add(assertion_id)
+    exact_quotes_valid = all_spans_valid and set(policy_days) <= supported_claims
+
     conflicts: list[KbConflict] = []
     if entity_ids:
-        conflicts = list(
-            (
-                await db.scalars(
-                    select(KbConflict).where(
-                        KbConflict.entity_id.in_(entity_ids),
-                        KbConflict.status.in_(("open", "disputed")),
-                    )
-                )
-            ).all()
-        )
+        conflicts = list((await db.scalars(select(KbConflict).where(
+            KbConflict.entity_id.in_(entity_ids),
+            KbConflict.status.in_(("open", "disputed")),
+        ))).all())
 
-    # 30일 vs 90일 정책 간 동일 주체/동일 predicate 값 상충(contradiction) 확인
-    policy_conflict_valid = False
-    assertions_30 = [a for a in assertions if a.revision_id == res_30.revision_id]
-    assertions_90 = [a for a in assertions if a.revision_id == res_90.revision_id]
-    policy_pair_found = False
-    for a30 in assertions_30:
-        for a90 in assertions_90:
-            if (
-                a30.subject_entity_id == a90.subject_entity_id
-                and a30.predicate == a90.predicate
-                and a30.norm_object_value != a90.norm_object_value
-            ):
-                policy_pair_found = True
-                break
-        if policy_pair_found:
-            break
-
-    if policy_pair_found and conflicts:
-        # conflicts 중 현재 두 정책 문서 사이에서 파생된 충돌이 있는지 확인
-        conflicts_30_90 = [
-            c
-            for c in conflicts
-            if (
-                (c.assertion_a_id in {a.id for a in assertions_30} and c.assertion_b_id in {a.id for a in assertions_90})
-                or (c.assertion_a_id in {a.id for a in assertions_90} and c.assertion_b_id in {a.id for a in assertions_30})
-                or (c.entity_id in entity_ids and policy_pair_found)
-            )
-        ]
-        if conflicts_30_90:
-            policy_conflict_valid = True
+    # The conflict must reference exactly the current, source-backed 30/90 pair.
+    policy_conflict_valid = any(
+        a30.subject_entity_id == a90.subject_entity_id
+        and a30.predicate == a90.predicate
+        and a30.applies_condition == a90.applies_condition
+        and a30.id in supported_claims and a90.id in supported_claims
+        and c.conflict_kind == "value_contradiction"
+        and c.entity_id == a30.subject_entity_id
+        and c.predicate == a30.predicate
+        and {c.assertion_a_id, c.assertion_b_id} == {a30.id, a90.id}
+        for a30 in assertions_30 for a90 in assertions_90 for c in conflicts
+    )
 
     # 각 잡의 단계별 상태 및 실 L2 호출 성공 증거 확인
     final_jobs = list(

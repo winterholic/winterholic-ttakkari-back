@@ -1,0 +1,155 @@
+- generic [ref=e2]:
+  - link "본문으로 건너뛰기" [ref=e33] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e34]:
+    - main [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e86]:
+          - button "메뉴 열기" [ref=e552] [cursor=pointer]
+          - generic [ref=e87]:
+            - heading "지식 도서관" [level=1] [ref=e88]
+            - paragraph [ref=e89]:
+              - generic [ref=e90]: 문서 2 · 패시지 2
+          - generic [ref=e92]:
+            - button "자료 추가" [ref=e93] [cursor=pointer]: + 추가
+            - 'button "처리 현황 열기: 진행 0건, 실패 0건, 보류 0건, 부분 완료 2건" [ref=e207] [cursor=pointer]':
+              - generic [ref=e96]: 대기 없음
+            - button "다시 읽기" [ref=e97] [cursor=pointer]
+        - generic [ref=e104]:
+          - list "도서관 현황" [ref=e105]:
+            - listitem [ref=e106]:
+              - generic [ref=e107]: 문서
+              - strong [ref=e108]: "2"
+            - listitem [ref=e109]:
+              - generic [ref=e110]: 개념
+              - strong [ref=e111]: "4"
+            - listitem [ref=e112]:
+              - generic [ref=e113]: 주장
+              - strong [ref=e114]: "0"
+            - listitem [ref=e115]:
+              - generic [ref=e116]: 관계
+              - strong [ref=e117]: "1"
+            - listitem [ref=e118]:
+              - generic [ref=e119]: 후보 관계
+              - strong [ref=e120]: "0"
+            - listitem [ref=e121]:
+              - generic [ref=e122]: 열린 충돌
+              - strong [ref=e123]: "0"
+          - navigation "보기 방식" [ref=e124]:
+            - button "지식 탐색" [ref=e125] [cursor=pointer]
+            - button "개념 그래프" [pressed] [ref=e126] [cursor=pointer]
+            - button "문서·처리" [ref=e127] [cursor=pointer]
+            - button "충돌·품질" [ref=e128] [cursor=pointer]
+          - generic [ref=e580]:
+            - generic [ref=e581]:
+              - search [ref=e583]:
+                - searchbox "개념 찾기" [ref=e587]
+                - button "찾기" [ref=e588] [cursor=pointer]
+              - generic [ref=e590] [cursor=pointer]:
+                - checkbox "후보 관계도 보기 (근거는 있지만 아직 확정되지 않은 관계. 점선·후보 표시)" [ref=e591]
+                - generic [ref=e592]: 후보 관계도 보기 (근거는 있지만 아직 확정되지 않은 관계. 점선·후보 표시)
+              - generic [ref=e593]:
+                - generic [ref=e594]:
+                  - region "선택한 개념의 이웃" [ref=e645]:
+                    - heading "Kubernetes" [level=3] [ref=e646]
+                    - paragraph [ref=e647]: 이웃 개념이 없어요.
+                  - list "핵심 개념 목록" [ref=e595]:
+                    - listitem [ref=e596]:
+                      - button "Kubernetes 기술 문서 2 주장 0" [active] [pressed] [ref=e597] [cursor=pointer]:
+                        - generic [ref=e598]:
+                          - generic [ref=e599]: Kubernetes
+                          - generic [aria-hidden] [ref=e601]: ›
+                        - generic [ref=e602]: 기술
+                        - generic [ref=e605]:
+                          - generic [ref=e606]: 문서 2
+                          - generic [ref=e607]: 주장 0
+                    - listitem [ref=e608]:
+                      - button "Deployment 개념 문서 1 주장 0" [ref=e609] [cursor=pointer]:
+                        - generic [ref=e610]:
+                          - generic [ref=e611]: Deployment
+                          - generic [aria-hidden] [ref=e613]: ›
+                        - generic [ref=e614]: 개념
+                        - generic [ref=e617]:
+                          - generic [ref=e618]: 문서 1
+                          - generic [ref=e619]: 주장 0
+                    - listitem [ref=e620]:
+                      - button "PostgreSQL 기술 문서 1 주장 0" [ref=e621] [cursor=pointer]:
+                        - generic [ref=e622]:
+                          - generic [ref=e623]: PostgreSQL
+                          - generic [aria-hidden] [ref=e625]: ›
+                        - generic [ref=e626]: 기술
+                        - generic [ref=e629]:
+                          - generic [ref=e630]: 문서 1
+                          - generic [ref=e631]: 주장 0
+                    - listitem [ref=e632]:
+                      - button "ReplicaSet 개념 문서 1 주장 0" [ref=e633] [cursor=pointer]:
+                        - generic [ref=e634]:
+                          - generic [ref=e635]: ReplicaSet
+                          - generic [aria-hidden] [ref=e637]: ›
+                        - generic [ref=e638]: 개념
+                        - generic [ref=e641]:
+                          - generic [ref=e642]: 문서 1
+                          - generic [ref=e643]: 주장 0
+                - status [ref=e644]: 개념 4개 표시 · 관계 1개
+            - complementary "개념 상세" [ref=e648]:
+              - generic [ref=e649]:
+                - button "닫기" [ref=e651] [cursor=pointer]
+                - heading "Kubernetes" [level=2] [ref=e653]
+                - generic [ref=e654]:
+                  - generic [ref=e655]: 기술
+                  - generic [ref=e657]: 인프라
+                  - generic [ref=e659]: 문서 2
+              - region "정본 요약" [ref=e661]:
+                - heading "정본 요약" [level=3] [ref=e662]
+                - paragraph [ref=e663]: 아직 근거로 뒷받침된 정본 요약이 없어요. 문서가 더 모이면 합성돼요.
+              - region "별칭" [ref=e664]:
+                - heading "별칭" [level=3] [ref=e665]
+                - list "별칭 목록" [ref=e666]:
+                  - listitem [ref=e667]:
+                    - generic [ref=e668]: 쿠버네티스 · ko
+                  - listitem [ref=e669]:
+                    - generic [ref=e670]: k8s · en
+                  - listitem [ref=e671]:
+                    - generic [ref=e672]: Kubernetes · en
+                - generic [ref=e673]:
+                  - generic [ref=e674]:
+                    - generic [ref=e675]: 별칭 추가
+                    - textbox "별칭 추가" [ref=e676]:
+                      - /placeholder: "예: 디플로이먼트"
+                  - generic [ref=e677]:
+                    - generic [ref=e678]: 언어
+                    - generic [ref=e679]:
+                      - combobox "언어 한국어" [ref=e680] [cursor=pointer]:
+                        - generic [ref=e681]: 한국어
+                      - text: ✓
+                  - button "추가" [disabled] [ref=e682]
+              - region "지지 주장" [ref=e684]:
+                - heading "지지 주장과 원문 인용" [level=3] [ref=e685]
+                - paragraph [ref=e686]: 연결된 주장이 없어요.
+              - region "연결된 관계" [ref=e687]:
+                - heading "관계와 근거" [level=3] [ref=e688]
+                - paragraph [ref=e689]: 확정된 관계가 없어요. 후보 관계는 그래프의 후보 관계 보기를 켜면 나와요.
+              - region "관련 문서" [ref=e690]:
+                - heading "관련 문서" [level=3] [ref=e691]
+                - list "관련 문서 목록" [ref=e692]:
+                  - listitem [ref=e693]:
+                    - button "Kubernetes 한국어 안내 v1" [ref=e694] [cursor=pointer]:
+                      - text: Kubernetes 한국어 안내
+                      - generic [ref=e695]: v1
+                  - listitem [ref=e696]:
+                    - button "Kubernetes networking v1" [ref=e697] [cursor=pointer]:
+                      - text: Kubernetes networking
+                      - generic [ref=e698]: v1
+      - text: ✓
+    - navigation "영역" [ref=e556]:
+      - link "채팅" [ref=e557] [cursor=pointer]:
+        - /url: /chat
+      - link "작업" [ref=e560] [cursor=pointer]:
+        - /url: /tasks
+      - link "메모" [ref=e565] [cursor=pointer]:
+        - /url: /memos
+      - link "캘린더" [ref=e569] [cursor=pointer]:
+        - /url: /calendar
+      - link "더보기" [ref=e572] [cursor=pointer]:
+        - /url: /more
+    - status

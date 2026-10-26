@@ -1,0 +1,186 @@
+- generic [ref=e2]:
+  - link "본문으로 건너뛰기" [ref=e33] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e34]:
+    - complementary "탐색" [ref=e35]:
+      - link "Ttakkari" [ref=e37] [cursor=pointer]:
+        - /url: /chat
+      - navigation "영역과 진행 중인 일" [ref=e39]:
+        - generic [ref=e40]:
+          - group "대화 공간" [ref=e41]:
+            - paragraph [ref=e42]: 대화 공간
+            - link "개인 대화" [ref=e43] [cursor=pointer]:
+              - /url: /chat
+            - link "회사 대화" [ref=e46] [cursor=pointer]:
+              - /url: /work
+          - link "작업" [ref=e50] [cursor=pointer]:
+            - /url: /tasks
+          - button "부가 기능" [ref=e55] [cursor=pointer]
+          - link "지식 도서관" [ref=e62] [cursor=pointer]:
+            - /url: /knowledge-library
+        - generic [ref=e65]:
+          - paragraph [ref=e66]: 진행 중
+          - paragraph [ref=e67]: 지금 도는 일이 없어요. 따까리에게 맡긴 일이 여기서 가지를 뻗어요.
+        - link "지난 작업 모두 보기" [ref=e68] [cursor=pointer]:
+          - /url: /tasks
+      - button "사용자 메뉴" [ref=e75] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e76]: W
+        - generic [ref=e77]:
+          - generic [ref=e78]: winterholic
+          - status [ref=e79]: Mac Studio 연결됨
+    - main [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - heading "지식 도서관" [level=1] [ref=e88]
+            - paragraph [ref=e89]:
+              - generic [ref=e90]: 문서 2 · 패시지 2
+          - generic [ref=e92]:
+            - button "자료 추가" [ref=e93] [cursor=pointer]:
+              - text: +
+              - generic [ref=e94]: 자료
+              - text: 추가
+            - 'button "처리 현황 열기: 진행 0건, 실패 0건, 보류 0건, 부분 완료 2건" [ref=e207] [cursor=pointer]':
+              - generic [ref=e96]: 처리 대기 없음
+            - button "다시 읽기" [active] [ref=e97] [cursor=pointer]
+        - generic [ref=e104]:
+          - list "도서관 현황" [ref=e105]:
+            - listitem [ref=e106]:
+              - generic [ref=e107]: 문서
+              - strong [ref=e108]: "2"
+            - listitem [ref=e109]:
+              - generic [ref=e110]: 개념
+              - strong [ref=e111]: "4"
+            - listitem [ref=e112]:
+              - generic [ref=e113]: 주장
+              - strong [ref=e114]: "0"
+            - listitem [ref=e115]:
+              - generic [ref=e116]: 관계
+              - strong [ref=e117]: "1"
+            - listitem [ref=e118]:
+              - generic [ref=e119]: 후보 관계
+              - strong [ref=e120]: "0"
+            - listitem [ref=e121]:
+              - generic [ref=e122]: 열린 충돌
+              - strong [ref=e123]: "0"
+          - navigation "보기 방식" [ref=e124]:
+            - button "지식 탐색" [pressed] [ref=e125] [cursor=pointer]
+            - button "개념 그래프" [ref=e126] [cursor=pointer]
+            - button "문서·처리" [ref=e127] [cursor=pointer]
+            - button "충돌·품질" [ref=e128] [cursor=pointer]
+          - generic [ref=e129]:
+            - search [ref=e130]:
+              - searchbox "지식 도서관 검색" [ref=e134]
+              - button "검색" [ref=e135] [cursor=pointer]
+            - generic [ref=e137]:
+              - generic [ref=e138]: 검색 방식
+              - generic [ref=e139]:
+                - combobox "검색 방식 통합 (단어+의미+개념 관계)" [ref=e140] [cursor=pointer]:
+                  - generic [ref=e141]: 통합 (단어+의미+개념 관계)
+                - text: ✓
+          - region "필터" [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]:
+                - generic [ref=e145]: 주제
+                - generic [ref=e146]:
+                  - combobox "주제 모든 주제" [ref=e147] [cursor=pointer]:
+                    - generic [ref=e148]: 모든 주제
+                  - text: ✓
+              - generic [ref=e149]:
+                - generic [ref=e150]: 유형
+                - generic [ref=e151]:
+                  - combobox "유형 모든 유형" [ref=e152] [cursor=pointer]:
+                    - generic [ref=e153]: 모든 유형
+                  - text: ✓
+              - generic [ref=e154]:
+                - generic [ref=e155]: 기간
+                - generic [ref=e156]:
+                  - combobox "기간 전체 기간" [ref=e157] [cursor=pointer]:
+                    - generic [ref=e158]: 전체 기간
+                  - text: ✓
+              - generic [ref=e159]:
+                - generic [ref=e160]: 출처 주소
+                - textbox "출처 주소" [ref=e161]:
+                  - /placeholder: "예: postgresql.org"
+          - generic [ref=e162]:
+            - region "처리 현황" [ref=e163]:
+              - heading "처리 현황" [level=2] [ref=e164]
+              - paragraph [ref=e165]:
+                - generic [ref=e166]: 진행 중 0건
+                - generic [ref=e168]: 실패 0건
+                - generic [ref=e170]: 보류 0건
+                - generic [ref=e172]: 부분 완료 2건
+              - paragraph [ref=e208]: 부분 완료는 AI 심층 추출만 빠지고 규칙·사전 기반 개념까지는 처리된 문서예요. 검색은 그대로 쓸 수 있어요.
+              - button "처리 현황 열기" [ref=e174] [cursor=pointer]
+            - region "처리 오류와 보류" [ref=e176]:
+              - heading "처리 오류와 보류" [level=2] [ref=e177]
+              - paragraph [ref=e178]: 실패하거나 보류된 작업이에요. 원인을 보고 다시 시도할 수 있어요.
+              - paragraph [ref=e179]: 실패하거나 보류된 작업이 없어요.
+            - region "최근 자료" [ref=e180]:
+              - heading "최근 자료" [level=2] [ref=e181]
+              - list "최근 자료" [ref=e209]:
+                - listitem [ref=e210]:
+                  - button "Kubernetes 한국어 안내 부분 완료 개발·인프라 · 자동 분류 직접 등록 2026. 10. 27. 07:40 개념 3 주장 0" [ref=e211] [cursor=pointer]:
+                    - generic [ref=e212]:
+                      - generic [ref=e213]: Kubernetes 한국어 안내
+                      - generic [aria-hidden] [ref=e214]: ›
+                    - generic [ref=e215]:
+                      - generic [ref=e216]: 부분 완료
+                      - generic [ref=e218]: 개발·인프라 · 자동 분류
+                      - generic [ref=e220]: 직접 등록
+                    - generic [ref=e222]:
+                      - generic [ref=e223]: 2026. 10. 27. 07:40
+                      - generic [ref=e224]: 개념 3
+                      - generic [ref=e225]: 주장 0
+                - listitem [ref=e226]:
+                  - button "Kubernetes networking 부분 완료 개발·인프라 · 자동 분류 직접 등록 2026. 10. 27. 07:40 개념 2 주장 0" [ref=e227] [cursor=pointer]:
+                    - generic [ref=e228]:
+                      - generic [ref=e229]: Kubernetes networking
+                      - generic [aria-hidden] [ref=e230]: ›
+                    - generic [ref=e231]:
+                      - generic [ref=e232]: 부분 완료
+                      - generic [ref=e234]: 개발·인프라 · 자동 분류
+                      - generic [ref=e236]: 직접 등록
+                    - generic [ref=e238]:
+                      - generic [ref=e239]: 2026. 10. 27. 07:40
+                      - generic [ref=e240]: 개념 2
+                      - generic [ref=e241]: 주장 0
+            - region "주제별 분류" [ref=e185]:
+              - heading "주제별 분류" [level=2] [ref=e186]
+              - paragraph [ref=e187]: 사용자가 고른 주제와 추출된 개념으로 자동 분류한 주제를 함께 센 값이에요.
+              - list "주제별 문서 수" [ref=e242]:
+                - listitem [ref=e243]:
+                  - button "개발·인프라 2" [ref=e244] [cursor=pointer]
+            - region "주요 개념과 관계" [ref=e189]:
+              - heading "주요 개념과 관계" [level=2] [ref=e190]
+              - paragraph [ref=e191]: 전체 개념 4개 중 중요도 상위 4개
+              - generic [ref=e245]:
+                - paragraph [ref=e246]: 기술
+                - list "기술 개념" [ref=e248]:
+                  - listitem [ref=e249]:
+                    - button "Kubernetes 문서 2" [ref=e250] [cursor=pointer]:
+                      - text: Kubernetes
+                      - generic [ref=e251]: 문서 2
+                  - listitem [ref=e252]:
+                    - button "PostgreSQL 문서 1" [ref=e253] [cursor=pointer]:
+                      - text: PostgreSQL
+                      - generic [ref=e254]: 문서 1
+              - generic [ref=e255]:
+                - paragraph [ref=e256]: 개념
+                - list "개념 개념" [ref=e258]:
+                  - listitem [ref=e259]:
+                    - button "ReplicaSet 문서 1" [ref=e260] [cursor=pointer]:
+                      - text: ReplicaSet
+                      - generic [ref=e261]: 문서 1
+                  - listitem [ref=e262]:
+                    - button "Deployment 문서 1" [ref=e263] [cursor=pointer]:
+                      - text: Deployment
+                      - generic [ref=e264]: 문서 1
+              - list "주요 관계" [ref=e265]:
+                - listitem [ref=e266]:
+                  - generic [ref=e267]: Deployment
+                  - generic [ref=e268]: manages →
+                  - generic [ref=e269]: ReplicaSet
+              - button "개념 그래프에서 펼쳐 보기" [ref=e270] [cursor=pointer]
+      - text: ✓
+    - status

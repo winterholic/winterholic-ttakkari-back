@@ -1,0 +1,217 @@
+- generic [ref=e2]:
+  - link "본문으로 건너뛰기" [ref=e33] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e34]:
+    - complementary "탐색" [ref=e35]:
+      - link "Ttakkari" [ref=e37] [cursor=pointer]:
+        - /url: /chat
+      - navigation "영역과 진행 중인 일" [ref=e39]:
+        - generic [ref=e40]:
+          - group "대화 공간" [ref=e41]:
+            - paragraph [ref=e42]: 대화 공간
+            - link "개인 대화" [ref=e43] [cursor=pointer]:
+              - /url: /chat
+            - link "회사 대화" [ref=e46] [cursor=pointer]:
+              - /url: /work
+          - link "작업" [ref=e50] [cursor=pointer]:
+            - /url: /tasks
+          - button "부가 기능" [ref=e55] [cursor=pointer]
+          - link "지식 도서관" [ref=e62] [cursor=pointer]:
+            - /url: /knowledge-library
+        - generic [ref=e65]:
+          - paragraph [ref=e66]: 진행 중
+          - paragraph [ref=e67]: 지금 도는 일이 없어요. 따까리에게 맡긴 일이 여기서 가지를 뻗어요.
+        - link "지난 작업 모두 보기" [ref=e68] [cursor=pointer]:
+          - /url: /tasks
+      - button "사용자 메뉴" [ref=e75] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e76]: W
+        - generic [ref=e77]:
+          - generic [ref=e78]: winterholic
+          - status [ref=e79]: Mac Studio 연결됨
+    - main [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - heading "지식 도서관" [level=1] [ref=e88]
+            - paragraph [ref=e89]:
+              - generic [ref=e90]: 문서 2 · 패시지 2
+          - generic [ref=e92]:
+            - button "자료 추가" [ref=e93] [cursor=pointer]:
+              - text: +
+              - generic [ref=e94]: 자료
+              - text: 추가
+            - 'button "처리 현황 열기: 진행 0건, 실패 0건, 보류 0건, 부분 완료 2건" [ref=e207] [cursor=pointer]':
+              - generic [ref=e96]: 처리 대기 없음
+            - button "다시 읽기" [ref=e97] [cursor=pointer]
+        - generic [ref=e104]:
+          - list "도서관 현황" [ref=e105]:
+            - listitem [ref=e106]:
+              - generic [ref=e107]: 문서
+              - strong [ref=e108]: "2"
+            - listitem [ref=e109]:
+              - generic [ref=e110]: 개념
+              - strong [ref=e111]: "4"
+            - listitem [ref=e112]:
+              - generic [ref=e113]: 주장
+              - strong [ref=e114]: "0"
+            - listitem [ref=e115]:
+              - generic [ref=e116]: 관계
+              - strong [ref=e117]: "1"
+            - listitem [ref=e118]:
+              - generic [ref=e119]: 후보 관계
+              - strong [ref=e120]: "0"
+            - listitem [ref=e121]:
+              - generic [ref=e122]: 열린 충돌
+              - strong [ref=e123]: "0"
+          - generic [ref=e382]:
+            - generic [ref=e383]:
+              - search [ref=e384]:
+                - searchbox "문서 제목 필터" [ref=e388]
+              - link "외부 자동 수집기 관리 →" [ref=e389] [cursor=pointer]:
+                - /url: /collect
+            - region "필터" [ref=e390]:
+              - generic [ref=e391]:
+                - generic [ref=e392]:
+                  - generic [ref=e393]: 주제
+                  - generic [ref=e394]:
+                    - combobox "주제 모든 주제" [ref=e395] [cursor=pointer]:
+                      - generic [ref=e396]: 모든 주제
+                    - text: ✓
+                - generic [ref=e397]:
+                  - generic [ref=e398]: 유형
+                  - generic [ref=e399]:
+                    - combobox "유형 모든 유형" [ref=e400] [cursor=pointer]:
+                      - generic [ref=e401]: 모든 유형
+                    - text: ✓
+                - generic [ref=e402]:
+                  - generic [ref=e403]: 기간
+                  - generic [ref=e404]:
+                    - combobox "기간 전체 기간" [ref=e405] [cursor=pointer]:
+                      - generic [ref=e406]: 전체 기간
+                    - text: ✓
+                - generic [ref=e407]:
+                  - generic [ref=e408]: 처리 상태
+                  - generic [ref=e409]:
+                    - combobox "처리 상태 모든 상태" [ref=e410] [cursor=pointer]:
+                      - generic [ref=e411]: 모든 상태
+                    - text: ✓
+                - generic [ref=e412]:
+                  - generic [ref=e413]: 출처 주소
+                  - textbox "출처 주소" [ref=e414]:
+                    - /placeholder: "예: postgresql.org"
+          - generic [ref=e415]:
+            - generic [ref=e417]:
+              - status [ref=e418]: 2건 중 2건
+              - list "문서 목록" [ref=e419]:
+                - listitem [ref=e420]:
+                  - button "Kubernetes 한국어 안내 부분 완료 버전 1 직접 등록 개발·인프라 · 자동 분류 ko 패시지 1개 개념 3 주장 0 92자 2026. 10. 27. 07:40" [ref=e421] [cursor=pointer]:
+                    - generic [ref=e422]:
+                      - generic [ref=e423]: Kubernetes 한국어 안내
+                      - generic [aria-hidden] [ref=e424]: ›
+                    - generic [ref=e425]:
+                      - generic [ref=e426]: 부분 완료
+                      - generic [ref=e428]: 버전 1
+                      - generic [ref=e430]: 직접 등록
+                      - generic [ref=e432]: 개발·인프라 · 자동 분류
+                      - generic [ref=e434]: ko
+                    - generic [ref=e436]:
+                      - generic [ref=e437]: 패시지 1개
+                      - generic [ref=e438]: 개념 3
+                      - generic [ref=e439]: 주장 0
+                      - generic [ref=e440]: 92자
+                      - generic [ref=e441]: 2026. 10. 27. 07:40
+                - listitem [ref=e442]:
+                  - button "Kubernetes networking 부분 완료 버전 1 직접 등록 개발·인프라 · 자동 분류 en 패시지 1개 개념 2 주장 0 164자 2026. 10. 27. 07:40" [pressed] [ref=e443] [cursor=pointer]:
+                    - generic [ref=e444]:
+                      - generic [ref=e445]: Kubernetes networking
+                      - generic [aria-hidden] [ref=e446]: ›
+                    - generic [ref=e447]:
+                      - generic [ref=e448]: 부분 완료
+                      - generic [ref=e450]: 버전 1
+                      - generic [ref=e452]: 직접 등록
+                      - generic [ref=e454]: 개발·인프라 · 자동 분류
+                      - generic [ref=e456]: en
+                    - generic [ref=e458]:
+                      - generic [ref=e459]: 패시지 1개
+                      - generic [ref=e460]: 개념 2
+                      - generic [ref=e461]: 주장 0
+                      - generic [ref=e462]: 164자
+                      - generic [ref=e463]: 2026. 10. 27. 07:40
+            - region "문서 상세" [ref=e464]:
+              - generic [ref=e465]:
+                - heading "Kubernetes networking" [level=2] [ref=e466]
+                - generic [ref=e467]:
+                  - generic [ref=e468]: 부분 완료
+                  - generic [ref=e470]: 개발·인프라 · 자동 분류
+                - paragraph [ref=e472]: ui-only-20261027-0
+              - group "보기" [ref=e473]:
+                - button "개요·처리" [pressed] [ref=e474] [cursor=pointer]
+                - button "개념·관계·주장" [ref=e475] [cursor=pointer]
+                - button "원문 패시지" [ref=e476] [cursor=pointer]
+                - button "버전·처리 이력" [ref=e477] [cursor=pointer]
+              - generic [ref=e478]:
+                - generic [ref=e479]:
+                  - generic [ref=e480]:
+                    - term [ref=e481]: 등록
+                    - definition [ref=e482]: 2026. 10. 27. 07:40
+                  - generic [ref=e483]:
+                    - term [ref=e484]: 게시·수집 시각
+                    - definition [ref=e485]: 2026. 10. 27. 07:40
+                  - generic [ref=e486]:
+                    - term [ref=e487]: 크기
+                    - definition [ref=e488]: 164자 · 패시지 1개
+                  - generic [ref=e489]:
+                    - term [ref=e490]: 주제
+                    - definition [ref=e491]: 개발·인프라 (추출된 개념으로 자동 분류)
+                  - generic [ref=e492]:
+                    - term [ref=e493]: 원본
+                    - definition [ref=e494]: 직접 등록 · ui-only-20261027-0
+                  - generic [ref=e495]:
+                    - term [ref=e496]: 원본 SHA-256
+                    - definition [ref=e497]: a1dade093628…
+                  - generic [ref=e498]:
+                    - term [ref=e499]: 본문 SHA-256
+                    - definition [ref=e500]: a1dade093628…
+                  - generic [ref=e501]:
+                    - term [ref=e502]: 분할 규칙
+                    - definition [ref=e503]: raw-v1
+                - paragraph [ref=e504]: 서버가 원본 파일을 내려받는 기능은 아직 주지 않아요. 웹 문서는 원래 주소로, 그 밖에는 아래 원문 패시지에서 읽을 수 있어요.
+                - region "요약" [ref=e505]:
+                  - heading "요약" [level=3] [ref=e506]
+                  - paragraph [ref=e507]: Kubernetes schedules containers on cluster nodes. Kubernetes manages Pods through Deployments. A Service routes requests to Pods. PostgreSQL stores relational data.
+                  - paragraph [ref=e508]: AI 가 쓴 요약이 아니에요. 본문 앞부분 발췌을 그대로 보여 줘요.
+                - region "자동 처리" [ref=e509]:
+                  - heading "자동 처리" [level=3] [ref=e510]
+                  - list [ref=e511]:
+                    - listitem [ref=e512]:
+                      - generic [ref=e513]:
+                        - paragraph [ref=e514]: 처리 단계
+                        - generic [ref=e515]:
+                          - generic [ref=e516]: v1
+                          - generic [ref=e518]: 부분 완료
+                      - list "처리 단계" [ref=e520]:
+                        - listitem [ref=e521]:
+                          - generic [ref=e523]: 파싱
+                          - generic [ref=e524]: 완료 · 2ms
+                        - listitem [ref=e525]:
+                          - generic [ref=e527]: 구조 청킹
+                          - generic [ref=e528]: 완료 · 1ms
+                        - listitem [ref=e529]:
+                          - generic [ref=e531]: 지식 추출
+                          - generic [ref=e532]: 일부 생략 · 151ms
+                          - generic [ref=e533]: AI 심층 추출이 꺼져 있어 규칙·사전 기반 결과만 만들었어요.
+                        - listitem [ref=e534]:
+                          - generic [ref=e536]: 개념 연결
+                          - generic [ref=e537]: 완료 · 19ms
+                        - listitem [ref=e538]:
+                          - generic [ref=e540]: 색인
+                          - generic [ref=e541]: 완료 · 9ms
+                        - listitem [ref=e542]:
+                          - generic [ref=e544]: 정본 요약
+                          - generic [ref=e545]: 완료 · 16ms
+                      - paragraph [ref=e546]: 패시지 1 · 개념 2 · 주장 0 · 관계 0
+                      - paragraph [ref=e547]: AI 심층 추출이 꺼져 있어 규칙·사전 기반 결과만 만들었어요. 패시지 검색은 바로 쓸 수 있고, 규칙·사전 기반 개념은 이미 연결됐어요. 심층 추출만 다시 시도할 수 있어요.
+                      - button "심층 추출만 다시" [ref=e549] [cursor=pointer]
+                      - paragraph [ref=e551]: 갱신 2026. 10. 27. 07:40 · 시도 1/3
+      - text: ✓
+    - status

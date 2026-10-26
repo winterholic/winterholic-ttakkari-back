@@ -127,18 +127,26 @@ class PoliteFetcher:
         until = await self.host_state.get_cooldown(url.origin)
         if until is not None and until > now:
             raise FetchError("host_cooldown", url.origin, retryable=True, retry_after=(until - now).total_seconds())
+
         robots_state = "not_applicable"
-        delay = policy.min_delay_seconds
-        if policy.robots_required:
-            rules = await self._rules(url, policy)
-            if rules.unavailable:
-                raise PolicyBlocked("robots_forbidden", url.origin)
-            if not rules.allowed(url.target):
-                raise PolicyBlocked("robots_disallowed", url.target)
-            robots_state = "allowed"
-            delay = max(delay, rules.crawl_delay or 0.0)
 
         async def pace(hop: ParsedUrl) -> None:
+            nonlocal robots_state
+            hop_now = self.clock()
+            hop_until = await self.host_state.get_cooldown(hop.origin)
+            if hop_until is not None and hop_until > hop_now:
+                raise FetchError("host_cooldown", hop.origin, retryable=True, retry_after=(hop_until - hop_now).total_seconds())
+
+            delay = policy.min_delay_seconds
+            if policy.robots_required:
+                rules = await self._rules(hop, policy)
+                if rules.unavailable:
+                    raise PolicyBlocked("robots_forbidden", hop.origin)
+                if not rules.allowed(hop.target):
+                    raise PolicyBlocked("robots_disallowed", hop.target)
+                robots_state = "allowed"
+                delay = max(delay, rules.crawl_delay or 0.0)
+
             wait = await self.host_state.reserve_slot(hop.origin, delay, self.clock())
             if wait > 0:
                 await self.sleep(wait)
@@ -189,9 +197,16 @@ class PoliteFetcher:
                 await self.sleep(wait)
 
         status, body = "unreachable", None
+        def robots_hop(target: ParsedUrl) -> str | None:
+            # A file-scoped grant still needs the origin's control file. This
+            # exception applies only to robots acquisition, never document fetch.
+            if target.origin == robots_url.origin and target.target == "/robots.txt":
+                return None
+            return policy.check_url(target)
+
         try:
             fetched = await self.fetcher.fetch(
-                robots_url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, host_check=policy.check_url,
+                robots_url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, host_check=robots_hop,
                 before_request=pace, accept="text/plain,*/*;q=0.1", max_bytes=robots.MAX_ROBOTS_BYTES,
             )
             status = "parse"

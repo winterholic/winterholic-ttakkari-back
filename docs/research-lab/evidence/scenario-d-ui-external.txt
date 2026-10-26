@@ -1,0 +1,91 @@
+### Page
+- Page URL: http://127.0.0.1:57442/research?view=monitor&study=dbfdd5b1-0783-41b3-ba22-3f480b93f49c&experiment=18f873bc-7535-4d98-9bfa-c717801a4ce1&run=31d0a5d9-911b-4286-9701-6b6dfe60521a
+- Page Title: Winterholic Ttakkari
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- dialog [active] [ref=f7e238]:
+  - generic [ref=f7e239]:
+    - heading "실행 상세 · Control (A)" [level=2] [ref=f7e240]
+    - button "닫기" [ref=f7e241] [cursor=pointer]
+  - generic [ref=f7e246]:
+    - generic [ref=f7e247]:
+      - generic [ref=f7e248]: 성공
+      - generic [ref=f7e250]: 외부 보고 · 외부 벤치마크
+      - generic [ref=f7e252]: 외부 결과 등록 · 반복 1 · 시드 42
+    - note [ref=f7e253]:
+      - generic [ref=f7e256]:
+        - strong [ref=f7e257]: 따까리가 측정한 값이 아닙니다
+        - generic [ref=f7e258]: 다른 환경에서 측정해 들여온 보고입니다. 같은 조건의 비교인지 실행 환경 기록으로 확인하세요.
+    - generic [ref=f7e259]:
+      - generic [ref=f7e260]:
+        - term [ref=f7e261]: 시작
+        - definition [ref=f7e262]: 10. 26. 오전 06:56
+      - generic [ref=f7e263]:
+        - term [ref=f7e264]: 끝
+        - definition [ref=f7e265]: 10. 26. 오전 06:56
+      - generic [ref=f7e266]:
+        - term [ref=f7e267]: 소요
+        - definition [ref=f7e268]: —
+      - generic [ref=f7e269]:
+        - term [ref=f7e270]: 진행
+        - definition [ref=f7e271]:
+          - progressbar "실행 진행률" [ref=f7e272]
+          - text: 100%
+    - region "측정값" [ref=f7e273]:
+      - heading "측정값" [level=4] [ref=f7e274]
+      - region "측정값 표 (가로로 스크롤)" [ref=f7e276]:
+        - table [ref=f7e277]:
+          - rowgroup [ref=f7e278]:
+            - row [ref=f7e279]:
+              - columnheader "지표" [ref=f7e280]
+              - columnheader "값" [ref=f7e281]
+              - columnheader "방향" [ref=f7e282]
+              - columnheader "집계" [ref=f7e283]
+          - rowgroup [ref=f7e284]:
+            - row [ref=f7e285]:
+              - rowheader "디코드 속도" [ref=f7e286]
+              - cell "1 tok/s" [ref=f7e287]
+              - cell "높을수록 좋음" [ref=f7e288]
+              - cell "single" [ref=f7e289]
+    - region "산출물" [ref=f7e290]:
+      - heading "산출물" [level=4] [ref=f7e291]
+      - paragraph [ref=f7e292]: 연결된 결과물이 없습니다.
+    - region "실행 환경" [ref=f7e293]:
+      - heading "실행 환경" [level=4] [ref=f7e294]
+      - generic [ref=f7e296]:
+        - generic [ref=f7e297]:
+          - term [ref=f7e298]: provenance
+          - definition [ref=f7e299]: external_benchmark
+        - generic [ref=f7e300]:
+          - term [ref=f7e301]: source_url
+          - definition [ref=f7e302]: https://example.invalid/d-ui-benchmark#table-1
+        - generic [ref=f7e303]:
+          - term [ref=f7e304]: description
+          - definition [ref=f7e305]: 합성 UI fixture. GPU 미실행·외부실측 없음. 출처 전달 기능 검사.
+        - generic [ref=f7e306]:
+          - term [ref=f7e307]: source_title
+          - definition [ref=f7e308]: Synthetic UI benchmark fixture (실제 논문 아님)
+        - generic [ref=f7e309]:
+          - term [ref=f7e310]: execution_origin
+          - definition [ref=f7e311]: external_report
+    - region "원본 출력" [ref=f7e312]:
+      - heading "원본 출력" [level=4] [ref=f7e313]
+      - generic [ref=f7e315]:
+        - generic [ref=f7e316]:
+          - term [ref=f7e317]: note
+          - definition [ref=f7e318]: 합성 벤치마크 자료. 성능 개선/실A100 근거로 사용 금지.
+        - generic [ref=f7e319]:
+          - term [ref=f7e320]: provenance
+          - definition [ref=f7e321]: external_benchmark
+        - generic [ref=f7e322]:
+          - term [ref=f7e323]: source_url
+          - definition [ref=f7e324]: https://example.invalid/d-ui-benchmark#table-1
+        - generic [ref=f7e325]:
+          - term [ref=f7e326]: source_title
+          - definition [ref=f7e327]: Synthetic UI benchmark fixture (실제 논문 아님)
+        - generic [ref=f7e328]:
+          - term [ref=f7e329]: execution_origin
+          - definition [ref=f7e330]: external_report
+  - button "같은 설정으로 다시 실행" [ref=f7e332] [cursor=pointer]
+```

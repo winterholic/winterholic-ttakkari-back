@@ -23,7 +23,7 @@ BACK = Path(__file__).resolve().parents[3]
 SCRIPTS = BACK / "scripts"
 
 HEAVY = ("backup_db", "data_snapshot", "restore_rehearsal", "snapshot_verify")
-INLINE = ("runtime_report", "performance_baseline", "backup_status")
+INLINE = ("runtime_report", "performance_baseline", "backup_status", "collection_scope_preview", "collection_scope_apply")
 KINDS = (*HEAVY, *INLINE)
 TIMEOUT_SECONDS = {"backup_db": 900, "data_snapshot": 1800, "restore_rehearsal": 1800, "snapshot_verify": 1800}
 BACKUP_RETENTION_DAYS = 30

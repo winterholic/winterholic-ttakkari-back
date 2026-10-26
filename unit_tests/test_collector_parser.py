@@ -37,8 +37,6 @@ class DetectKindTests(unittest.TestCase):
 
     def test_mismatch_and_binary_are_unsupported_with_a_reason(self):
         cases = [
-            (b"%PDF-1.4 ...", "application/pdf", "pdf_not_supported"),
-            (b"%PDF-1.4 ...", "text/html", "pdf_not_supported"),
             (b"\x89PNG\r\n\x1a\n", "image/png", "binary_content"),
             (b"PK\x03\x04zip", "application/zip", "binary_content"),
             (b"a\x00b" * 10, "text/html", "binary_content"),
@@ -104,7 +102,7 @@ class DiscoveryParseTests(unittest.TestCase):
         urlset = b"""<urlset xmlns="s"><url><loc>https://x.test/p</loc></url></urlset>"""
         self.assertEqual(parse.parse_sitemap(urlset, "https://x.test/"), (["https://x.test/p"], []))
         links = parse.extract_links(html("<a href='/ok'>a</a><a href='mailto:a@b'>m</a><a href='/f.pdf'>p</a><a href='#top'>t</a><a href='/ok'>dup</a>"), "https://x.test/")
-        self.assertEqual(links, ["https://x.test/ok"])
+        self.assertEqual(links, ["https://x.test/ok", "https://x.test/f.pdf"])
 
     def test_xml_entities_are_not_expanded_or_fetched(self):
         bomb = b"""<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;"><!ENTITY x SYSTEM "file:///etc/passwd">]>

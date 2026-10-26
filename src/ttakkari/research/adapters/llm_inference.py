@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import platform
 import shutil
 import time
 from pathlib import Path
-from typing import Any
-from uuid import UUID
+from typing import Any, ClassVar
+from uuid import UUID, uuid4
 
 from ttakkari.research.adapters.base import (
     AdapterEnvironmentStatus,
     AdapterRunResult,
-    ExecutionAdapter,
     MeasurementRecord,
     ResourceEstimate,
 )
+from ttakkari.research.resources import checkpoint_resource
 
 # quant_type은 사전 양자화 GGUF 모델 별칭을 고르는 키다. 등록된 정확한 값만 받고 별칭("Q2K" 등)은 받지 않는다.
 QUANT_TYPE_MODELS: dict[str, str] = {
@@ -26,9 +27,7 @@ QUANT_TYPE_MODELS: dict[str, str] = {
     "Q2_K": "qwen3.8-flash-next-q2k",
 }
 _LIVE_PHASES = ("starting", "ready")
-# HostGpu.start raises this when the supervisor wrote no state within 20s. The supervisor may still come up
-# afterwards, and its launch id (generated inside start) is unknown to us, so we cannot prove or stop it.
-_START_STATE_TIMEOUT_MARKER = "did not report a state"
+logger = logging.getLogger(__name__)
 
 
 class LlmInferenceAdapter:
@@ -37,10 +36,10 @@ class LlmInferenceAdapter:
     id: str = "llm_inference"
     version: str = "1.0.0"
     name_ko: str = "로컬 LLM 추론 및 GPU 가속 벤치마크 어댑터"
-    domains: list[str] = ["llm"]
+    domains: ClassVar[list[str]] = ["llm"]
 
     # Explicit whitelist: exactly match methods implemented by this adapter
-    supported_methods: list[str] = [
+    supported_methods: ClassVar[list[str]] = [
         "kv_cache_quantization",
         "prompt_context_length_tuning",
         "cpu_gpu_offloading",
@@ -49,7 +48,7 @@ class LlmInferenceAdapter:
     ]
 
     # Explicit whitelist of parameters (both catalog seed keys and adapter internal keys)
-    supported_parameters: list[str] = [
+    supported_parameters: ClassVar[list[str]] = [
         # Catalog seed parameter keys (llm_inference.json, systems.json)
         "cache_type_k",
         "cache_type_v",
@@ -79,7 +78,7 @@ class LlmInferenceAdapter:
         "repetitions",
         "max_seconds",
     ]
-    required_inputs: list[str] = ["model"]
+    required_inputs: ClassVar[list[str]] = ["model"]
 
     def check_environment(self, *, scope: str) -> AdapterEnvironmentStatus:
         """Probe real host GPU environment, llama-server binary, and model files."""
@@ -97,6 +96,7 @@ class LlmInferenceAdapter:
             from ttakkari.config import get_settings
             s = get_settings()
         except Exception as exc:
+            logger.warning("LLM environment inspection failed", exc_info=True)
             return AdapterEnvironmentStatus(
                 adapter_id=self.id,
                 ready=False,
@@ -134,13 +134,13 @@ class LlmInferenceAdapter:
             reason = "호스트 GPU 경로 (llama-server) 사용 가능"
 
         # Check lease status
-        lease_held = False
+        lease_held = None
         try:
             from ttakkari.host_gpu import _lock_held, state_dir
             s_dir = state_dir(s.data_dir)
             lease_held = _lock_held(s_dir)
         except Exception:
-            pass
+            logger.warning("LLM lease status inspection failed", exc_info=True)
 
         is_darwin_arm64 = platform.system() == "Darwin" and platform.machine() in ("arm64", "aarch64")
         hardware = "apple_silicon_metal" if is_darwin_arm64 else ("cuda" if shutil.which("nvidia-smi") else "cpu")
@@ -224,7 +224,7 @@ class LlmInferenceAdapter:
                     f"허용되지 않은 모델 별칭: '{model}'. 허용 목록: {sorted(models_dict.keys())}"
                 )
         except Exception:
-            pass
+            logger.warning("LLM model inventory inspection failed", exc_info=True)
 
         # Check gpu_layers / n_gpu_layers
         gpu_layers_val = config.get("n_gpu_layers") if "n_gpu_layers" in config else config.get("gpu_layers")
@@ -289,7 +289,7 @@ class LlmInferenceAdapter:
             )
 
         from ttakkari.config import get_settings
-        from ttakkari.host_gpu import GpuError, HostGpu, StartRequest
+        from ttakkari.host_gpu import Busy, GpuError, HostGpu, StartRequest
 
         s = get_settings()
         host_gpu = HostGpu(s)
@@ -345,10 +345,38 @@ class LlmInferenceAdapter:
         server_started = False
         launch: dict[str, Any] = {}
         start_ownership_error: str | None = None
+        intent_committed = False
         cleanup_info: dict[str, Any] = {
             "attempted": False, "success": True, "stopped": False, "skipped_reason": "server_not_started",
         }
         run_result: AdapterRunResult | None = None
+
+        async def start_owned_launch() -> None:
+            nonlocal server_started, launch, start_ownership_error, intent_committed
+            planned_id = uuid4().hex
+            await checkpoint_resource({"kind": "host_gpu", "launch": {"launch_id": planned_id}, "state": "starting"})
+            intent_committed = True
+            launch = {"launch_id": planned_id}
+            try:
+                await asyncio.to_thread(host_gpu.start, start_req, launch_id=planned_id)
+                fresh = await asyncio.to_thread(self._read_launch, host_gpu)
+                if fresh.get("launch_id") != planned_id:
+                    raise GpuError("ownership_unverified: started launch identity is missing or replaced")
+                launch = fresh
+                server_started = True
+                await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
+            except BaseException as start_exc:
+                if not isinstance(start_exc, Busy):
+                    start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                    # A timeout or failed post-start commit can leave our supervisor alive.
+                    # The precommitted UUID fences this observation; never adopt a replacement.
+                    try:
+                        fresh = await asyncio.to_thread(self._read_launch, host_gpu)
+                        if fresh.get("launch_id") == planned_id:
+                            launch, server_started = fresh, True
+                    except Exception:
+                        logger.warning("LLM startup identity observation failed", exc_info=True)
+                raise
 
         try:
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
@@ -360,16 +388,14 @@ class LlmInferenceAdapter:
                 )
                 return run_result
 
+            startup = asyncio.create_task(start_owned_launch())
             try:
-                await asyncio.to_thread(host_gpu.start, start_req)
-            except GpuError as start_exc:
-                if _START_STATE_TIMEOUT_MARKER in str(start_exc):
-                    start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                await asyncio.shield(startup)
+            except asyncio.CancelledError:
+                # Cancelling to_thread cannot stop its thread. Observe the
+                # launch identity before cleanup, even after a budget expires.
+                await startup
                 raise
-            server_started = True
-            # start() does not return the launch id; read it right away. HostGpu allows one live
-            # instance, so the state written by the start() that just returned is ours.
-            launch = await asyncio.to_thread(self._read_launch, host_gpu)
 
             deadline = time.monotonic() + 45.0
             ready = False
@@ -390,6 +416,7 @@ class LlmInferenceAdapter:
                         fresh = await asyncio.to_thread(self._read_launch, host_gpu)
                         if fresh.get("launch_id") == launch["launch_id"]:
                             launch = fresh
+                            await checkpoint_resource({"kind": "host_gpu", "launch": launch, "state": "owned"})
                 if st.get("ready"):
                     ready = True
                     break
@@ -436,7 +463,18 @@ class LlmInferenceAdapter:
             )
             return run_result
 
+        except asyncio.CancelledError:
+            run_result = AdapterRunResult(
+                status="cancelled",
+                raw_output={"reason": "task_cancelled"},
+                environment_snapshot={"scope": scope},
+                error_code="cancelled",
+                error_message="LLM execution task cancelled",
+                wall_seconds=round(time.monotonic() - started_wall, 3),
+            )
+            return run_result
         except Exception as exc:
+            logger.warning("LLM execution failed", exc_info=True)
             total_wall = time.monotonic() - started_wall
             run_result = AdapterRunResult(
                 status="failed",
@@ -451,12 +489,26 @@ class LlmInferenceAdapter:
         finally:
             if server_started:
                 cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch)
+                try:
+                    await checkpoint_resource({"kind": "host_gpu", "launch": launch,
+                                               "state": "released" if cleanup_info["success"] else "cleanup_unverified",
+                                               "cleanup": cleanup_info})
+                except Exception:
+                    logger.warning("LLM cleanup checkpoint was not persisted", exc_info=True)
+                    cleanup_info["checkpoint_persisted"] = False
             elif start_ownership_error:
                 cleanup_info = {
                     "attempted": False, "success": False, "stopped": False, "ownership": "unverified",
-                    "error": f"{start_ownership_error} — 감독자가 뒤늦게 뜰 수 있으나 launch_id를 알 수 없어 "
-                             "다른 프로세스를 건드리지 않도록 stop을 호출하지 않았습니다.",
+                    "error": f"{start_ownership_error} — 기록된 시작 의도와 일치하는 실행 신원은 미확인입니다.",
                 }
+            if intent_committed and not server_started:
+                try:
+                    await checkpoint_resource({"kind": "host_gpu", "launch": launch,
+                                               "state": "cleanup_unverified" if start_ownership_error else "released",
+                                               "cleanup": cleanup_info})
+                except Exception:
+                    logger.warning("LLM startup cleanup checkpoint was not persisted", exc_info=True)
+                    cleanup_info["checkpoint_persisted"] = False
             if run_result is not None and isinstance(run_result.raw_output, dict):
                 run_result.raw_output["cleanup"] = cleanup_info
 
@@ -515,6 +567,7 @@ class LlmInferenceAdapter:
             try:
                 absent, evidence = LlmInferenceAdapter._launch_processes_absent(launch)
             except Exception as probe_exc:
+                logger.warning("LLM launch identity probe failed during cleanup", exc_info=True)
                 info["error"] = f"termination_unverified: {type(probe_exc).__name__}: {probe_exc}"
                 return info
             info["process_evidence"] = evidence
@@ -525,6 +578,7 @@ class LlmInferenceAdapter:
             else:
                 info["error"] = f"termination_unverified: {evidence} — 종료를 관측하지 못했습니다."
         except Exception as exc:
+            logger.warning("LLM owned launch cleanup failed", exc_info=True)
             info["error"] = f"{type(exc).__name__}: {exc}"
         return info
 

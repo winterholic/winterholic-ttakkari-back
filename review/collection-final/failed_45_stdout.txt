@@ -1,0 +1,13 @@
+# Execution SHA: 572de152bdeeedf882221dc82e955fb466fcdfd3
+# Date: 2026-10-25T21:36:31+09:00
+# Command: PYTHONPATH=. uv run pytest -q --tb=short $(cat review/collection-final/failed_ids.txt)
+---
+.............................................                            [100%]
+=============================== warnings summary ===============================
+tests/test_collector_control.py::test_manual_documents_are_scope_bound_and_detail_is_hidden
+  /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/src/ttakkari/api/kb_library.py:81: DeprecationWarning: deprecated
+    locator=body.locator, pool=pool_for_scope(body.scope),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+db reset: 27 selective (avg 4.3/111 tables), 0 forced full, 0 fell back to full
+45 passed, 1 warning in 24.65s

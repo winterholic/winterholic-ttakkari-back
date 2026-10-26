@@ -1,0 +1,48 @@
+COMMAND: ../back/.venv/bin/python -m pytest -q --noconftest unit_tests/test_collection_research_migration_merge.py unit_tests/test_schema_head_admission.py tests/test_collection_combined_migration_contract.py::test_c1_and_c2_form_a_serial_migration_path_and_generation_contract tests/test_collection_combined_migration_contract.py::test_previous_c1_generation_is_admitted_for_the_additive_c2_upgrade
+.FF................                                                      [100%]
+=================================== FAILURES ===================================
+_ test_upgrade_from_each_branch_only_plans_missing_branch[existing0-missing0] __
+
+existing = ('0072_collection_missions', '0073_collection_mission_runs', '0074_collection_single_library')
+missing = ('0072_research_lab_v2', '0073_research_reuse_source')
+
+    @pytest.mark.parametrize(("existing", "missing"), [
+        (COLLECTION, RESEARCH), (RESEARCH, COLLECTION),
+    ])
+    def test_upgrade_from_each_branch_only_plans_missing_branch(existing, missing):
+        planned = {revision.revision for revision in scripts().iterate_revisions(MERGE, existing[-1])}
+>       assert planned == {MERGE, *missing}
+E       AssertionError: assert {'0075_collec...search_merge'} == {'0072_resear...search_merge'}
+E         
+E         Extra items in the right set:
+E         '0072_research_lab_v2'
+E         '0073_research_reuse_source'
+E         Use -v to get more diff
+
+unit_tests/test_collection_research_migration_merge.py:40: AssertionError
+_ test_upgrade_from_each_branch_only_plans_missing_branch[existing1-missing1] __
+
+existing = ('0072_research_lab_v2', '0073_research_reuse_source')
+missing = ('0072_collection_missions', '0073_collection_mission_runs', '0074_collection_single_library')
+
+    @pytest.mark.parametrize(("existing", "missing"), [
+        (COLLECTION, RESEARCH), (RESEARCH, COLLECTION),
+    ])
+    def test_upgrade_from_each_branch_only_plans_missing_branch(existing, missing):
+        planned = {revision.revision for revision in scripts().iterate_revisions(MERGE, existing[-1])}
+>       assert planned == {MERGE, *missing}
+E       AssertionError: assert {'0075_collec...search_merge'} == {'0072_collec...search_merge'}
+E         
+E         Extra items in the right set:
+E         '0072_collection_missions'
+E         '0074_collection_single_library'
+E         '0073_collection_mission_runs'
+E         Use -v to get more diff
+
+unit_tests/test_collection_research_migration_merge.py:40: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_collection_research_migration_merge.py::test_upgrade_from_each_branch_only_plans_missing_branch[existing0-missing0]
+FAILED unit_tests/test_collection_research_migration_merge.py::test_upgrade_from_each_branch_only_plans_missing_branch[existing1-missing1]
+2 failed, 17 passed in 0.34s
+
+EXIT_CODE=1

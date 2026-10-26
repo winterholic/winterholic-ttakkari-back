@@ -377,10 +377,12 @@ class GenerationRuntime:
                 "epoch": control.epoch if control else 0}
 
     async def can_retire(self) -> bool:
+        from ttakkari.research.ownership import has_reservations
+
         snap = await self.snapshot()
         if snap["state"] != "draining":
             return False
-        if snap["owned_runs"] or self._work or self.http_inflight or bool(self._accepted_work):
+        if snap["owned_runs"] or self._work or self.http_inflight or bool(self._accepted_work) or has_reservations(self.id):
             return False
         if self.role == "api" and self.execution_mode == "remote":
             return True  # remote API 는 TTS job 을 소유하지 않는다(QUEUE_OWNER). executor 가 합성한다.

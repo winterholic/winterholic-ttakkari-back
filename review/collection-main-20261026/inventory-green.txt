@@ -1,0 +1,6 @@
+COMMAND: .venv/bin/python -m pytest -q --noconftest unit_tests/test_collection_research_migration_merge.py unit_tests/test_platform_v2_inventory.py unit_tests/test_platform_v2_corrections.py unit_tests/test_platform_v2_api_audit.py unit_tests/test_platform_v2_route_audit.py unit_tests/test_platform_v2_test_classification.py
+........................................................................ [ 80%]
+.................                                                        [100%]
+89 passed in 69.66s (0:01:09)
+
+EXIT_CODE=0

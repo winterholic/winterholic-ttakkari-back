@@ -222,6 +222,23 @@ def _no_muse_ping():
     usage.MUSE_PING = before
 
 
+@pytest.fixture(autouse=True)
+def _no_live_paper_providers():
+    # 논문 공급자(arXiv/Crossref)는 실제 공개 망을 부른다. 시험은 기본으로 막고, 필요한 시험만 직접 대체한다. (값을 직접 저장·복원하는 이유는 위와 같다.)
+    from ttakkari.collector import paper
+    before = paper.search_arxiv, paper.resolve
+
+    async def no_candidates(*args, **kwargs):
+        return []
+
+    async def offline(*args, **kwargs):
+        raise paper.PaperError("offline_test")
+
+    paper.search_arxiv, paper.resolve = no_candidates, offline
+    yield
+    paper.search_arxiv, paper.resolve = before
+
+
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean(_schema_and_app):
     await profiles.flush_persist()
@@ -345,3 +362,21 @@ async def client_500():
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+def fake_muse_runtime(tmp_path):
+    """build_command 계약 테스트를 위한 격리된 최소 Muse SDK 패키지 fixture."""
+    from ttakkari.config import get_settings
+
+    settings = get_settings()
+    before = settings.muse_runtime_root
+    runtime_root = tmp_path / "fake_muse_runtime"
+    pkg = runtime_root / "node_modules/@muse-code/sdk/package.json"
+    pkg.parent.mkdir(parents=True, exist_ok=True)
+    pkg.write_text('{"name": "@muse-code/sdk", "version": "1.0.0"}', encoding="utf-8")
+    settings.muse_runtime_root = runtime_root
+    try:
+        yield runtime_root
+    finally:
+        settings.muse_runtime_root = before

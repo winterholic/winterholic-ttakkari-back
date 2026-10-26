@@ -1,0 +1,1441 @@
+{
+  "base_revision": "99b687db52d04244e1fa0b096bdff63f08c207c6",
+  "scope": "Lead Codex command sandbox, actual ASGI and injected Run PostgreSQL; real bounded CPU failures. No GPU/UI/deployed execution.",
+  "capture_stage": "Responses captured at 27-pass stage before adding registry lineage cap. Final 41-pass stage covers the cap and source-node lineage; no duplicate API capture.",
+  "responses": [
+    {
+      "v2": false,
+      "identity": [
+        "ttakkari_test",
+        "ttk_test"
+      ],
+      "method": {
+        "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+        "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+        "kind": "method",
+        "title": "CPU method",
+        "summary": "",
+        "conditions": {
+          "backend": "cpu"
+        },
+        "details": {
+          "cost_seconds": 1
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:35:16.282234+00:00"
+      },
+      "experiment": {
+        "id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+        "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+        "title": "Invalid corpus execution",
+        "hypothesis": "",
+        "rationale": "",
+        "adapter": "retrieval_eval",
+        "state": "queued",
+        "config": {
+          "corpus": [
+            {
+              "id": "a",
+              "text": "a"
+            }
+          ],
+          "queries": [
+            {
+              "query": "a",
+              "relevant": [
+                "missing"
+              ]
+            }
+          ]
+        },
+        "environment": {
+          "dataset": "A"
+        },
+        "budget": {
+          "seconds": 30,
+          "memory_mb": 256,
+          "max_runs": 20,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [
+          "4e952924-cb44-4db8-a404-aa40762e24d2"
+        ],
+        "created_at": "2026-10-25T22:35:16.288544+00:00",
+        "finished_at": null,
+        "method_id": null,
+        "compared_method_ids": [],
+        "adapter_id": "retrieval_eval",
+        "strategy": "single",
+        "search_space": {},
+        "fixed_inputs": {
+          "corpus": [
+            {
+              "id": "a",
+              "text": "a"
+            }
+          ],
+          "queries": [
+            {
+              "query": "a",
+              "relevant": [
+                "missing"
+              ]
+            }
+          ]
+        },
+        "primary_metric": "recall_at_k",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "d3d22002-a28c-41fd-8585-5298eafcef65",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null,
+        "name": "Invalid corpus execution",
+        "experiment": {
+          "id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+          "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+          "title": "Invalid corpus execution",
+          "hypothesis": "",
+          "rationale": "",
+          "adapter": "retrieval_eval",
+          "state": "queued",
+          "config": {
+            "corpus": [
+              {
+                "id": "a",
+                "text": "a"
+              }
+            ],
+            "queries": [
+              {
+                "query": "a",
+                "relevant": [
+                  "missing"
+                ]
+              }
+            ]
+          },
+          "environment": {
+            "dataset": "A"
+          },
+          "budget": {
+            "seconds": 30,
+            "memory_mb": 256,
+            "max_runs": 20,
+            "max_total_seconds": 300
+          },
+          "receipt": {},
+          "method_ids": [
+            "4e952924-cb44-4db8-a404-aa40762e24d2"
+          ],
+          "created_at": "2026-10-25T22:35:16.288544+00:00",
+          "finished_at": null,
+          "method_id": null,
+          "compared_method_ids": [],
+          "adapter_id": "retrieval_eval",
+          "strategy": "single",
+          "search_space": {},
+          "fixed_inputs": {
+            "corpus": [
+              {
+                "id": "a",
+                "text": "a"
+              }
+            ],
+            "queries": [
+              {
+                "query": "a",
+                "relevant": [
+                  "missing"
+                ]
+              }
+            ]
+          },
+          "primary_metric": "recall_at_k",
+          "secondary_metrics": [],
+          "baseline_configuration_id": "d3d22002-a28c-41fd-8585-5298eafcef65",
+          "source_study_id": null,
+          "source_experiment_id": null,
+          "source_configuration_id": null,
+          "source_run_id": null,
+          "name": "Invalid corpus execution"
+        },
+        "configurations": [
+          {
+            "id": "d3d22002-a28c-41fd-8585-5298eafcef65",
+            "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+            "label": "Baseline",
+            "role": "baseline",
+            "order_index": 0,
+            "parameters": {
+              "corpus": [
+                {
+                  "id": "a",
+                  "text": "a"
+                }
+              ],
+              "queries": [
+                {
+                  "query": "a",
+                  "relevant": [
+                    "missing"
+                  ]
+                }
+              ],
+              "default": {
+                "corpus": [
+                  {
+                    "id": "a",
+                    "text": "a"
+                  }
+                ],
+                "queries": [
+                  {
+                    "query": "a",
+                    "relevant": [
+                      "missing"
+                    ]
+                  }
+                ]
+              }
+            },
+            "config_hash": "a951da76511143061723b3c35a0afb37b9fc392af89089de58c5dd26f10eaa89",
+            "ablation_factor": null,
+            "created_at": "2026-10-25T22:35:16.290118+00:00"
+          }
+        ],
+        "runs": []
+      },
+      "failure_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+      "selections": {
+        "A": {
+          "candidates": [
+            {
+              "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+              "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.282234+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "needs_review",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "run_id": null,
+                      "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "server_executed",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": null,
+                      "error_message": "invalid_qrels",
+                      "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "applicable",
+                        "conditions": [
+                          {
+                            "status": "applicable",
+                            "missing": [],
+                            "mismatches": [],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": true
+                    }
+                  ]
+                }
+              },
+              "priority": 1
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        },
+        "B": {
+          "candidates": [
+            {
+              "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+              "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.282234+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "candidate",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "run_id": null,
+                      "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "server_executed",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": null,
+                      "error_message": "invalid_qrels",
+                      "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "incompatible",
+                        "conditions": [
+                          {
+                            "status": "incompatible",
+                            "missing": [],
+                            "mismatches": [
+                              "dataset"
+                            ],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": false
+                    }
+                  ]
+                }
+              },
+              "priority": 0
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        },
+        "None": {
+          "candidates": [
+            {
+              "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+              "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.282234+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "needs_review",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "run_id": null,
+                      "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "server_executed",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": null,
+                      "error_message": "invalid_qrels",
+                      "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "unknown",
+                        "conditions": [
+                          {
+                            "status": "unknown",
+                            "missing": [
+                              "dataset"
+                            ],
+                            "mismatches": [],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": true
+                    }
+                  ]
+                }
+              },
+              "priority": 1
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        }
+      },
+      "restored": {
+        "study": {
+          "id": "8fd0574f-3881-45f6-9086-e0b9e655ee8b",
+          "title": "Followup failure review",
+          "goal": "Do not repeat blindly",
+          "scope": "personal",
+          "phase": "planning",
+          "environment": {},
+          "criteria": [],
+          "next_actions": [],
+          "version": 1,
+          "primary_target": null,
+          "best_result_id": null,
+          "created_at": "2026-10-25T22:35:16.298563+00:00",
+          "updated_at": "2026-10-25T22:35:16.298563+00:00"
+        },
+        "nodes": [],
+        "relations": [],
+        "experiments": [],
+        "timeline": [
+          {
+            "id": "664b5d78-ab60-4cf0-a7e9-036b8b1ed5a6",
+            "study_id": "8fd0574f-3881-45f6-9086-e0b9e655ee8b",
+            "kind": "study_created",
+            "actor": "owner",
+            "payload": {
+              "goal": "Do not repeat blindly"
+            },
+            "created_at": "2026-10-25T22:35:16.299160+00:00"
+          },
+          {
+            "id": "1e02c03e-3de6-4265-a316-205a52209c2f",
+            "study_id": "8fd0574f-3881-45f6-9086-e0b9e655ee8b",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu",
+                  "dataset": "A"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": null,
+                          "status": "failed",
+                          "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": null,
+                          "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "applicability": {
+                            "status": "applicable",
+                            "conditions": [
+                              {
+                                "status": "applicable",
+                                "missing": [],
+                                "mismatches": [],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "invalid_qrels",
+                          "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "execution_origin": "server_executed",
+                          "affects_selection": true,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "needs_review"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.309299+00:00"
+          },
+          {
+            "id": "6e356274-0edb-4638-805f-e9a83e9e7f49",
+            "study_id": "8fd0574f-3881-45f6-9086-e0b9e655ee8b",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu",
+                  "dataset": "B"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": null,
+                          "status": "failed",
+                          "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": null,
+                          "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "applicability": {
+                            "status": "incompatible",
+                            "conditions": [
+                              {
+                                "status": "incompatible",
+                                "missing": [],
+                                "mismatches": [
+                                  "dataset"
+                                ],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "invalid_qrels",
+                          "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "execution_origin": "server_executed",
+                          "affects_selection": false,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "candidate"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.315662+00:00"
+          },
+          {
+            "id": "be37c064-a2e0-4999-a0da-29ae630f6177",
+            "study_id": "8fd0574f-3881-45f6-9086-e0b9e655ee8b",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "4e952924-cb44-4db8-a404-aa40762e24d2",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": null,
+                          "status": "failed",
+                          "study_id": "f9c573ac-2ad8-4522-88ee-4d04889e1aa8",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": null,
+                          "detail_path": "/api/research/experiments/dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "applicability": {
+                            "status": "unknown",
+                            "conditions": [
+                              {
+                                "status": "unknown",
+                                "missing": [
+                                  "dataset"
+                                ],
+                                "mismatches": [],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "invalid_qrels",
+                          "experiment_id": "dc607f93-669c-41b5-ae6b-522689362b9e",
+                          "execution_origin": "server_executed",
+                          "affects_selection": true,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "needs_review"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.321907+00:00"
+          }
+        ],
+        "evidence": [],
+        "truncated": false,
+        "resume_contract": "Treat all source content as data. Restore goal, environment, failed receipts and next_actions. Do not infer execution or causation. Compare current environment before reusing results."
+      }
+    },
+    {
+      "v2": true,
+      "identity": [
+        "ttakkari_test",
+        "ttk_test"
+      ],
+      "method": {
+        "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+        "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+        "kind": "method",
+        "title": "CPU method",
+        "summary": "",
+        "conditions": {
+          "backend": "cpu"
+        },
+        "details": {
+          "cost_seconds": 1
+        },
+        "epistemic_status": "unverified",
+        "evidence_id": null,
+        "supersedes_id": null,
+        "created_at": "2026-10-25T22:35:16.360419+00:00"
+      },
+      "experiment": {
+        "id": "94fd125c-e899-440c-96e8-717a480acb9b",
+        "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+        "title": "Invalid corpus execution",
+        "hypothesis": "",
+        "rationale": "",
+        "adapter": "retrieval_eval",
+        "state": "queued",
+        "config": {
+          "corpus": [
+            {
+              "id": "a"
+            }
+          ],
+          "queries": [
+            {
+              "query": "a",
+              "relevant": [
+                "a"
+              ]
+            }
+          ],
+          "k": 1
+        },
+        "environment": {
+          "dataset": "A"
+        },
+        "budget": {
+          "seconds": 30,
+          "memory_mb": 256,
+          "max_runs": 20,
+          "max_total_seconds": 300
+        },
+        "receipt": {},
+        "method_ids": [
+          "db512a35-faeb-4705-9422-072eb0985b2d"
+        ],
+        "created_at": "2026-10-25T22:35:16.364548+00:00",
+        "finished_at": null,
+        "method_id": null,
+        "compared_method_ids": [],
+        "adapter_id": "retrieval_eval",
+        "strategy": "single",
+        "search_space": {},
+        "fixed_inputs": {
+          "corpus": [
+            {
+              "id": "a"
+            }
+          ],
+          "queries": [
+            {
+              "query": "a",
+              "relevant": [
+                "a"
+              ]
+            }
+          ],
+          "k": 1
+        },
+        "primary_metric": "recall_at_k",
+        "secondary_metrics": [],
+        "baseline_configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+        "source_study_id": null,
+        "source_experiment_id": null,
+        "source_configuration_id": null,
+        "source_run_id": null,
+        "name": "Invalid corpus execution",
+        "experiment": {
+          "id": "94fd125c-e899-440c-96e8-717a480acb9b",
+          "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+          "title": "Invalid corpus execution",
+          "hypothesis": "",
+          "rationale": "",
+          "adapter": "retrieval_eval",
+          "state": "queued",
+          "config": {
+            "corpus": [
+              {
+                "id": "a"
+              }
+            ],
+            "queries": [
+              {
+                "query": "a",
+                "relevant": [
+                  "a"
+                ]
+              }
+            ],
+            "k": 1
+          },
+          "environment": {
+            "dataset": "A"
+          },
+          "budget": {
+            "seconds": 30,
+            "memory_mb": 256,
+            "max_runs": 20,
+            "max_total_seconds": 300
+          },
+          "receipt": {},
+          "method_ids": [
+            "db512a35-faeb-4705-9422-072eb0985b2d"
+          ],
+          "created_at": "2026-10-25T22:35:16.364548+00:00",
+          "finished_at": null,
+          "method_id": null,
+          "compared_method_ids": [],
+          "adapter_id": "retrieval_eval",
+          "strategy": "single",
+          "search_space": {},
+          "fixed_inputs": {
+            "corpus": [
+              {
+                "id": "a"
+              }
+            ],
+            "queries": [
+              {
+                "query": "a",
+                "relevant": [
+                  "a"
+                ]
+              }
+            ],
+            "k": 1
+          },
+          "primary_metric": "recall_at_k",
+          "secondary_metrics": [],
+          "baseline_configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+          "source_study_id": null,
+          "source_experiment_id": null,
+          "source_configuration_id": null,
+          "source_run_id": null,
+          "name": "Invalid corpus execution"
+        },
+        "configurations": [
+          {
+            "id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+            "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+            "label": "Baseline",
+            "role": "baseline",
+            "order_index": 0,
+            "parameters": {
+              "corpus": [
+                {
+                  "id": "a"
+                }
+              ],
+              "queries": [
+                {
+                  "query": "a",
+                  "relevant": [
+                    "a"
+                  ]
+                }
+              ],
+              "k": 1
+            },
+            "config_hash": "34ee55988bfdc4b487b560a5339c1997e2a041c45874ad717229f991a3aecf63",
+            "ablation_factor": null,
+            "created_at": "2026-10-25T22:35:16.365356+00:00"
+          }
+        ],
+        "runs": []
+      },
+      "failure_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+      "selections": {
+        "A": {
+          "candidates": [
+            {
+              "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+              "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.360419+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "needs_review",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                      "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                      "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "local_measured",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": "KeyError",
+                      "error_message": "'text'",
+                      "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "applicable",
+                        "conditions": [
+                          {
+                            "status": "applicable",
+                            "missing": [],
+                            "mismatches": [],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": true
+                    }
+                  ]
+                }
+              },
+              "priority": 1
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        },
+        "B": {
+          "candidates": [
+            {
+              "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+              "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.360419+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "candidate",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                      "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                      "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "local_measured",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": "KeyError",
+                      "error_message": "'text'",
+                      "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "incompatible",
+                        "conditions": [
+                          {
+                            "status": "incompatible",
+                            "missing": [],
+                            "mismatches": [
+                              "dataset"
+                            ],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": false
+                    }
+                  ]
+                }
+              },
+              "priority": 0
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        },
+        "None": {
+          "candidates": [
+            {
+              "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+              "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+              "kind": "method",
+              "title": "CPU method",
+              "summary": "",
+              "conditions": {
+                "backend": "cpu"
+              },
+              "details": {
+                "cost_seconds": 1
+              },
+              "epistemic_status": "unverified",
+              "evidence_id": null,
+              "supersedes_id": null,
+              "created_at": "2026-10-25T22:35:16.360419+00:00",
+              "cost_seconds": 1,
+              "evidence_count": 0,
+              "applicability": {
+                "status": "applicable",
+                "missing": [],
+                "mismatches": [],
+                "unspecified_conditions": false
+              },
+              "eligibility": "needs_review",
+              "reason": {
+                "conditions": {
+                  "status": "applicable",
+                  "missing": [],
+                  "mismatches": [],
+                  "unspecified_conditions": false
+                },
+                "cost_seconds": 1,
+                "within_budget": true,
+                "evidence_links": 0,
+                "expected_effect": "unknown_until_measured",
+                "information_value": "unassessed",
+                "evidence_quality": "unassessed",
+                "research_context": {
+                  "relations": [],
+                  "truncated": false,
+                  "failures": [
+                    {
+                      "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                      "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                      "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                      "status": "failed",
+                      "adapter_id": "retrieval_eval",
+                      "execution_origin": "local_measured",
+                      "declared_environment": {
+                        "dataset": "A"
+                      },
+                      "observed_environment": {},
+                      "error_code": "KeyError",
+                      "error_message": "'text'",
+                      "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                      "causal_status": "unassessed",
+                      "environment_conflicts": [],
+                      "applicability": {
+                        "status": "unknown",
+                        "conditions": [
+                          {
+                            "status": "unknown",
+                            "missing": [
+                              "dataset"
+                            ],
+                            "mismatches": [],
+                            "unspecified_conditions": false
+                          }
+                        ]
+                      },
+                      "affects_selection": true
+                    }
+                  ]
+                }
+              },
+              "priority": 1
+            }
+          ],
+          "limit": 200,
+          "ranking": "deterministic investigation priority; no predicted effect",
+          "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."
+        }
+      },
+      "restored": {
+        "study": {
+          "id": "e1154626-e3c2-4115-a103-11d9a6c6b1e0",
+          "title": "Followup failure review",
+          "goal": "Do not repeat blindly",
+          "scope": "personal",
+          "phase": "planning",
+          "environment": {},
+          "criteria": [],
+          "next_actions": [],
+          "version": 1,
+          "primary_target": null,
+          "best_result_id": null,
+          "created_at": "2026-10-25T22:35:16.391196+00:00",
+          "updated_at": "2026-10-25T22:35:16.391197+00:00"
+        },
+        "nodes": [],
+        "relations": [],
+        "experiments": [],
+        "timeline": [
+          {
+            "id": "96c80fd2-c6d0-47b6-b235-f89a1c8431b0",
+            "study_id": "e1154626-e3c2-4115-a103-11d9a6c6b1e0",
+            "kind": "study_created",
+            "actor": "owner",
+            "payload": {
+              "goal": "Do not repeat blindly"
+            },
+            "created_at": "2026-10-25T22:35:16.391540+00:00"
+          },
+          {
+            "id": "25cd018d-f7a7-41af-bd78-2eae57742f56",
+            "study_id": "e1154626-e3c2-4115-a103-11d9a6c6b1e0",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu",
+                  "dataset": "A"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "status": "failed",
+                          "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": "KeyError",
+                          "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "applicability": {
+                            "status": "applicable",
+                            "conditions": [
+                              {
+                                "status": "applicable",
+                                "missing": [],
+                                "mismatches": [],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "'text'",
+                          "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                          "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                          "execution_origin": "local_measured",
+                          "affects_selection": true,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "needs_review"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.396223+00:00"
+          },
+          {
+            "id": "616accfc-51a4-4532-86cd-6034bc18450f",
+            "study_id": "e1154626-e3c2-4115-a103-11d9a6c6b1e0",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu",
+                  "dataset": "B"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "status": "failed",
+                          "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": "KeyError",
+                          "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "applicability": {
+                            "status": "incompatible",
+                            "conditions": [
+                              {
+                                "status": "incompatible",
+                                "missing": [],
+                                "mismatches": [
+                                  "dataset"
+                                ],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "'text'",
+                          "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                          "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                          "execution_origin": "local_measured",
+                          "affects_selection": false,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "candidate"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.401717+00:00"
+          },
+          {
+            "id": "da1e8826-fccc-4f55-b9ad-28e1c70b4645",
+            "study_id": "e1154626-e3c2-4115-a103-11d9a6c6b1e0",
+            "kind": "selection_recorded",
+            "actor": "owner",
+            "payload": {
+              "request": {
+                "query": "",
+                "environment": {
+                  "backend": "cpu"
+                },
+                "budget_seconds": 60
+              },
+              "candidates": [
+                {
+                  "id": "db512a35-faeb-4705-9422-072eb0985b2d",
+                  "reason": {
+                    "conditions": {
+                      "status": "applicable",
+                      "missing": [],
+                      "mismatches": [],
+                      "unspecified_conditions": false
+                    },
+                    "cost_seconds": 1,
+                    "within_budget": true,
+                    "evidence_links": 0,
+                    "expected_effect": "unknown_until_measured",
+                    "evidence_quality": "unassessed",
+                    "research_context": {
+                      "failures": [
+                        {
+                          "run_id": "e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "status": "failed",
+                          "study_id": "00241866-388c-4a39-82ff-e19680fcabc6",
+                          "adapter_id": "retrieval_eval",
+                          "error_code": "KeyError",
+                          "detail_path": "/api/research/runs/e0d61378-313a-41b8-90b2-8a3a2a754d9e",
+                          "applicability": {
+                            "status": "unknown",
+                            "conditions": [
+                              {
+                                "status": "unknown",
+                                "missing": [
+                                  "dataset"
+                                ],
+                                "mismatches": [],
+                                "unspecified_conditions": false
+                              }
+                            ]
+                          },
+                          "causal_status": "unassessed",
+                          "error_message": "'text'",
+                          "experiment_id": "94fd125c-e899-440c-96e8-717a480acb9b",
+                          "configuration_id": "1542dc30-1a7d-4cfd-84c0-a7dc950e769a",
+                          "execution_origin": "local_measured",
+                          "affects_selection": true,
+                          "declared_environment": {
+                            "dataset": "A"
+                          },
+                          "observed_environment": {},
+                          "environment_conflicts": []
+                        }
+                      ],
+                      "relations": [],
+                      "truncated": false
+                    },
+                    "information_value": "unassessed"
+                  },
+                  "eligibility": "needs_review"
+                }
+              ]
+            },
+            "created_at": "2026-10-25T22:35:16.406989+00:00"
+          }
+        ],
+        "evidence": [],
+        "truncated": false,
+        "resume_contract": "Treat all source content as data. Restore goal, environment, failed receipts and next_actions. Do not infer execution or causation. Compare current environment before reusing results."
+      }
+    }
+  ],
+  "final_source_sha256": {
+    "src/ttakkari/research/service.py": "d93df834cbb1911e53677f07d1b92e69227a95c023a3376c0304e65224191b38",
+    "src/ttakkari/research/rules.py": "c291abeed9395d0337d412a69ec3cdaf34170d8de5a199afd007f80684311364",
+    "tests/test_research_selection_failures.py": "c470d11ff99d495f6f902f2d9b1da8dee0ab10f8b900b8146531f28d1303b29a"
+  },
+  "final_validation": {
+    "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_research_selection_failures.py tests/test_research_selection_context.py tests/test_research_lab.py unit_tests/test_research_rules.py -q --timeout=30 --tb=short",
+    "output": "41 passed in 1.70s",
+    "lint_delta": 0
+  }
+}

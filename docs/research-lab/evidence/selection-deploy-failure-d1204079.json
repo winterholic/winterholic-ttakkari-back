@@ -1,0 +1,34 @@
+{
+  "job_id": "d1204079-f97e-4311-96b6-ddb64c091a35",
+  "revision": "60bb4e24861cc6722129d5fc44dd0bb73c5435a1",
+  "status": "failed",
+  "strategy": "generations",
+  "created_at": "2026-10-26T10:51:18.485323+00:00",
+  "updated_at": "2026-10-26T11:07:10.073850+00:00",
+  "error": "release stage pytest failed (exit 1); last 12 log lines:\ntests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\ntests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n  /Users/winterholic/.ttakkari/deploy/releases/60bb4e24861cc6722129d5fc44dd0bb73c5435a1/.venv/lib/python3.13/site-packages/pydant",
+  "log": {
+    "exists": true,
+    "bytes": 9681,
+    "lines": 139,
+    "clipped_head": false
+  },
+  "stage": "pytest",
+  "cause": "FAILED tests/test_research_selection_failures.py::test_real_failure_reappears_in_followup_selection_without_global_exclusion[True]",
+  "sections": [
+    {
+      "from_line": 41,
+      "to_line": 47,
+      "text": "41| .......................s................................................ [ 50%]\n42| ........................................................................ [ 51%]\n43| ................................................F\n44| =================================== FAILURES ===================================\n45| _ test_real_failure_reappears_in_followup_selection_without_global_exclusion[True] _\n46| \n47| client = <httpx.AsyncClient object at 0x11ac28890>"
+    },
+    {
+      "from_line": 101,
+      "to_line": 115,
+      "text": "101|             assert failure[\"run_id\" if v2 else \"experiment_id\"] == failure_id\n102|             assert failure[\"declared_environment\"] == {\"dataset\": \"A\"}\n103| >           assert failure[\"applicability\"][\"status\"] == fit\n104| E           AssertionError: assert 'unknown' == 'applicable'\n105| E             \n106| E             - applicable\n107| E             + unknown\n108| \n109| tests/test_research_selection_failures.py:69: AssertionError\n110| ------------------------------ Captured log call -------------------------------\n111| ERROR    ttakkari.research.runner:runner.py:351 Error executing run 52e32f1e-1b0c-4fb5-92f2-0491b79f84de\n112| Traceback (most recent call last):\n113|   File \"/Users/winterholic/.ttakkari/deploy/releases/60bb4e24861cc6722129d5fc44dd0bb73c5435a1/src/ttakkari/research/runner.py\", line 159, in execute_run_instance\n114|     adapter_res = await adapter.execute_run(\n115|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^"
+    },
+    {
+      "from_line": 125,
+      "to_line": 139,
+      "text": "125|   /Users/winterholic/.ttakkari/deploy/releases/60bb4e24861cc6722129d5fc44dd0bb73c5435a1/.venv/lib/python3.13/site-packages/fastapi/routing.py:360: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.\n126|     return await dependant.call(**values)\n127| \n128| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n129| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n130|   /Users/winterholic/.ttakkari/deploy/releases/60bb4e24861cc6722129d5fc44dd0bb73c5435a1/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:\n131|     PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])\n132|     return self.__pydantic_serializer__.to_python(\n133| \n134| -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n135| db reset: 2827 selective (avg 3.6/115 tables), 1 forced full, 1 fell back to full\n136| =========================== short test summary info ============================\n137| FAILED tests/test_research_selection_failures.py::test_real_failure_reappears_in_followup_selection_without_global_exclusion[True]\n138| !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n139| 1 failed, 2909 passed, 11 skipped, 2 xfailed, 3 warnings, 6 subtests passed in 907.53s (0:15:07)"
+    }
+  ]
+}

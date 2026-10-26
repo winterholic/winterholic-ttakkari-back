@@ -1,0 +1,15 @@
+.......................................................F................ [ 86%]
+...........                                                              [100%]
+=================================== FAILURES ===================================
+_ test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline _
+tests/test_collection_research_flow.py:273: in test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline
+    assert detail["counts"]["imported"] == 1, detail
+E   AssertionError: {'id': '996e1493-6732-4cdb-947c-b66370d783d1', 'goal': '러너 내부 구조', 'title': '러너 내부 구조', 'status': 'partial', ...}
+E   assert 0 == 1
+------------------------------ Captured log call -------------------------------
+WARNING  trafilatura.core:core.py:465 discarding data: http://docs.test:50892/spa
+WARNING  ttakkari.collector.pipeline:pipeline.py:302 extract crashed for http://docs.test:50892/spa: TypeError
+db reset: 63 selective (avg 11.8/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_collection_research_flow.py::test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline
+1 failed, 82 passed in 9.43s

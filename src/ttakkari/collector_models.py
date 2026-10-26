@@ -50,7 +50,9 @@ class CollectorJob(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # C2: 항상 단일 값(collector.library.LIBRARY_SCOPE). 읽을 수 있는 엔진 범위는 pool 이 정한다.
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    pool: Mapped[str] = mapped_column(String(16), nullable=False, default="personal", server_default="personal")
     source_key: Mapped[str] = mapped_column(String(256), nullable=False)
     request_key: Mapped[str] = mapped_column(String(256), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -237,3 +239,48 @@ class CollectorDedupeBand(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     band_hash: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class CollectionMission(Base):
+    """User intent and its execution plan. Collector items remain the acquisition ledger."""
+
+    __tablename__ = "collection_missions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "request_key", name="uq_collection_mission_request"),
+        Index("ix_collection_mission_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    # Periodic refresh is run-based: each run gets a fresh per-run page budget (CollectionMissionRun).
+    current_run_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CollectionMissionJob(Base):
+    __tablename__ = "collection_mission_jobs"
+    __table_args__ = (Index("ix_collection_mission_job_run", "mission_id", "run_seq"),)
+
+    mission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collection_missions.id", ondelete="RESTRICT"), primary_key=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collector_jobs.id", ondelete="RESTRICT"), primary_key=True)
+    run_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
+class CollectionMissionRun(Base):
+    """One initial, scheduled or rerun pass. Budget accounting never crosses run boundaries."""
+
+    __tablename__ = "collection_mission_runs"
+
+    mission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collection_missions.id", ondelete="RESTRICT"), primary_key=True)
+    run_seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    page_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    extra_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

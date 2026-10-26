@@ -369,6 +369,72 @@ async def test_robots_disallow_blocks_without_fetching_the_page(server):
     record("robots", {"case": "disallow + crawl-delay", "expected": "blocked, 1 robots fetch, delay 3s", "observed": "ok", "passed": True})
 
 
+async def test_robots_disallow_on_redirect_hop_blocks_destination_get(server):
+    server.page("/robots.txt", "User-agent: *\nDisallow: /blocked\nAllow: /\n", "text/plain")
+
+    async def redirect(request):
+        return web.Response(status=302, headers={"Location": "/blocked"})
+
+    server.routes["/ok"] = redirect
+    server.page("/blocked", "secret body")
+    pf, clock, state, f = polite(server)
+    spec = spec_for(server)
+    try:
+        with pytest.raises(PolicyBlocked) as blocked:
+            await pf.fetch(parsed(server, "/ok"), spec)
+    finally:
+        await f.aclose()
+    assert blocked.value.code == "robots_disallowed"
+    assert server.count("/ok") == 1
+    assert server.count("/blocked") == 0
+
+
+async def test_allowed_redirect_hop_succeeds_with_robots(server):
+    server.page("/robots.txt", "User-agent: *\nDisallow: /blocked\nAllow: /\n", "text/plain")
+
+    async def redirect(request):
+        return web.Response(status=302, headers={"Location": "/permitted"})
+
+    server.routes["/ok"] = redirect
+    server.page("/permitted", "permitted body")
+    pf, clock, state, f = polite(server)
+    spec = spec_for(server)
+    try:
+        res = await pf.fetch(parsed(server, "/ok"), spec)
+    finally:
+        await f.aclose()
+    assert res.result.body == b"permitted body"
+    assert res.robots == "allowed"
+    assert server.count("/ok") == 1
+    assert server.count("/permitted") == 1
+
+
+async def test_redirect_to_different_allowed_origin_enforces_destination_robots(server):
+    async def redirect(request):
+        return web.Response(status=302, headers={"Location": f"http://cdn.test:{server.port}/cdn-blocked"})
+
+    async def robots_handler(request):
+        host = request.headers.get("Host", "").split(":")[0]
+        if host == "cdn.test":
+            return web.Response(text="User-agent: *\nDisallow: /cdn-blocked\n", content_type="text/plain")
+        return web.Response(text="User-agent: *\nAllow: /\n", content_type="text/plain")
+
+    server.routes["/jump"] = redirect
+    server.routes["/robots.txt"] = robots_handler
+    server.page("/cdn-blocked", "cdn secret")
+
+    pf, clock, state, f = polite(server, spec_hosts=("docs.test", "cdn.test"))
+    spec = spec_for(server, allowed_hosts=["docs.test", "cdn.test"])
+    try:
+        with pytest.raises(PolicyBlocked) as blocked:
+            await pf.fetch(parsed(server, "/jump", host="docs.test"), spec)
+    finally:
+        await f.aclose()
+    assert blocked.value.code == "robots_disallowed"
+    assert server.count("/jump") == 1
+    assert server.count("/cdn-blocked") == 0
+
+
 @pytest.mark.parametrize(("status", "outcome"), [
     (404, "allowed"), (410, "allowed"), (403, "robots_forbidden"), (401, "robots_forbidden"),
     (500, "robots_unreachable"), (503, "robots_unreachable"), (429, "robots_unreachable"),

@@ -160,6 +160,11 @@ def test_scanner_and_ttakkari_import_from_this_worktree():
 # ==============================================================================
 
 
+@pytest.mark.parametrize("stem", ("0072_research_lab_v2", "0073_research_reuse_source"))
+def test_research_migrations_belong_to_research_lab(stem):
+    assert classify_migration(stem) == "domain.research_lab"
+
+
 def test_unknown_inputs_negative_controls():
     assert classify_route("GET", "/api/alien_service/teleport") == "unmatched"
     assert classify_mcp_tool("quantum_hyperdrive_engage") == "unmatched"

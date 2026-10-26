@@ -1,4 +1,4 @@
-"""읽기 전용 즉시 작업: 소유권 보고, 짧은 기준 성능, 백업 상태. 모두 짧고 제한되며 아무것도 바꾸지 않는다."""
+"""Bounded inline operations: read-only reports and explicitly named guarded library maintenance."""
 
 from __future__ import annotations
 
@@ -107,6 +107,9 @@ def backup_state() -> dict:
 
 
 async def run(kind: str, db: AsyncSession) -> dict:
+    if kind in {"collection_scope_preview", "collection_scope_apply"}:
+        from ttakkari.collector.scope_merge import operate
+        return await asyncio.wait_for(operate(db, apply=kind == "collection_scope_apply"), timeout=60)
     if kind == "runtime_report":
         return await runtime_report(db)
     if kind == "performance_baseline":

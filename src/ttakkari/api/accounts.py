@@ -353,6 +353,7 @@ class AccountUsageOut(BaseModel):
     login: str
     cooldown_seconds: int
     windows: list[UsageWindowOut]
+    quota_unlimited: dict[str, str] = Field(default_factory=dict)
     reset_credits: ResetCreditsOut | None = None
     credits_balance: int | None = None
     credits_error: str | None = None
@@ -432,7 +433,7 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
     is_agy = a.engine == "antigravity"
     aged = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
     agy_expired = [w for w in u.windows if w.resets_at and w.resets_at <= now] if is_agy else []
-    stale = aged or has_expired_exhausted or not muse_current or bool(agy_expired) or (is_agy and bool(u.error))
+    stale = aged or has_expired_exhausted or not muse_current or bool(agy_expired) or ((is_agy or u.source == "copilot_sdk") and bool(u.error))
     valid_windows = [
         w for w in u.windows
         if not ((is_muse or u.source != "api") and w.resets_at and w.resets_at <= now
@@ -466,7 +467,7 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
                            stale=stale,
                            work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
                            cooldown_seconds=profiles.cooldown_remaining(a.id),
-                           windows=windows_out, source=u.source, plan=u.plan,
+                           windows=windows_out, quota_unlimited=u.quota_unlimited, source=u.source, plan=u.plan,
                            reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                            credits_balance=u.credits_balance, credits_error=u.credits_error,
                            error=err, updated_at=u.updated_at, refreshing=refreshing,

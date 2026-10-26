@@ -416,3 +416,21 @@ async def test_other_engines_keep_plain_backoff_on_new_stream_values(client, aut
     usage_mod.remember_stream(ids["claude"], [_w("five_hour", 5)])
     assert ids["claude"] not in await c.tick(st.last_fetch + 120)
     await usage_store.flush()
+
+
+async def test_copilot_quota_persists_and_restores_without_inventing_unlimited_percent(client, auth, make_dir):
+    ids = await _accounts(client, auth, make_dir)
+    aid = ids['claude']
+    usage_store.reset()
+    sample = usage_mod.Usage(source='copilot_sdk', updated_at=time.time(), windows=[
+        usage_mod.Window('copilot_premium_interactions', 'Copilot 월간', 25, int(time.time()) + 86400, 75)],
+        quota_unlimited={'copilot_chat': 'Copilot 채팅'})
+    assert await usage_store.record(aid, sample)
+    usage_mod.forget(aid)
+    async with sessionmaker()() as db:
+        assert await usage_store.load_latest(db) >= 1
+    restored = usage_mod.cached(aid)
+    assert restored.source == 'copilot_sdk'
+    assert restored.windows == sample.windows
+    assert restored.quota_unlimited == sample.quota_unlimited
+    assert restored.error is None

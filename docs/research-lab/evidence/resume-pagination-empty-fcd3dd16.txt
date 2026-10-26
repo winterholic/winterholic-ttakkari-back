@@ -1,0 +1,26 @@
+### Page
+- Page URL: http://127.0.0.1:18872/research?view=records&study=e4a402a0-c424-4381-b6b1-ceded20eb0dd
+- Page Title: Winterholic Ttakkari
+- Console: 3 errors, 0 warnings
+### Snapshot
+```yaml
+- group [ref=e221] [box=16,223,358,540]:
+  - generic "전체 기록 찾아보기" [ref=e222] [cursor=pointer] [box=16,235,358,40]
+  - generic [ref=e235] [box=16,287,358,464]:
+    - paragraph [ref=e236] [box=16,287,358,45]: 요약에 없는 기록도 종류별로 찾아볼 수 있습니다. 각 페이지는 작성 순서로 표시합니다.
+    - generic [ref=e237] [box=16,348,358,26]: 기록 종류
+    - combobox "기록 종류" [ref=e238] [box=16,389,358,44]:
+      - option "지식·가설" [box=0,0,0,0]
+      - option "관계" [selected] [box=0,0,0,0]
+      - option "실험" [box=0,0,0,0]
+      - option "변경 이력" [box=0,0,0,0]
+    - status [ref=e650] [box=16,465,358,26]: 관계 · 전체 0개 · 1 / 1페이지
+    - generic [ref=e651] [box=16,523,358,44]:
+      - button "이전 기록" [disabled] [ref=e652] [box=16,523,78,44]
+      - button "다음 기록" [disabled] [ref=e654] [box=102,523,78,44]
+    - generic [ref=e731] [box=16,583,358,130]:
+      - generic [ref=e732] [box=16,583,73,26]: 기록 페이지
+      - spinbutton "기록 페이지" [ref=e733] [box=16,616,358,44]: "1"
+      - button "이동" [ref=e734] [cursor=pointer] [box=16,668,50,44]
+    - paragraph [ref=e736] [box=16,728,358,22]: 이 종류의 기록이 없습니다.
+```

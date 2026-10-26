@@ -1,0 +1,39 @@
+### Page
+- Page URL: http://127.0.0.1:18872/research?view=records&study=e4a402a0-c424-4381-b6b1-ceded20eb0dd
+- Page Title: Winterholic Ttakkari
+- Console: 3 errors, 0 warnings
+### Snapshot
+```yaml
+- group [ref=e221] [box=16,182,358,781]:
+  - generic "전체 기록 찾아보기" [ref=e222] [cursor=pointer] [box=16,194,358,40]
+  - generic [ref=e235] [box=16,246,358,705]:
+    - paragraph [ref=e236] [box=16,246,358,45]: 요약에 없는 기록도 종류별로 찾아볼 수 있습니다. 각 페이지는 작성 순서로 표시합니다.
+    - generic [ref=e237] [box=16,307,358,26]: 기록 종류
+    - combobox "기록 종류" [ref=e238] [box=16,348,358,44]:
+      - option "지식·가설" [box=0,0,0,0]
+      - option "관계" [box=0,0,0,0]
+      - option "실험" [box=0,0,0,0]
+      - option "변경 이력" [selected] [box=0,0,0,0]
+    - status [ref=e650] [box=16,424,358,26]: 변경 이력 · 전체 2개 · 1 / 1페이지
+    - generic [ref=e651] [box=16,482,358,44]:
+      - button "이전 기록" [disabled] [ref=e652] [box=16,482,78,44]
+      - button "다음 기록" [disabled] [ref=e654] [box=102,482,78,44]
+    - generic [ref=e714] [box=16,542,358,130]:
+      - generic [ref=e715] [box=16,542,73,26]: 기록 페이지
+      - spinbutton "기록 페이지" [ref=e716] [box=16,575,358,44]: "1"
+      - button "이동" [ref=e717] [cursor=pointer] [box=16,627,50,44]
+    - article [ref=e719] [box=16,687,358,124]:
+      - heading "원문을 확보했습니다" [level=4] [ref=e720] [box=33,704,324,26]
+      - paragraph [ref=e721] [box=33,738,324,22]:
+        - time [ref=e722] [box=33,741,109,16]: 10. 26. 오전 08:00
+        - text: · fixture
+      - group [ref=e723] [box=33,768,324,26]:
+        - generic "세부 기록" [ref=e724] [box=33,768,324,26]
+    - article [ref=e725] [box=16,827,358,124]:
+      - heading "연구 지식을 기록했습니다" [level=4] [ref=e726] [box=33,844,324,26]
+      - paragraph [ref=e727] [box=33,877,324,22]:
+        - time [ref=e728] [box=33,880,109,16]: 10. 26. 오전 08:00
+        - text: · fixture
+      - group [ref=e729] [box=33,908,324,26]:
+        - generic "세부 기록" [ref=e730] [box=33,908,324,26]
+```

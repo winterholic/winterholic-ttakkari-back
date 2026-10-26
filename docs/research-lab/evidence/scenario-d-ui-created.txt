@@ -1,0 +1,27 @@
+### Page
+- Page URL: http://127.0.0.1:57442/research?view=library&study=dbfdd5b1-0783-41b3-ba22-3f480b93f49c&method=new
+- Page Title: Winterholic Ttakkari
+- Console: 2 errors, 0 warnings
+### Snapshot
+```yaml
+- dialog [ref=f6e1600]:
+  - generic [ref=f6e7]:
+    - heading "가설을 등록했습니다" [level=2] [ref=f6e1601]
+    - button "닫기" [ref=f6e9] [cursor=pointer]
+  - generic [ref=f6e1602]:
+    - paragraph [ref=f6e1603]:
+      - strong [ref=f6e1604]: D 상태 복원 확인 가설
+      - text: "가설을 카탈로그에 등록했습니다. 현재 상태:"
+    - paragraph [ref=f6e1605]:
+      - generic "실험 프로토콜 구체화 필요 (가설 편집 또는 외부 결과 기록만 가능)" [ref=f6e1606]: 가설 단계
+      - generic [ref=f6e1609]: 실험 프로토콜 구체화 필요 (가설 편집 또는 외부 결과 기록만 가능)
+    - note [ref=f6e1610]:
+      - generic [ref=f6e1613]:
+        - strong [ref=f6e1614]: 다음 단계
+        - list [ref=f6e1616]:
+          - listitem [ref=f6e1617]: 실행할 수 있는 형태가 아직 아닙니다. 파라미터와 측정 지표를 구체화하거나, 외부에서 실험한 결과를 기록하세요.
+          - listitem [ref=f6e1618]: 실험 결과가 쌓이면 방법 상세에서 ‘검증 후 승격’으로 후보 또는 검증됨 단계로 올릴 수 있습니다. 외부 결과만으로는 ‘후보’까지입니다.
+    - generic [ref=f6e1619]:
+      - button "이 방법으로 실험 설계" [ref=f6e1620] [cursor=pointer]
+      - button "닫기" [ref=f6e1622] [cursor=pointer]
+```

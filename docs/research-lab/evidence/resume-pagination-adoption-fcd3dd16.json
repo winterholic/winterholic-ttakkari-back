@@ -1,0 +1,62 @@
+{
+  "scope": "Lead Codex actual Run PG/ASGI and configured headless browser; synthetic records. No GPU/model/deployed execution or independent reviewer.",
+  "backend_base": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+  "frontend_revision": "0daa6c6bcd83ddcd9eefc1ddc1abb6dc2158e3c4",
+  "backend_validation": {
+    "command": "PYTHONPATH=src .venv/bin/python -m pytest tests/test_research_resume_pagination.py tests/test_research_lab.py tests/test_research_source_refresh_acceptance.py tests/test_research_selection_evidence.py -q --timeout=30 --tb=short",
+    "output": "22 passed in 2.40s"
+  },
+  "frontend_validation": {
+    "command": "pnpm exec vitest run src/pages/research",
+    "output": "5 test files; 83 passed; duration 3.61s",
+    "build": "Saved build output newer than five frontend source files; not rerun",
+    "lint": "pnpm lint rerun on final source; ui-lint baseline 138"
+  },
+  "ui": {
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "page6_nodes": 6,
+    "total_nodes": 506,
+    "mobile_archive_x_width": [
+      16,
+      358
+    ],
+    "mobile_button_height": 44,
+    "empty_and_collection_reset": true,
+    "quote": "이 인용은 500건 이후에도 원문 그대로 남아 있습니다.",
+    "fixture": {
+      "study_id": "e4a402a0-c424-4381-b6b1-ceded20eb0dd",
+      "quoted_node_id": "39d5c9f5-f6d0-4cde-8a51-af8b2dc00539",
+      "nodes": 506,
+      "identity": [
+        "ttakkari_test",
+        "ttk_test"
+      ],
+      "scope": "Run test PostgreSQL + own temporary HOME; synthetic input; no model/GPU/production execution",
+      "previous_fixture": {
+        "study_id": "cd49b5f2-4c52-432c-8413-f8003eeac9cd",
+        "quoted_node_id": "ffc3069c-8892-4bab-80cb-a557eca9f595",
+        "nodes": 506,
+        "identity": [
+          "ttakkari_test",
+          "ttk_test"
+        ],
+        "scope": "Run test PostgreSQL + own temporary HOME; synthetic input; no model/GPU/production execution"
+      }
+    },
+    "console": "3 login/dev errors: auth refresh 401 and sw.js HTML MIME (2); no new post-login errors observed",
+    "coverage": "RecordArchive controls/page 6/quote/kind switch/empty only. quick.mjs not run; configured browser DOM boxes used. General UI audit unverified; full archive screenshot clipped; quote screenshots retained."
+  },
+  "source_sha256": {
+    "src/ttakkari/api/research.py": "6da1d3a18226bc47eace46d94d6d5a4b20cd1af6ce044dac07eebab9bc848a50",
+    "src/ttakkari/research/service.py": "0d44990b81b5baeeb6f11539ff147fe9f7ed87473f3e407e48e1ff54ccd95d0d",
+    "src/ttakkari/orchestrator/mcp_server.py": "47538a46fae42c690f6ee9bc92ddf4e5231cd871edca8d9d3dc7fae7cd0c8340",
+    "tests/test_research_resume_pagination.py": "e106673efc374dcb8da807664c7c3c185fea6f78ef72c81ad54d11b3af692f18"
+  }
+}

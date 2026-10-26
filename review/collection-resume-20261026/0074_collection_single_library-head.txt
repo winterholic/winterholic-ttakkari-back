@@ -1,0 +1,7 @@
+WARNI [ttakkari.config] env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+WARNI [ttakkari.config] cors_origins가 localhost/loopback 전용(http://localhost:5173,http://127.0.0.1:5173)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0071_library_platform_v2_merge -> 0072_research_lab_v2, Research Lab v2: Multi-dimensional taxonomy, methods, configurations, runs, measurements, analyses, artifacts, and best results with v1 migration.
+INFO  [alembic.runtime.migration] Running upgrade 0072_research_lab_v2 -> 0073_research_reuse_source, Add source_* typed lineage columns to research_experiments.
+INFO  [alembic.runtime.migration] Running upgrade 0074_collection_single_library, 0073_research_reuse_source -> 0075_collection_research_merge, Converge collection missions and Research Lab without rewriting either history.

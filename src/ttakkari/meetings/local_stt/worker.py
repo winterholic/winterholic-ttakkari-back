@@ -15,11 +15,14 @@ import os
 import resource
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
 from ttakkari.meetings.local_stt.core import normalize_segments, term_prompt
+from ttakkari.model_process import (
+    start_parent_guard,
+    watch_parent,  # noqa: F401 -- preserve the existing worker import surface
+)
 
 
 def decode_options(profile: str, terms: list[str]) -> dict:
@@ -255,20 +258,8 @@ def transcribe(request: dict) -> dict:
     return result
 
 
-def watch_parent(parent_pid: int, stop: threading.Event) -> None:
-    """A backend crash must not leave an orphan inference process holding the model."""
-    while not stop.wait(1):
-        if os.getppid() != parent_pid or parent_pid == 1:
-            os._exit(74)
-            return  # reachable only in tests replacing the process exit primitive
-
-
 def main() -> int:
-    stop = threading.Event()
-    guard = threading.Thread(
-        target=watch_parent, args=(os.getppid(), stop), daemon=True
-    )
-    guard.start()
+    stop = start_parent_guard()
     try:
         request = json.load(sys.stdin)
         with tempfile.TemporaryDirectory(prefix="ttk-stt-runtime-") as cache:

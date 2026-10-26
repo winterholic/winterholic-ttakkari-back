@@ -1,0 +1,52 @@
+{
+  "base_revision": "a2c594f6241d7529d4d61a19577f21e19a1d7d4f",
+  "environment": "Codex command environment; isolated injected test PG",
+  "independent_verification": false,
+  "red": {
+    "failed": 7,
+    "passed_negative_controls": 9,
+    "seconds": 1.93
+  },
+  "exit_receipt_red": {
+    "failed": 1,
+    "seconds": 0.35
+  },
+  "final_regression": {
+    "passed": 201,
+    "seconds": 20.96,
+    "files": [
+      "tests/test_research_model_resources.py",
+      "tests/test_research_external_resources.py",
+      "tests/test_research_runner_lifecycle.py",
+      "tests/test_research_adapters.py",
+      "tests/test_local_stt_runner.py",
+      "tests/test_local_stt_worker.py",
+      "tests/test_tts_queue.py",
+      "unit_tests/test_model_process_lifecycle.py"
+    ]
+  },
+  "new_db_tests": 21,
+  "shared_lifecycle_tests_including_prior19": 21,
+  "actual_parent_death_db_cases": 4,
+  "model_inference": "not executed; executable wrapper with production common supervisor/guard and actual research runner/PG",
+  "negative_resource_observations": "synthetic present/absent/unknown and identity refusal; no signals allowed",
+  "lint": "All checks passed!",
+  "diff_check": "exit0",
+  "source_sha256": {
+    "src/ttakkari/model_process.py": "3d3db1e99240e3458be82477e6d736ebc15f6859119b82dd30053c2c96d4c204",
+    "src/ttakkari/research/resources.py": "b67810a5abad3816fffb81f5a95de0145386972a9239e2aa46ac5428b57e80af",
+    "src/ttakkari/research/ownership.py": "3826375e6580e9dc2913342cb299a74b5f7c3c428b907d28eb9f4598d18b028b",
+    "src/ttakkari/research/runner.py": "c29cb2c4b3bbdca1a7f4594914a51c01947119b23de61b61306e32b5ea136aec",
+    "tests/test_research_model_resources.py": "b64270b522c133393724e5df971ee532e75b2d2a132d658fa49edbf9863a5434",
+    "unit_tests/test_model_process_lifecycle.py": "8a219f3d597737e5533c99f1b606af30db2d2654ea81c0924d3d2e5aa232a3ce",
+    "docs/research-lab/evidence/research-model-receipts-a2c594f6.md": "0c636331e0529279d8cdb4a33b5d8b0150ee49287187bef4368972760f4774f5"
+  },
+  "unverified": [
+    "actual ML native/GIL blocking",
+    "real memory budget",
+    "native checkpoint resume",
+    "GPU before checkpoint startup crash",
+    "production activation/Metal/RuntimeLease/authenticated UI/legacy92",
+    "whole controller gate/PMS remaining original criteria"
+  ]
+}

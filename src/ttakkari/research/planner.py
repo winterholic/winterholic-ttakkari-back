@@ -238,8 +238,7 @@ def expand_configurations(
                 )
                 return configs, errors, warnings
 
-            idx = 0
-            for combo in itertools.product(*sweep_values):
+            for idx, combo in enumerate(itertools.product(*sweep_values)):
                 params = dict(fixed_part)
                 label_parts = []
                 for k, val in zip(sweep_keys, combo):
@@ -256,7 +255,6 @@ def expand_configurations(
                         "ablation_factor": None,
                     }
                 )
-                idx += 1
 
     elif strategy == "random":
         sweep_keys = []
@@ -422,6 +420,30 @@ async def local_readiness_issues(
     return issues
 
 
+def execution_budget_seconds(budget: dict[str, Any]) -> float:
+    """Return the finite positive wall-time allowance shared by a batch."""
+    seconds = budget.get("max_total_seconds", 300)
+    if (isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or not 0 < seconds <= 3600):
+        raise ValueError("max_total_seconds는 0보다 크고 3600 이하인 유한한 숫자여야 합니다.")
+    return float(seconds)
+
+
+def execution_memory_budget(budget: dict[str, Any], adapter_id: str, config: dict | None = None) -> int | None:
+    """Optional sampled RSS stop threshold, limited to disposable model children."""
+    value = budget.get("max_memory_mb")
+    if value is None:
+        return None
+    if type(value) is not int or value <= 0:
+        raise ValueError("max_memory_mb는 0보다 큰 정수여야 합니다. 감시를 끄려면 필드를 생략하세요.")
+    if adapter_id != "tts_synthesis" or (
+        config is not None and config.get("mode", "normalize_only") not in {"synthesize", "synthesize_and_stt"}
+    ):
+        raise ValueError("max_memory_mb는 현재 TTS 합성/STT의 모델 자식 RSS 감시만 지원합니다. "
+                         "호스트 GPU·검색·정규화의 메모리 제한은 미지원이므로 이 필드를 생략하세요.")
+    return value
+
+
 async def validate_experiment_plan(
     db,
     *,
@@ -448,11 +470,11 @@ async def validate_experiment_plan(
             f"요청된 max_runs({requested_max_runs})가 어댑터 '{adapter_id}'의 하드 상한({max_runs_limit})을 초과합니다."
         )
 
-    requested_seconds = budget.get("max_total_seconds", 300)
-    if requested_seconds > 3600:
-        errors.append(
-            f"요청된 max_total_seconds({requested_seconds})가 최대 허용 시간(3600초)을 초과합니다."
-        )
+    try:
+        execution_budget_seconds(budget)
+        execution_memory_budget(budget, adapter_id)
+    except ValueError as exc:
+        errors.append(str(exc))
 
     # Check method relations
     all_methods = []
@@ -499,6 +521,15 @@ async def validate_experiment_plan(
     )
     errors.extend(exp_errors)
     warnings.extend(exp_warnings)
+    for cfg in expanded_configs:
+        try:
+            execution_memory_budget(budget, adapter_id, cfg.get("parameters", cfg))
+        except ValueError as exc:
+            if str(exc) not in errors:
+                errors.append(str(exc))
+    if budget.get("max_memory_mb") is not None:
+        warnings.append("메모리 감시는 각 모델 자식 RSS를 50ms 간격으로 관측해 초과 시 중단합니다. "
+                        "OS 강제 상한이 아니며 샘플 사이의 초과, 부모·자손·GPU 메모리는 보장하지 않습니다.")
 
     # Validate expanded configurations against adapter constraints
     if local_dispatch:
@@ -515,6 +546,7 @@ async def validate_experiment_plan(
                     "Adapter registry lookup for '%s' failed: %s",
                     adapter_id,
                     type(exc).__name__,
+                    exc_info=True,
                 )
                 errors.append(
                     f"어댑터 '{adapter_id}' 조회 중 오류가 발생했습니다: {type(exc).__name__}"
@@ -536,6 +568,7 @@ async def validate_experiment_plan(
                             "Adapter '%s' validate_config failed: %s",
                             adapter_id,
                             type(exc).__name__,
+                            exc_info=True,
                         )
                         err_msg = f"어댑터 '{adapter_id}' 설정 검증 중 오류가 발생했습니다: {type(exc).__name__}"
                         if err_msg not in errors:
@@ -548,6 +581,7 @@ async def validate_experiment_plan(
 
     est_sec_per_run = 15 if adapter_id == "llm_inference" else 3 if adapter_id == "retrieval_eval" else 5
     resource_estimate = {
+        "memory_budget_contract": 1,
         "total_runs": runs_count,
         # `estimated_seconds` is the contract name (adapters.base.ResourceEstimate); `estimated_total_seconds` stays for older callers.
         "estimated_seconds": runs_count * est_sec_per_run,

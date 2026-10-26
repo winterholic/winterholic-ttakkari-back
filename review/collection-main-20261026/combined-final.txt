@@ -1,0 +1,5 @@
+COMMAND: .venv/bin/python -m pytest -q --noconftest tests/test_collection_combined_migration_contract.py::test_c1_and_c2_form_a_serial_migration_path_and_generation_contract tests/test_collection_combined_migration_contract.py::test_previous_c1_generation_is_admitted_for_the_additive_c2_upgrade unit_tests/test_collection_research_migration_merge.py unit_tests/test_migration_logging.py unit_tests/test_schema_head_admission.py
+.......................                                                  [100%]
+23 passed in 0.78s
+
+EXIT_CODE=0

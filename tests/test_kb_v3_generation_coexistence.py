@@ -35,6 +35,9 @@ def test_contract_declares_head_and_both_intermediate_revisions_online():
     assert {
         "0071_library_platform_v2_merge", "0072_kb_v3_schema_and_scope",
         "0072_research_lab_v2", "0073_research_reuse_source", "0073_kb_l2_budget_ledger",
+        "0072_collection_missions", "0073_collection_mission_runs",
+        "0074_collection_single_library", "0074_kb_v3_research_merge",
+        "0075_collection_research_merge",
     } <= set(contract["online_migration_from"])
     assert HEAD not in contract["online_migration_from"]
 

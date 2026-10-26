@@ -1,0 +1,63 @@
+{
+  "base_revision": "116dad45203fad2c81a862309016d430eb3eae49",
+  "environment": "lead Codex command sandbox; actual owned native model-free children; isolated PostgreSQL",
+  "independent_verification": false,
+  "red": {
+    "failed": 2,
+    "seconds": 16.97,
+    "failure": "parent death while PyDLL sleep holds GIL; exit observation times out after 3 seconds"
+  },
+  "first_green": {
+    "passed": 30,
+    "seconds": 9.02
+  },
+  "db_and_negative_controls": {
+    "passed": 29,
+    "seconds": 23.68
+  },
+  "final_regression": {
+    "passed": 116,
+    "seconds": 33.11,
+    "new_native_pg_ownerdeath_cases": 4
+  },
+  "optional_runtime_native_wrappers": [
+    {
+      "python": "3.11.16",
+      "worker_pid": 53173,
+      "monitor_exit": 0,
+      "process_exited": true
+    },
+    {
+      "python": "3.13.15",
+      "worker_pid": 53253,
+      "monitor_exit": 0,
+      "process_exited": true
+    }
+  ],
+  "source_sha256": {
+    "src/ttakkari/model_process.py": "97cfaa00061ace0d8054f38d05cbc7eaca330ff7b6f5c28b915878f5baaab1ce",
+    "src/ttakkari/model_process_guard.py": "297cedaa6c881b4978869a4c1c39f519562dca179be0f3f657869448ef3395dc",
+    "tests/test_research_model_resources.py": "3606cee49833883526b9e01aab533dfe16cc155a786ce5095f2b0b483c6c12ab",
+    "unit_tests/test_model_native_owner_death.py": "6b132982631180740497cb6bca0d50013894033f5891644551bad48f23885e21",
+    "src/ttakkari/research/runner.py": "e7305bf0cf434b22f1c7839dbd123a3b57707411ee14d812e7ce4579e6529738",
+    "src/ttakkari/research/resources.py": "6efa9d4b6b24b47da92e5aa69d97639c91933cae0ff731bff4b044d33ff9e114",
+    "docs/research-lab/refactor-v2.md": "ceadbbf3de505bdee4ee0fb56bcadfd5ad532591500923d289983e61ece58b2a",
+    "docs/research-lab/evidence/model-native-owner-116dad45.md": "6f1238954e1c942edf9ada8ba6837d0c4bf197cce7615991472e743f01081a72"
+  },
+  "deployment_observed": {
+    "id": "f5194370-e954-4469-a9a7-5f6f3b45027f",
+    "status": "testing",
+    "error": null,
+    "ops_lines": 23,
+    "percent_marker": 25,
+    "error_sections": 0
+  },
+  "unverified": [
+    "actual ML native owner death",
+    "actual GPU owner crash",
+    "native checkpoint resume",
+    "whole memory/OS bound",
+    "RuntimeLease/authenticated production UI/legacy92",
+    "whole controller gate/PMS original criteria"
+  ]
+}

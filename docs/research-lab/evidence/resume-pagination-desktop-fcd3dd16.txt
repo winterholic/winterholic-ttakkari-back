@@ -1,0 +1,54 @@
+### Page
+- Page URL: http://127.0.0.1:18872/research?view=records&study=e4a402a0-c424-4381-b6b1-ceded20eb0dd
+- Page Title: Winterholic Ttakkari
+- Console: 3 errors, 0 warnings
+### Snapshot
+```yaml
+- group [ref=e221] [box=332,324,1056,1341]:
+  - generic "전체 기록 찾아보기" [ref=e222] [cursor=pointer] [box=332,336,1056,40]
+  - generic [ref=e235] [box=332,388,1056,1265]:
+    - paragraph [ref=e236] [box=332,388,1056,22]: 요약에 없는 기록도 종류별로 찾아볼 수 있습니다. 각 페이지는 작성 순서로 표시합니다.
+    - generic [ref=e237] [box=332,426,1056,26]: 기록 종류
+    - combobox "기록 종류" [ref=e238] [box=332,468,1056,40]:
+      - option "지식·가설" [selected] [box=0,0,0,0]
+      - option "관계" [box=0,0,0,0]
+      - option "실험" [box=0,0,0,0]
+      - option "변경 이력" [box=0,0,0,0]
+    - status [ref=e650] [box=332,540,1056,26]: 지식·가설 · 전체 506개 · 6 / 6페이지
+    - generic [ref=e651] [box=332,598,1056,32]:
+      - button "이전 기록" [ref=e652] [cursor=pointer] [box=332,598,78,32]
+      - button "다음 기록" [disabled] [ref=e654] [box=418,598,78,32]
+    - generic [ref=e656] [box=332,646,1056,114]:
+      - generic [ref=e657] [box=332,646,73,26]: 기록 페이지
+      - spinbutton "기록 페이지" [ref=e658] [box=332,679,1056,40]: "6"
+      - button "이동" [ref=e659] [cursor=pointer] [box=332,727,50,32]
+    - article [ref=e661] [box=332,775,1056,125]:
+      - paragraph [ref=e662] [box=349,792,1022,22]: 방법론 · 미검증
+      - heading "누적 기록 109" [level=4] [ref=e663] [box=349,823,1022,26]
+      - paragraph [ref=e664] [box=349,856,1022,27]: 합성 입력이며 실제 연구 성과가 아닙니다.
+    - article [ref=e665] [box=332,916,1056,125]:
+      - paragraph [ref=e666] [box=349,933,1022,22]: 방법론 · 미검증
+      - heading "누적 기록 388" [level=4] [ref=e667] [box=349,964,1022,26]
+      - paragraph [ref=e668] [box=349,997,1022,27]: 합성 입력이며 실제 연구 성과가 아닙니다.
+    - article [ref=e669] [box=332,1058,1056,125]:
+      - paragraph [ref=e670] [box=349,1075,1022,22]: 방법론 · 미검증
+      - heading "누적 기록 351" [level=4] [ref=e671] [box=349,1105,1022,26]
+      - paragraph [ref=e672] [box=349,1139,1022,27]: 합성 입력이며 실제 연구 성과가 아닙니다.
+    - article [ref=e673] [box=332,1199,1056,125]:
+      - paragraph [ref=e674] [box=349,1216,1022,22]: 방법론 · 미검증
+      - heading "누적 기록 018" [level=4] [ref=e675] [box=349,1246,1022,26]
+      - paragraph [ref=e676] [box=349,1280,1022,27]: 합성 입력이며 실제 연구 성과가 아닙니다.
+    - article [ref=e677] [box=332,1340,1056,125]:
+      - paragraph [ref=e678] [box=349,1357,1022,22]: 방법론 · 미검증
+      - heading "누적 기록 228" [level=4] [ref=e679] [box=349,1387,1022,26]
+      - paragraph [ref=e680] [box=349,1421,1022,27]: 합성 입력이며 실제 연구 성과가 아닙니다.
+    - article [ref=e681] [box=332,1481,1056,172]:
+      - paragraph [ref=e682] [box=349,1498,1022,22]: 방법론 · 논문·원문 보고
+      - heading "506번째 기록 · 원문 연결" [level=4] [ref=e683] [box=349,1528,1022,26]
+      - blockquote [ref=e684] [box=349,1562,1022,74]:
+        - paragraph [ref=e685] [box=368,1562,1003,27]: 이 인용은 500건 이후에도 원문 그대로 남아 있습니다.
+        - generic [ref=e686] [box=368,1597,1003,38]:
+          - link "research:personal:paging-browser-source" [ref=e687] [cursor=pointer] [box=368,1599,226,14]:
+            - /url: https://example.invalid/paging-browser
+          - group [ref=e688] [box=368,1616,1003,19]
+```

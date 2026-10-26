@@ -1,0 +1,522 @@
+{
+  "environment": "lead Codex command sandbox; actual CPU Supertonic/Whisper; isolated Run PostgreSQL",
+  "normal": {
+    "id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+    "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+    "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+    "study_id": "a3635a1d-0320-458a-acba-47ae53e91a8e",
+    "adapter_id": "tts_synthesis",
+    "execution_origin": "local_measured",
+    "repeat_index": 1,
+    "seed": 42,
+    "status": "succeeded",
+    "progress": null,
+    "environment_snapshot": {
+      "scope": "personal",
+      "voice": "M1",
+      "engine": "supertonic",
+      "temp_dir": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research_tts_70d0d830-fb91-43af-aa2d-1b770eb62e9f_cv7kp6o1",
+      "research_memory_guard": {
+        "scope": "each_owned_model_child_rss",
+        "samples": 529,
+        "error_code": null,
+        "hard_limit": false,
+        "limit_bytes": 8589934592,
+        "owner_token": "e643596d-fdef-44bd-bacb-6ff37dc2353c",
+        "poll_seconds": 0.05,
+        "sampled_peak_rss_bytes": 3599024128
+      },
+      "research_model_workers": {
+        "state": "released",
+        "workers": {
+          "1a7696c1-fa35-4c98-8d0b-0bb906c103bb": {
+            "pid": 86210,
+            "state": "exited",
+            "module": "ttakkari.tts.worker_supertonic",
+            "parent_pid": 86098,
+            "returncode": 0,
+            "started_at": 1793014185.02677
+          },
+          "6d2a019c-3431-4e69-8048-ecc9574ff69e": {
+            "pid": 86733,
+            "state": "exited",
+            "module": "ttakkari.meetings.local_stt.worker",
+            "parent_pid": 86098,
+            "returncode": 0,
+            "started_at": 1793014200.074894
+          },
+          "b9401716-33c6-49da-866c-46a48d02e850": {
+            "pid": 86276,
+            "state": "exited",
+            "module": "ttakkari.meetings.local_stt.worker",
+            "parent_pid": 86098,
+            "returncode": 0,
+            "started_at": 1793014186.401014
+          }
+        },
+        "contract": 1,
+        "owner_token": "e643596d-fdef-44bd-bacb-6ff37dc2353c",
+        "recorded_at": "2026-10-26T11:30:12.386897+00:00"
+      },
+      "research_execution_owner": {
+        "token": "e643596d-fdef-44bd-bacb-6ff37dc2353c",
+        "contract": 1,
+        "accepted_at": "2026-10-26T11:29:45.018217+00:00",
+        "generation_id": null
+      }
+    },
+    "raw_output": {
+      "mode": "synthesize_and_stt",
+      "speed": 1.0,
+      "voice": "M1",
+      "engine": "supertonic",
+      "metrics": {
+        "rtf": 0.2004,
+        "peak_rss_mb": 509.69,
+        "load_seconds": 0.398,
+        "wall_seconds": 27.362,
+        "audio_seconds": 4.317,
+        "synth_seconds": 0.865
+      },
+      "stt_eval": [
+        {
+          "cer_vs_raw": 0.7222222222222222,
+          "wer_vs_raw": 1.0,
+          "chunk_index": 0,
+          "raw_reference": "안녕하세요. 메모리 감시를 확인합니다.",
+          "recognized_text": "안녕하세요",
+          "cer_vs_normalized": 0.16666666666666666,
+          "wer_vs_normalized": 1.0,
+          "normalized_reference": "안녕하세요."
+        },
+        {
+          "cer_vs_raw": 0.3333333333333333,
+          "wer_vs_raw": 0.25,
+          "chunk_index": 1,
+          "raw_reference": "안녕하세요. 메모리 감시를 확인합니다.",
+          "recognized_text": "메모리 감시를 확인합니다.",
+          "cer_vs_normalized": 0.0,
+          "wer_vs_normalized": 0.0,
+          "normalized_reference": "메모리 감시를 확인합니다."
+        }
+      ],
+      "warnings": [],
+      "artifacts": [
+        {
+          "kind": "audio",
+          "path": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research_tts_70d0d830-fb91-43af-aa2d-1b770eb62e9f_cv7kp6o1/chunk-0000.wav",
+          "role": "audio_sample",
+          "bytes": 150260,
+          "category": "research_tts_sample",
+          "filename": "chunk-0000.wav",
+          "sample_rate": 44100,
+          "duration_seconds": 1.7031292517006802
+        },
+        {
+          "kind": "audio",
+          "path": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research_tts_70d0d830-fb91-43af-aa2d-1b770eb62e9f_cv7kp6o1/chunk-0001.wav",
+          "role": "audio_sample",
+          "bytes": 230618,
+          "category": "research_tts_sample",
+          "filename": "chunk-0001.wav",
+          "sample_rate": 44100,
+          "duration_seconds": 2.61421768707483
+        }
+      ],
+      "sentences": [
+        {
+          "index": 1,
+          "chunks": [
+            "안녕하세요.",
+            "메모리 감시를 확인합니다."
+          ],
+          "raw_text": "안녕하세요. 메모리 감시를 확인합니다.",
+          "char_delta": 0,
+          "chunk_count": 2,
+          "normalized_text": "안녕하세요. 메모리 감시를 확인합니다."
+        }
+      ],
+      "chunk_count": 2,
+      "audio_chunks": [
+        {
+          "path": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research_tts_70d0d830-fb91-43af-aa2d-1b770eb62e9f_cv7kp6o1/chunk-0000.wav",
+          "bytes": 150260,
+          "filename": "chunk-0000.wav",
+          "chunk_index": 0,
+          "sample_rate": 44100,
+          "duration_seconds": 1.7031292517006802
+        },
+        {
+          "path": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research_tts_70d0d830-fb91-43af-aa2d-1b770eb62e9f_cv7kp6o1/chunk-0001.wav",
+          "bytes": 230618,
+          "filename": "chunk-0001.wav",
+          "chunk_index": 1,
+          "sample_rate": 44100,
+          "duration_seconds": 2.61421768707483
+        }
+      ],
+      "dataset_name": "custom_texts",
+      "raw_char_count": 21,
+      "sentence_count": 1,
+      "char_delta_total": 0,
+      "engine_requested": "supertonic",
+      "normalized_char_count": 21
+    },
+    "error_code": null,
+    "error_message": null,
+    "started_at": "2026-10-26T11:29:45.024500+00:00",
+    "finished_at": "2026-10-26T11:30:12.400386+00:00",
+    "wall_seconds": 27.362,
+    "created_at": "2026-10-26T11:29:45.010480+00:00",
+    "measurements": [
+      {
+        "id": "1a73f58c-454f-40df-a0c6-bb261751fd35",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "chunk_count",
+        "metric_label": "분할된 총 청크 수",
+        "value": 2.0,
+        "unit": "count",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389125+00:00"
+      },
+      {
+        "id": "498e71a5-ac83-4262-a90f-50cffb447678",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "normalized_char_delta",
+        "metric_label": "정규화 후 글자 수 증감",
+        "value": 0.0,
+        "unit": "count",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389183+00:00"
+      },
+      {
+        "id": "a447fa31-dac1-40dd-9930-28c1c3bccc2d",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "rtf",
+        "metric_label": "실시간 계수 (RTF)",
+        "value": 0.2004,
+        "unit": "ratio",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389200+00:00"
+      },
+      {
+        "id": "396e130c-fd5e-470a-ab63-9c653168b951",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "synth_seconds",
+        "metric_label": "음성 합성 소요 시간",
+        "value": 0.865,
+        "unit": "s",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389214+00:00"
+      },
+      {
+        "id": "05068399-ee67-4796-9dbf-9b22fdfaa1ce",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "audio_seconds",
+        "metric_label": "생성된 오디오 총 길이",
+        "value": 4.317,
+        "unit": "s",
+        "direction": "higher_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389226+00:00"
+      },
+      {
+        "id": "59dc0182-0ec8-48b4-89b5-8c84be295fb8",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "load_seconds",
+        "metric_label": "모델 로드 시간",
+        "value": 0.398,
+        "unit": "s",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389236+00:00"
+      },
+      {
+        "id": "5e1cdaa7-d1c1-49e4-b544-1d827d6ba6f6",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "peak_rss_mb",
+        "metric_label": "최대 RSS 메모리",
+        "value": 509.69,
+        "unit": "MB",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389247+00:00"
+      },
+      {
+        "id": "26a3a5f5-72b1-40ee-b9ed-66017447d0ab",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "stt_cer_vs_normalized",
+        "metric_label": "STT 재인식 음절 오류율 (정규화문 대리 지표)",
+        "value": 0.0833,
+        "unit": "ratio",
+        "direction": "lower_is_better",
+        "is_proxy": true,
+        "aggregator": "mean",
+        "slice_key": "overall",
+        "meta": {
+          "explanation": "Whisper 재인식을 통한 발음 명료도 간접 대리 지표이며 사람 청취 품질(MOS)이 아님"
+        },
+        "created_at": "2026-10-26T11:30:12.389256+00:00"
+      },
+      {
+        "id": "4568d0b7-2060-40b8-adc1-f1185dd3e263",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "stt_cer_vs_raw",
+        "metric_label": "STT 재인식 음절 오류율 (원문 대리 지표)",
+        "value": 0.5278,
+        "unit": "ratio",
+        "direction": "lower_is_better",
+        "is_proxy": true,
+        "aggregator": "mean",
+        "slice_key": "overall",
+        "meta": {
+          "explanation": "원문 기준 Whisper 재인식 음절 오류율(CER) 대리 지표"
+        },
+        "created_at": "2026-10-26T11:30:12.389266+00:00"
+      },
+      {
+        "id": "92bd0407-0b03-4864-8cf6-218660da1203",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "stt_wer_vs_normalized",
+        "metric_label": "STT 재인식 어절 오류율 (정규화문 대리 지표)",
+        "value": 0.5,
+        "unit": "ratio",
+        "direction": "lower_is_better",
+        "is_proxy": true,
+        "aggregator": "mean",
+        "slice_key": "overall",
+        "meta": {
+          "explanation": "Whisper 재인식을 통한 발음 명료도 간접 대리 지표이며 사람 청취 품질(MOS)이 아님"
+        },
+        "created_at": "2026-10-26T11:30:12.389276+00:00"
+      },
+      {
+        "id": "018b603f-dcb6-466c-80ae-96fa08d3e73a",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "stt_wer_vs_raw",
+        "metric_label": "STT 재인식 어절 오류율 (원문 대리 지표)",
+        "value": 0.625,
+        "unit": "ratio",
+        "direction": "lower_is_better",
+        "is_proxy": true,
+        "aggregator": "mean",
+        "slice_key": "overall",
+        "meta": {
+          "explanation": "원문 기준 Whisper 재인식 어절 오류율(WER) 대리 지표"
+        },
+        "created_at": "2026-10-26T11:30:12.389286+00:00"
+      },
+      {
+        "id": "03be01c3-f254-40d5-9103-4b679e1ac520",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "configuration_id": "547a812f-8022-46e8-a687-423c829dfa7a",
+        "metric_key": "wall_seconds",
+        "metric_label": "전체 소요 시간",
+        "value": 27.362,
+        "unit": "s",
+        "direction": "lower_is_better",
+        "is_proxy": false,
+        "aggregator": "single",
+        "slice_key": "overall",
+        "meta": {},
+        "created_at": "2026-10-26T11:30:12.389296+00:00"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "6967b81b-43fb-4768-855f-0696cb97d878",
+        "study_id": "a3635a1d-0320-458a-acba-47ae53e91a8e",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "artifact_id": "a4ac2303-0c60-4935-96f2-2bd11ce6861b",
+        "role": "audio_sample",
+        "label": "chunk-0000.wav",
+        "promoted_to_library": false,
+        "created_at": "2026-10-26T11:30:12.396664+00:00"
+      },
+      {
+        "id": "0c082a15-6355-4434-8e4d-eb1ccdd48e2d",
+        "study_id": "a3635a1d-0320-458a-acba-47ae53e91a8e",
+        "experiment_id": "ba4b9a1d-1c92-42a0-9441-be0bcee80acd",
+        "run_id": "70d0d830-fb91-43af-aa2d-1b770eb62e9f",
+        "artifact_id": "7d78aac0-3700-4478-86e8-bde54d22a393",
+        "role": "audio_sample",
+        "label": "chunk-0001.wav",
+        "promoted_to_library": false,
+        "created_at": "2026-10-26T11:30:12.399458+00:00"
+      }
+    ]
+  },
+  "low_tts": {
+    "id": "826ed8fa-5d97-409b-b943-b4bb325965ee",
+    "experiment_id": "2ade7d88-f4b9-436f-83d9-321abbb9e761",
+    "configuration_id": "5723817d-5762-46fa-b0cc-142df1cd322f",
+    "study_id": "425bd844-7695-4661-bbd4-824a03afed13",
+    "adapter_id": "tts_synthesis",
+    "execution_origin": "local_measured",
+    "repeat_index": 1,
+    "seed": 42,
+    "status": "cancelled",
+    "progress": null,
+    "environment_snapshot": {
+      "scope": "personal",
+      "engine": "supertonic",
+      "research_memory_guard": {
+        "scope": "each_owned_model_child_rss",
+        "samples": 6,
+        "error_code": "memory_budget_exceeded",
+        "hard_limit": false,
+        "limit_bytes": 134217728,
+        "owner_token": "a53fff5c-4f46-4e7b-9397-50f6653f2e3f",
+        "poll_seconds": 0.05,
+        "sampled_peak_rss_bytes": 214892544
+      },
+      "research_model_workers": {
+        "state": "released",
+        "workers": {
+          "ae1a080f-ebfa-4eae-b003-4a4615360225": {
+            "pid": 88879,
+            "state": "exited",
+            "module": "ttakkari.tts.worker_supertonic",
+            "parent_pid": 88820,
+            "returncode": -9,
+            "started_at": 1793014253.721854
+          }
+        },
+        "contract": 1,
+        "owner_token": "a53fff5c-4f46-4e7b-9397-50f6653f2e3f",
+        "recorded_at": "2026-10-26T11:30:53.991972+00:00"
+      },
+      "research_execution_owner": {
+        "token": "a53fff5c-4f46-4e7b-9397-50f6653f2e3f",
+        "contract": 1,
+        "accepted_at": "2026-10-26T11:30:53.714014+00:00",
+        "generation_id": null
+      }
+    },
+    "raw_output": {
+      "mode": "synthesize_and_stt",
+      "error": "memory_budget_exceeded"
+    },
+    "error_code": "memory_budget_exceeded",
+    "error_message": "Model worker RSS guard stopped this run: memory_budget_exceeded",
+    "started_at": "2026-10-26T11:30:53.719828+00:00",
+    "finished_at": "2026-10-26T11:30:53.997023+00:00",
+    "wall_seconds": 0.275,
+    "created_at": "2026-10-26T11:30:53.706025+00:00",
+    "measurements": [],
+    "artifacts": []
+  },
+  "low_stt_direct": {
+    "guard": {
+      "scope": "each_owned_model_child_rss",
+      "limit_bytes": 536870912,
+      "sampled_peak_rss_bytes": 783843328,
+      "samples": 6,
+      "poll_seconds": 0.05,
+      "hard_limit": false,
+      "error_code": "memory_budget_exceeded"
+    },
+    "observations": [
+      {
+        "worker_id": "996e8386-675d-4a78-8710-0d7f8ee926fa",
+        "module": "ttakkari.meetings.local_stt.worker",
+        "parent_pid": 88820,
+        "pid": 88902,
+        "state": "running",
+        "returncode": null
+      },
+      {
+        "worker_id": "996e8386-675d-4a78-8710-0d7f8ee926fa",
+        "module": "ttakkari.meetings.local_stt.worker",
+        "parent_pid": 88820,
+        "pid": 88902,
+        "state": "exited",
+        "returncode": -9
+      }
+    ],
+    "persisted_run": false
+  },
+  "source_revision": "e1cfa8b492bc855ec90c04a5e44af54b59375ba8",
+  "normal_scope": "actual TTS and two STT children, both Run fresh HTTP and PG matched before export; first harness failed only its chunk-count=1 assumption",
+  "validation": {
+    "normal_initial": "1 failed in 28.17s at len(stt_eval)==1; actual output2chunks preserved",
+    "low_models": "1 passed, 1 deselected in1.32s; no normal model rerun",
+    "captured_receipt": "see execution log: normal receipt + negative controls; no model rerun"
+  },
+  "source_sha256": {
+    "src/ttakkari/model_process.py": "ad580183793c3430e3593afe0a32266a270a8b96c66fd604c43c2f1d8702c449",
+    "src/ttakkari/research/planner.py": "02790d361c30f7d48addce897d17d2c9fac1b02a347715198233275c16203e87",
+    "src/ttakkari/research/runner.py": "53803ef29c883315dc32a34797fd44d043cd9b5209a1d8ec1e16d52b3fa1a192",
+    "src/ttakkari/research/ownership.py": "e8e484a5f501e830ab282cbd086f7c3c0bc652b2cde838d27950922563513bb5",
+    "tests/test_research_memory_budget.py": "561fecd0d89fad7071aaa32fd91dbf3418643c19731bc2e10bc95b1760716e20",
+    "unit_tests/test_model_memory_budget.py": "3a3570889e0bb64e5926d199f046e23fdb41fccfa6d2056ce8570b84c8b2a48e",
+    "docs/research-lab/refactor-v2.md": "13e97247015fb509ee5da9ee9e229d2bea8b2ca3b1e5925dee834a0ed8a3ae14"
+  },
+  "runtime_metadata": {
+    "tts": {
+      "executable": "/Users/winterholic/development/projects/winterholic-ttakkari/back/.tts-runtime/supertonic/bin/python",
+      "python": "3.11.16 (main, Sep  1 2026, 14:08:22) [Clang 22.1.3 ]",
+      "packages": {
+        "numpy": "2.4.6",
+        "onnxruntime": "1.31.0"
+      }
+    },
+    "stt": {
+      "executable": "/Users/winterholic/development/projects/winterholic-ttakkari/back/.stt-runtime/venv/bin/python",
+      "python": "3.13.15 (main, Sep  1 2026, 14:05:45) [Clang 22.1.3 ]",
+      "packages": {
+        "faster-whisper": "1.2.1",
+        "ctranslate2": "4.8.3"
+      }
+    }
+  }
+}

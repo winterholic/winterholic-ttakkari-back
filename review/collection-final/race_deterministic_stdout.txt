@@ -1,0 +1,26 @@
+=== RACE TEST DETERMINISTIC EXECUTION EVIDENCE ===
+Execution Timestamp: 2026-10-25T16:28:44Z
+Host: winterholicui-MacStudio.local
+Git Branch: integ/collection-platform-20261025
+Git Commit HEAD: b813960b020a7c743c423d220c0040d4b9358a06
+Test File: tests/test_collection_missions.py
+Test File Clean against HEAD: true (clean, 0 diff)
+Test File SHA256: 313aaf1e15638a9fe27d7d2bcd7d3a9f99834fdec0bcfc351774a39d241d85f2
+Command: uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions -v
+--- PYTEST STDOUT START ---
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0 -- /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration
+configfile: pyproject.toml
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 42 items / 40 deselected / 2 selected
+
+tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race PASSED [ 50%]
+tests/test_collection_missions.py::test_concurrent_two_db_sessions_precise_first_then_unhold_race PASSED [100%]
+
+db reset: 2 selective (avg 12.0/111 tables), 0 forced full, 0 fell back to full
+======================= 2 passed, 40 deselected in 1.16s =======================
+--- PYTEST STDOUT END ---
+Pytest Exit Code: 0

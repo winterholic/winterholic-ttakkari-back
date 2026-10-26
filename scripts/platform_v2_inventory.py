@@ -1748,7 +1748,7 @@ def classify_table(name: str) -> str:
         return "domain.memory_ontology"
     if n.startswith(("knowledge_", "kb_")):
         return "domain.knowledge_rag"
-    if n.startswith("collector_"):
+    if n.startswith(("collector_", "collection_")):
         return "domain.collector"
     if n in ("artcraft_tasks",):
         return "domain.creative_studio"
@@ -1787,7 +1787,12 @@ def classify_table(name: str) -> str:
 def classify_migration(stem: str) -> str:
     s = stem.lower()
     # Core & Control
-    if s == "0071_library_platform_v2_merge":
+    if s in (
+        "0071_library_platform_v2_merge",
+        "0074_kb_v3_research_merge",
+        "0075_collection_research_merge",
+        "0076_kb_v3_collection_merge",
+    ):
         # A no-op merge joins the library and execution branches; deployment
         # owns convergence, while each parent retains its domain's DDL.
         return "core.generation_deploy"
@@ -1850,13 +1855,13 @@ def classify_migration(stem: str) -> str:
         x in s for x in ("knowledge", "kb_", "clovanote_vectors", "retire_clovanote")
     ):
         return "domain.knowledge_rag"
-    if "collector" in s:
+    if any(x in s for x in ("collector", "collection")):
         return "domain.collector"
     if "artcraft" in s:
         return "domain.creative_studio"
     if "notebooklm" in s:
         return "domain.notebooklm"
-    if "research_lab" in s:
+    if "research_lab" in s or s == "0073_research_reuse_source":
         return "domain.research_lab"
     if "reverse" in s:
         return "domain.reverse_eng"
@@ -2067,7 +2072,7 @@ def classify_source_file(rel_path: str) -> str:
         "/api/accounts" in p
         or "antigravity_accounts" in p
         or "account_usage" in p
-        or p.endswith(("/copilot_accounts.py", "/opencode_accounts.py"))
+        or p.endswith(("/runs/copilot_usage.py", "/copilot_accounts.py", "/opencode_accounts.py"))
     ):
         return "core.accounts_quota"
     if (
@@ -2149,9 +2154,15 @@ def classify_source_file(rel_path: str) -> str:
         or "kb_embedding" in p
         or "kb_retrieval" in p
         or "/api/kb_" in p
+        or "kb_" in p
+        or "/kb_pipeline" in p
+        or "/kb_parsers" in p
+        or "/kb_ontology" in p
+        or "/common/" in p
+        or "kb_visibility" in p
     ):
         return "domain.knowledge_rag"
-    if "/collector/" in p or "collector_models" in p or "/api/collect" in p:
+    if "/collector/" in p or "collector" in p or "/api/collect" in p:
         return "domain.collector"
     if (
         "/creative/" in p

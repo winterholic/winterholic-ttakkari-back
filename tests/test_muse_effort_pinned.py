@@ -47,7 +47,7 @@ def test_worker_launch_ignores_the_stored_effort():
     assert _launch_model(orch, Run(prompt="x", effort="low"), prof(), prof()) == (MUSE, "max")
 
 
-def test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise(tmp_path):
+def test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise(tmp_path, fake_muse_runtime):
     adapter = MuseAdapter()
     for effort in (None, "low", "high"):
         spec = LaunchSpec(cwd=tmp_path, prompt="x", engine_session_id=None, model=MUSE, effort=effort, outbox=tmp_path,

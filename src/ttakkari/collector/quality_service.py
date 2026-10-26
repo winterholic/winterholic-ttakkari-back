@@ -1,4 +1,8 @@
-"""Scope-local, permission-bound learning. Models are shadow candidates, never automatic gates."""
+"""Library-wide, permission-bound learning. Models are shadow candidates, never automatic gates.
+
+C2: 모델은 도서관 하나에 하나씩 학습한다. 옛 scope 별 모델 행은 불변 증거라 지우지 않고, 가장 늦게 학습한 모델을
+현재 모델로 고른다. 옛 이름(utility:tenant:work:digest)으로 요청한 job 도 같은 digest 의 모델로 해석한다.
+"""
 import asyncio
 import hashlib
 import json
@@ -8,23 +12,28 @@ from sqlalchemy import select
 
 from ttakkari.collector import learning, store
 from ttakkari.collector.control_models import CollectorQualityModel, CollectorReview
+from ttakkari.collector.library import LEGACY_SCOPES, LIBRARY_SCOPE, in_library
 from ttakkari.collector.quality import AxisScore, ScorerInfo, register_scorer
 from ttakkari.collector_models import CollectorItem
 
 
 async def latest_model(db, tenant, scope):
     return await db.scalar(select(CollectorQualityModel).where(
-        CollectorQualityModel.tenant_id == tenant, CollectorQualityModel.scope == scope,
+        CollectorQualityModel.tenant_id == tenant, in_library(CollectorQualityModel.scope),
     ).order_by(CollectorQualityModel.created_at.desc(), CollectorQualityModel.id.desc()).limit(1))
 
 
 async def load_requested(db, tenant, scope, name):
-    prefix = f"utility:{tenant}:{scope}:"
-    if not name.startswith(prefix):
+    digest = None
+    for legacy in LEGACY_SCOPES:
+        prefix = f"utility:{tenant}:{legacy}:"
+        if name.startswith(prefix):
+            digest = name[len(prefix):]
+            break
+    if digest is None:
         raise ValueError("quality_model_scope_mismatch")
-    digest = name[len(prefix):]
     model = await db.scalar(select(CollectorQualityModel).where(
-        CollectorQualityModel.tenant_id == tenant, CollectorQualityModel.scope == scope,
+        CollectorQualityModel.tenant_id == tenant, in_library(CollectorQualityModel.scope),
         CollectorQualityModel.digest == digest,
     ).order_by(CollectorQualityModel.created_at.desc()).limit(1))
     if model is not None:
@@ -65,7 +74,7 @@ def install(model):
 
 async def reviewed_items(db, tenant, scope):
     rows = (await db.execute(select(CollectorReview, CollectorItem).join(CollectorItem).where(
-        CollectorItem.tenant_id == tenant, CollectorItem.scope == scope,
+        CollectorItem.tenant_id == tenant, in_library(CollectorItem.scope),
     ).order_by(CollectorReview.created_at.desc(), CollectorReview.id.desc()).limit(10000))).all()
     latest = {}
     for review, item in rows:
@@ -92,7 +101,7 @@ async def train(db, tenant, scope):
                         "license_id": rights.get("license_id"), "policy_url": active[0].policy_url,
                         "train_permission": True})
     artifact = await asyncio.to_thread(learning.fit, samples)
-    model = CollectorQualityModel(tenant_id=tenant, scope=scope, digest=artifact["digest"], artifact=artifact)
+    model = CollectorQualityModel(tenant_id=tenant, scope=LIBRARY_SCOPE, digest=artifact["digest"], artifact=artifact)
     db.add(model)
     await db.flush()
     return model

@@ -300,8 +300,12 @@ async def status(
     db: AsyncSession,
     scope: str = "personal",
     access_context: KbAccessContext | None = None,
+    pool: str | None = None,
 ) -> dict[str, Any]:
-    ctx = access_context or from_legacy_scope(scope)
+    if pool is not None and access_context is None:
+        ctx = from_legacy_scope("work" if pool == "work" else "personal")
+    else:
+        ctx = access_context or from_legacy_scope(scope)
     total = (
         await db.scalar(
             select(func.count())
@@ -518,6 +522,7 @@ async def search(
     mode: str = "hybrid",
     include_candidates: bool = False,
     include_uncanonical_entities: bool = False,
+    pool: str | None = None,
 ) -> dict[str, Any]:
     """KB v3 5경로 그래프 통합 하이브리드 검색.
 
@@ -531,7 +536,10 @@ async def search(
     if offset > 200:
         raise ValueError("kb_hybrid_offset_limit")
 
-    ctx = access_context or from_legacy_scope(scope)
+    if pool is not None and access_context is None:
+        ctx = from_legacy_scope("work" if pool == "work" else "personal")
+    else:
+        ctx = access_context or from_legacy_scope(scope)
     words = terms(query)
     filter_dict = filters or {}
     metadata_predicates = _metadata_filter_predicates(filter_dict, ctx)
@@ -917,5 +925,5 @@ async def search(
         "offset": offset,
         "has_more": has_more,
         "include_candidates": include_candidates,
-        "retrieval": await status(db, scope=scope, access_context=ctx),
+        "retrieval": await status(db, scope=scope, access_context=ctx, pool=pool),
     }

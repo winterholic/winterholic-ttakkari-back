@@ -1,7 +1,9 @@
 """Unit tests for OpencodeAdapter JSON stream event normalization."""
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from ttakkari.agents.base import LaunchSpec, ParseState
 from ttakkari.agents.opencode import OpencodeAdapter
@@ -158,19 +160,26 @@ class OpencodeAdapterTests(unittest.TestCase):
         self.assertEqual(self.state.cost_usd, 0.005)
 
     def test_error_event_and_usage_limit_detection(self):
-        evs = self.adapter.parse_line(
-            {
-                "type": "error",
-                "sessionID": "ses_1",
-                "error": {"message": "You've hit your usage limit. Try again at Oct 26th, 2026 3:00 PM."},
-            },
-            self.state,
-            self.cwd,
-        )
-        self.assertEqual(evs[0].type, "error")
-        self.assertTrue(self.state.is_error)
-        self.assertTrue(self.state.limit_hit)
-        self.assertIsNotNone(self.state.limit_resets_at)
+        # The provider message uses local time. Its fixed date must not expire
+        # with the wall clock; verify both a future reset and an elapsed reset.
+        for hour, expected in ((14, datetime(2026, 10, 26, 15).astimezone().timestamp()), (16, None)):
+            with self.subTest(local_hour=hour):
+                state = ParseState()
+                now = datetime(2026, 10, 26, hour).astimezone().timestamp()
+                with patch("ttakkari.runs.profiles.time.time", return_value=now):
+                    evs = self.adapter.parse_line(
+                        {
+                            "type": "error",
+                            "sessionID": "ses_1",
+                            "error": {"message": "You've hit your usage limit. Try again at Oct 26th, 2026 3:00 PM."},
+                        },
+                        state,
+                        self.cwd,
+                    )
+                self.assertEqual(evs[0].type, "error")
+                self.assertTrue(state.is_error)
+                self.assertTrue(state.limit_hit)
+                self.assertEqual(state.limit_resets_at, expected)
 
     def test_finalize_process_failure_handling(self):
         # Non-zero exit code

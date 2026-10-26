@@ -1,0 +1,236 @@
+COMMAND: ../back/.venv/bin/python -m pytest -q unit_tests/test_collection_research_migration_merge.py unit_tests/test_schema_head_admission.py
+FFF.......F..F..                                                         [100%]
+=================================== FAILURES ===================================
+_________ test_single_head_preserves_both_published_branch_identities __________
+
+    def test_single_head_preserves_both_published_branch_identities():
+        graph = scripts()
+>       assert graph.get_heads() == [MERGE]
+E       AssertionError: assert ['0073_resear...ngle_library'] == ['0075_collec...search_merge']
+E         
+E         At index 0 diff: '0073_research_reuse_source' != '0075_collection_research_merge'
+E         Left contains one more item: '0074_collection_single_library'
+E         Use -v to get more diff
+
+unit_tests/test_collection_research_migration_merge.py:25: AssertionError
+_ test_upgrade_from_each_branch_only_plans_missing_branch[existing0-missing0] __
+
+existing = ('0072_collection_missions', '0073_collection_mission_runs', '0074_collection_single_library')
+missing = ('0072_research_lab_v2', '0073_research_reuse_source')
+
+    @pytest.mark.parametrize(("existing", "missing"), [
+        (COLLECTION, RESEARCH), (RESEARCH, COLLECTION),
+    ])
+    def test_upgrade_from_each_branch_only_plans_missing_branch(existing, missing):
+>       planned = {revision.revision for revision in scripts().iterate_revisions(MERGE, existing[-1])}
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_collection_research_migration_merge.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:807: in iterate_revisions
+    revisions, heads = fn(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:1440: in _collect_upgrade_revisions
+    for rev in self._parse_upgrade_target(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:1227: in _parse_upgrade_target
+    return self.get_revisions(target)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:558: in get_revisions
+    return tuple(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:559: in <genexpr>
+    self._revision_for_ident(rev_id, branch_label)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <alembic.script.revision.RevisionMap object at 0x109d9a0d0>
+resolved_id = '0075_collection_research_merge', check_branch = None
+
+    def _revision_for_ident(
+        self,
+        resolved_id: str | tuple[()] | None,
+        check_branch: str | None = None,
+    ) -> Revision | None:
+        branch_rev: Revision | None
+        if check_branch:
+            branch_rev = self._resolve_branch(check_branch)
+        else:
+            branch_rev = None
+    
+        revision: Revision | None | Literal[False]
+        try:
+            revision = self._revision_map[resolved_id]
+        except KeyError:
+            # break out to avoid misleading py3k stack traces
+            revision = False
+        revs: Sequence[str]
+        if revision is False:
+            assert resolved_id
+            # do a partial lookup
+            revs = [
+                x
+                for x in self._revision_map
+                if x and len(x) > 3 and x.startswith(resolved_id)
+            ]
+    
+            if branch_rev:
+                revs = self.filter_for_lineage(revs, check_branch)
+            if not revs:
+>               raise ResolutionError(
+                    "No such revision or branch '%s'%s"
+                    % (
+                        resolved_id,
+                        (
+                            "; please ensure at least four characters are "
+                            "present for partial revision identifier matches"
+                            if len(resolved_id) < 4
+                            else ""
+                        ),
+                    ),
+                    resolved_id,
+E                   alembic.script.revision.ResolutionError: No such revision or branch '0075_collection_research_merge'
+
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:630: ResolutionError
+_ test_upgrade_from_each_branch_only_plans_missing_branch[existing1-missing1] __
+
+existing = ('0072_research_lab_v2', '0073_research_reuse_source')
+missing = ('0072_collection_missions', '0073_collection_mission_runs', '0074_collection_single_library')
+
+    @pytest.mark.parametrize(("existing", "missing"), [
+        (COLLECTION, RESEARCH), (RESEARCH, COLLECTION),
+    ])
+    def test_upgrade_from_each_branch_only_plans_missing_branch(existing, missing):
+>       planned = {revision.revision for revision in scripts().iterate_revisions(MERGE, existing[-1])}
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_collection_research_migration_merge.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:807: in iterate_revisions
+    revisions, heads = fn(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:1440: in _collect_upgrade_revisions
+    for rev in self._parse_upgrade_target(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:1227: in _parse_upgrade_target
+    return self.get_revisions(target)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:558: in get_revisions
+    return tuple(
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:559: in <genexpr>
+    self._revision_for_ident(rev_id, branch_label)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <alembic.script.revision.RevisionMap object at 0x109d9b4d0>
+resolved_id = '0075_collection_research_merge', check_branch = None
+
+    def _revision_for_ident(
+        self,
+        resolved_id: str | tuple[()] | None,
+        check_branch: str | None = None,
+    ) -> Revision | None:
+        branch_rev: Revision | None
+        if check_branch:
+            branch_rev = self._resolve_branch(check_branch)
+        else:
+            branch_rev = None
+    
+        revision: Revision | None | Literal[False]
+        try:
+            revision = self._revision_map[resolved_id]
+        except KeyError:
+            # break out to avoid misleading py3k stack traces
+            revision = False
+        revs: Sequence[str]
+        if revision is False:
+            assert resolved_id
+            # do a partial lookup
+            revs = [
+                x
+                for x in self._revision_map
+                if x and len(x) > 3 and x.startswith(resolved_id)
+            ]
+    
+            if branch_rev:
+                revs = self.filter_for_lineage(revs, check_branch)
+            if not revs:
+>               raise ResolutionError(
+                    "No such revision or branch '%s'%s"
+                    % (
+                        resolved_id,
+                        (
+                            "; please ensure at least four characters are "
+                            "present for partial revision identifier matches"
+                            if len(resolved_id) < 4
+                            else ""
+                        ),
+                    ),
+                    resolved_id,
+E                   alembic.script.revision.ResolutionError: No such revision or branch '0075_collection_research_merge'
+
+../back/.venv/lib/python3.13/site-packages/alembic/script/revision.py:630: ResolutionError
+_ test_single_or_missing_database_head_keeps_existing_policy[heads4-expected4] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5414/test_single_or_missing_databas4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1074c2620>
+heads = ['0074_collection_single_library']
+expected = ('online', '0074_collection_single_library')
+
+    @pytest.mark.parametrize(("heads", "expected"), [
+        (["0068_library_intent"], ("online", "0068_library_intent")),
+        (["0071_library_platform_v2_merge"], ("online", "0071_library_platform_v2_merge")),
+        (["0072_collection_missions"], ("online", "0072_collection_missions")),
+        (["0073_collection_mission_runs"], ("online", "0073_collection_mission_runs")),
+        (["0074_collection_single_library"], ("online", "0074_collection_single_library")),
+        (["0072_research_lab_v2"], ("online", "0072_research_lab_v2")),
+        (["0073_research_reuse_source"], ("online", "0073_research_reuse_source")),
+        (["0075_collection_research_merge"], ("current", "0075_collection_research_merge")),
+        (["unknown_branch"], ("idle", "unknown_branch")),
+        ([], ("idle", None)),
+    ])
+    async def test_single_or_missing_database_head_keeps_existing_policy(tmp_path, monkeypatch, heads, expected):
+        Database = database_with_heads(heads)
+        monkeypatch.setattr(deployment, "sessionmaker", lambda: Database)
+        controller = deployment.GenerationController(JobStore(tmp_path))
+        contract = deployment.Releases.contract(Path(__file__).resolve().parents[1])
+>       assert await controller.schema_plan(contract) == expected
+E       AssertionError: assert ('current', '...ngle_library') == ('online', '0...ngle_library')
+E         
+E         At index 0 diff: 'current' != 'online'
+E         Use -v to get more diff
+
+unit_tests/test_schema_head_admission.py:66: AssertionError
+_ test_single_or_missing_database_head_keeps_existing_policy[heads7-expected7] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5414/test_single_or_missing_databas7')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109fd5950>
+heads = ['0075_collection_research_merge']
+expected = ('current', '0075_collection_research_merge')
+
+    @pytest.mark.parametrize(("heads", "expected"), [
+        (["0068_library_intent"], ("online", "0068_library_intent")),
+        (["0071_library_platform_v2_merge"], ("online", "0071_library_platform_v2_merge")),
+        (["0072_collection_missions"], ("online", "0072_collection_missions")),
+        (["0073_collection_mission_runs"], ("online", "0073_collection_mission_runs")),
+        (["0074_collection_single_library"], ("online", "0074_collection_single_library")),
+        (["0072_research_lab_v2"], ("online", "0072_research_lab_v2")),
+        (["0073_research_reuse_source"], ("online", "0073_research_reuse_source")),
+        (["0075_collection_research_merge"], ("current", "0075_collection_research_merge")),
+        (["unknown_branch"], ("idle", "unknown_branch")),
+        ([], ("idle", None)),
+    ])
+    async def test_single_or_missing_database_head_keeps_existing_policy(tmp_path, monkeypatch, heads, expected):
+        Database = database_with_heads(heads)
+        monkeypatch.setattr(deployment, "sessionmaker", lambda: Database)
+        controller = deployment.GenerationController(JobStore(tmp_path))
+        contract = deployment.Releases.contract(Path(__file__).resolve().parents[1])
+>       assert await controller.schema_plan(contract) == expected
+E       AssertionError: assert ('idle', '007...search_merge') == ('current', '...search_merge')
+E         
+E         At index 0 diff: 'idle' != 'current'
+E         Use -v to get more diff
+
+unit_tests/test_schema_head_admission.py:66: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_collection_research_migration_merge.py::test_single_head_preserves_both_published_branch_identities
+FAILED unit_tests/test_collection_research_migration_merge.py::test_upgrade_from_each_branch_only_plans_missing_branch[existing0-missing0]
+FAILED unit_tests/test_collection_research_migration_merge.py::test_upgrade_from_each_branch_only_plans_missing_branch[existing1-missing1]
+FAILED unit_tests/test_schema_head_admission.py::test_single_or_missing_database_head_keeps_existing_policy[heads4-expected4]
+FAILED unit_tests/test_schema_head_admission.py::test_single_or_missing_database_head_keeps_existing_policy[heads7-expected7]
+5 failed, 11 passed in 0.72s
+
+EXIT_CODE=1

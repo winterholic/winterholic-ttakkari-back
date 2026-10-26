@@ -1,0 +1,225 @@
+{
+ "heads": {
+  "label_source": "FineWeb-C kor_Hang community human annotators (1 annotator/doc), ODC-By 1.0",
+  "n_total": 639,
+  "n_train": 448,
+  "n_test": 191,
+  "label_counts": {
+   "None": 254,
+   "Minimal": 216,
+   "Basic": 83,
+   "Good": 20,
+   "Excellent": 5,
+   "❗ Problematic Content ❗": 61
+  },
+  "split": "seeded stratified 70/30 (seed 20261025); test never used for lambda/threshold/fit",
+  "models": {
+   "e5-large": {
+    "edu": {
+     "n_test": 173,
+     "n_pos": 32,
+     "lambda": 10000,
+     "auc": 0.7774822695035462,
+     "auc_ci95": [
+      0.6937548522535428,
+      0.8509328058110233
+     ],
+     "spearman": 0.505982014413007,
+     "threshold_train_p25": 0.959637200744216,
+     "at_threshold": {
+      "tp": 16,
+      "fp": 22,
+      "fn": 16,
+      "precision": 0.42105263157894735,
+      "recall": 0.5
+     }
+    },
+    "problematic": {
+     "n_test": 191,
+     "n_pos": 18,
+     "lambda": 1000,
+     "auc": 0.8484264611432242,
+     "auc_ci95": [
+      0.7314153385492128,
+      0.9453785173160172
+     ],
+     "threshold_train_p25": -1.4974509737895199,
+     "at_threshold": {
+      "tp": 8,
+      "fp": 5,
+      "fn": 10,
+      "precision": 0.6153846153846154,
+      "recall": 0.4444444444444444
+     }
+    }
+   },
+   "minilm-l12": {
+    "edu": {
+     "n_test": 173,
+     "n_pos": 32,
+     "lambda": 10000,
+     "auc": 0.6702127659574468,
+     "auc_ci95": [
+      0.5645157799190058,
+      0.7691575200657987
+     ],
+     "spearman": 0.3708354228739098,
+     "threshold_train_p25": 0.8340890070912592,
+     "at_threshold": {
+      "tp": 20,
+      "fp": 58,
+      "fn": 12,
+      "precision": 0.2564102564102564,
+      "recall": 0.625
+     }
+    },
+    "problematic": {
+     "n_test": 191,
+     "n_pos": 18,
+     "lambda": 1,
+     "auc": 0.7132305716120745,
+     "auc_ci95": [
+      0.5847199216743708,
+      0.8307070111719977
+     ],
+     "threshold_train_p25": 1.598204177040587,
+     "at_threshold": {
+      "tp": 2,
+      "fp": 5,
+      "fn": 16,
+      "precision": 0.2857142857142857,
+      "recall": 0.1111111111111111
+     }
+    }
+   }
+  },
+  "baselines": {
+   "char_tfidf_logistic": {
+    "edu_auc": 0.7477836879432624,
+    "edu_auc_ci95": [
+     0.6634120745434614,
+     0.8342281086607651
+    ],
+    "problematic_auc": 0.7241490044958253,
+    "problematic_auc_ci95": [
+     0.5674157303370787,
+     0.8574006050129646
+    ]
+   },
+   "rule_quality_axis": {
+    "edu_auc": 0.5806737588652482,
+    "problematic_auc_inverse_quality": 0.5242453436095055,
+    "note": "rule axis is a length/structure heuristic, not an educational-value model"
+   },
+   "length_only": {
+    "edu_auc": 0.704011524822695,
+    "problematic_auc": 0.352922286448298
+   }
+  },
+  "manifest_sha256": "992e0f1048adb349a3381eab28f293f869272472cd321ccb0c4430d84c0e6d16"
+ },
+ "relevance": {
+  "label_source": "Mr. TyDi ko train: TyDi QA human answer judgements; negatives = BM25 hard negatives",
+  "caveat": "queries are questions and passages are short Wikipedia paragraphs, not mission goals vs web pages",
+  "n_queries_total": 150,
+  "n_calibration_queries": 50,
+  "n_test_queries": 100,
+  "n_test_pairs": 300,
+  "scores": {
+   "lexical_current": {
+    "auc": 0.74255,
+    "auc_ci95": [
+     0.6806340283941926,
+     0.8024477001039501
+    ],
+    "positive_beats_all_negatives": 0.65,
+    "zero_overlap_share_of_positives": 0.07333333333333333
+   },
+   "e5-large": {
+    "auc": 0.94855,
+    "auc_ci95": [
+     0.9223833871239531,
+     0.9702826530534693
+    ],
+    "positive_beats_all_negatives": 0.96,
+    "bands_on_test": {
+     "positives_below_low": 0.05,
+     "negatives_below_low": 0.77,
+     "positives_above_high": 0.75,
+     "negatives_above_high": 0.065
+    }
+   },
+   "minilm-l12": {
+    "auc": 0.78775,
+    "auc_ci95": [
+     0.7282125574009498,
+     0.8404289709719466
+    ],
+    "positive_beats_all_negatives": 0.79,
+    "bands_on_test": {
+     "positives_below_low": 0.01,
+     "negatives_below_low": 0.16,
+     "positives_above_high": 0.35,
+     "negatives_above_high": 0.06
+    }
+   }
+  },
+  "thresholds_from_calibration_queries": {
+   "e5-large": {
+    "low": 0.8201319371960505,
+    "high": 0.8566813346604965
+   },
+   "minilm-l12": {
+    "low": 0.25183931438163387,
+    "high": 0.7157107816181416
+   }
+  }
+ },
+ "cost": {
+  "cold_child_runs": [
+   {
+    "docs": 1,
+    "load_seconds": 0.6352237081155181,
+    "inference_seconds": 0.6731441249139607,
+    "peak_rss_bytes": 1842774016,
+    "process_exited": true,
+    "worker_pid": 33978,
+    "wall_seconds": 1.6549740419723094,
+    "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
+   },
+   {
+    "docs": 1,
+    "load_seconds": 0.6164965420030057,
+    "inference_seconds": 0.6684338748455048,
+    "peak_rss_bytes": 1842315264,
+    "process_exited": true,
+    "worker_pid": 34062,
+    "wall_seconds": 1.624340500216931,
+    "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
+   },
+   {
+    "docs": 5,
+    "load_seconds": 0.6431352910585701,
+    "inference_seconds": 2.0105514591559768,
+    "peak_rss_bytes": 2103312384,
+    "process_exited": true,
+    "worker_pid": 34098,
+    "wall_seconds": 3.0906907091848552,
+    "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
+   },
+   {
+    "docs": 5,
+    "load_seconds": 0.5926786670461297,
+    "inference_seconds": 1.9820646671578288,
+    "peak_rss_bytes": 2102771712,
+    "process_exited": true,
+    "worker_pid": 34201,
+    "wall_seconds": 2.9146897504106164,
+    "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
+   }
+  ],
+  "warm_seconds_per_doc_threads2": 0.3375747344107367,
+  "doc_chars": 1500,
+  "machine": "Mac Studio (local CPU, 2 ONNX threads)"
+ }
+}

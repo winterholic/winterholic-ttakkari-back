@@ -19,13 +19,12 @@ import os
 import re
 import resource
 import sys
-import threading
 import time
 import unicodedata
 import wave
 from pathlib import Path
 
-from ttakkari.model_process import watch_parent
+from ttakkari.model_process import start_parent_guard
 
 TAIL_SILENCE_SECONDS = 0.2
 _SPECIALS = {
@@ -186,9 +185,7 @@ def synthesize(request: dict) -> dict:
 
 
 def main() -> int:
-    stop = threading.Event()
-    guard = threading.Thread(target=watch_parent, args=(os.getppid(), stop), daemon=True)
-    guard.start()
+    stop = start_parent_guard()
     try:
         request = json.load(sys.stdin)
         result = synthesize(request)

@@ -31,8 +31,9 @@ async def test_collection_reaches_search_with_original_bytes(client, auth, env, 
     ev = (await client.get("/api/assistant/kb/passages/" + hit["passage_id"] + "/evidence", headers=auth)).json()
     assert ev["span"]["hash_verified"]
     assert "직렬화 트랜잭션" in ev["quote"]
-    hidden = (await client.get("/api/assistant/kb/search?q=직렬화&scope=work", headers=auth)).json()
-    assert hidden["items"] == []
+    # C2: 소유자 검색은 scope=work 파라미터를 받아도 무시하고 단일 도서관 결과를 반환한다.
+    unified = (await client.get("/api/assistant/kb/search?q=직렬화&scope=work", headers=auth)).json()
+    assert len(unified["items"]) == 1
     items = (await client.get(BASE + f"/jobs/{job.json()['job_id']}/items", headers=auth)).json()
     item = items["items"][0]
     assert item["delivery"]["outcome"] == "imported"

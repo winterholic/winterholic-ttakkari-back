@@ -1,0 +1,5 @@
+COMMAND: .venv/bin/python -m pytest -q --noconftest unit_tests/test_backup_restore.py unit_tests/test_backup_ops_remaining.py unit_tests/test_backup_status_allowlist.py
+.........s...................                                            [100%]
+28 passed, 1 skipped in 5.92s
+
+EXIT_CODE=0

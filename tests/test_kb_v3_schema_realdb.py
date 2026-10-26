@@ -37,7 +37,7 @@ pytestmark = pytest.mark.pg
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "tests" / "fixtures" / "kb_v3_seed_0071.sql"
 IMAGE = "pgvector/pgvector:pg17"
-HEAD = "0074_kb_v3_research_merge"
+HEAD = "0076_kb_v3_collection_merge"
 V3_TABLES = (
     "kb_pipeline_jobs",
     "kb_pipeline_stages",

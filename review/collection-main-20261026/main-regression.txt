@@ -1,0 +1,452 @@
+COMMAND: ../back/.venv/bin/python -m pytest -q --noconftest unit_tests/test_platform_v2_inventory.py unit_tests/test_platform_v2_corrections.py unit_tests/test_platform_v2_api_audit.py unit_tests/test_platform_v2_route_audit.py unit_tests/test_platform_v2_test_classification.py unit_tests/test_backup_restore.py unit_tests/test_backup_ops_remaining.py unit_tests/test_backup_status_allowlist.py
+....................................F................................... [ 64%]
+...........FFFFF.FFFsFFFFFFFFF.FF.......                                 [100%]
+=================================== FAILURES ===================================
+____ test_report_schema_separates_extraction_classification_scope_coverage _____
+
+    def test_report_schema_separates_extraction_classification_scope_coverage():
+        data = run_audit()
+        report = data["scan_report"]
+        for key in (
+            "extraction",
+            "classification",
+            "collection_scope",
+            "coverage",
+            "sanity_heuristics",
+            "unresolved_ledger",
+            "target",
+            "verdict",
+            "scope_note",
+        ):
+            assert key in report, key
+        assert set(report["extraction"]["by_category"]) == set(CATEGORIES)
+        assert set(report["classification"]["by_category"]) == set(CATEGORIES)
+        assert set(report["collection_scope"]["by_category"]) == set(CATEGORIES)
+        assert set(report["coverage"]["by_category"]) == set(CATEGORIES)
+        for cat in CATEGORIES:
+            scope = report["collection_scope"]["by_category"][cat]
+            assert scope["collected_count"] == data["collected_counts"][cat]
+            assert len(scope["collected_ids_sha256"]) == 64
+            cls = report["classification"]["by_category"][cat]
+            assert cls["classified"] + cls["unmatched"] == cls["collected"]
+        # 분류 완료(unmatched=0)는 coverage 증명과 별개다.
+>       assert report["classification"]["all_collected_classified"] is True
+E       assert False is True
+
+unit_tests/test_platform_v2_inventory.py:682: AssertionError
+_________________ test_rehearsal_fails_without_backup_artifact _________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_fails_without_b0')
+
+    def test_rehearsal_fails_without_backup_artifact(tmp_path: Path) -> None:
+        """백업 산출물 없이 복원 리허설을 돌리면 DB에 손대기 전에 실패한다(RED)."""
+        r = run([str(REHEARSE_SH), "--manifest", str(tmp_path / "없음.manifest.json")])
+        assert r.returncode != 0
+>       assert "백업 산출물 없음" in r.stderr
+E       AssertionError: assert '백업 산출물 없음' in '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n'
+E        +  where '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stderr
+
+unit_tests/test_backup_restore.py:93: AssertionError
+__________________ test_rehearsal_refuses_non_isolated_target __________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_refuses_non_iso0')
+
+    def test_rehearsal_refuses_non_isolated_target(tmp_path: Path) -> None:
+        """운영 DB명으로 보이는 대상에는 복원을 거부한다."""
+        manifest = tmp_path / "m.manifest.json"
+        manifest.write_text(json.dumps(
+            {"created_at": "x", "db": "u", "dump_file": str(tmp_path / "d.dump"),
+             "sha256": "0" * 64, "tables": {}}))
+        r = run([str(REHEARSE_SH), "--manifest", str(manifest),
+                 "--target-db", "ttakkari"])
+        assert r.returncode != 0
+>       assert "격리 대상 아님" in r.stderr
+E       AssertionError: assert '격리 대상 아님' in '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n'
+E        +  where '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stderr
+
+unit_tests/test_backup_restore.py:105: AssertionError
+_________________ test_backup_then_rehearsal_row_counts_match __________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_then_rehearsal_row0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_then...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_then_rehearsal_row0/stub.log'))
+
+    def test_backup_then_rehearsal_row_counts_match(tmp_path: Path, stubs) -> None:
+        """백업→복원 배관이 manifest 행 수 일치를 보고한다(GREEN)."""
+        env, log = stubs
+        out = tmp_path / "bk"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql+asyncpg://localhost/ttakkari"], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_restore.py:114: AssertionError
+______ test_backup_artifacts_are_private_and_manifest_has_no_credentials _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_artifacts_are_priv0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_arti...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_artifacts_are_priv0/stub.log'))
+
+    def test_backup_artifacts_are_private_and_manifest_has_no_credentials(tmp_path: Path, stubs) -> None:
+        env, _ = stubs
+        out = tmp_path / "private-backups"
+        url = "postgresql://backup-user:secret-value@localhost/ttakkari"
+        r = run([str(BACKUP_SH), "--dir", str(out), "--db-url", url], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_restore.py:140: AssertionError
+_______________ test_backup_failure_leaves_no_success_artifacts ________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_failure_leaves_no_0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_fail...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_failure_leaves_no_0/stub.log'))
+
+    def test_backup_failure_leaves_no_success_artifacts(tmp_path: Path, stubs) -> None:
+        env, _ = stubs
+        env["STUB_DUMP_FAIL"] = "1"
+        out = tmp_path / "failed-backup"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql://localhost/ttakkari"], env)
+        assert r.returncode != 0
+>       assert list(out.iterdir()) == []
+                    ^^^^^^^^^^^^^
+
+unit_tests/test_backup_restore.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_failure_leaves_no_0/failed-backup')
+
+    def iterdir(self):
+        """Yield path objects of the directory contents.
+    
+        The children are yielded in arbitrary order, and the
+        special entries '.' and '..' are not included.
+        """
+        root_dir = str(self)
+>       with os.scandir(root_dir) as scandir_it:
+             ^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_failure_leaves_no_0/failed-backup'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pathlib/_local.py:575: FileNotFoundError
+______ test_retention_cleanup_failure_does_not_misreport_completed_backup ______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_retention_cleanup_failure0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_retention_c...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_retention_cleanup_failure0/stub.log'))
+
+    def test_retention_cleanup_failure_does_not_misreport_completed_backup(tmp_path: Path, stubs) -> None:
+        env, _ = stubs
+        stub_dir = Path(env["PATH"].split(os.pathsep)[0])
+        find = stub_dir / "find"
+        find.write_text("#!/bin/bash\nexit 1\n")
+        find.chmod(find.stat().st_mode | stat.S_IXUSR)
+        out = tmp_path / "retention-cleanup-failure"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql://localhost/ttakkari"], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_restore.py:178: AssertionError
+_______ test_rehearsal_rejects_remote_database_url_before_database_tools _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_rejects_remote_0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_r...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_rejects_remote_0/stub.log'))
+
+    def test_rehearsal_rejects_remote_database_url_before_database_tools(tmp_path: Path, stubs) -> None:
+        env, log = stubs
+        manifest = tmp_path / "m.manifest.json"
+        dump = tmp_path / "d.dump"
+        dump.write_text("dump")
+        import hashlib
+        manifest.write_text(json.dumps(
+            {"created_at": "x", "db": "ttakkari", "dump_file": str(dump),
+             "sha256": hashlib.sha256(b"dump").hexdigest(), "tables": {}}))
+        r = run([str(REHEARSE_SH), "--manifest", str(manifest),
+                 "--db-url", "postgresql://backup-user:secret@prod.example/ttakkari"], env)
+        assert r.returncode != 0
+>       assert "localhost" in r.stderr or "loopback" in r.stderr
+E       AssertionError: assert ('localhost' in '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' or 'loopback' in '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n')
+E        +  where '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stderr
+E        +  and   '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stderr
+
+unit_tests/test_backup_restore.py:196: AssertionError
+__________________ test_rehearsal_detects_row_count_mismatch ___________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_detects_row_cou0')
+stubs = ({'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_d...lders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_rehearsal_detects_row_cou0/stub.log'))
+
+    def test_rehearsal_detects_row_count_mismatch(tmp_path: Path, stubs) -> None:
+        """복원 뒤 행 수가 달라지면 리허설이 실패한다."""
+        env, log = stubs
+        out = tmp_path / "bk"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql://localhost/ttakkari"], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_restore.py:206: AssertionError
+____________ test_encrypted_backup_then_rehearsal_row_counts_match _____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_backup_then_reh0')
+stubs = {'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_ba...s/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_backup_then_reh0/stub.log', ...}
+passphrase_file = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_backup_then_reh0/backup.key')
+
+    def test_encrypted_backup_then_rehearsal_row_counts_match(
+            tmp_path: Path, stubs, passphrase_file: Path) -> None:
+        """암호화 백업→리허설이 manifest 행 수 일치를 보고한다."""
+        env = dict(stubs)
+        out = tmp_path / "bk-enc"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql+asyncpg://localhost/ttakkari",
+                 "--passphrase-file", str(passphrase_file)], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:109: AssertionError
+_____________ test_encrypted_rehearsal_fails_with_wrong_passphrase _____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_rehearsal_fails0')
+stubs = {'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_re...s/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_rehearsal_fails0/stub.log', ...}
+passphrase_file = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_rehearsal_fails0/backup.key')
+
+    def test_encrypted_rehearsal_fails_with_wrong_passphrase(
+            tmp_path: Path, stubs, passphrase_file: Path) -> None:
+        """틀린 암호로는 암호화 리허설이 실패한다."""
+        env = dict(stubs)
+        out = tmp_path / "bk-enc"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql+asyncpg://localhost/ttakkari",
+                 "--passphrase-file", str(passphrase_file)], env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:135: AssertionError
+______________ test_backup_rejects_group_readable_passphrase_file ______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_rejects_group_read0')
+stubs = {'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_rejec...s/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_rejects_group_read0/stub.log', ...}
+
+    def test_backup_rejects_group_readable_passphrase_file(
+            tmp_path: Path, stubs) -> None:
+        """다른 사용자가 읽을 수 있는 암호 파일로는 백업을 거부한다."""
+        env = dict(stubs)
+        bad = tmp_path / "shared.key"
+        bad.write_text("shared\n")
+        bad.chmod(0o644)
+        r = run([str(BACKUP_SH), "--dir", str(tmp_path / "bk"),
+                 "--db-url", "postgresql://localhost/ttakkari",
+                 "--passphrase-file", str(bad)], env)
+        assert r.returncode != 0
+>       assert "소유자만" in r.stdout + r.stderr
+E       AssertionError: assert '소유자만' in ('' + '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n')
+E        +  where '' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stdout
+E        +  and   '프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n' = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').stderr
+
+unit_tests/test_backup_ops_remaining.py:157: AssertionError
+___________________ test_data_snapshot_and_verify_roundtrip ____________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_and_verify_0')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_and_verify_0/sample-data')
+
+    def test_data_snapshot_and_verify_roundtrip(tmp_path: Path, sample_data: Path) -> None:
+        """격리 위치에서 데이터 스냅샷→검증이 통과한다."""
+        out = tmp_path / "snaps"
+        r = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out)])
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:176: AssertionError
+____________________ test_data_snapshot_encrypted_roundtrip ____________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_encrypted_r0')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_encrypted_r0/sample-data')
+passphrase_file = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_encrypted_r0/backup.key')
+
+    def test_data_snapshot_encrypted_roundtrip(
+            tmp_path: Path, sample_data: Path, passphrase_file: Path) -> None:
+        """암호화 스냅샷→검증이 통과하고 평문 tar.gz가 남지 않는다."""
+        out = tmp_path / "snaps-enc"
+        env = {"TMPDIR": str(tmp_path)}
+        r = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out),
+                 "--passphrase-file", str(passphrase_file)], env_extra=env)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:197: AssertionError
+_________ test_data_snapshot_skips_links_in_both_archive_and_manifest __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_skips_links0')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_skips_links0/sample-data')
+
+    def test_data_snapshot_skips_links_in_both_archive_and_manifest(tmp_path, sample_data):
+        import tarfile
+    
+        outside = tmp_path / "outside.txt"
+        outside.write_text("outside must stay unchanged")
+        (sample_data / "file-link").symlink_to(outside)
+        (sample_data / "dir-link").symlink_to(outside.parent, target_is_directory=True)
+        (sample_data / "broken-link").symlink_to(tmp_path / "missing")
+        out = tmp_path / "snapshots"
+        created = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out)])
+>       assert created.returncode == 0, created.stdout + created.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:220: AssertionError
+_ test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned[readonly-file] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon0')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon0/sample-data')
+passphrase_file = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon0/backup.key')
+readonly_tree = False
+
+    @pytest.mark.parametrize("readonly_tree", [False, True], ids=["readonly-file", "readonly-tree"])
+    def test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned(
+            tmp_path, sample_data, passphrase_file, readonly_tree):
+        """Game bundles remain immutable; their disposable verification copy must be removable."""
+        from ttakkari.operations import runner
+    
+        original = sample_data / "notes" / "a.md"
+        original.chmod(0o444)
+        if readonly_tree:
+            (sample_data / "notes").chmod(0o555)
+        out = tmp_path / "snapshots"
+        target = tmp_path / "verified"
+        try:
+            created = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out),
+                           "--passphrase-file", str(passphrase_file)])
+>           assert created.returncode == 0, created.stdout + created.stderr
+E           AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E             
+E           assert 3 == 0
+E            +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:246: AssertionError
+_ test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned[readonly-tree] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon1')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon1/sample-data')
+passphrase_file = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_encrypted_snapshot_readon1/backup.key')
+readonly_tree = True
+
+    @pytest.mark.parametrize("readonly_tree", [False, True], ids=["readonly-file", "readonly-tree"])
+    def test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned(
+            tmp_path, sample_data, passphrase_file, readonly_tree):
+        """Game bundles remain immutable; their disposable verification copy must be removable."""
+        from ttakkari.operations import runner
+    
+        original = sample_data / "notes" / "a.md"
+        original.chmod(0o444)
+        if readonly_tree:
+            (sample_data / "notes").chmod(0o555)
+        out = tmp_path / "snapshots"
+        target = tmp_path / "verified"
+        try:
+            created = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out),
+                           "--passphrase-file", str(passphrase_file)])
+>           assert created.returncode == 0, created.stdout + created.stderr
+E           AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E             
+E           assert 3 == 0
+E            +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:246: AssertionError
+___________________ test_data_snapshot_verify_detects_tamper ___________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_verify_dete0')
+sample_data = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_data_snapshot_verify_dete0/sample-data')
+
+    def test_data_snapshot_verify_detects_tamper(tmp_path: Path, sample_data: Path) -> None:
+        """아카이브가 바뀌면 검증이 실패한다."""
+        out = tmp_path / "snaps"
+        r = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out)])
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:269: AssertionError
+____________________ test_backup_writes_latest_status_file _____________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_writes_latest_stat0')
+stubs = {'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_write...s/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_writes_latest_stat0/stub.log', ...}
+
+    def test_backup_writes_latest_status_file(tmp_path: Path, stubs) -> None:
+        """백업 성공 시 latest.json에 성공 시각·산출물이 남는다."""
+        out = tmp_path / "bk"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql+asyncpg://localhost/ttakkari"], dict(stubs))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:293: AssertionError
+______________________ test_backup_status_reports_latest _______________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_status_reports_lat0')
+stubs = {'PATH': '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_statu...s/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5418/test_backup_status_reports_lat0/stub.log', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115d8e350>
+
+    def test_backup_status_reports_latest(tmp_path: Path, stubs, monkeypatch) -> None:
+        """운영 상태 조회가 마지막 백업 성공 시각을 돌려준다."""
+        from ttakkari import backup_status as mod
+        out = tmp_path / "bk"
+        r = run([str(BACKUP_SH), "--dir", str(out),
+                 "--db-url", "postgresql+asyncpg://localhost/ttakkari"], dict(stubs))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 프로젝트 Python 환경 없음: /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python
+E         
+E       assert 3 == 0
+E        +  where 3 = CompletedProcess(args=['/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scr...ers/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/scripts/../.venv/bin/python\n').returncode
+
+unit_tests/test_backup_ops_remaining.py:310: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage
+FAILED unit_tests/test_backup_restore.py::test_rehearsal_fails_without_backup_artifact
+FAILED unit_tests/test_backup_restore.py::test_rehearsal_refuses_non_isolated_target
+FAILED unit_tests/test_backup_restore.py::test_backup_then_rehearsal_row_counts_match
+FAILED unit_tests/test_backup_restore.py::test_backup_artifacts_are_private_and_manifest_has_no_credentials
+FAILED unit_tests/test_backup_restore.py::test_backup_failure_leaves_no_success_artifacts
+FAILED unit_tests/test_backup_restore.py::test_retention_cleanup_failure_does_not_misreport_completed_backup
+FAILED unit_tests/test_backup_restore.py::test_rehearsal_rejects_remote_database_url_before_database_tools
+FAILED unit_tests/test_backup_restore.py::test_rehearsal_detects_row_count_mismatch
+FAILED unit_tests/test_backup_ops_remaining.py::test_encrypted_backup_then_rehearsal_row_counts_match
+FAILED unit_tests/test_backup_ops_remaining.py::test_encrypted_rehearsal_fails_with_wrong_passphrase
+FAILED unit_tests/test_backup_ops_remaining.py::test_backup_rejects_group_readable_passphrase_file
+FAILED unit_tests/test_backup_ops_remaining.py::test_data_snapshot_and_verify_roundtrip
+FAILED unit_tests/test_backup_ops_remaining.py::test_data_snapshot_encrypted_roundtrip
+FAILED unit_tests/test_backup_ops_remaining.py::test_data_snapshot_skips_links_in_both_archive_and_manifest
+FAILED unit_tests/test_backup_ops_remaining.py::test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned[readonly-file]
+FAILED unit_tests/test_backup_ops_remaining.py::test_encrypted_snapshot_readonly_bundle_can_be_verified_and_cleaned[readonly-tree]
+FAILED unit_tests/test_backup_ops_remaining.py::test_data_snapshot_verify_detects_tamper
+FAILED unit_tests/test_backup_ops_remaining.py::test_backup_writes_latest_status_file
+FAILED unit_tests/test_backup_ops_remaining.py::test_backup_status_reports_latest
+20 failed, 91 passed, 1 skipped in 67.01s (0:01:07)
+
+EXIT_CODE=1

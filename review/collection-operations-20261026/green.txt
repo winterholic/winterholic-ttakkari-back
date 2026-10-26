@@ -1,0 +1,141 @@
+.........................F.......FFF.............F..............FFFF.... [ 75%]
+.............F..........                                                 [100%]
+=================================== FAILURES ===================================
+_______________________ test_inline_reports_are_recorded _______________________
+tests/test_host_operations.py:147: in test_inline_reports_are_recorded
+    assert perf["status"] == "succeeded", perf.get("error")
+E   AssertionError: OSError: 
+E   assert 'failed' == 'succeeded'
+E     
+E     - succeeded
+E     + failed
+________________ test_runner_times_out_and_kills_process_group _________________
+tests/test_host_operations.py:323: in test_runner_times_out_and_kills_process_group
+    status, _ = runner._execute(_fake_plan("sleep 60 & sleep 60", timeout=1), out)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/operations/runner.py:112: in _execute
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1039: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1994: in _execute_child
+    raise child_exception_type(err_msg)
+E   subprocess.SubprocessError: Exception occurred in preexec_fn.
+_____________________ test_runner_cancel_flag_stops_child ______________________
+tests/test_host_operations.py:330: in test_runner_cancel_flag_stops_child
+    status, _ = runner._execute(_fake_plan("sleep 60"), out)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/operations/runner.py:112: in _execute
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1039: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1994: in _execute_child
+    raise child_exception_type(err_msg)
+E   subprocess.SubprocessError: Exception occurred in preexec_fn.
+________________ test_failed_run_keeps_error_and_masks_secrets _________________
+tests/test_host_operations.py:344: in test_failed_run_keeps_error_and_masks_secrets
+    assert done["status"] == "failed" and done["exit_code"] == 7 and done["finished_at"]
+E   AssertionError: assert ('failed' == 'failed'
+E     
+E       failed and None == 7)
+___________________ test_backup_restore_snapshot_end_to_end ____________________
+tests/test_host_operations.py:511: in test_backup_restore_snapshot_end_to_end
+    assert done["status"] == "succeeded", done
+E   AssertionError: {'id': 'dcd3be39-04c8-4571-bcae-2d9f4c8fd9f8', 'kind': 'backup_db', 'status': 'failed', 'created_at': '2026-10-26T13:05:11.158695+00:00', ...}
+E   assert 'failed' == 'succeeded'
+E     
+E     - succeeded
+E     + failed
+__________ test_real_runner_sigkill_leaves_verifiable_child_identity ___________
+tests/test_host_operations.py:906: in test_real_runner_sigkill_leaves_verifiable_child_identity
+    leader = _wait_for(lambda: _job_field(job_id, "child_pid"))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_host_operations.py:892: in _wait_for
+    raise AssertionError("조건이 시간 안에 충족되지 않았다")
+E   AssertionError: 조건이 시간 안에 충족되지 않았다
+----------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+  File "/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5561/test_real_runner_sigkill_leave0/runner_child.py", line 18, in <module>
+    runner._execute(plan, out, job_id=jid)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-main-20261026/src/ttakkari/operations/runner.py", line 112, in _execute
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
+                            stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py", line 1994, in _execute_child
+    raise child_exception_type(err_msg)
+subprocess.SubprocessError: Exception occurred in preexec_fn.
+_ test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile _
+tests/test_host_operations.py:926: in test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile
+    children = _wait_for(lambda: psutil.Process(proc.pid).children())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_host_operations.py:888: in _wait_for
+    value = predicate()
+            ^^^^^^^^^^^
+tests/test_host_operations.py:926: in <lambda>
+    children = _wait_for(lambda: psutil.Process(proc.pid).children())
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/psutil/__init__.py:978: in children
+    ppid_map = _ppid_map()
+               ^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/psutil/__init__.py:256: in _ppid_map
+    for pid in pids():
+               ^^^^^^
+.venv/lib/python3.13/site-packages/psutil/__init__.py:1485: in pids
+    ret = sorted(_psplatform.pids())
+                 ^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/psutil/_psosx.py:320: in pids
+    ls = cext.pids()
+         ^^^^^^^^^^^
+E   PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)
+________ test_runner_timeout_confirms_whole_group_gone_not_just_leader _________
+tests/test_host_operations.py:960: in test_runner_timeout_confirms_whole_group_gone_not_just_leader
+    status, _ = runner._execute(plan, out)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/operations/runner.py:112: in _execute
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1039: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1994: in _execute_child
+    raise child_exception_type(err_msg)
+E   subprocess.SubprocessError: Exception occurred in preexec_fn.
+_______ test_runner_reports_cleanup_pending_when_group_survives_sigkill ________
+tests/test_host_operations.py:985: in test_runner_reports_cleanup_pending_when_group_survives_sigkill
+    status, _ = runner._execute(plan, out)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/operations/runner.py:112: in _execute
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_child_setup(pidfile),  # noqa: PLW1509
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1039: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:1994: in _execute_child
+    raise child_exception_type(err_msg)
+E   subprocess.SubprocessError: Exception occurred in preexec_fn.
+___ test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed ___
+tests/test_host_operations.py:1231: in test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed
+    assert done["status"] == "cleanup_pending" and not done.get("finished_at"), done
+E   AssertionError: {'id': '71081568-71c2-43fa-91f2-6b28b92038be', 'kind': 'backup_db', 'status': 'failed', 'created_at': '2026-10-26T13:05:26.989634+00:00', ...}
+E   assert ('failed' == 'cleanup_pending'
+E     
+E     - cleanup_pending
+E     + failed)
+db reset: 96 selective (avg 3.1/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_host_operations.py::test_inline_reports_are_recorded - Asse...
+FAILED tests/test_host_operations.py::test_runner_times_out_and_kills_process_group
+FAILED tests/test_host_operations.py::test_runner_cancel_flag_stops_child - s...
+FAILED tests/test_host_operations.py::test_failed_run_keeps_error_and_masks_secrets
+FAILED tests/test_host_operations.py::test_backup_restore_snapshot_end_to_end
+FAILED tests/test_host_operations.py::test_real_runner_sigkill_leaves_verifiable_child_identity
+FAILED tests/test_host_operations.py::test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile
+FAILED tests/test_host_operations.py::test_runner_timeout_confirms_whole_group_gone_not_just_leader
+FAILED tests/test_host_operations.py::test_runner_reports_cleanup_pending_when_group_survives_sigkill
+FAILED tests/test_host_operations.py::test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed
+10 failed, 86 passed in 21.05s

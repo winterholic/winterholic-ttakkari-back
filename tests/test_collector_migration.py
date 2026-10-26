@@ -41,11 +41,25 @@ async def test_collector_migrations_match_models_and_round_trip():
     intake = _load("0059_collector_intake")
     runtime = _load("0060_collector_job_runtime")
     retry = _load("0067_collector_outbox_retry")
+    single_lib = _load("0074_collection_single_library")
     assert intake.down_revision == "0058_kb_immutability_truncate"
     assert runtime.down_revision == "0059_collector_intake"
+    assert single_lib.down_revision == "0073_collection_mission_runs"
+
+    def upgrade_0074_pool():
+        import sqlalchemy as sa
+
+        from alembic import op
+
+        op.add_column("collector_jobs", sa.Column("pool", sa.String(16), nullable=False, server_default="personal"))
+
+    def downgrade_0074_pool():
+        from alembic import op
+        op.drop_column("collector_jobs", "pool")
+
     async with sessionmaker()() as db:
         for table in reversed(TABLES):
-            await db.execute(text(f"DROP TABLE {table} CASCADE"))
+            await db.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
         conn = await db.connection()
 
         def run(sync, fn):
@@ -66,9 +80,11 @@ async def test_collector_migrations_match_models_and_round_trip():
         assert not runtime_columns & await columns()
         await conn.run_sync(run, runtime.upgrade)
         await conn.run_sync(run, retry.upgrade)  # outbox retry columns that the ORM model carries
+        await conn.run_sync(run, upgrade_0074_pool)  # C2 single library pool column on collector_jobs
         assert await conn.run_sync(drift) == []
         assert runtime_columns <= await columns()
 
+        await conn.run_sync(run, downgrade_0074_pool)
         await conn.run_sync(run, retry.downgrade)
         await conn.run_sync(run, runtime.downgrade)
         assert not runtime_columns & await columns()
@@ -79,6 +95,7 @@ async def test_collector_migrations_match_models_and_round_trip():
         await conn.run_sync(run, intake.upgrade)
         await conn.run_sync(run, runtime.upgrade)
         await conn.run_sync(run, retry.upgrade)
+        await conn.run_sync(run, upgrade_0074_pool)
         assert await conn.run_sync(drift) == []
         names = {r[0] for r in await db.execute(text(
             "select conname from pg_constraint where conrelid in ('collector_jobs'::regclass, 'collector_outbox'::regclass)"))}

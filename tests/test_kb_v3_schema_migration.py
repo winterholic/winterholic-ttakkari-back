@@ -56,15 +56,21 @@ def _load_migration(name: str):
 
 
 def test_alembic_v3_single_head_and_lineage():
-    """Alembic 그래프가 단일 head이며 0072_kb_v3_schema_and_scope 가 0071 뒤에 정확히 연결되었는지 검증."""
+    """Alembic 그래프가 단일 head이며 0076_kb_v3_collection_merge 가 0074와 0075를 정확히 머지했는지 검증."""
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
     assert len(heads) == 1, f"Alembic heads must be exactly 1, got: {heads}"
-    assert heads[0] == "0074_kb_v3_research_merge"
+    assert heads[0] == "0076_kb_v3_collection_merge"
+    assert set(_load_migration("0076_kb_v3_collection_merge").down_revision) == {
+        "0074_kb_v3_research_merge", "0075_collection_research_merge"
+    }
     assert set(_load_migration("0074_kb_v3_research_merge").down_revision) == {
         "0073_research_reuse_source", "0073_kb_l2_budget_ledger"
+    }
+    assert set(_load_migration("0075_collection_research_merge").down_revision) == {
+        "0074_collection_single_library", "0073_research_reuse_source"
     }
     assert _load_migration("0073_kb_l2_budget_ledger").down_revision == "0072_kb_v3_schema_and_scope"
 

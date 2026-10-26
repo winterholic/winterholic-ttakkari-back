@@ -75,7 +75,7 @@ async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkey
         started = await client.post(f"/api/games/{gid}/builds", json={}, headers=auth)
         assert started.status_code == 202, started.text
         done = await wait_build(client, auth, gid, started.json()["id"], timeout=600)
-        assert done["status"] == "succeeded", done["error"]
+        assert done["status"] == "succeeded", (done["error"], done["log_tail"])
         assert done["lock_verified"] is True
         return done
 
@@ -135,7 +135,8 @@ async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkey
         rb = await client.post(f"/api/games/{gid}/rollback", json={"build_id": b1["id"], "restore_source": True, "confirm": True}, headers=auth)
         assert rb.status_code == 200, rb.text
         restored = await wait_build(client, auth, gid, rb.json()["restore_build"]["id"], timeout=600)
-        assert restored["status"] == "succeeded" and restored["restored_from_id"] == b1["id"]
+        assert restored["status"] == "succeeded", (restored["error"], restored["log_tail"])
+        assert restored["restored_from_id"] == b1["id"]
         assert restored["bundle_sha256"] == b1["bundle_sha256"]  # 소스 트리가 v1 과 같아 번들도 같다
         assert git(root, "diff", "--stat", v1_commit, "HEAD") == ""
         assert (await client.get(f"/api/games/{gid}", headers=auth)).json()["active_build_id"] == restored["id"]  # 복구 빌드가 활성이 된다

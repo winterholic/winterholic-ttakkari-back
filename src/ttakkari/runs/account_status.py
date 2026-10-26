@@ -57,7 +57,7 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
         left = []
     has_expired_window = any(w.resets_at and w.resets_at <= now for w in u.windows)
     # Antigravity 는 조회 실패 뒤 마지막 관측값을 유지한다. 오류가 붙은 값은 현재 측정이 아니다.
-    agy_failed = (engine == "antigravity" or u.source == "antigravity_cli") and bool(u.error)
+    agy_failed = (engine in {"antigravity", "opencode", "copilot"} or u.source in {"antigravity_cli", "copilot_sdk"}) and bool(u.error)
     return {
         "source": u.source, "plan": u.plan, "measured_at": _iso(u.updated_at), "age_seconds": age,
         "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window or not muse_current or agy_failed,
@@ -73,7 +73,8 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
         "model_quotas": [{"key": w.key, "label": w.label, **_window(w, now, history.get(w.key)),
                           "state": "unavailable" if w.resets_at and w.resets_at <= now
                           else "stale" if agy_failed or (age is None or age > get_settings().usage_stale_seconds) else "current"}
-                         for w in u.windows if w.key.startswith("agy_")],
+                         for w in u.windows if w.key.startswith(("agy_", "copilot_"))],
+        "quota_unlimited": u.quota_unlimited,
         "credits_balance": u.credits_balance,
         "credits_error": u.credits_error,
         "error": u.error,

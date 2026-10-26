@@ -236,6 +236,8 @@ async def execute_build(
             build.status, build.error = "failed", "빌드 중 소스가 변경되어 source commit 을 신뢰할 수 없습니다."
         elif not res.success or res.output_dir is None:
             build.status, build.error = "failed", res.error or "빌드 실패"
+            # Preserve the bounded original output independently of assertion repr truncation.
+            log.warning("Game build %s failed: %s\n%s", plan.build_id, build.error, build.log_tail)
         else:
             await _snapshot(db, game, build, res.output_dir, run, ws)
     except BaseException as e:

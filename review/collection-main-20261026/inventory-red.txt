@@ -1,0 +1,43 @@
+COMMAND: .venv/bin/python -m pytest -q --noconftest unit_tests/test_collection_research_migration_merge.py -k inventory
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_integrated_migration_inventory_uses_the_owning_domain[0075_collection_research_merge-core.generation_deploy] _
+
+revision = '0075_collection_research_merge', owner = 'core.generation_deploy'
+
+    @pytest.mark.parametrize(("revision", "owner"), [
+        (MERGE, "core.generation_deploy"),
+        (RESEARCH[-1], "domain.research_lab"),
+        ("9999_unknown_migration", "unmatched"),
+    ])
+    def test_integrated_migration_inventory_uses_the_owning_domain(revision, owner):
+>       assert classify_migration(revision) == owner
+E       AssertionError: assert 'domain.collector' == 'core.generation_deploy'
+E         
+E         - core.generation_deploy
+E         + domain.collector
+
+unit_tests/test_collection_research_migration_merge.py:57: AssertionError
+_ test_integrated_migration_inventory_uses_the_owning_domain[0073_research_reuse_source-domain.research_lab] _
+
+revision = '0073_research_reuse_source', owner = 'domain.research_lab'
+
+    @pytest.mark.parametrize(("revision", "owner"), [
+        (MERGE, "core.generation_deploy"),
+        (RESEARCH[-1], "domain.research_lab"),
+        ("9999_unknown_migration", "unmatched"),
+    ])
+    def test_integrated_migration_inventory_uses_the_owning_domain(revision, owner):
+>       assert classify_migration(revision) == owner
+E       AssertionError: assert 'unmatched' == 'domain.research_lab'
+E         
+E         - domain.research_lab
+E         + unmatched
+
+unit_tests/test_collection_research_migration_merge.py:57: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_collection_research_migration_merge.py::test_integrated_migration_inventory_uses_the_owning_domain[0075_collection_research_merge-core.generation_deploy]
+FAILED unit_tests/test_collection_research_migration_merge.py::test_integrated_migration_inventory_uses_the_owning_domain[0073_research_reuse_source-domain.research_lab]
+2 failed, 1 passed, 3 deselected in 0.13s
+
+EXIT_CODE=1

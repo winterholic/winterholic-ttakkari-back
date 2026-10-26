@@ -34,5 +34,13 @@ TDD 보정 중 공식 Git 문서 대조에서 `git clone --no-recurse-submodules
 
 - 실제 비공개 저장소 clone/pull 및 backend LaunchAgent runtime은 미검증이다. 아래 별도 push 시도는 feature의 Git clone/pull 검증과 별개다. mock 테스트를 실환경 성공으로 간주하지 않는다.
 - 운영 revision/runtime은 확인하지 않았다. 이 회사 세션의 `ops_list_deploys` 조회가 403으로 거부되어 있으며, 보호된 로그를 다른 경로로 확인하지 않는다.
-- push 기록: 기본 자격으로 `git push -u origin fix/gh-auth-switch-20261026`가 GitHub에서 `Permission to winterholic/winterholic-ttakkari-back.git denied to daeseon-dev` (HTTP 403)로 거부됐다. `winterholic` 계정별 토큰을 값 출력 없이 askpass에 전달한 한 번의 시도는 exit 128이었다. stderr를 숨겨 실제 prompt는 관측하지 못했다. 후속 synthetic test에서 Git password prompt의 `https://x-access-token@github.com` 형태를 helper가 거부함을 재현해 보완했다. 따라서 두 번째 시도의 직접 원인이 그 prompt였다는 설명은 추론이다. helper 수정 후 push 결과는 최종 보고서에 분리 기재한다.
+- push 기록: 기본 자격으로 `git push -u origin fix/gh-auth-switch-20261026`가 GitHub에서 `Permission to winterholic/winterholic-ttakkari-back.git denied to daeseon-dev` (HTTP 403)로 거부됐다. `winterholic` 계정별 토큰을 값 출력 없이 askpass에 전달한 한 번의 시도는 exit 128이었다. stderr를 숨겨 실제 prompt는 관측하지 못했다. 후속 synthetic test에서 Git password prompt의 `https://x-access-token@github.com` 형태를 helper가 거부함을 재현해 보완했다. 따라서 두 번째 시도의 직접 원인이 그 prompt였다는 설명은 추론이다. mock에서 해당 prompt 형식을 재현한 뒤 helper를 보완했고, `gh auth token --hostname github.com --user winterholic` 결과를 값 출력 없이 askpass 환경변수로 전달한 push가 성공했다.
+
+```text
+$ git push --porcelain -u origin fix/gh-auth-switch-20261026
+push exit=0; origin accepted fix/gh-auth-switch-20261026
+[new branch] refs/heads/fix/gh-auth-switch-20261026
+```
+
+첫 기본 인증 push의 403은 `daeseon-dev`가 Ttakkari 저장소에 권한이 없어 발생했다. 계정별 인증으로는 전역 활성 계정 전환 없이 push할 수 있음을 확인했다.
 - 최신 main 통합·배포는 lead가 충돌·소유권과 회사 범위를 판단한 뒤 재개한다. 이 작업에서는 deploy 도구나 runtime restart를 하지 않는다.

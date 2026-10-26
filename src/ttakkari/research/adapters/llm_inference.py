@@ -350,6 +350,17 @@ class LlmInferenceAdapter:
         }
         run_result: AdapterRunResult | None = None
 
+        async def start_owned_launch() -> None:
+            nonlocal server_started, launch, start_ownership_error
+            try:
+                await asyncio.to_thread(host_gpu.start, start_req)
+            except GpuError as start_exc:
+                if _START_STATE_TIMEOUT_MARKER in str(start_exc):
+                    start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                raise
+            server_started = True
+            launch = await asyncio.to_thread(self._read_launch, host_gpu)
+
         try:
             if cancel_event and getattr(cancel_event, "is_set", lambda: False)():
                 run_result = AdapterRunResult(
@@ -360,16 +371,14 @@ class LlmInferenceAdapter:
                 )
                 return run_result
 
+            startup = asyncio.create_task(start_owned_launch())
             try:
-                await asyncio.to_thread(host_gpu.start, start_req)
-            except GpuError as start_exc:
-                if _START_STATE_TIMEOUT_MARKER in str(start_exc):
-                    start_ownership_error = f"{type(start_exc).__name__}: {start_exc}"
+                await asyncio.shield(startup)
+            except asyncio.CancelledError:
+                # Cancelling to_thread cannot stop its thread. Observe the
+                # launch identity before cleanup, even after a budget expires.
+                await startup
                 raise
-            server_started = True
-            # start() does not return the launch id; read it right away. HostGpu allows one live
-            # instance, so the state written by the start() that just returned is ours.
-            launch = await asyncio.to_thread(self._read_launch, host_gpu)
 
             deadline = time.monotonic() + 45.0
             ready = False
@@ -436,6 +445,16 @@ class LlmInferenceAdapter:
             )
             return run_result
 
+        except asyncio.CancelledError:
+            run_result = AdapterRunResult(
+                status="cancelled",
+                raw_output={"reason": "task_cancelled"},
+                environment_snapshot={"scope": scope},
+                error_code="cancelled",
+                error_message="LLM execution task cancelled",
+                wall_seconds=round(time.monotonic() - started_wall, 3),
+            )
+            return run_result
         except Exception as exc:
             total_wall = time.monotonic() - started_wall
             run_result = AdapterRunResult(

@@ -1,0 +1,34 @@
+{
+  "base_revision": "1b23d566a4b8d15813a9e1425adbbe705aa5e8a4",
+  "integrated_main": "dd9748675b5744ca0ec73f6726bfd5ffae5e7c41",
+  "environment": "lead Codex sandbox; actual isolated Run PostgreSQL; synthetic adapter/host/provider fixtures",
+  "source_sha256": {
+    "src/ttakkari/research/runner.py": "7811a167af4ae8a7c53fceb37ea1345616a48954bd780392146ffbf148efe850",
+    "src/ttakkari/research/planner.py": "363e0ce243b4ba38049b9646c6650d1bfa6a4f46c854cebe7ca12f7a33c1fdf9",
+    "src/ttakkari/research/adapters/llm_inference.py": "35c0682d892479d8caa485ab4e1ff57a20d44c03901331d5bbde4feeac293563",
+    "src/ttakkari/research/adapters/tts_synthesis.py": "e1f3ea94f473bd5886f553169bc9554d878788c0970849fc428ea466a80c7941",
+    "tests/test_research_runner_lifecycle.py": "9ac6a25cfc4f24677e68fe9165773c2fe04eb407486d412743393c2b24cba48e",
+    "tests/test_research_adapters.py": "790b50e672446780055f93e92d3a95d1666f1aeaca43a8c044cbc6a15ae5cc24"
+  },
+  "validation": [
+    {
+      "suite": "runner lifecycle + adapters",
+      "result": "79 passed in 2.51s"
+    },
+    {
+      "suite": "artifacts + core + API + CPU combination",
+      "result": "90 passed in 6.91s"
+    },
+    {
+      "suite": "final budget + cancellation subset",
+      "result": "23 passed, 63 deselected in 2.02s"
+    }
+  ],
+  "not_verified": [
+    "operating GPU or UI",
+    "long-term owner crash/checkpoint recovery",
+    "actual memory budgets",
+    "full deploy controller"
+  ],
+  "overlapping_counts_must_not_be_added": true
+}

@@ -72,7 +72,9 @@ async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
     return False
 
 
-async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) -> Run:
+async def execute_run_instance(
+    run_id: uuid.UUID, adapter_registry: Any = None, *, deadline: float | None = None,
+) -> Run:
     """Execute a single run through its designated ExecutionAdapter."""
     reg = adapter_registry or _get_registry()
     sm = sessionmaker()
@@ -117,14 +119,19 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
         start_time = asyncio.get_event_loop().time()
         adapter_res = None
         created_copies: list[Path] = []
+        execution_timeout = asyncio.timeout_at(deadline)
         try:
-            adapter_res = await adapter.execute_run(
-                run_id=run.id,
-                config=config.parameters,
-                scope=study.scope,
-                cancel_event=cancel_event,
-            )
+            async with execution_timeout:
+                adapter_res = await adapter.execute_run(
+                    run_id=run.id,
+                    config=config.parameters,
+                    scope=study.scope,
+                    cancel_event=cancel_event,
+                )
             elapsed = asyncio.get_event_loop().time() - start_time
+            budget_exhausted = execution_timeout.expired() or (
+                deadline is not None and asyncio.get_running_loop().time() >= deadline
+            )
 
             # Cancellation may come from another request/process while the adapter
             # finishes. Re-read the persisted status before publishing its result.
@@ -136,7 +143,14 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             if not cancelled:
                 run.error_code = adapter_res.error_code
                 run.error_message = adapter_res.error_message
-            run.wall_seconds = adapter_res.wall_seconds or elapsed
+                if budget_exhausted:
+                    # Some adapters return their cleanup evidence after handling
+                    # CancelledError. Expiry must still prevent a success result.
+                    cancel_event.set()
+                    run.status = "cancelled"
+                    run.error_code = "budget_exceeded"
+                    run.error_message = "Experiment max_total_seconds exhausted"
+            run.wall_seconds = elapsed if budget_exhausted else adapter_res.wall_seconds or elapsed
             run.finished_at = utcnow()
 
             if run.status == "succeeded":
@@ -289,7 +303,10 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             await db.commit()
             return run
         except Exception as e:
-            logger.exception("Error executing run %s", run_id)
+            if execution_timeout.expired():
+                logger.info("Execution time budget exhausted for run %s", run_id)
+            else:
+                logger.exception("Error executing run %s", run_id)
             elapsed = asyncio.get_event_loop().time() - start_time
             # A failed flush poisons the session; reset it so the run still reaches a terminal state.
             await db.rollback()
@@ -303,6 +320,11 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                     f"{run.error_message or 'Run cancelled'}; "
                     f"adapter error after cancellation: {type(e).__name__}: {e}"
                 )
+            elif execution_timeout.expired():
+                cancel_event.set()
+                run.status = "cancelled"
+                run.error_code = "budget_exceeded"
+                run.error_message = "Experiment max_total_seconds exhausted"
             else:
                 run.status = "failed"
                 run.error_code = type(e).__name__
@@ -335,6 +357,14 @@ async def _finish_experiment_if_terminal(db, experiment_id: uuid.UUID) -> bool:
     exp.state = state
     exp.finished_at = utcnow()
     return True
+
+
+async def _cancel_unstarted_batch(sm, experiment_id, run_ids, code, message) -> None:
+    async with sm() as db:
+        await db.execute(update(Run).where(
+            Run.id.in_(run_ids), Run.experiment_id == experiment_id, Run.status == "queued",
+        ).values(status="cancelled", error_code=code, error_message=message, finished_at=utcnow()))
+        await db.commit()
 
 
 async def run_experiment_batch(
@@ -376,33 +406,44 @@ async def run_experiment_batch(
             ).limit(1))
             if exp is None or pending is None:
                 return
+            from ttakkari.research.planner import execution_budget_seconds
+
+            try:
+                seconds = execution_budget_seconds(exp.budget or {})
+            except ValueError as exc:
+                await db.execute(update(Run).where(
+                    Run.id.in_(run_ids), Run.experiment_id == experiment_id, Run.status == "queued",
+                ).values(status="cancelled", error_code="budget_invalid",
+                         error_message=str(exc), finished_at=utcnow()))
+                await _finish_experiment_if_terminal(db, experiment_id)
+                await db.commit()
+                return
+            deadline = asyncio.get_running_loop().time() + seconds
             exp.state = "running"
             exp.finished_at = None
             await db.commit()
 
         for rid in run_ids:
+            if asyncio.get_running_loop().time() >= deadline:
+                await _cancel_unstarted_batch(
+                    sm, experiment_id, run_ids, "budget_exceeded", "Experiment max_total_seconds exhausted",
+                )
+                break
             try:
-                run = await execute_run_instance(rid, adapter_registry=adapter_registry)
+                run = await execute_run_instance(rid, adapter_registry=adapter_registry, deadline=deadline)
                 if run.status == "running":
                     # This is a replay while another batch owns the Run. Do not
                     # steal its remaining configurations or publish partial analysis.
                     return
                 if run.status == "cancelled":
                     logger.info("Batch stopped due to run %s cancellation", rid)
-                    async with sm() as db:
-                        await db.execute(
-                            update(Run).where(
-                                Run.id.in_(run_ids),
-                                Run.experiment_id == experiment_id,
-                                Run.status == "queued",
-                            ).values(
-                                status="cancelled",
-                                error_code="batch_cancelled",
-                                error_message="Batch stopped after a run was cancelled",
-                                finished_at=utcnow(),
-                            )
-                        )
-                        await db.commit()
+                    budget_expired = run.error_code == "budget_exceeded"
+                    await _cancel_unstarted_batch(
+                        sm, experiment_id, run_ids,
+                        "budget_exceeded" if budget_expired else "batch_cancelled",
+                        "Experiment max_total_seconds exhausted" if budget_expired
+                        else "Batch stopped after a run was cancelled",
+                    )
                     break
             except Exception:
                 logger.exception("Failed to execute run instance %s", rid)

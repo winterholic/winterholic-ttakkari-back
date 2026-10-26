@@ -59,6 +59,8 @@ async def _await_unless_cancelled(
     finally:
         if not task.done():
             task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 def _apply_custom_dict(text: str, custom_dict: dict[str, str], *, case_sensitive: bool = False) -> str:
@@ -665,6 +667,15 @@ class TtsSynthesisAdapter:
                 artifacts=artifacts_to_register,
             )
 
+        except asyncio.CancelledError:
+            # The awaited provider/STT child has completed its teardown first.
+            if not artifacts_to_register:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            result = _cancelled_result("task_cancelled", artifacts=artifacts_to_register)
+            if artifacts_to_register:
+                result.raw_output["artifacts"] = artifacts_to_register
+                result.environment_snapshot["temp_dir"] = temp_dir
+            return result
         except Exception as exc:
             total_wall = time.monotonic() - started_wall
             return AdapterRunResult(

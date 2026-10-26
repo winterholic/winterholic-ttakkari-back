@@ -422,6 +422,15 @@ async def local_readiness_issues(
     return issues
 
 
+def execution_budget_seconds(budget: dict[str, Any]) -> float:
+    """Return the finite positive wall-time allowance shared by a batch."""
+    seconds = budget.get("max_total_seconds", 300)
+    if (isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or not 0 < seconds <= 3600):
+        raise ValueError("max_total_seconds는 0보다 크고 3600 이하인 유한한 숫자여야 합니다.")
+    return float(seconds)
+
+
 async def validate_experiment_plan(
     db,
     *,
@@ -448,11 +457,10 @@ async def validate_experiment_plan(
             f"요청된 max_runs({requested_max_runs})가 어댑터 '{adapter_id}'의 하드 상한({max_runs_limit})을 초과합니다."
         )
 
-    requested_seconds = budget.get("max_total_seconds", 300)
-    if requested_seconds > 3600:
-        errors.append(
-            f"요청된 max_total_seconds({requested_seconds})가 최대 허용 시간(3600초)을 초과합니다."
-        )
+    try:
+        execution_budget_seconds(budget)
+    except ValueError as exc:
+        errors.append(str(exc))
 
     # Check method relations
     all_methods = []

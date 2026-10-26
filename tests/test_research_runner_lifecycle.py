@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 import uuid
 
 import pytest
@@ -57,6 +58,138 @@ class ProbeAdapter:
 
     def to_measurements(self, result, config):
         return []
+
+
+async def test_batch_time_budget_stops_adapter_and_unstarted_runs(client):
+    exp_id, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        (await db.get(Experiment, exp_id)).budget = {"max_total_seconds": 0.05}
+        await db.commit()
+    adapter = ProbeAdapter()
+    # Deliberately never release it: the execution budget must cancel the wait.
+    await asyncio.wait_for(runner.run_experiment_batch(exp_id, ids, adapter), 0.8)
+    async with sessionmaker()() as db:
+        rows = [await db.get(Run, rid) for rid in ids]
+        assert [row.status for row in rows] == ["cancelled", "cancelled"]
+        assert all(row.error_code == "budget_exceeded" for row in rows)
+        assert all(row.finished_at is not None for row in rows)
+        assert (await db.get(Experiment, exp_id)).state == "cancelled"
+    assert adapter.calls == 1
+    assert not any(rid in runner._CANCEL_EVENTS for rid in ids)
+
+
+async def test_batch_budget_is_shared_and_preserves_finished_run(client, monkeypatch):
+    exp_id, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        (await db.get(Experiment, exp_id)).budget = {"max_total_seconds": 0.2}
+        await db.commit()
+    adapter = ProbeAdapter()
+    adapter.release.set()
+    original = runner.execute_run_instance
+
+    async def finish_then_delay(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        # Simulate time spent between runs, after the first evidence was saved.
+        await asyncio.sleep(0.25)
+        return result
+
+    monkeypatch.setattr(runner, "execute_run_instance", finish_then_delay)
+    await runner.run_experiment_batch(exp_id, ids, adapter)
+    async with sessionmaker()() as db:
+        first, second = [await db.get(Run, rid) for rid in ids]
+        assert first.status == "succeeded"
+        assert first.raw_output == {"probe": "completed"}
+        assert second.status == "cancelled"
+        assert second.error_code == "budget_exceeded"
+        assert second.started_at is None
+        assert (await db.get(Experiment, exp_id)).state == "cancelled"
+    assert adapter.calls == 1
+
+
+async def test_budget_marks_blocking_adapter_late_result_without_claiming_preemption(client):
+    exp_id, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        (await db.get(Experiment, exp_id)).budget = {"max_total_seconds": 0.05}
+        await db.commit()
+    adapter = ProbeAdapter()
+
+    async def blocks_event_loop(**kwargs):
+        adapter.calls += 1
+        time.sleep(0.08)  # noqa: ASYNC251 - deliberate non-preemptible native-call probe
+        return AdapterRunResult(status="succeeded", raw_output={"late": True}, environment_snapshot={})
+
+    adapter.execute_run = blocks_event_loop
+    await runner.run_experiment_batch(exp_id, ids, adapter)
+    async with sessionmaker()() as db:
+        first, second = [await db.get(Run, rid) for rid in ids]
+        assert first.status == second.status == "cancelled"
+        assert first.error_code == second.error_code == "budget_exceeded"
+        assert first.raw_output == {"late": True}
+    assert adapter.calls == 1
+
+
+@pytest.mark.parametrize("seconds", [0, -1, True, "30", None, 3601, float("nan"), float("inf")])
+async def test_invalid_persisted_time_budget_fails_closed(client, seconds):
+    exp_id, ids = await seed_runs()
+    async with sessionmaker()() as db:
+        (await db.get(Experiment, exp_id)).budget = {"max_total_seconds": seconds}
+        # PostgreSQL JSON rejects NaN and infinity: test those at the shared parser boundary.
+        if isinstance(seconds, float):
+            from ttakkari.research.planner import execution_budget_seconds
+            with pytest.raises(ValueError, match="max_total_seconds"):
+                execution_budget_seconds({"max_total_seconds": seconds})
+            return
+        await db.commit()
+    adapter = ProbeAdapter()
+    adapter.release.set()
+    await runner.run_experiment_batch(exp_id, ids, adapter)
+    async with sessionmaker()() as db:
+        row = await db.get(Run, ids[0])
+        assert row.status == "cancelled"
+        assert row.error_code == "budget_invalid"
+        assert (await db.get(Experiment, exp_id)).state == "cancelled"
+    assert adapter.calls == 0
+
+
+@pytest.mark.parametrize("seconds", [0, -1, True, "30", None, 3601, 10**400])
+async def test_plan_validation_rejects_invalid_time_budget(client, auth, seconds):
+    exp_id, _ = await seed_runs()
+    async with sessionmaker()() as db:
+        study_id = (await db.get(Experiment, exp_id)).study_id
+    response = await client.post("/api/research/experiments/validate", headers=auth, json={
+        "study_id": str(study_id), "budget": {"max_total_seconds": seconds},
+    })
+    assert response.status_code == 200
+    assert response.json()["valid"] is False
+    assert any("max_total_seconds" in message for message in response.json()["errors"])
+
+
+async def test_budget_expiry_preserves_adapter_cleanup_output(client):
+    exp_id, ids = await seed_runs(2)
+    async with sessionmaker()() as db:
+        (await db.get(Experiment, exp_id)).budget = {"max_total_seconds": 0.05}
+        await db.commit()
+    adapter = ProbeAdapter()
+
+    async def cleans_up_after_cancel(**kwargs):
+        adapter.calls += 1
+        if adapter.calls > 1:
+            return AdapterRunResult(status="succeeded", raw_output={}, environment_snapshot={})
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            return AdapterRunResult(status="succeeded", raw_output={"cleanup": "done"},
+                                    environment_snapshot={"execution": "synthetic_adapter"})
+
+    adapter.execute_run = cleans_up_after_cancel
+    await asyncio.wait_for(runner.run_experiment_batch(exp_id, ids, adapter), 0.8)
+    async with sessionmaker()() as db:
+        rows = [await db.get(Run, rid) for rid in ids]
+        assert [row.status for row in rows] == ["cancelled", "cancelled"]
+        assert all(row.error_code == "budget_exceeded" for row in rows)
+        assert rows[0].raw_output == {"cleanup": "done"}
+        assert rows[0].environment_snapshot == {"execution": "synthetic_adapter"}
+    assert adapter.calls == 1
 
 
 @pytest.mark.parametrize("terminal_status", ["cancelled", "failed", "succeeded"])

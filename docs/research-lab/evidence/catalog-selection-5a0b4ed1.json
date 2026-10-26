@@ -332,5 +332,25 @@
       "src/pages/research/views/MethodLibraryView.tsx": "a792f84763c082bec540fe8d48f6793a3de5963a7ccd550c48bfcaf4439ca2db",
       "src/pages/research/catalog-selection.test.tsx": "c3395d44be419f5f1e6ed146d3d2e55d5d05cced499b7a6593a95374b5862297"
     }
+  },
+  "resume_3c3b1640": {
+    "prepublish_gate": {
+      "ruff_files": 5,
+      "contracts": "84 passed,5785 deselected12.60s",
+      "changed": "4 passed1.38s",
+      "total_seconds": 25
+    },
+    "publish": {
+      "front": "57730bdf9e8b986f75f33c597f20e523497b3e79",
+      "backend": "3c3b1640d1ad5dea472c54bdfcf2af3de2021b2c",
+      "remote_published": false,
+      "initial_push_error": "403 denied to daeseon-dev",
+      "official_account_switch": "keyring move exit161",
+      "scoped_username_push": "both repositories: Password Device not configured",
+      "new_deploy_reserved": false
+    },
+    "docker_mount_probe": "node:20-alpine read-only bind exit0; source existed",
+    "first_api_build": "1 passed8.50s; install/check/build exit0; no browser",
+    "controller_cause": "unverified; deploy log line87 clipped350chars; not a controller reproduction"
   }
 }

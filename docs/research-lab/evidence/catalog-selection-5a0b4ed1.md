@@ -100,3 +100,31 @@ b6444f6a controller는5a0b4ed1에서1407 passed/16 skipped 후 게임 스튜디�
 설치 Docker mount source mkdir 오류(exit127)로 실패했다. 운영 Research 오류로
 확대하지 않는다. ops 원문은 deploy-mount-failure-b6444f6a.json에 보존하며
 긴87행은 ops의 행 길이 제한으로 잘려 끝 errno는 여전히 미확인이다.
+
+## 23:38 게시 경계와 좁은 배포 진단
+
+backend3c3b1640(최신origin1083a0ce 병합)은 필수 gate를 실제 실행했다:
+`UV_CACHE_DIR=/private/tmp/ttakkari-research-uv-cache scripts/verify_deploy_gate.sh --commit HEAD --base origin/main`
+ruff5파일 exit0, 계약84 passed/5785 deselected12.60s, 변경4 passed1.38s,
+총25초. 배포 전체 gate를 대체하지 않는다.
+
+front57730bd의 일반 HTTPS push가 daeseon-dev 계정403이었다. 지원 GitHub
+connector도 daeseon-dev이며 backend repo permissions.push=false다.
+`gh auth status`로 개인 winterholic 로그인 존재를 확인했으나 공식
+`gh auth switch --hostname github.com --user winterholic`은 이 Codex 명령 환경에서
+keyring 이동 exit161로 실패했다. 파일/비밀 직접 접근 없이 공식 credential helper에
+개인 username만 지정한 두 repo push도 Password/Device not configured로 거절됐다.
+이후 인증·push를 재시도하지 않는다. 새 revision은 원격 게시되지 않았으며,
+backend 새 배포 예약과 frontend 새 Production을 주장하지 않는다.
+
+Docker 경로 문제는 별도로 조사했다. 첫 읽기 probe는 잘못 고른 미설치
+node:22-alpine 이미지로 exit125(마운트 검사 전)였다. 실제 설정 node:20-alpine을
+사용한 새 임시 경로의 read-only bind probe는 source 존재/exit0/marker 동일했다
+(mount-probe-3c3b1640.json). 기존 API 첫 빌드 재현 스크립트
+`PYTHONPATH=src .venv/bin/python docs/research-lab/evidence/repro-game-recorded-build.py`
+역시1 passed8.50s, install/check/build 모두exit0였다. 브라우저를 실행하지 않았다.
+이는 Codex 명령 환경과 해당RunPG/host Docker 경로의 관측이며 controller b644의
+긴 실행 후 경로 오류 해결을 입증하지 않는다. ops 저장 이벤트에서 buildUUID검색0건,
+ops deploy87행은350자 clipping으로 errno가 없어 원인 확정 불가. 소스상 stage_source
+완료 후 install을 호출하고 stage 삭제는 finally뿐이다. 실제 controller 경로가
+시작 직전에 존재했는지는 미관측이므로 조기삭제/FUSE 원인을 단정하지 않는다.

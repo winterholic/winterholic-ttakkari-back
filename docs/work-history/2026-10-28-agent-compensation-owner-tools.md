@@ -38,3 +38,6 @@ Codex nested command sandbox에서 넓힌 호스트 검사 일부는 psutil/sysc
 - runtime_report의 실제 SQL 및 회사 도구 권한·보상 회귀 31 passed in 1.61s.
 
 - 통합 뒤 `tests/test_route_inventory.py tests/test_security_gate_inventory.py tests/test_run_compensation.py tests/test_work_service_access.py tests/test_github_account_switch.py tests/test_collection_agent.py tests/test_worker_quota_recovery.py tests/test_orchestrator.py` 재검사: **108 passed in 16.10s**. 겹치지 않는 기존 기능 검증(311/31)과 묶어 검토한다. 마지막 변경 Python ruff 및 diff whitespace 통과.
+
+- 두 번째 origin/main 진전 `0730559a`의 Muse binding/발견 guard/인자 provenance 수정도 보존하여 재통합했다. 겹치는 런타임 경계와 MCP 역할·권한·새 Muse 회귀 묶음: **122 passed in 21.32s**.
+- Codex nested command 환경에서 `git -c credential.username=winterholic push origin HEAD:main`과 표준 gh git-credential helper 지정은 모두 `could not read Password ... Device not configured`로 끝났다. 이 결과는 credential 공급 실패이며 sandbox 권한 거부나 해당 저장소의 GitHub 403을 관측한 것은 아니다. `gh auth status`의 토큰 없는 metadata는 daeseon-dev active/winterholic inactive, 둘 다 success/keyring을 반환했다. 등록된 winterholic 자격을 Git 프로토콜에만 전달하는 임시 계정별 helper를 준비했다. 파일에는 자격증명 값을 저장하지 않는다. 전역 활성 계정 전환은 수행하지 않았다.

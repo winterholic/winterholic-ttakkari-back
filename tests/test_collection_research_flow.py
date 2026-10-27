@@ -170,7 +170,8 @@ async def test_provider_failure_is_a_recorded_failure_retried_and_never_an_empty
     detail = await mission(client, auth, made["id"])
     reasons = [g["reason"] for g in detail["gaps"]]
     assert "search_provider_failed" in reasons and "no_search_candidates" not in reasons
-    assert detail["status"] == "partial"
+    assert detail["status"] == "failed"
+    assert detail["counts"]["acquired"] == 0 and detail["counts"]["imported"] == 0
     history = detail["plan"]["search_history"]
     assert history and {h["status"] for h in history} == {"failed"} and {h["error"] for h in history} == {"search_provider_challenge"}
     assert detail["plan"]["search_stop"] != "diminishing_returns"  # failures are not "no new results"
@@ -183,8 +184,11 @@ async def test_provider_failure_is_a_recorded_failure_retried_and_never_an_empty
         return []
     monkeypatch.setattr(adapters, "search_web", empty)
     await drain(monkeypatch, env)
-    gaps = [g["reason"] for g in (await mission(client, auth, other["id"]))["gaps"]]
+    empty_detail = await mission(client, auth, other["id"])
+    gaps = [g["reason"] for g in empty_detail["gaps"]]
     assert "no_search_candidates" in gaps and "search_provider_failed" not in gaps
+    assert empty_detail["status"] == "failed"
+    assert empty_detail["counts"]["acquired"] == 0 and empty_detail["counts"]["imported"] == 0
 
 
 async def test_provider_that_recovers_clears_the_failure_and_finishes_the_search(client, auth, env, monkeypatch):  # noqa: F811

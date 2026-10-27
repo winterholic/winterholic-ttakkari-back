@@ -1,0 +1,35 @@
+....F........................................................            [100%]
+=================================== FAILURES ===================================
+_ test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline _
+
+client = <httpx.AsyncClient object at 0x111e1c250>
+[isolated test auth omitted]
+env = Env(server=<collector_support.FixtureServer object at 0x111e09350>, deps=Deps(polite=<ttakkari.collector.polite.Polite...tor.blobs.FileBlobStore object at 0x111c43e10>, fetcher=<ttakkari.collector.fetcher.SafeFetcher object at 0x111e09e00>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112b9f7e0>
+
+    @pytest.mark.skipif(render_runtime() is None, reason="playwright-core and Chromium are not installed")
+    async def test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline(client, auth, env, monkeypatch):  # noqa: F811
+        await open_source(client, auth, env, hosts=("docs.test",), key="spa-source")
+        body = "The durable job runner fences attempts and records heartbeats for crawlers. " + prose("en", 301, 14)
+        env.server.page("/spa", SPA)
+        env.server.page("/app.js", "fetch('/api/page').then(r => r.json()).then(d => { document.getElementById('root').innerHTML = "
+                        "'<article><h1>' + d.title + '</h1><p>' + d.body + '</p></article>'; });", "application/javascript")
+        env.server.page("/api/page", json.dumps({"title": "Runner internals", "body": body}), "application/json")
+        monkeypatch.setattr(render, "runtime", render_runtime)
+    
+        # Use the pipeline's actual policy-aware fetcher, which already owns the
+        # fixture resolver. Replacing default_fetch hid its policy/polite contract.
+        made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "러너 내부 구조", "urls": [env.server.url("/spa")]})).json()
+        await drain(monkeypatch, env)
+        detail = await mission(client, auth, made["id"])
+>       assert detail["counts"]["imported"] == 1, detail
+E       AssertionError: {'id': '67c7adf8-8e97-4ecc-842e-9031a9d2ef25', 'goal': '러너 내부 구조', 'title': '러너 내부 구조', 'status': 'partial', ...}
+E       assert 0 == 1
+
+tests/test_collection_research_flow.py:267: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  trafilatura.core:core.py:465 discarding data: http://docs.test:51283/spa
+db reset: 49 selective (avg 13.3/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_collection_research_flow.py::test_script_shell_page_is_rendered_collected_and_searchable_through_the_real_pipeline
+1 failed, 60 passed in 10.15s

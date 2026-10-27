@@ -108,8 +108,8 @@ async def test_retry_rejects_arbitrary_parameters(client, seeded):
         assert (await client.post(f"{BASE}/{mid}/retry", headers=hdr, json=body)).status_code == 422
 
 
-async def test_work_session_cannot_cross_existing_personal_mission_boundary(client, seeded):
+async def test_owner_work_session_can_inspect_and_retry_existing_mission(client, seeded):
     env, mid = seeded
     hdr = headers(env.work_session_id)
-    assert (await client.get(f"{BASE}/{mid}", headers=hdr)).status_code == 403
-    assert (await client.post(f"{BASE}/{mid}/retry", headers=hdr, json={"expected_run_seq": 1})).status_code == 403
+    assert (await client.get(f"{BASE}/{mid}", headers=hdr)).status_code == 200
+    assert (await client.post(f"{BASE}/{mid}/retry", headers=hdr, json={"expected_run_seq": 1})).status_code == 202

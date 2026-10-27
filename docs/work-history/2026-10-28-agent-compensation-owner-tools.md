@@ -33,3 +33,8 @@ Codex nested command sandbox에서 넓힌 호스트 검사 일부는 psutil/sysc
 - `PYTHONPATH=src .venv/bin/python -m pytest -q`에 route/security inventory, compensation, work service, GitHub switch, worker quota, host scope, reverse/reconstruction, deployment, oplog, creative MCP, NotebookLM, generations/processes, executor/reconcile, GitHub accounts 및 변경한 host/Google 권한 사례 23개 파일/노드 묶음을 지정: **311 passed in 34.45s**. 테스트 입력/회수 대상은 격리 DB와 합성 프로세스 증거이며 운영 복구 성공 증거는 아니다.
 - 변경 Python 파일 전체 `ruff check`: `All checks passed!`. `git diff --check`: exit 0.
 - source origin/main이 작업 중 `038067ae`로 진전했다. collection recovery API 변경을 보존하여 통합한다. 통합 후 계약/관련 회귀를 다시 검사한다.
+
+- origin/main `038067ae`의 collection mission recovery API와 이번 변경을 통합했다. shared operations 인증 함수가 이제 owner의 양쪽 세션 그룹을 허용하므로 collection 진단/기존 임무 재시도도 같은 권한이 적용된다. 과거 038067ae의 개인 한정 결정은 이번 사용자의 명시적 제한 완화 요청으로 대체되며 tenant=owner·활성 작업 보존·사용자 pause/cancel·예상 회차 검사는 유지한다. MCP 역할/읽기전용 목록 및 화면 도구 분류도 이에 맞춘다.
+- runtime_report의 실제 SQL 및 회사 도구 권한·보상 회귀 31 passed in 1.61s.
+
+- 통합 뒤 `tests/test_route_inventory.py tests/test_security_gate_inventory.py tests/test_run_compensation.py tests/test_work_service_access.py tests/test_github_account_switch.py tests/test_collection_agent.py tests/test_worker_quota_recovery.py tests/test_orchestrator.py` 재검사: **108 passed in 16.10s**. 겹치지 않는 기존 기능 검증(311/31)과 묶어 검토한다. 마지막 변경 Python ruff 및 diff whitespace 통과.

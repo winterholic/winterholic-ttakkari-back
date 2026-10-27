@@ -1,6 +1,7 @@
 """자체 MCP 실행 권한과 도구의 읽기·쓰기 의미를 구분한다(ADR 0003)."""
 
 READ_ONLY_TOOLS = frozenset({
+    "collection_mission_status",
     "kb_search", "kb_documents", "kb_document", "kb_evidence",
     "list_checklist", "list_checklist_templates", "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
@@ -31,6 +32,7 @@ CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "
 # 사용자 지시에 따른 자체 앱 관리는 무인 실행에서 승인 프롬프트를 만들지 않는다.
 # 실제 권한은 API의 세션 토큰·역할·범위 검사로 제한한다. 쓰기를 readOnlyHint로 위장하지 않는다.
 ASSISTANT_WRITE_TOOLS = frozenset({
+    "collection_mission_retry",
     "knowledge_retry_extraction", "knowledge_start_extraction", "knowledge_submit_batch", "knowledge_review_assertion",
     "remember", "describe_entity", "link", "forget", "share_file", "keep_artifact", "set_artifact_area", "notify_user",
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",

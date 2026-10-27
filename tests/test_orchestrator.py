@@ -422,6 +422,7 @@ AGENT_TOOLS = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_c
                "execution_capabilities", "begin_environment_probe", "report_execution_environment", "host_gpu_start",
                "host_gpu_status", "host_gpu_bench", "host_gpu_stop",
                "host_operation_start", "host_operation_status", "host_operation_cancel",
+               "collection_mission_status", "collection_mission_retry",
                "reverse_start", "reverse_list", "reverse_get", "reverse_retry", "reverse_message",
                "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_create", "notebooklm_rename",
                "notebooklm_delete", "notebooklm_add_source", "notebooklm_delete_source", "notebooklm_query",
@@ -467,6 +468,7 @@ def test_mcp_server_tools_by_role():
 def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
     _, replies = _mcp_tools(role)
     queries = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_checklist", "list_checklist_templates",
+        "collection_mission_status",
         "backend_deploy_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
         "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",

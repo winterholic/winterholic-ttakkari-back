@@ -232,6 +232,8 @@ def test_mcp_scope_values_valid():
 
 
 ROUTE_SCOPE: dict[tuple[str, str], str] = {
+    ("GET", "/api/agent/collection/missions/{mission_id}"): "agent-plain",
+    ("POST", "/api/agent/collection/missions/{mission_id}/retry"): "agent-plain",
     ("GET", "/api/assistant/collect/missions"): "owner-plain",
     ("POST", "/api/assistant/collect/missions"): "owner-plain",
     ("POST", "/api/assistant/collect/missions/plan"): "owner-plain",
@@ -889,6 +891,8 @@ MCP_ORCHESTRATOR_ONLY = frozenset(
 )
 
 MCP_SCOPE: dict[str, str] = {
+    "collection_mission_status": "knowledge",
+    "collection_mission_retry": "knowledge",
     "comfy_cancel": "comfy",
     "comfy_job": "comfy",
     "comfy_jobs": "comfy",

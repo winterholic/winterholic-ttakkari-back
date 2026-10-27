@@ -1,0 +1,804 @@
+{
+  "observed_at": "2026-10-28 Asia/Seoul, before deployment",
+  "method": "kb_documents(limit=100) returned all 99 visible documents. Placements below are metadata-based predeployment expectations, not factuality reviews or production application receipts.",
+  "baseline_revision": "c70bce7ba8ab888ea4989f2ab3ef887ff41f0809",
+  "counts": {
+    "documents": 99,
+    "research_context": 24,
+    "knowledge_reference": 75
+  },
+  "documents": [
+    {
+      "id": "90067a7c-bb85-4b70-8edf-d329a45659a7",
+      "title": "003~011 Mac CPU 통합 보고 최종 인수와 iPhone 미완료",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/integrated-results-20261028/report.md",
+      "source_sha256": "4e3cab2b84fde63622cefb2da1fabfadfad47138285a345b96803cf6c37f3be7",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "4f05f44e-526c-4375-90ab-7f197ebcf462",
+      "title": "011 attempt02 부분 인수·원장 결함·도구결과/상태 표현 교정",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-inference-03/results/qwen-kcache-workflow-20261028-011/independent-review-20261028/review.md",
+      "source_sha256": "d77cf390548c32931b084e416e7198920573f9bd26f98510974774178cf7a781",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "0846448f-601f-470a-abde-aea54858b12f",
+      "title": "011 no-start CPU metric gate reassessment (external report)",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-inference-03/results/qwen-kcache-workflow-20261028-011/lead-gate-reassessment-20261028.json",
+      "source_sha256": "f32527bd4b326d543b300dea1271476ec69a5a50f5558770bd0f11ebceed6032",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "a2c37326-9f7f-4ea4-b360-578239b6f350",
+      "title": "010 K-cache raw verification and corrected result v2 (external report)",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-inference-03/results/qwen-kcache-precision-20261027-010/report-corrected-v2.md",
+      "source_sha256": "5a41cab16581491639e78b3a098a04daaef7aa06204b4503fa695f868d89a5fd",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "e348e9c1-56e1-4bab-8ab5-a61bb849825f",
+      "title": "009 Qwen cache workflow — lead raw validation and corrected report v2",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-inference-03/results/qwen-cache-workflow-20261027-009/report-corrected-v2.md",
+      "source_sha256": "8a7463d953316c9a91da18978e83d88068ab9ed81fb19399e2c0dfa2eed3dcd6",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "327d7a6e-b615-4dca-9420-bbb6d334433f",
+      "title": "008 CPU KV 버퍼 상세 로그 — 672/224 MiB와 후속009도구캐시실측",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/model-comparison-20261027-008/lead-raw-validation-20261027.json",
+      "source_sha256": "b0dd9003f3208682d1aab2fc8635949dab642820246ee3b7cb2db7a550757646",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "369ceddc-2257-44dd-8306-83b4d7d4e9a2",
+      "title": "007 자원 계측 독립 검토 인수 및 표현 교정본",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/model-comparison-20261027-007/lead-independent-review-acceptance-20261027.json",
+      "source_sha256": "1a2d42cc50130d85de4f3bae73d2e3ae2717d05b4ce2a6ad2f619d74ca1e5b54",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "6f344861-051f-4d2b-9d02-3872f5641c30",
+      "title": "007 컨텍스트 비교 — 하위트리 메모리 proxy와 독립 검토/008 KV 관측 보완",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/model-comparison-20261027-007/lead-raw-validation-20261027.json",
+      "source_sha256": "28a76efefbb5e819e2560b9400fff1ca63149db6f80fb35e5664fcc2dc597938",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "b1caa16b-6142-48ec-8c51-36cf8fec27bf",
+      "title": "006 한국어 지침 전후 — 도구 미호출 회귀와 후속 컨텍스트 실험",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/model-comparison-20261027-006/report.md",
+      "source_sha256": "9b03e5024ca263a36ab4270e08fbfafebde5bc43499cadd40fca70791e886962",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "5543a4ff-5c11-4ba0-9db5-202ccc302157",
+      "title": "Qwen3 1.7B 공통평가 005 — 교정 의미판정 및 lead 원자료 대조",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/model-comparison-20261027-005/independent-state-review/README.md",
+      "source_sha256": "93a11182f102db044b064a9f697dd0f5da89f951b3c878f444eccde8326c1959",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "627d15c6-595b-45fa-8eef-4d24cff55ed6",
+      "title": "Simulator CPU 계측 라벨 교정 — 소스 검증 한정",
+      "kind": "research_text",
+      "locator": "repo:3af53a5:docs/research/ios-memory-01/simulator-backend-label-fix-20261027-001.md",
+      "source_sha256": "33ab59db9b190f040b301fc993f31545c961dcbad6e39ee06e649a89a7dc40e0",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "a97af8f1-bf7f-4a2f-95a2-c7f57f030e43",
+      "title": "Simulator 첫 독립 조회 — 앱 실행 전 CoreSimulatorService 연결 실패",
+      "kind": "research_text",
+      "locator": "repo:0bdfb66:docs/research/ios-memory-01/simulator-check-20261027-001/README.md",
+      "source_sha256": "a0eeec14cbfc8879cf234812fad369e2e7e00067a2cf4635469d853ac692aa5a",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "9286bab4-5207-4794-8888-618fcd22fffa",
+      "title": "CPU 보충판 두 교정 인수와 남은 필수 실측 제약",
+      "kind": "research_text",
+      "locator": "repo:c81429f:docs/research/ios-model-02/review/cpu-proxy-addendum-lead-acceptance-20261027.json",
+      "source_sha256": "7a25d38fad2ce69d0189fd427ba0a9c975225956349bbf2e7b3e79db848ad537",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "389f4819-7414-486e-ab00-913795d64196",
+      "title": "제공 문서 4회 원자료 인수 — 방어 안내 조건·외부 실행 범위",
+      "kind": "research_text",
+      "locator": "repo:2a5635753317e65a983a29603ef16917b76984d1:docs/research/ios-model-02/review/provided-document-lead-acceptance-20261027.md",
+      "source_sha256": "31deea0f2c4b36bf845ad16da80162236ebf8d52cf2a79c59744e35b4eeb8561",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "0d42e835-36b8-4856-86c9-df5a5b070f9c",
+      "title": "LFM Mac CPU proxy 보존 자료 교정 보고 (외부 보고, 관측 아님)",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/lfm2.5-1.2b-instruct/macos-cpu-proxy-001/report.md#교정-addendum",
+      "source_sha256": "3dbaa806f8b9b5985a59d9b3c5a0eee83eebced4c32cfea1a462917bf7eee98d",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "456742b2-6f42-4880-8b6a-29813c1834bf",
+      "title": "LFM2.5 1.2B GGUF Mac CPU host-only proxy execution report (Codex run)",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/results/lfm2.5-1.2b-instruct/macos-cpu-proxy-001/report.md",
+      "source_sha256": "003d7ebf9e58b73379f1aa96d0cd8de9de437a9b0a8944b10deabd602042f1ff",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "a2d8680a-98fa-47cb-bb0b-d70db0c8f8a3",
+      "title": "Candidate artifact metadata review 673b23a (no model execution)",
+      "kind": "research_text",
+      "locator": "/Users/winterholic/development/hyperez/regna-ios/docs/research/ios-model-02/artifact-metadata-evidence.json",
+      "source_sha256": "fb837ff663cbbfe9948e4d33a4a0f8adc5b544a1569391620d6b54c4bf57efd4",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "854090f7-f600-46a0-abbf-05fec7e2623a",
+      "title": "Regna current source and read-only study inputs",
+      "kind": "research_text",
+      "locator": "repository: app/Regna/GemmaEngine.swift; app/Regna/LocalEngine.swift; app/Regna/model-manifest.json; app/project.yml; docs/research/ios-memory-01/*; docs/research/ios-model-02/benchmark-cases.jsonl and benchmark-records-schema.json",
+      "source_sha256": "62bfe5778c285904bf909601a3aa95e4c20281e2de0b7ceae65d7dcfe433a668",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "b046b2c5-02da-4a02-b45f-9d5d87c2a595",
+      "title": "Apple Metal performance analysis documentation",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/xcode/analyzing-the-performance-of-your-metal-app",
+      "source_sha256": "16af09b77747afa637080629146821fffed8eb913222f1a90cd17ff64335792f",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "8e3182f3-b6a6-4dad-a253-a87ee359ccc7",
+      "title": "Apple SystemLanguageModel reference",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel",
+      "source_sha256": "215a865349286bc892ef70136c07a59ceb50aa68e10a817c0871a198880b61e4",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "d01200b0-89b4-4f37-8ed2-12e1bb288c4d",
+      "title": "MLC LLM upstream iOS deployment guide",
+      "kind": "research_text",
+      "locator": "https://github.com/mlc-ai/mlc-llm/blob/main/docs/deploy/ios.rst",
+      "source_sha256": "ed9e89e4d177c7088b824cab43540658c48825691adf61efe7441b821ba6a9a1",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "1fb9a64f-0dee-477c-b7d3-ad7803aa2bcb",
+      "title": "mlx-swift pinned Package.swift 0.32.3",
+      "kind": "research_text",
+      "locator": "https://github.com/ml-explore/mlx-swift/blob/0.32.3/Package.swift",
+      "source_sha256": "f7bf8b0e64c72de87b7fb2fdd8095f15accd076b34608a6306ecf999f8016911",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "5dd6385d-1030-4aa5-9a69-f030b00442d1",
+      "title": "mlx-swift-lm pinned Package.swift 3.32.3",
+      "kind": "research_text",
+      "locator": "https://github.com/ml-explore/mlx-swift-lm/blob/3.32.3/Package.swift",
+      "source_sha256": "5876faef709a393b5505a71f5bb0958f83e6f2b72a63461af1cb7c0ba28fe516",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "63338c49-02b7-4948-86a7-2fac85479e27",
+      "title": "llama.cpp upstream build guide",
+      "kind": "research_text",
+      "locator": "https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md",
+      "source_sha256": "53641e93845948d1ada17bb6522aac6ab0578231b867753ddbe47ed5a0d0b454",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "e5da20ed-5a79-4b65-a424-22e64cc754cd",
+      "title": "PagedAttention original paper",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2309.06180 (2023; SOSP 2023)",
+      "source_sha256": "615c585ffd70e567ecb690ed2d570485d28e6af5d476052fa2348e6175f62516",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "00bd67c6-3612-4f1d-b20b-17089235662f",
+      "title": "FlashAttention original paper",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2205.14135 (v2, 2022-06-23)",
+      "source_sha256": "fd4d08382b320c5fab8ddde495829f6a5c2165a3a494d6366d33b0e3a8d2565a",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "58d3866e-8021-41f8-9452-b4553b0878ad",
+      "title": "LiteRT-LM current Swift API documentation",
+      "kind": "research_text",
+      "locator": "https://developers.google.com/edge/litert-lm/swift",
+      "source_sha256": "42ecbe3ee073233a5b92b3f0b6b55657b11022ec44fe481ad8a9321726e37f7e",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "721be9c6-6cf3-4667-a212-12149230f490",
+      "title": "LiteRT-LM 0.18.1 pinned Package.swift",
+      "kind": "research_text",
+      "locator": "https://raw.githubusercontent.com/google-ai-edge/LiteRT-LM/bda624851d74be34d4e1f7fac1fc4155939539c7/Package.swift",
+      "source_sha256": "1c2b067335127e34f886259dc4ab4a54f03789e902fa78f46335a5bb02df3952",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "2aff6591-4c87-4888-9ec5-7dad08453857",
+      "title": "Apple official thermal and MetricKit measurement boundaries",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/foundation/processinfo/thermalstate-swift.enum ; https://developer.apple.com/documentation/xcode/responding-to-power-notifications ; https://developer.apple.com/documentation/metrickit ; accessed 2026-10-27",
+      "source_sha256": "dd70767a937e4d94c9868df4fe0369ba1af0481d24098756f18be34fac811726",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "e0fdaaa5-c731-4ccc-acd6-95a67a4c212f",
+      "title": "Primary papers: GQA, KIVI, speculative decoding",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2305.13245 ; https://arxiv.org/abs/2402.02750 ; https://proceedings.mlr.press/v202/leviathan23a.html ; accessed 2026-10-27",
+      "source_sha256": "945e811690b9d0bb02e4ff98639663df63dff11009dacea73767afd13460accf",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "12f76a19-e226-494e-b572-faa022629d56",
+      "title": "Regna local inference path and exact dependency pins (read-only survey)",
+      "kind": "research_text",
+      "locator": "repo=/Users/winterholic/development/hyperez/regna-ios; HEAD=6caf1f5d37051cda578eeacde18ef2366746b86; Package.resolved pins LiteRT-LM 0.18.1 bda624851d74be34d4e1f7fac1fc4155939539c7 and mlx-swift-lm 3.32.3 3b339ad6e3b3f44c8121ecff5131c7fd55e075e6; https://github.com/google-ai-edge/LiteRT-LM/releases/tag/v0.18.1; https://github.com/ml-explore/mlx-swift-lm/blob/3b339ad6e3b3f44c8121ecff5131c7fd55e075e6/Libraries/MLXLMCommon/KVCache.swift; https://github.com/ml-explore/mlx-swift-lm/blob/3b339ad6e3b3f44c8121ecff5131c7fd55e075e6/Libraries/MLXLMCommon/ChatSession.swift",
+      "source_sha256": "4d3597f38a5184d4765e541e75db70c757edc87569e10fcaf753e3dfced5442a",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "12909df3-e4aa-48c1-b282-7a7921a45569",
+      "title": "사용자 제3차 추론 최적화 연구 지시와 선행 조건",
+      "kind": "research_text",
+      "locator": "session:20ce11fe-9df6-4215-9ded-11dc4f1e9c29 / 2026-10-27 제3차 연구 요청",
+      "source_sha256": "7111bfb115be823301d56d70c258a79e53f0b3e0d4d0394ab1de1c194a614bf7",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "bbd04153-bc8b-4162-97bb-99c15d6a5cb5",
+      "title": "MiniCPM5-1B official model card (pinned revision)",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/openbmb/MiniCPM5-1B/blob/87179e5c1f455ef22e6223592d2d61351b525bfc/README.md",
+      "source_sha256": "6fe73b7a519bcb96c13469b393aead0d235073e44c2d01571928f0c724f36790",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4a442804-23f5-4708-ae66-2781f1e56222",
+      "title": "Kanana-2-1.3B-Instruct official model card (pinned revision)",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/kakaocorp/kanana-2-1.3b-instruct/blob/bf4786aa2a1908adce942d53976270132732f720/README.md",
+      "source_sha256": "b25a813993d1eb8d0c52c1b2960343539de6b39f3a2cce5140f4443fd291d2f4",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "8d09b0c9-987f-49c8-892e-fb9188fc6355",
+      "title": "Regna iOS study 1 implementation and environment documents",
+      "kind": "research_text",
+      "locator": "repo:docs/research/ios-memory-01/implementation-execution.md; docs/research/ios-memory-01/architecture-environment.md",
+      "source_sha256": "7cf0b23b67f9aeae396f64e5dc897c2b961f647aac72fd0ec2f2d49d56b04138",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "3d74beee-c794-4d0f-bde4-ac1b88cb5e87",
+      "title": "Meta FAIR Noncommercial Research License for MobileMoE and MobileLLM",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/facebook/MobileMoE-S-SFT/blob/4decae01abfeaf46046b8774fdc4404b3e33a3a4/LICENSE",
+      "source_sha256": "9c50a31cffc8081443f2311d25a13dac874c14828d420ffdedfdebc5d94af5ea",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "375418d2-7953-41c8-9b46-970f6b71ef75",
+      "title": "EXAONE AI Model License Agreement 1.2-NC",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/LGAI-EXAONE/EXAONE-4.0-1.2B/blob/3abf2810673c7c0778df64a73c2d52eab32d91c4/LICENSE",
+      "source_sha256": "324863a3414636f10e8c1e871449d1020fc8d2d1e29134bc95032747536c7d25",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "e1414766-8ac7-40c5-9e8f-b63bd266b2f3",
+      "title": "Swiss AI Apertus v1.5 usage policy",
+      "kind": "research_text",
+      "locator": "https://github.com/swiss-ai/apertus-legal/blob/main/apertus_1.5/USAGE_POLICY.pdf",
+      "source_sha256": "9ba6a98d033ecf4177487bd08c6991674230cf835df110a834ba68be8bd06327",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "6e9796e6-19f6-44f6-b1ff-3239777c77cd",
+      "title": "Apple Intelligence supported language and device availability",
+      "kind": "research_text",
+      "locator": "https://support.apple.com/en-lamr/121115",
+      "source_sha256": "e730fd2f7dfb8c9637dfa0fdbba030ad96aa90bf5941ce32d8eb4f16298634bf",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4e3fffbc-4ea3-47fc-b6d6-5b272ba63212",
+      "title": "Apple Foundation Models tool API",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/foundationmodels/tool",
+      "source_sha256": "ab820cfc19b0309f013d67e0364af3d6a34f566e33de03e5d18bbaea2ccb006b",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "f0f80c86-c5fe-4a50-b6be-7b2b35099ae6",
+      "title": "Apple Foundation Models framework",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/FoundationModels",
+      "source_sha256": "c87fc0af6fc984dac692ceaf29312dc4466659a907ed9dbbb0a8ece58eaae59d",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "9d7a9540-0b93-4432-bc4e-0b2518ffe444",
+      "title": "llama.cpp upstream iOS/Metal and GGUF notes",
+      "kind": "research_text",
+      "locator": "https://github.com/ggml-org/llama.cpp/blob/master/README.md",
+      "source_sha256": "b457e86010f17d98992d684e6980d292f3aec9226a7cf7963fffecd88a381ba2",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "04da0c59-d0c0-49ae-8af0-ed522b5e0206",
+      "title": "MLX Swift LM model compatibility and iOS examples",
+      "kind": "research_text",
+      "locator": "https://github.com/ml-explore/mlx-swift-lm/blob/main/Libraries/MLXLMCommon/Documentation.docc/model-compatibility.md",
+      "source_sha256": "0be9f8d2ee539a44c2659e0fafeb5dd478be92d264983d5dcd819e25fe88de28",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "cee75cc0-c1f2-46c0-83f9-5a29919fe4da",
+      "title": "LiteRT-LM official runtime scope and API status",
+      "kind": "research_text",
+      "locator": "https://github.com/google-ai-edge/LiteRT-LM/blob/main/README.md",
+      "source_sha256": "251305515c8d57d1a635d35ae0d471392413d167dd13e5dfe7e48c360b1ec941",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "8ab5d9e0-92fe-486f-9f87-b5402297d3c8",
+      "title": "MobileLLM: MobileLLM-R1.5-950M official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/facebook/MobileLLM-R1.5-950M",
+      "source_sha256": "32559e77f37243f99164a764d566ef574ec7cdef633f688ea1a64683377c4671",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "f19fe979-b731-4ca9-96c6-747eadfe29b0",
+      "title": "MobileMoE: MobileMoE-S-SFT official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/facebook/MobileMoE-S-SFT/blob/4decae01abfeaf46046b8774fdc4404b3e33a3a4/README.md",
+      "source_sha256": "1921215a2291dffa9a9cdbae967d948f0805ef628c90d119b1d6216dc65ab09a",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "409c501a-e9e5-41f9-816a-f08b75d962fc",
+      "title": "Apertus: Apertus v1.5 8B official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/swiss-ai/Apertus-v1.5-8B",
+      "source_sha256": "a3ec25b6a1f9748e3431e0324331764cc6a0bd20b26c7681091d79b926495979",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "59aa023a-5713-4130-aa1e-2be11f444827",
+      "title": "Nemotron: NVIDIA Nemotron 3 Nano 4B BF16 official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16/blob/dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f/README.md",
+      "source_sha256": "da28482293d2e633791459effef093358ad6b82b3c55eeeb5d76834b9dc66bde",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "e0a699d1-c426-4899-8eab-7868334fb655",
+      "title": "EXAONE: EXAONE 4.0 1.2B official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/LGAI-EXAONE/EXAONE-4.0-1.2B/blob/3abf2810673c7c0778df64a73c2d52eab32d91c4/README.md",
+      "source_sha256": "2ad91775f717b1f149389de5a44fa2fb6d63dbb43242bf870dfaf73f3a10d8ab",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "c763658f-962c-48a7-979d-c37f11c6c3b2",
+      "title": "Ministral: Ministral 3 3B Instruct 2512 official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512/blob/b35d4dfe56c142746f54dbd64f579faab2744308/README.md",
+      "source_sha256": "e03a3e4a46c9a1729841cd05a072265a1486abe804bab6a460e06d0aecc633d8",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "a8f765d1-47df-4e2b-95aa-bfda3adffe7f",
+      "title": "Llama: Llama 3.2 1B Instruct official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
+      "source_sha256": "d1368d7d331b08be2d2a62f8fad4bf39c684ecdefe7d5d35dca8dc3773bd8678",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "b896b453-3cf0-4e71-b205-c9ced7012afc",
+      "title": "SmolLM: SmolLM3-3B official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/HuggingFaceTB/SmolLM3-3B/blob/a07cc9a04f16550a088caea529712d1d335b0ac1/README.md",
+      "source_sha256": "6665917172e1322cabc4623c1d62f966e57a366106e5b1e533c208d92ae3a4db",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "aeb74119-71ab-4c6b-8fb0-eac56ab884e4",
+      "title": "Granite: Granite 4.0 Micro official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/ibm-granite/granite-4.0-micro/blob/56111ae135df9c53a78c99028e7bc24035a9e979/README.md",
+      "source_sha256": "a03ac85ceb823d4f44c58cdf8b623ccbfab2da0e2a4841f0ab95692a55a5b510",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "3bcde9cd-6641-4d8a-8cc0-a322719755b0",
+      "title": "Phi: Phi-4-mini-instruct official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/microsoft/Phi-4-mini-instruct/blob/cfbefacb99257ffa30c83adab238a50856ac3083/README.md",
+      "source_sha256": "53c06797c9ebebe74903cdeb9499f30978aa48af2e36bba71d84cae7e12b6812",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "af6e7372-b9c6-41f0-9e39-f6fab5073fe3",
+      "title": "MiniCPM: MiniCPM4-0.5B official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/openbmb/MiniCPM4-0.5B/blob/5253c7fcc5e29e1cf3eacb59a58adf1ba4df8630/README.md",
+      "source_sha256": "9e596b9318d5244de8c93134ad33083e050358e5f4c9dcdd48cc2565da5be525",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "6891c31d-30f3-4ad7-a5ca-82e640186242",
+      "title": "LFM: LFM2.5-1.2B-Instruct official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct/blob/0f604ada3f766f9f257460c4c9f0b5d6f69d431b/README.md",
+      "source_sha256": "68cd211101a7a949acde0aedf5a76e3d9fe360c43fc761c531e79c56cf7711ff",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "8d498254-306c-481d-81ef-ac6867d0f19d",
+      "title": "Gemma: Gemma 4 E2B IT official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/README.md",
+      "source_sha256": "aca5155a82cd03f7d3bb8d8436b418e18746c42a801621ad5b3d386a0c01e1b9",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "8847995a-aab9-484d-a1ff-b26dddc3dacc",
+      "title": "Qwen: Qwen3.5-0.8B official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/2fc06364715b967f1860aea9cf38778875588b17/README.md",
+      "source_sha256": "a00d123ee6ca6d3fe77169595b5fbab136167b257d1db62b20633a0dc539caf4",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "19550eef-6aaa-4463-964c-2ebb0c024d6e",
+      "title": "Kanana: Kakao Kanana Nano 2.1B Instruct official card and metadata",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/kakaocorp/kanana-nano-2.1b-instruct/blob/e12a48d5386ceb7dd608533e8ffaea82d6070554/README.md",
+      "source_sha256": "1bafd987cc62157b415450cbaab7cd33b3c79cc6c6cf17979b46418c2a9b06d7",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "cfc07ebd-f26a-4407-a59b-517787f1ec96",
+      "title": "Kanana Nano 2.1B Instruct official model card",
+      "kind": "research_text",
+      "locator": "https://huggingface.co/kakaocorp/kanana-nano-2.1b-instruct/blob/e12a48d5386ceb7dd608533e8ffaea82d6070554/README.md",
+      "source_sha256": "970de23e66a2bd7736cc5d7351193b8095431076e499e9f891b9afe069bcede1",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "efde1986-eb40-4441-b9dc-c2454076f086",
+      "title": "Regna iOS memory study 01 primary scenarios",
+      "kind": "research_text",
+      "locator": "regna-ios/docs/research/ios-memory-01/scenarios.json#conditions.D (checked 2026-10-27; repo HEAD e834b328a40e5f7a41fd74f3e3b6414187c2d02b)",
+      "source_sha256": "b9b1469792c9cdf949bf16bc9414f6c251f6914f71ad506cd8b9cc95d25cb969",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "76dbbf7e-8738-4520-a5da-a5dcef6ee849",
+      "title": "Regna iOS memory study 01 implementation execution state",
+      "kind": "research_text",
+      "locator": "regna-ios/docs/research/ios-memory-01/implementation-execution.md#State (checked 2026-10-27; repo HEAD e834b328a40e5f7a41fd74f3e3b6414187c2d02b)",
+      "source_sha256": "526838781768963b72e5202fb5c05fc88b4e43f984d639bfcb75af62e389250c",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "2d584a73-a17e-4979-bb30-9c2d564af23b",
+      "title": "사용자 추가 연구 운영 지시: 제2차 사전 준비·자동 전환",
+      "kind": "research_text",
+      "locator": "session:20ce11fe-9df6-4215-9ded-11dc4f1e9c29 (2026-10-27 추가 지시)",
+      "source_sha256": "cb55e0cda4d5feedc8e5f7d79230a697853e468324987c5384d63d7d4723467f",
+      "expected_placement": "research_context"
+    },
+    {
+      "id": "2731f585-a15a-4951-85b4-67fffc193755",
+      "title": "디플로이먼트",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/workloads/controllers/deployment/",
+      "source_sha256": "f1bfd805c3d079d1de36b6a05f72761b8363537c0e011731b245ebb0c6f66f8a",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "2097afbb-aef6-4870-b23a-2e37ab4e991d",
+      "title": "퍼시스턴트 볼륨",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/storage/persistent-volumes/",
+      "source_sha256": "03a45baca446a50dfb7bde16c5cc371e7a52a15d59eb56de4e3fbe263ffbda18",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4a0d4e03-6788-4a7a-993c-15dfb3f9c447",
+      "title": "컨피그맵(ConfigMap)",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/configuration/configmap/",
+      "source_sha256": "b18644900092a8c0ed1abea7cf3511d5f3f9027eb0c2ae8cd7336808793945b1",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "cfd60b9d-b1f6-43a2-84bf-0d7a63c36aff",
+      "title": "서비스",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/services-networking/service/",
+      "source_sha256": "1f8ccf8ac24666bdef711cf8f8ce990963080dac5dfd8e545b07724b8643e377",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "e9f190c1-a2f3-475e-a5d3-76a57f165b9e",
+      "title": "파드",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/workloads/pods/",
+      "source_sha256": "2aebb341ec38de93aabb4fc5c6ce618b48b2b2ce5dbf51c2de2473dc23f8061b",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "9d6a4222-3253-4933-a9d6-29ba77870b19",
+      "title": "쿠버네티스란 무엇인가?",
+      "kind": "web",
+      "locator": "https://kubernetes.io/ko/docs/concepts/overview/",
+      "source_sha256": "85279bf5816731c41f1fa74812d6fa149679b076618f01b2cd3d52ff578a03d2",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "25aa3527-b802-456b-acf6-64dced2e9cd8",
+      "title": "Kubernetes v1.37: Memory QoS Graduates to Beta",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/14/kubernetes-v1-37-memory-qos-graduates-to-beta/",
+      "source_sha256": "f8579902c0d4b88647808dca95388e9c42c3d486cee3f79a622f63e1d92a056f",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "73dcea40-3184-4800-b52d-4613cddf1db6",
+      "title": "Kubernetes Changed Block Tracking API - Beta Differences",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/14/csi-changed-block-tracking-beta/",
+      "source_sha256": "21c0eb4ba73421a73f7d886081635c06ff190e595dcd4bcef09f33d875a74e43",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4768d38d-f36e-43df-b5af-cfe8aa08e545",
+      "title": "Kubernetes v1.37: Pod-Level Resource Managers graduated to Beta",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/15/kubernetes-v1-37-pod-level-resource-managers-beta/",
+      "source_sha256": "4c8b986f957ddd941360fd323a26c8b9b64c8d53b294d4e0aedcedb1f252322e",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "fffa2f87-a82a-43f5-ba70-7243d196ac3a",
+      "title": "Kubernetes v1.37: Hardening Container Storage with Bind Mount Options and EmptyDir Permissions",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/16/kubernetes-v1-37-hardening-container-storage/",
+      "source_sha256": "15c7cf4a134935c845a15e53a4f1d0c38817353ab28d193c92fc1faae6efe7b6",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "21205529-3fec-42b9-b643-47c2a752c9a0",
+      "title": "Kubernetes v1.37: Tracking When a PersistentVolumeClaim Was Last Used (Beta)",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/21/kubernetes-v1-37-pvc-last-used-time/",
+      "source_sha256": "ca0fb733c42f95033500ba60037638aeca5082aaed22ffa61833749889048ba8",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4626d575-187f-4915-99d3-26ea5a569a70",
+      "title": "Spotlight on SIG Apps",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/09/22/sig-apps-spotlight/",
+      "source_sha256": "3be019bfcd416eea6e35e93328ef5267fca7727811806bfe44723a59af8950e7",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "51ef6902-2480-402b-910b-1a3517b9ee12",
+      "title": "Scaling Kubernetes Workloads with Node Swap",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/10/05/scaling-kubernetes-workloads-with-node-swap/",
+      "source_sha256": "52c8fae424c5a0ededd2719f28b56c589b028873ccdce92a3d4577c19bdd1861",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "b4c175e4-94b6-4ce3-8afd-8d480a9bf9db",
+      "title": "The Shift to cgroup v2 in Kubernetes: What You Need to Know",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/10/06/kubernetes-cgroups-v2-shift/",
+      "source_sha256": "14481b35f1049ddefa96a56bd546ce59f6d02fbad662ea170616ecebb5467d0a",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "3631f864-dddd-4483-bf3c-233a9de34476",
+      "title": "Why Is My Kubernetes Job Still Pending? Tracing Kueue Admission with Headlamp",
+      "kind": "web",
+      "locator": "https://kubernetes.io/blog/2026/10/14/tracing-kueue-admission-with-headlamp/",
+      "source_sha256": "5f16cb8dc93f5eef475d3755af8e4f11c365edaf5b88a04c4062d95bcbbf4211",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "4404b791-65ce-4826-8745-a5d5939a5650",
+      "title": "Recent Frontier Models Are Reward Hacking",
+      "kind": "research_text",
+      "locator": "https://metr.org/blog/2025-06-05-recent-reward-hacking/",
+      "source_sha256": "cc9f8fb9d5d0fb7bd1c6c290837c47b0a3ced4272bda83752db6cbdce21d519e",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "46e2bb56-3184-4b9c-b893-bfbcfc973b24",
+      "title": "Handling Errors - Inspect",
+      "kind": "research_text",
+      "locator": "https://inspect.aisi.org.uk/handling-errors.html",
+      "source_sha256": "16eb63c02b1e40f167b057d8033fc5fdb3d18970fc49475894060b7e1b91ac3f",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "313ceee7-7110-40c9-8edb-f7c0adcc8108",
+      "title": "Options - Inspect",
+      "kind": "research_text",
+      "locator": "https://inspect.aisi.org.uk/options.html",
+      "source_sha256": "0d895bd3ebd8e2a26d41b5a116e9c4642f096ea1961a20ae6b0529d0830e1f2e",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "737330b3-3d2c-49a4-b7b9-edb3919be9d1",
+      "title": "Log Files - Inspect",
+      "kind": "research_text",
+      "locator": "https://inspect.aisi.org.uk/eval-logs.html",
+      "source_sha256": "8bd89b524b06f96c53d95df64d755994d25dc4afde8efe737255f40fe7865d83",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "a62b2fa2-9624-40c1-83af-59c44a12e1f9",
+      "title": "Example autonomy evaluation protocol - METR",
+      "kind": "research_text",
+      "locator": "https://evaluations.metr.org/faq/",
+      "source_sha256": "37e1b9ffbb29e6ab67a9b29da64ae68a8929877a2b7e076262632c13d010c651",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "abb8f6e9-4894-4416-895a-6561678e542e",
+      "title": "When +1% Is Not Enough: A Paired Bootstrap Protocol for Evaluating Small Improvements",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2511.19794",
+      "source_sha256": "aba722805fdf4a11ca8406055092290e97873ff7e0e6388840d230e8fd47b7d3",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "ecaf609d-1d21-47a2-8369-87f2368cf294",
+      "title": "Introducing SWE-bench Verified",
+      "kind": "research_text",
+      "locator": "https://openai.com/index/introducing-swe-bench-verified/",
+      "source_sha256": "c629734a0509db6a885ce5371c0393152729e8641b5495de15f956267e872219",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "f8f1374f-5d4b-4804-95c2-96e6c42aa5fa",
+      "title": "Virtual Machine Manager | Docker Docs",
+      "kind": "research_text",
+      "locator": "https://docs.docker.com/desktop/features/vmm/",
+      "source_sha256": "6f4cb15a7fc81df6aa59abf76569e0146849c9f4387d87a581ea3c4ac9cceec8",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "604f4ca4-43ee-4c0a-a82c-ac88403cb52a",
+      "title": "Virtualize macOS on a Mac",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/virtualization/virtualize-macos-on-a-mac",
+      "source_sha256": "abfbe608d0ab43c0bcb48adc60604b923a78ac6f12c489afaf2a50074d6ebddb",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "638b3905-6674-47b3-8a85-2e35e9906b9a",
+      "title": "sandbox-exec(1) macOS manual page",
+      "kind": "research_text",
+      "locator": "https://man.freebsd.org/cgi/man.cgi?manpath=macOS+13.6.5&query=sandbox-exec&sektion=1",
+      "source_sha256": "190779707f008303846f842e422b7cf36b0e77eb517b4b015a55e4fb0294dca4",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "f86414e6-072d-4906-8df0-24f4529116a2",
+      "title": "App Sandbox",
+      "kind": "research_text",
+      "locator": "https://developer.apple.com/documentation/security/app-sandbox",
+      "source_sha256": "2c24a4f9d387961ca856cb1b9ba875600da31e5294b9ac004a0396c571fb8faf",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "55ddc0e8-31ca-406c-9884-28af3e78af15",
+      "title": "Recent Frontier Models Are Reward Hacking",
+      "kind": "research_text",
+      "locator": "https://metr.org/blog/2025-06-05-recent-reward-hacking/",
+      "source_sha256": "058af4434f202a5ba78cbc6ad8b3139459fcd23a6496811bee93d063e83a6dad",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "5f6c0db6-3af5-4d44-a433-cb36a2c913d8",
+      "title": "Sycophancy to subterfuge: Investigating reward tampering in language models",
+      "kind": "research_text",
+      "locator": "https://www.anthropic.com/research/reward-tampering",
+      "source_sha256": "33a19c42caba909ef5a7fdaa7a1b927501d865b28773d2382cf99a95ee645d90",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "2a4dd833-2eb6-493d-a7e2-1f2b86e22731",
+      "title": "SWE-Bench Pro V2: A Cleaner, Harder-to-Game Coding Benchmark",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2610.24206",
+      "source_sha256": "474e1881365fcdf4887eabec01335fc68afb81d8695dadc8555fcc9588036a2b",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "c7f6d853-ff29-42fc-aa95-e6eb6eda6c8e",
+      "title": "SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2605.21384",
+      "source_sha256": "220de37347ae0d8e04b75b569fd71b4dd70e268b1b3fc6dffba0b10c907355d6",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "13539686-dbab-4566-84a9-2a4e1024934a",
+      "title": "EvilGenie: A Reward Hacking Benchmark",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2511.21654",
+      "source_sha256": "23cad7b99f3d249e5d401c15c92d6ef6926ce7085d2705da4672f91f2d9ef41d",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "b0d0fbb6-c9fe-4417-bb47-011248cfc086",
+      "title": "Evaluating Large Language Models Trained on Code",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2107.03374",
+      "source_sha256": "1db313918543541abb6b03fab34005bca84b916ad174e0133475b7683f5b0e28",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "b6235342-bb83-41f9-8714-d954b716d7dc",
+      "title": "LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language Models for Code",
+      "kind": "research_text",
+      "locator": "https://proceedings.iclr.cc/paper_files/paper/2025/hash/94074dd5a072d28ff75a76dabed43767-Abstract-Conference.html",
+      "source_sha256": "d5472548c1a4e4e7982dbefe0db9c855bc7dce3a8414297af641a69cedd73db4",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "2deb06fd-89cc-4cbd-b450-b5b2c739a7c1",
+      "title": "Terminal-Bench 2.0: Benchmarking Agents on Hard, Realistic Tasks in Command Line Interfaces",
+      "kind": "research_text",
+      "locator": "https://arxiv.org/abs/2601.11868",
+      "source_sha256": "f9f7d654d2129a3cf3e6fc4ded4046e21e39ee770fa24d02b0b2cdf4667dbe73",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "fb4443bb-2c8a-432d-9a54-98c4785383e4",
+      "title": "SWE-bench official benchmark description",
+      "kind": "research_text",
+      "locator": "https://www.swebench.com/original",
+      "source_sha256": "75113c1bbbc2d7171cc855658462cb35f1179105032c24e7360c8d0c49c99e4e",
+      "expected_placement": "knowledge_reference"
+    },
+    {
+      "id": "1da8a7d6-bd3e-4faf-880a-6e2fca7d6abc",
+      "title": "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?",
+      "kind": "research_text",
+      "locator": "https://proceedings.iclr.cc/paper_files/paper/2024/hash/edac78c3e300629acfe6cbe9ca88fb84-Abstract-Conference.html",
+      "source_sha256": "b8bd76ce758331297a795e67e21a24222183e7631f7b3e33b62d65aa83b9f74e",
+      "expected_placement": "knowledge_reference"
+    }
+  ]
+}

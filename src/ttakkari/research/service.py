@@ -374,6 +374,12 @@ async def import_source(db, study, body, actor):
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"), {"key": key}
     )
+    prior = await db.scalar(select(KbSource).where(KbSource.source_key == key)
+                            .order_by(KbSource.created_at.desc(), KbSource.id.desc()).limit(1))
+    if prior is not None and kb_library.research_source_purpose(prior) != body.purpose:
+        # Source metadata is immutable. Never claim that an idempotent replay changed
+        # placement. Use a distinct source_key for a deliberately curated reference.
+        raise HTTPException(409, "research_source_purpose_conflict_use_distinct_source_key")
     imported = await kb_store.ingest_source(
         db,
         source_key=key,
@@ -386,6 +392,7 @@ async def import_source(db, study, body, actor):
             "research_scope": study.scope,
             "external_key": body.source_key,
             "content_scope": "caller_supplied_text",
+            "library_purpose": body.purpose,
         },
     )
     units = await kb_store.segment_revision(db, imported.revision_id)
@@ -402,6 +409,7 @@ async def import_source(db, study, body, actor):
         title=body.title,
         locator=body.locator,
         extraction="pending_review",
+        library_purpose=body.purpose,
     )
     return {
         "revision": {
@@ -423,8 +431,11 @@ async def import_source(db, study, body, actor):
             for u in units
         ],
         "extraction": "pending_review",
+        "library_visibility": "knowledge_reference" if body.purpose == "knowledge_reference" else "research_only",
         "normalization": "KB NFKC+LF; quote offsets are passage-local Unicode codepoints",
-        "note": "Original bytes are retained by Knowledge Library. No claims have been verified.",
+        "note": "Original bytes and citations are retained for research. Only explicitly classified reusable references "
+        "appear in general knowledge discovery; task status, handoffs and acceptance receipts belong in research context. "
+        "No claims have been verified.",
     }
 
 

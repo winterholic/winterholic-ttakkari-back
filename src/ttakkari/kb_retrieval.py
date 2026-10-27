@@ -60,7 +60,9 @@ async def index_pending(*, limit=16):
     async with _lock:
         async with sessionmaker()() as db:
             indexed = select(V.passage_id).where(V.passage_id == KbPassage.id, V.model_key == model_key()).exists()
-            query = select(KbPassage).where(~indexed).order_by(KbPassage.created_at, KbPassage.id)
+            query = select(KbPassage).join(KbRevision).join(KbDocument).where(
+                ~indexed, lib.library_filter(),
+            ).order_by(KbPassage.created_at, KbPassage.id)
             if _failed_passages:
                 query = query.where(KbPassage.id.not_in(_failed_passages.keys()))
             passages = list(await db.scalars(query.limit(limit)))

@@ -615,7 +615,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         has_failed_latest = any(j.status != "succeeded" for j in latest_jobs.values() if j.stage != "mission_prepare")
         state = "partial" if mission.gaps or counts["failed"] or counts["blocked"] or counts["not_imported"] or (counts["held"] and not counts["accepted"]) or has_failed_latest else "succeeded"
         if not counts["acquired"]:
-            state = "partial"
+            # A completed attempt with no material is a failed collection, even if preparation exited cleanly.
+            state = "failed"
 
     engine_state = precise_eval.view_engine_status()  # never probes the harness qwen slot
     triage_summary = {

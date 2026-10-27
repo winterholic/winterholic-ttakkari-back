@@ -38,10 +38,10 @@ def query_tool(fn):
 
 
 async def _call(method: str, path: str, body: dict[str, Any] | None = None, *, prefix: str = "/api/orchestrator",
-                params: dict[str, Any] | None = None) -> str:
+                params: dict[str, Any] | None = None, timeout: float = 30) -> str:
     api = os.environ.get("TTK_API_URL", "http://127.0.0.1:8787").rstrip("/")
     headers = {"Authorization": f"Bearer {os.environ.get('TTK_ORCH_TOKEN', '')}"}
-    async with httpx.AsyncClient(base_url=api, headers=headers, timeout=30) as c:
+    async with httpx.AsyncClient(base_url=api, headers=headers, timeout=timeout) as c:
         r = await c.request(method, f"{prefix}{path}", json=body,
                             params={k: v for k, v in (params or {}).items() if v is not None} or None)
     try:
@@ -53,6 +53,20 @@ async def _call(method: str, path: str, body: dict[str, Any] | None = None, *, p
         return json.dumps({"error": r.status_code, **(data if isinstance(data, dict) else {"detail": data})},
                           ensure_ascii=False)
     return json.dumps(data, ensure_ascii=False)
+
+
+if ROLE == "orchestrator":
+    @server.tool()
+    async def activate_copilot_account() -> str:
+        """Register/recheck the owner's installed and logged-in GitHub Copilot CLI in Ttakkari accounts.
+
+        Personal planner only; idempotent. Verifies authentication with one bounded read-only model
+        request (may consume a subscription request), refreshes account quota and enables only on
+        successful authentication. Does not read credentials into tool output, log in interactively,
+        buy credits, change company accounts or verify production MCP/resume. Use when the user
+        asks to enable/integrate Copilot CLI. Failed login stays visible as a disabled account.
+        """
+        return await _call("POST", "/copilot/activate", timeout=90)
 
 
 # ---- 공통(모든 Run)

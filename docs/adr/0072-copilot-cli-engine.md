@@ -11,7 +11,8 @@
 
 1. **독립된 엔진 식별자**:
    - `engine="copilot"`으로 `opencode`와 완전히 분리된 엔진 등록.
-   - 모델 라우팅(`session_engine="auto"`)에 자동 편입되지 않으며, 명시적 `engine="copilot"` 선택으로만 배정.
+   - 최초(2026-10-25)에는 검증 전이어서 명시 선택만 허용했다. 2026-10-28 교정에서는 인증된 계정의 `auto` 모델을 일반·단순 작업 자동 배정 첫 단계에 포함한다. 월간 잔여량·현재 부하를 기존 엔진과 비교하며, 미확인 잔여량은 여유로 만들지 않는다.
+   - 정상 기획자는 네이티브 Opus/Sol 우선이다. 네이티브가 사용 불가할 때 Copilot도 기존 Muse와 함께 비상 기획 후보가 된다. 접수 경로는 이번 변경 범위가 아니다.
 
 2. **계정 격리 및 기본 시스템 계정 지원**:
    - 첫 번째 등록 계정은 `config_dir=None`을 허용하여 호스트의 기본 `~/.copilot` 자격증명을 재사용(`system_default`).
@@ -27,7 +28,7 @@
      - `assistant.message_delta` -> 스트리밍 텍스트 델타 (`Normalized("message")`)
      - `tool.execution_start` / `tool.execution_complete` -> 도구 호출 및 결과 추적
      - `result` -> 종료 코드, 세션 ID, 토큰 사용량(`usage`) 추출
-     - 한도 초과(monthly limit of premium requests, 429 등) 감지 및 자동 쿨다운 연동. 공식 잔여 quota API가 없으므로 오류 이벤트 기반으로 쿨다운 및 계정 회피를 수행.
+     - 한도 오류 기반 쿨다운에 더해 2026-10-26부터 공식 SDK `account.getQuota`로 월간 프리미엄 잔여량을 수집한다. 2026-10-28에는 조회 HOME, 월간 한도의 배정·상한·수집 주기·표시 연결을 교정했다.
      - 인증 실패(401, unauthorized) 감지 시 해당 계정 `auth_expired` 설정 및 남은 계정으로 핸드오프·폴백.
    - MCP 서버 연동: `--additional-mcp-config @<path>` 플래그를 통해 세션별 임시 MCP 설정 파일 주입.
 
@@ -48,3 +49,11 @@
 - inherited token/BYOK 환경변수가 선택 계정을 바꾸지 못하도록 제거한다. `COPILOT_ALLOW_ALL=true`의 묵시적 폴더 신뢰를 제거하고 명시 도구 승인 옵션만 사용한다.
 - `You have exceeded your premium request allowance`를 한도로 분류하고, `quota`가 들어간 일반 안내는 한도로 보지 않는다.
 - 운영에서의 인증/실제 모델 응답/대화 재개/MCP 도구 호출은 각각 미검증이다. 중첩 Codex 환경의 EPERM은 호스트 실패의 근거가 아니다.
+
+## 2026-10-28 통합 교정
+
+- 위 미검증 문장은 10월 25일 판정이다. 10월 26~27일 대화의 직접 CLI 응답·재개·echo MCP 성공 보고와 따까리 운영 수용 검증을 구분한다. 이번 변경의 현재 증거는 [작업 기록](../work-history/2026-10-28-copilot-parity.md)을 따른다.
+- 설치·로그인과 계정 등록은 별개다. 개인 기획용 `activate_copilot_account`가 기존 시스템 로그인을 모델 probe로 확인하고 계정을 등록/재확인·활성화한 뒤 quota를 수집한다. 실패한 계정도 비활성 상태로 보이며, 반복 호출은 기존 계정을 재사용한다. 회사 계정의 범위나 토큰을 바꾸지 않는다.
+- 새 quota 조회 프로세스가 반환한 `resetDate`가 관측 시각보다 과거이면 다음 초기화 시각으로 사용하지 않는다. 실측 SDK 1.0.26/CLI 1.0.103에서 이 값은 관측보다 수 초 앞선 시각이었다. [SDK 이슈 #2619](https://github.com/github/copilot-sdk/issues/2619)의 보고와 일치하지만 해당 필드가 모든 버전에서 fetch 시각이라는 보편적 주장은 하지 않는다. 잔여량은 새 관측으로 보존하고 다음 초기화일은 미확인으로 둔다. 소진·상한 도달은 짧은 재조회 대기로 막으며 무료·무제한·다음 달 날짜를 추정하지 않는다.
+- Copilot의 공통/역할/기획 계약·MCP·필수 Seatbelt 경계를 유지하고, 컨텍스트 이벤트·환경 probe 등록·하네스 레이어 조회 누락도 연결한다. 공용 스킬은 CLI의 `~/.agents/skills` discovery를 사용한다. Claude 전용 훅을 Copilot에 적용했다고 표시하지 않는다.
+- `auto`가 실제 모델을 고르므로 일반·단순 작업 결과는 별도 GPT/Claude 검증을 요구한다. 디자인·독립 검증·고난도 추론 작업의 기본 자동 후보로는 추가하지 않는다.

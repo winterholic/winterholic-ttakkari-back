@@ -39,10 +39,12 @@ class _State:
     last_fetch: float = 0.0
 
 
-def lowest_remaining(u: usage_mod.Usage | None, now: float) -> int | None:
+def lowest_remaining(u: usage_mod.Usage | None, now: float) -> float | None:
     """5시간·주간 창의 가장 낮은 잔여 퍼센트. 초기화 시각이 지난 창은 새로 시작된 것으로 보고 뺀다."""
-    left = [100 - w.percent for w in (u.windows if u else [])
-            if w.key in ("five_hour", "seven_day") and not (w.resets_at and w.resets_at <= now)]
+    left = [w.remaining_percent if w.remaining_percent is not None else 100 - w.percent
+            for w in (u.windows if u else [])
+            if w.key in ("five_hour", "seven_day", "copilot_premium_interactions")
+            and not (w.resets_at and w.resets_at <= now)]
     return min(left) if left else None
 
 

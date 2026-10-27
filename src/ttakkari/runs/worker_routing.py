@@ -28,6 +28,7 @@ ARGON = ("antigravity", "gemini-4-argon-high")
 AGY_OPUS = ("antigravity", "claude-opus-5-5-medium")
 SOL = ("codex", "gpt-6.1-sol")
 NATIVE_OPUS = ("claude", "opus")
+COPILOT_AUTO = ("copilot", "auto")
 
 
 QWEN_LOCAL_ENGINE = "qwen-local"
@@ -74,8 +75,8 @@ ROUTES = {
     # 한도 비상(_emergency_qwen, trigger "emergency"), 평시 병렬-fit(_parallel_qwen,
     # trigger "parallel"). ROUTES에 있으면 초기 비상 분기가 도달 불가하고
     # 영수증 trigger가 initial로 찍힌다(반례 2).
-    "general": ((SONNET, MUSE_SPARK), (FLASH,), (NATIVE_SONNET, LUNA)),
-    "routine": ((FLASH, MUSE_SPARK), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
+    "general": ((SONNET, MUSE_SPARK, COPILOT_AUTO), (FLASH,), (NATIVE_SONNET, LUNA)),
+    "routine": ((FLASH, MUSE_SPARK, COPILOT_AUTO), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "design": ((SONNET,), (NATIVE_SONNET,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
@@ -105,7 +106,7 @@ def needs_independent_verification(task_type: str | None, model: str | None) -> 
 
     Muse has no measured quality baseline against the other workers yet, so its results are treated like Flash's.
     """
-    return (is_flash_model(model) or is_muse_model(model)) and (task_type or "general") in {"general", "routine"}
+    return (model == "auto" or is_flash_model(model) or is_muse_model(model)) and (task_type or "general") in {"general", "routine"}
 
 
 def verifier_recommendation(model: str | None = None) -> dict:
@@ -116,7 +117,7 @@ def verifier_recommendation(model: str | None = None) -> dict:
             for stage in ROUTES["verification"]
             for engine, model_id in stage
         ],
-        "excluded_family": "muse" if is_muse_model(model) else "gemini-3.8-flash",
+        "excluded_family": "copilot-auto" if model == "auto" else "muse" if is_muse_model(model) else "gemini-3.8-flash",
     }
 
 
@@ -135,7 +136,7 @@ def policy() -> dict:
 
 
 def accepts_model(task_type: str, model: str) -> bool:
-    engine = profiles.model_engine(model)
+    engine = "copilot" if model == "auto" else profiles.model_engine(model)
     family = model.rsplit("-", 1)[0] if engine == "antigravity" else model
     return any((engine, family) == (e, m.rsplit("-", 1)[0] if e == "antigravity" else m)
                for stage in ROUTES[task_type] for e, m in stage if _routable(e))
@@ -467,7 +468,7 @@ def capacity(profile: profiles.Profile, running: int) -> dict:
     until = profiles.profile_limited_until(profile)
     snapshot = usage.cached(profile.id)
     group = quota_group(profile.model)
-    keys = {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
+    keys = profiles.quota_keys(profile)
     return {"engine": profile.engine, "model": profile.model, "quota_group": quota_group(profile.model),
             "remaining_to_limit_percent": room[0] if room else None,
             "headroom_per_run_percent": room[0] / (running + 1) if room else None,
@@ -476,7 +477,7 @@ def capacity(profile: profiles.Profile, running: int) -> dict:
             "limited_until": until, "usage_measured_at": snapshot.updated_at if snapshot else None,
             "usage_age_seconds": max(0, round(time.time() - snapshot.updated_at)) if snapshot and snapshot.updated_at else None,
             "quota_windows": [{"key": w.key, "used_percent": w.percent,
-                               "remaining_percent": w.remaining_percent if group else max(0, 100 - w.percent),
+                               "remaining_percent": w.remaining_percent if group or profile.engine in {"copilot", "opencode"} else max(0, 100 - w.percent),
                                "reset_at": w.resets_at} for w in snapshot.windows if w.key in keys] if snapshot else []}
 
 

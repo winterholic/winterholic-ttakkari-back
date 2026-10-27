@@ -82,9 +82,12 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
 
 
 def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None,
-                   *, engine: str | None = None) -> int | None:
+                   *, engine: str | None = None) -> float | None:
     if not usage or usage["stale"]:
         return None
+    if engine in {"copilot", "opencode"}:
+        room = profiles._usage_headroom(profiles.Profile(account_id, "", engine, max_used_percent=cap))
+        return room[0] if room else None
     observed = usage_mod.cached(account_id)
     if observed and (engine == "muse" or observed.source == 'muse_cli') and not usage_mod.muse_quota_current(observed, time.time()):
         return None
@@ -109,8 +112,10 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             reason = "cooldown" if profiles.cooldown_until(a.id) else "usage_window"
         orch = s.orchestrator_fallback_models.get(a.engine)
         usage = _usage(a.id, now, hist.get(a.id), engine=a.engine)
-        if profiles.usage_limit_until(profiles.Profile(a.id, a.name, a.engine,
-                                                       max_used_percent=a.max_used_percent), now):
+        cap_until = profiles.usage_limit_until(profiles.Profile(a.id, a.name, a.engine,
+                                                              max_used_percent=a.max_used_percent), now)
+        if cap_until:
+            until = max(until or 0, cap_until)
             reason = "usage_cap"
         remaining = _cap_remaining(a.id, a.max_used_percent, usage, engine=a.engine)
         running = counts.get(a.id, 0)
@@ -119,7 +124,7 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             for model in s.engine_models.get(a.engine, [])}
         out.append({
             "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": profiles.is_on(a, pool), "priority": rank,
-            "available": profiles.is_on(a, pool) and not until,
+            "available": profiles.is_on(a, pool) and not until and profiles.execution_ready(profiles._profile(a)),
             "limit": {"waiting": bool(until), "until": _iso(until), "reason": reason},
             "running_runs": running,
             "max_used_percent": a.max_used_percent,

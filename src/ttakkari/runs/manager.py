@@ -2333,7 +2333,8 @@ async def _eligible_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_m
         )
     # 오케스트레이터(메인·기획) auto 는 Muse 계정도 폴백 후보로 본다. 네이티브가 모두 한도면 Muse 로 이어서 돈다.
     return await profiles_mod.availability(db, sess.engine, sess.pool, model=requested,
-                                           include_muse=(sess.kind == SessionKind.orchestrator))
+                                           include_muse=(sess.kind == SessionKind.orchestrator),
+                                           include_copilot=(sess.kind == SessionKind.orchestrator))
 
 
 async def _reconsider_quota_waits() -> None:

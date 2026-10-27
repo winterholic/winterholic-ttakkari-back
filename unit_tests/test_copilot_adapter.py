@@ -53,6 +53,16 @@ class CopilotAdapterTests(unittest.TestCase):
         self.assertIn("--reasoning-effort", cmd)
         self.assertIn("high", cmd)
 
+    def test_failed_process_scrubs_credentials_from_stderr(self):
+        self.adapter.finalize_process(
+            self.state, return_code=1,
+            stderr="request failed\ncopilot_token=private-test-token-456\n",
+        )
+        self.assertTrue(self.state.is_error)
+        self.assertIn("request failed", self.state.error)
+        self.assertNotIn("private-test-token-456", self.state.error)
+        self.assertIn("[REDACTED]", self.state.error)
+
     def test_message_delta_and_complete_message(self):
         # Delta event
         evs1 = self.adapter.parse_line(

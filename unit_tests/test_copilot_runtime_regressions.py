@@ -141,7 +141,10 @@ def test_explicit_copilot_model_is_not_replaced_by_auto(model):
 async def test_new_engine_usage_never_queries_codex(engine, monkeypatch):
     from unittest.mock import AsyncMock
 
-    from ttakkari.runs import profiles, usage
+    from ttakkari.runs import copilot_usage, profiles, usage
+    # A routing regression must not call a logged-in host provider. The quota
+    # reader is covered separately, including its authenticated HOME contract.
+    monkeypatch.setattr(copilot_usage, '_quota_rpc', AsyncMock(side_effect=RuntimeError('synthetic provider unavailable')))
     codex = AsyncMock(return_value=usage.Usage(windows=[usage.Window('five_hour', '5시간', 73, None)]))
     monkeypatch.setattr(usage, '_codex_usage_or_log', codex)
     monkeypatch.setattr(profiles, 'identity', lambda *args: ('unknown', None))

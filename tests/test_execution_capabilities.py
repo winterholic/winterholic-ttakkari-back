@@ -126,6 +126,16 @@ def test_unknown_engine_is_rejected():
         capabilities.record("gemini-web", _report(), source="session_probe")
 
 
+@pytest.mark.parametrize("engine", ["opencode", "copilot"])
+def test_executor_engines_can_issue_and_report_session_probes(engine):
+    chal = capabilities.issue_challenge(engine, "sess-1", "run-1")
+    assert chal["engine"] == engine and f"--challenge {chal['challenge']}" in chal["command"]
+    view = capabilities.record_session_report("sess-1", _signed(_report(), chal["challenge"]))
+    assert view["engine"] == engine and view["measured_at"]
+    assert capabilities.compact(engine)["engine"] == engine
+    assert f"- {engine} (" in capabilities.prompt_note()
+
+
 def test_older_report_does_not_overwrite_a_newer_measurement():
     new = _report(gpu_metal={"status": "available", "detail": "new"})
     old = _report(gpu_metal={"status": "blocked", "detail": "old"})
@@ -231,7 +241,7 @@ def test_prompt_note_carries_the_scope_principle_and_per_engine_limits():
     assert "holds for that environment only" in note and "never generalize it to \"the host cannot\"" in note
     assert "- codex (" in note and "blocked gpu_metal, process_list" in note
     assert "- claude (" in note and "nothing blocked" in note
-    assert "- not measured: antigravity, muse, qwen-local, host" in note
+    assert "- not measured: antigravity, muse, opencode, copilot, qwen-local, host" in note
     assert "host_gpu_start" in note and "begin_environment_probe" in note and "report_execution_environment" in note
     assert "measured on the host GPU path" in note
     assert len(note) < 1400  # 모든 세션에 들어가므로 짧게 유지한다

@@ -25,6 +25,33 @@ def test_copilot_quota_uses_provider_percent_and_monthly_reset():
     assert w.resets_at == 1919721600
 
 
+def test_live_quota_with_runtime_fetch_timestamp_is_not_hidden_as_expired():
+    # Observed on CLI 1.0.103 + SDK 1.0.26: resetDate was a few seconds
+    # before the new process returned its fresh account quota (#2619).
+    from ttakkari.runs import profiles
+    from ttakkari.runs.copilot_usage import parse_quota
+    aid = uuid4()
+    result = parse_quota({'quotaSnapshots': {'premium_interactions': snapshot(
+        98.1, resetDate='2026-10-27T22:16:18Z')}}, now=1793139382.10624)
+    assert result.windows[0].resets_at is None  # no invented next reset
+    assert result.windows[0].remaining_percent == 98.1
+    usage.seed(aid, result, refresh=True)
+    p = profiles.Profile(aid, 'copilot', 'copilot', model='auto')
+    assert profiles._usage_headroom(p, now=1793139383)[0] == 98.1
+
+
+def test_exhausted_live_snapshot_without_future_reset_keeps_short_cooldown():
+    from ttakkari.runs import profiles
+    from ttakkari.runs.copilot_usage import parse_quota
+    aid = uuid4()
+    now = time.time()
+    result = parse_quota({'quotaSnapshots': {'premium_interactions': snapshot(
+        0, resetDate='2026-01-01T00:00:00Z')}}, now=now)
+    usage.seed(aid, result, refresh=True)
+    p = profiles.Profile(aid, 'copilot', 'copilot', model='auto')
+    assert profiles.usage_limit_until(p, now=now) == now+90
+
+
 @pytest.mark.parametrize("body", [{}, {"quotaSnapshots": {}}, {"quotaSnapshots": {
     "premium_interactions": {"usedRequests": 0, "entitlementRequests": 300}}}])
 def test_absent_percentage_never_becomes_zero_usage(body):
@@ -217,6 +244,7 @@ def test_numeric_and_unlimited_quotas_reach_api_and_mcp(monkeypatch):
     a = EngineAccount(id=aid, name='OC', engine='opencode', config_dir=None, enabled=True, priority=0,
                       max_used_percent=100, pool='personal', work_enabled=False)
     out = accounts._usage_out(0, a, {}, sample)
+    assert out.remaining_to_limit_percent == 0
     assert out.quota_unlimited == sample.quota_unlimited
     assert out.windows[0].remaining_percent == 0 and out.windows[0].state == 'current'
     mcp = account_status._usage(aid, time.time(), engine='opencode')

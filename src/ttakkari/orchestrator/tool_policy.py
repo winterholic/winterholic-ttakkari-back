@@ -24,7 +24,7 @@ REVERSE_TOOLS = frozenset({"reverse_start", "reverse_retry", "reverse_message"})
 # 쓰기를 READ_ONLY_TOOLS에 넣어 readOnlyHint로 위장하지 않는다.
 PMS_TOOLS = frozenset({"manage_pms", "create_pms_task", "list_pms_projects"})
 # 사용자 지시에 따른 자기 배포는 예약 API에 위임하고 작업 내 직접 재시작은 하지 않는다.
-DEPLOY_TOOLS = frozenset({"request_backend_deploy"})
+DEPLOY_TOOLS = frozenset({"request_backend_deploy", "activate_copilot_account"})
 # 사용자가 일일·고정 체크리스트 전체 관리를 MCP에 명시적으로 위임했다.
 CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "delete_checklist_item",
                              "create_checklist_template", "update_checklist_template", "delete_checklist_template"})

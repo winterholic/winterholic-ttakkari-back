@@ -13,6 +13,7 @@ import math
 import os
 import tempfile
 import time
+from pathlib import Path
 from uuid import UUID
 
 from ttakkari.config import get_settings
@@ -24,6 +25,7 @@ LABELS = {"premium_interactions": "Copilot 월간 프리미엄", "chat": "Copilo
 
 def parse_quota(body: dict, *, now: float | None = None) -> Usage:
     u = Usage(source="copilot_sdk")
+    observed_at = time.time() if now is None else now
     snapshots = body.get("quotaSnapshots") if isinstance(body, dict) else None
     if not isinstance(snapshots, dict):
         u.error = "Copilot 계정 사용량 미제공"
@@ -47,9 +49,16 @@ def parse_quota(body: dict, *, now: float | None = None) -> Usage:
             missing.append(label)
             continue
         percent = 100 if remaining == 0 else min(99, round(100 - remaining))
-        u.windows.append(Window(key, label, percent, _ts(s.get("resetDate")), float(remaining)))
+        reset = _ts(s.get("resetDate"))
+        # Some runtimes return their fetch timestamp as resetDate (#2619).
+        # A past instant cannot be the next reset of a newly fetched snapshot.
+        # Keep the observed quota but leave its next reset unknown; never invent
+        # a monthly boundary or reinterpret an old cached observation as fresh.
+        if reset is not None and reset <= observed_at:
+            reset = None
+        u.windows.append(Window(key, label, percent, reset, float(remaining)))
     if u.windows or u.quota_unlimited:
-        u.updated_at = time.time() if now is None else now
+        u.updated_at = observed_at
     if missing or not (u.windows or u.quota_unlimited):
         u.error = "Copilot 계정 사용량 미제공" + (f" · {', '.join(missing)}" if missing else "")
     return u
@@ -115,6 +124,11 @@ async def fetch_usage(account_id: UUID, engine: str, config_dir: str | None) -> 
                     env = managed.execution_env(config_dir, env, is_system=p.is_system)
                 else:
                     env = managed.execution_env(None, env, is_system=True)
+                # The explicitly selected host account uses the OS login/keychain
+                # identity. A scratch HOME makes the CLI report not authenticated.
+                # Isolated accounts and OpenCode retain their scratch HOME.
+                if not config_dir or p.is_system:
+                    env["HOME"] = str(Path.home())
             else:
                 raise ValueError("unsupported quota engine")
             return parse_quota(await _quota_rpc(env=env, token=token, use_logged_in_user=engine == "copilot"))

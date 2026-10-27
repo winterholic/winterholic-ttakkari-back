@@ -619,6 +619,50 @@ async def accounts_usage(sid: OrchestratorSession, db: Db) -> dict:
     return await account_status(db, orch.pool)
 
 
+@router.post("/copilot/activate")
+async def activate_copilot(sid: OrchestratorSession, db: Db) -> dict:
+    """Enroll/recheck the owner's existing host CLI login without exposing credentials.
+
+    Personal planners only. Idempotent and serialized across generations. A failed
+    probe leaves a visible disabled account; no fabricated authentication evidence.
+    """
+    from ttakkari import copilot_accounts
+    from ttakkari.api.accounts import MAX_ACCOUNTS, _out
+    from ttakkari.audit import record
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs import usage, usage_store
+
+    orch = await _orchestrator(db, sid)
+    if orch.pool != "personal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "호스트 Copilot 개인 계정은 개인 기획 세션에서만 등록할 수 있습니다.")
+    await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 72)))
+    rows = await profiles_mod.accounts(db)
+    account = next((a for a in rows if a.engine == "copilot" and a.config_dir is None), None)
+    if account is not None and account.pool != "personal":
+        raise HTTPException(status.HTTP_409_CONFLICT, "기존 호스트 Copilot 계정의 범위를 먼저 확인해야 합니다.")
+    if account is None:
+        if len(rows) >= MAX_ACCOUNTS:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"계정은 {MAX_ACCOUNTS}개까지입니다.")
+        account = EngineAccount(id=uuid.uuid4(), name="GitHub Copilot CLI", engine="copilot", config_dir=None,
+                                pool="personal", enabled=False, work_enabled=False,
+                                priority=max((a.priority for a in rows), default=-1)+1,
+                                work_priority=max((a.work_priority or 0 for a in rows), default=0)+1,
+                                max_used_percent=100)
+        db.add(account)
+    checked = await asyncio.to_thread(copilot_accounts.check_auth, None, is_system=True)
+    account.enabled = checked.get("auth_state") == "authenticated"
+    record(db, action="account.copilot_activate", target_type="account", target_id=account.id,
+           detail={"enabled": account.enabled, "actor_session": str(sid)})
+    await db.commit()
+    observation = await usage.usage_for(account.id, "copilot", None, refresh=True)
+    await usage_store.record(account.id, observation)
+    if account.enabled:
+        await manager.release_waiting()
+    return {"activated": account.enabled, "account": _out(account).model_dump(mode="json"),
+            "usage_error": observation.error, "usage_measured_at": observation.updated_at,
+            "next_action": "ready_for_runtime_verification" if account.enabled else "check_login_in_accounts"}
+
+
 @router.post("/luna-common30-v2", status_code=status.HTTP_202_ACCEPTED)
 async def start_luna_benchmark(sid: OrchestratorSession, db: Db) -> dict:
     orch = await _orchestrator(db, sid)

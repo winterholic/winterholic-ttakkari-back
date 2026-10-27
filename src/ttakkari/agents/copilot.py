@@ -15,6 +15,7 @@ from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, truncate
 from ttakkari.config import get_settings
+from ttakkari.oplog.scrub import scrub
 from ttakkari.runs import profiles as profiles_mod
 
 log = logging.getLogger(__name__)
@@ -118,14 +119,22 @@ class CopilotAdapter:
     def finalize_process(self, state: ParseState, *, return_code: int | None, stderr: str) -> None:
         if return_code != 0 and not state.is_error:
             state.is_error = True
-            state.error = stderr.strip()[-4000:] or f"Copilot exited with return code {return_code}"
+            state.error = scrub(stderr.strip())[-4000:] or f"Copilot exited with return code {return_code}"
         elif return_code == 0 and not state.is_error and (not state.protocol_final_seen or not (state.result_text or "").strip()):
             state.is_error = True
-            state.error = stderr.strip()[-4000:] or "Copilot exited without a final response"
+            state.error = scrub(stderr.strip())[-4000:] or "Copilot exited without a final response"
 
     def parse_line(self, obj: dict[str, Any], state: ParseState, cwd: Path) -> list[Normalized]:
         event_type = obj.get("type")
         data = obj.get("data") or {}
+
+        if event_type == "session.usage_info":
+            tokens, window = data.get("currentTokens"), data.get("tokenLimit")
+            if type(tokens) is int and tokens >= 0 and type(window) is int and window > 0:
+                state.context_tokens, state.context_window = tokens, window
+                return [Normalized("usage", {"context_tokens": tokens, "context_window": window,
+                                              "context_percent": round(tokens * 100 / window)})]
+            return []
 
         # 1. Session resolution and auto routing
         if event_type == "session.auto_mode_resolved":

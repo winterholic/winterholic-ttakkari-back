@@ -30,7 +30,7 @@ from ttakkari.config import HOME, get_settings
 from ttakkari.runs import env_probe
 
 KST = ZoneInfo("Asia/Seoul")
-ENGINES = ("claude", "codex", "antigravity", "muse", "qwen-local", "host")
+ENGINES = ("claude", "codex", "antigravity", "muse", "opencode", "copilot", "qwen-local", "host")
 STATUSES = ("available", "blocked", "unknown")
 ITEMS = env_probe.ITEMS
 STALE_SECONDS = 24 * 3600

@@ -63,7 +63,7 @@ async def item(item_id: str, db: Db, offset: int = Query(default=0, ge=0),
 
 @router.get("/layers")
 async def layers(db: Db, session: Literal["desk", "lead", "worker", "orchestrator"],
-                 engine: Literal["claude", "codex", "antigravity", "muse", "qwen-local"],
+                 engine: Literal["claude", "codex", "antigravity", "muse", "qwen-local", "copilot", "opencode"],
                  pool: Literal["personal", "work"] = "personal") -> dict:
     return await service.layers(db, await service.snapshot(db), session=session, engine=engine, pool=pool)
 

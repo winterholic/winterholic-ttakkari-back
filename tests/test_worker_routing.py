@@ -197,6 +197,7 @@ async def test_account_usage_publishes_one_task_policy_and_per_model_headroom(cl
     assert body["worker_routing"]["general"][0] == [
         {"engine":"antigravity", "model":SONNET},
         {"engine":"muse", "model":"muse-spark-1.3"},
+        {"engine":"copilot", "model":"auto"},
     ]
     assert "native auto" not in body["note"]
     agy = next(a for a in body["accounts"] if a["engine"]=="antigravity")

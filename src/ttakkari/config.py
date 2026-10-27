@@ -163,6 +163,7 @@ class Settings(BaseSettings):
         "codex": {"model": "gpt-6.1-sol", "effort": "high"},
         # 네이티브가 모두 한도면 오케스트레이터 auto 가 이 쌍으로 Muse 에 이어서 돈다.
         "muse": {"model": "muse-spark-1.3", "effort": MUSE_EFFORT},
+        "copilot": {"model": COPILOT_DEFAULT, "effort": "high"},
     }
     # 명시 엔진·레거시 기본값. 신규 auto 작업자는 runs/worker_routing.py의 task 정책을 사용한다.
     worker_default_models: dict[str, dict[str, str]] = {

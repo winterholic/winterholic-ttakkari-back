@@ -345,7 +345,7 @@ class AccountUsageOut(BaseModel):
     enabled: bool
     rank: int
     max_used_percent: int
-    remaining_to_limit_percent: int | None
+    remaining_to_limit_percent: float | None
     stale: bool
     # 회사 모드의 켜기·순위. 회사에 들어온 계정(pool=work)만 work_rank 가 있다.
     work_enabled: bool
@@ -442,6 +442,10 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
     headroom = None if stale or not muse_current else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
                                        if w.key in ("five_hour", "seven_day")
                                        and not (w.resets_at and w.resets_at <= now)), default=None)
+    if a.engine in {"copilot", "opencode"} and not stale:
+        headroom = min((max(0, w.remaining_percent - (100 - a.max_used_percent)) for w in valid_windows
+                        if w.key == "copilot_premium_interactions" and w.remaining_percent is not None
+                        and not (w.resets_at and w.resets_at <= now)), default=None)
     if is_muse:
         windows_out = _muse_windows(u, now, muse_current)
     elif is_agy:

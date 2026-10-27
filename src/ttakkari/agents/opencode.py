@@ -15,6 +15,7 @@ from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
 from ttakkari.config import get_settings
+from ttakkari.oplog.scrub import scrub
 from ttakkari.runs import profiles as profiles_mod
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,8 @@ class OpencodeAdapter:
             binary, "run",
             "--format", "json",
             "--pure",
+            "--print-logs",
+            "--log-level", "ERROR",
             "--dir", str(spec.cwd.resolve()),
             "--model", model,
         ]
@@ -130,10 +133,17 @@ class OpencodeAdapter:
     def finalize_process(self, state: ParseState, *, return_code: int | None, stderr: str) -> None:
         if return_code != 0 and not state.is_error:
             state.is_error = True
-            state.error = stderr.strip()[-4000:] or f"OpenCode exited with return code {return_code}"
+            state.error = scrub(stderr.strip())[-4000:] or f"OpenCode exited with return code {return_code}"
+        elif (return_code != 0 and state.error
+              and "Unexpected server error" in state.error and stderr.strip()):
+            # OpenCode's UnknownError deliberately omits its internal cause in
+            # JSON. Its ERROR-level stderr supplies that cause; preserve it for
+            # the normal Run/ops error surface without exposing credentials.
+            detail = scrub(stderr.strip())[-3000:]
+            state.error = f"{scrub(state.error)[:800]}\nOpenCode stderr:\n{detail}"
         elif return_code == 0 and not state.is_error and state.result_text is None:
             state.is_error = True
-            state.error = stderr.strip()[-4000:] or "OpenCode exited without a final response"
+            state.error = scrub(stderr.strip())[-4000:] or "OpenCode exited without a final response"
 
     def parse_line(self, obj: dict[str, Any], state: ParseState, cwd: Path) -> list[Normalized]:
         event_type = obj.get("type")

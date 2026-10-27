@@ -103,6 +103,13 @@ Luna-first-for-everything and Claude-for-everything instructions in older role f
 - The authoritative ordered model stages (equal-stage candidates balance by load) are generated from code:
 """
 _ROUTING_NOTE_TAIL = """
+- GitHub Copilot CLI joins the first general/routine worker stage as engine="copilot", model="auto".
+  Compare its observed monthly premium quota and running load with other candidates; unknown is not spare quota.
+  Auto may select different providers, so its general/routine output requires independent GPT/Claude verification.
+  Installed CLI login alone is not account registration. When the user requests Copilot integration, use
+  activate_copilot_account to register/recheck it and refresh quota without reading credentials.
+  Native Opus/Sol remain the main planner while available; authenticated Copilot is also an emergency planner
+  fallback after natives are unavailable. No unlimited/free-model guarantee or paid overage is inferred.
 - Check account_usage before assignments, including model_capacity and worker_routing. The backend respects
   scope, configured model IDs, enable flags, model-group cooldowns and stale exhaustion. Unknown capacity is
   unknown; measured alternatives precede unknown candidates, then task-stage priority, then headroom per Run.

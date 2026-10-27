@@ -19,7 +19,7 @@ from ttakkari.harness_view.safe import mask_text
 from ttakkari.models import ChatSession, SessionKind
 
 SESSION_KINDS = ("desk", "lead", "worker", "orchestrator")
-LAYER_ENGINES = ("claude", "codex", "antigravity", "muse", "qwen-local")
+LAYER_ENGINES = ("claude", "codex", "antigravity", "muse", "qwen-local", "copilot", "opencode")
 SESSION_LABEL = {"desk": "접수", "lead": "기획", "worker": "작업자", "orchestrator": "메인 오케스트레이터(옛)"}
 PART_ITEMS = {
     "system_note": ("prompt", "code|SYSTEM_NOTE", "기본 안내", "runs/manager.py SYSTEM_NOTE"),
@@ -221,6 +221,20 @@ async def _work(db: AsyncSession, items: list[Item], *, session: str, engine: st
                    item_id=_link(items, "mcp", "ttakkari (MCP 서버)")),
         ]
         notes.append("Muse 는 사용자 전역 CLAUDE.md·스킬을 읽지 않는다. 프롬프트 레이어가 전부다.")
+    elif engine in {"copilot", "opencode"}:
+        prefix = "cp" if engine == "copilot" else "oc"
+        layers += [
+            _layer(f"{prefix}_delivery", "공통·역할 지침을 프롬프트 앞에 전달", "engine",
+                   f"agents/{engine}.py build_command", phase="delivery"),
+            _layer(f"{prefix}_mcp", "세션·역할 범위의 ttakkari MCP", "engine",
+                   f"agents/{engine}.py", phase="tool", item_id=_link(items, "mcp", "ttakkari (MCP 서버)")),
+            _layer(f"{prefix}_sandbox", "Seatbelt OS 샌드박스", "engine", "security/seatbelt.py",
+                   phase="guard", condition="쓰기 루트·보호 경로·DB 포트 정책 적용"),
+        ]
+        if engine == "copilot":
+            layers.append(_layer("cp_skills", "공용 ~/.agents/skills · 프로젝트 스킬", "cli",
+                                 "Copilot CLI skill discovery", phase="load", evidence="external",
+                                 condition="CLI의 skill list로 발견 여부 확인; 호환되지 않는 스킬은 CLI가 경고한다"))
     else:
         layers.append(_layer("qwen_sandbox", "Qwen 하네스 OS 샌드박스", "engine", "agents/qwen_local.py", phase="guard",
                              item_id=_link(items, "guard", "엔진별 강제 수단"),

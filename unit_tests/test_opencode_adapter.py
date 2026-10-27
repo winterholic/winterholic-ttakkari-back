@@ -31,11 +31,58 @@ class OpencodeAdapterTests(unittest.TestCase):
         self.assertIn("--format", cmd)
         self.assertIn("json", cmd)
         self.assertIn("--pure", cmd)
+        self.assertIn("--print-logs", cmd)
+        self.assertEqual(cmd[cmd.index("--log-level") + 1], "ERROR")
         self.assertNotIn("--auto", cmd)
         self.assertIn("--model", cmd)
         self.assertIn("github-copilot/gpt-5.6-sol", cmd)
         self.assertNotIn("--session", cmd)
         self.assertIn("Workspace root:", cmd[-1])
+
+    def test_generic_server_error_retains_scrubbed_stderr(self):
+        self.adapter.parse_line(
+            {"type": "error", "error": {"name": "UnknownError", "data": {
+                "message": "Unexpected server error. Check server logs for details.",
+            }}}, self.state, self.cwd,
+        )
+        self.adapter.finalize_process(
+            self.state, return_code=1,
+            stderr='level=ERROR error="TypeError: missing agent" token=private-test-token-123\n',
+        )
+        self.assertTrue(self.state.is_error)
+        self.assertIn("Unexpected server error", self.state.error)
+        self.assertIn("TypeError: missing agent", self.state.error)
+        self.assertNotIn("private-test-token-123", self.state.error)
+        self.assertIn("[REDACTED]", self.state.error)
+
+    def test_failed_process_scrubs_stderr_without_stream_error(self):
+        self.adapter.finalize_process(
+            self.state, return_code=1,
+            stderr="Connection refused\ntoken=private-test-token-123\n",
+        )
+        self.assertTrue(self.state.is_error)
+        self.assertIn("Connection refused", self.state.error)
+        self.assertNotIn("private-test-token-123", self.state.error)
+        self.assertIn("[REDACTED]", self.state.error)
+
+    def test_detailed_stream_error_keeps_precedence_over_stderr(self):
+        self.state.is_error = True
+        self.state.error = "401 Unauthorized: login required"
+        self.adapter.finalize_process(self.state, return_code=1, stderr="unrelated stderr")
+        self.assertEqual(self.state.error, "401 Unauthorized: login required")
+
+    def test_generic_error_diagnostics_are_bounded(self):
+        self.state.is_error = True
+        self.state.error = "Unexpected server error. Check server logs for details."
+        self.adapter.finalize_process(self.state, return_code=1, stderr="X" * 10000 + "fatal cause")
+        self.assertLessEqual(len(self.state.error), 4000)
+        self.assertIn("fatal cause", self.state.error)
+
+    def test_success_does_not_surface_stderr(self):
+        self.state.result_text = "OK"
+        self.adapter.finalize_process(self.state, return_code=0, stderr="warning")
+        self.assertFalse(self.state.is_error)
+        self.assertIsNone(self.state.error)
 
     def test_build_command_includes_session_and_model_prefix(self):
         spec = LaunchSpec(

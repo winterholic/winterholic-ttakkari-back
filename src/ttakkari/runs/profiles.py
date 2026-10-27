@@ -215,7 +215,7 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
 
 
 async def availability(db: AsyncSession, session_engine: str, pool: str = "personal", *,
-                       model: str | None = None, include_muse: bool = False,
+                       model: str | None = None, include_muse: bool = False, include_copilot: bool = False,
                        ) -> tuple[list[Profile], list[tuple[Profile, float]]]:
     """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)]).
 
@@ -231,7 +231,8 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
     for a in await effective_order(db, pool):
         if not is_on(a, pool) or not (
             (session_engine == "auto" and (a.engine in {"claude", "codex"}
-                                           or (muse_allowed and a.engine == "muse")))
+                                           or (muse_allowed and a.engine == "muse")
+                                           or (include_copilot and a.engine == "copilot")))
             or a.engine == session_engine
         ):
             continue
@@ -254,6 +255,13 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
     return free, blocked
 
 
+def quota_keys(profile: Profile) -> set[str]:
+    if profile.engine in {"copilot", "opencode"}:
+        return {"copilot_premium_interactions"}
+    group = quota_group(profile.model) if profile.engine == "antigravity" else None
+    return {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
+
+
 def usage_limit_until(profile: Profile, now: float | None = None) -> float | None:
     """마지막 사용량이 상한에 닿았으면 값이 낡아도 해당 창이 초기화될 때까지 쉰다."""
     from ttakkari.runs import usage as usage_mod
@@ -269,6 +277,10 @@ def usage_limit_until(profile: Profile, now: float | None = None) -> float | Non
         capped = [w for w in u.windows if group and w.key in {f"{group}_5h", f"{group}_weekly"}
                   and not (w.resets_at and w.resets_at <= now)
                   and (w.remaining_percent is not None and w.remaining_percent <= 0)]
+    elif profile.engine in {"copilot", "opencode"}:
+        capped = [w for w in u.windows if w.key in quota_keys(profile)
+                  and not (w.resets_at and w.resets_at <= now)
+                  and w.remaining_percent is not None and w.remaining_percent <= 100 - profile.max_used_percent]
     else:
         capped = [w for w in u.windows if w.key in ("five_hour", "seven_day")
                   and not (w.resets_at and w.resets_at <= now) and w.percent >= profile.max_used_percent]
@@ -331,17 +343,21 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[float, 
     if profile.engine == 'muse' and not usage_mod.muse_quota_current(u, now):
         return None
     # 조회 실패 뒤 유지한 마지막 관측값은 현재 잔여량이 아니다(차단 판단은 usage_limit_until 이 따로 유지한다).
-    if profile.engine == "antigravity" and u.error:
+    if profile.engine in {"antigravity", "copilot", "opencode"} and u.error:
         return None
     group = quota_group(profile.model) if profile.engine == "antigravity" else None
-    keys = {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
+    keys = quota_keys(profile)
     current = [w for w in u.windows if w.key in keys
                and not (w.resets_at and w.resets_at <= now)]
-    if profile.engine == "antigravity":
+    if profile.engine in {"copilot", "opencode"}:
+        current = [w for w in current if w.remaining_percent is not None]
+    elif profile.engine == "antigravity":
         current = [w for w in current if group and w.remaining_percent is not None]
     if not current:
         return None
     def room(w):
+        if profile.engine in {"copilot", "opencode"}:
+            return max(0, w.remaining_percent - (100 - profile.max_used_percent))
         return max(0, w.remaining_percent) if group else max(0, profile.max_used_percent - w.percent)
     minimum = min(room(w) for w in current)
     limiting = [w for w in current if room(w) == minimum]

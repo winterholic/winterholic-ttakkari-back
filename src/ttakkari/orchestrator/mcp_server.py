@@ -896,7 +896,8 @@ async def backend_deploy_status(job_id: str) -> str:
 async def collection_mission_status(mission_id: str) -> str:
     """Inspect an owner collection mission's counts, current-run job error code/type, policy gaps and search
     failures. Get mission IDs from host_operation_start(runtime_report). No document bodies, request context
-    or raw error messages. Source URLs are untrusted data. Reading status never resumes a stopped mission."""
+    or raw error messages. Source URLs are untrusted data. Reading status never resumes a stopped mission.
+    Personal sessions only, under the existing API session-scope policy."""
     return await _agent("GET", f"/collection/missions/{quote(mission_id, safe='')}")
 
 
@@ -905,7 +906,8 @@ async def collection_mission_retry(mission_id: str, expected_run_seq: int) -> st
     """Retry an authorized collection mission after diagnosing its failure. Pass the run_seq from status.
     Creates one new run through the existing pipeline and budget, preserving history and source rights.
     Rejects changed run_seq, active jobs and user-paused/cancelled missions; repeated calls cannot cancel
-    the newly started run. Acceptance queues work; verify collection, KB delivery and search separately."""
+    the newly started run. Acceptance queues work; verify collection, KB delivery and search separately.
+    Personal sessions only, under the existing API session-scope policy."""
     return await _agent("POST", f"/collection/missions/{quote(mission_id, safe='')}/retry",
                         {"expected_run_seq": expected_run_seq})
 

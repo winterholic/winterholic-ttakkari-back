@@ -21,7 +21,7 @@
 이는 복구 수단의 누락이며 원 수집 장애의 직접 원인을 입증하지 않는다.
 
 - 기존 임무 모듈에 agent GET 진단 / POST retry API를 추가한다. 기존 세션 토큰과 owner tenant를 검사한다.
-  단일 도서관의 임무 메타데이터는 개인/회사 세션 모두 같은 owner 경계를 사용한다.
+  현재 API scope 미들웨어의 work 세션 403을 별도 검사로 확인했고 이 정책은 변경하지 않는다.
 - 진단은 count, 현재 회차 job code/type, gap, 검색 실패만 반환한다. 원 요청 context/goal,
   문서 본문, raw error message는 제외하고 문자열을 기존 scrub_value로 마스킹한다.
 - 재시도는 기존 mission-control 트랜잭션 잠금 아래 expected_run_seq를 검사한다.
@@ -44,6 +44,9 @@
   browser IPC 제한 관측이 있어 이후 실행에서 해당 시험을 제외했다. 원인·브라우저 동작은 미검증이며,
   같은 브라우저 실행을 반복하거나 배포 전체 시험을 제외하지 않는다.
 - 변경 Python Ruff `All checks passed!`, `git diff --check` 출력 없음.
+- 첫 push는 계약 검사에서 UI 도구 목록 2개 누락 및 보안 검사 inventory 누락을 잡아 거절했다
+  (82 passed, 2 failed; 변경 검사 51 passed). 해당 두 등록 위치를 보완하고 다시 push 게이트를 실행한다.
+  인증과 시험 DB는 이 Codex 환경에서 실행됐으며 샌드박스 문제로 일반화하지 않는다.
 
 ## 다음 실행
 

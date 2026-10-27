@@ -135,6 +135,8 @@ TOOLS: list[dict[str, str]] = [
     {"name": "host_gpu_stop", "group": "서버", "who": "개인 실행", "desc": "호스트 GPU 시험 인스턴스를 멈춘다"},
     {"name": "host_operation_start", "group": "서버", "who": "개인 실행", "desc": "승인된 호스트 운영 작업 하나를 실행한다(백업·격리 복원·소유권/성능 확인). 종류만 고르고 경로·셸은 받지 않는다"},
     {"name": "host_operation_status", "group": "서버", "who": "개인 실행", "desc": "운영 작업 목록과 상태·결과(개수·해시·시각)를 조회한다"},
+    {"name": "collection_mission_status", "group": "수집", "who": "개인 실행", "desc": "수집 임무의 실제 수집·적재 수, 현재 회차의 실패 종류와 출처 정책 누락을 확인한다"},
+    {"name": "collection_mission_retry", "group": "수집", "who": "개인 실행", "desc": "실패 원인을 확인한 임무를 새 회차로 재시도한다. 회차가 달라졌거나 진행 중인 작업이 있으면 거절한다"},
     {"name": "host_operation_cancel", "group": "서버", "who": "개인 실행", "desc": "진행 중인 운영 작업을 취소한다(이미 만든 백업은 보존)"},
     {"name": "notify_user", "group": "알림", "who": "모든 실행", "desc": "폰으로 푸시 알림을 보낸다"},
     {"name": "list_sessions", "group": "대화", "who": "모든 실행", "desc": "최근 대화 목록"},

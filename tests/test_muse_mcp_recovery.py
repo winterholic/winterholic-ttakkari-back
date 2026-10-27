@@ -34,19 +34,19 @@ async def test_binding_failure_hands_off_to_native_with_tool_history(client, aut
     await _seed_muse(client, auth)
     module = import_module('ttakkari.runs.manager')
     monkeypatch.setitem(module.ADAPTERS, 'muse', BrokenMcpMuse())
-    original_choose = profiles.choose_async
-
-    async def start_on_muse(candidates, run_id, **kwargs):
-        muse = [p for p in candidates if p.engine == 'muse']
-        return await original_choose(muse or candidates, run_id, **kwargs)
-
-    monkeypatch.setattr(profiles, 'choose_async', start_on_muse)
+    for row in (await client.get('/api/accounts', headers=auth)).json():
+        if row['engine'] in {'claude', 'codex'}:
+            profiles.cool_down(uuid.UUID(row['id']), 600)
     launched = []
     original_attempt = module.RunManager._attempt
 
     async def attempt(self, db, run, adapter, spec, *args):
         launched.append((adapter.engine, spec.prompt))
-        return await original_attempt(self, db, run, adapter, spec, *args)
+        result = await original_attempt(self, db, run, adapter, spec, *args)
+        if adapter.engine == 'muse':
+            # A native window can reset while the fallback provider is running.
+            profiles.reset_cooldowns()
+        return result
 
     monkeypatch.setattr(module.RunManager, '_attempt', attempt)
     orch = await _session(client, auth, make_dir, kind='orchestrator')
@@ -118,13 +118,9 @@ async def test_stop_wins_over_mcp_failure_handoff(client, auth, make_dir, monkey
     await _seed_muse(client, auth)
     module = import_module('ttakkari.runs.manager')
     monkeypatch.setitem(module.ADAPTERS, 'muse', BrokenMcpMuse())
-    original_choose = profiles.choose_async
-
-    async def start_on_muse(candidates, run_id, **kwargs):
-        return await original_choose([p for p in candidates if p.engine == 'muse'] or candidates,
-                                     run_id, **kwargs)
-
-    monkeypatch.setattr(profiles, 'choose_async', start_on_muse)
+    for row in (await client.get('/api/accounts', headers=auth)).json():
+        if row['engine'] in {'claude', 'codex'}:
+            profiles.cool_down(uuid.UUID(row['id']), 600)
     original_attempt = module.RunManager._attempt
 
     async def attempt(self, db, run, *args):

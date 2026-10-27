@@ -1,5 +1,6 @@
 """오케스트레이터 auto 의 Muse 폴백: 네이티브가 모두 한도면 Muse 로 이어서 돈다."""
 import uuid
+from dataclasses import replace
 from importlib import import_module
 
 from conftest import agent_calls
@@ -73,3 +74,37 @@ async def test_orchestrator_run_fails_over_to_muse_when_natives_limited(client, 
     argv = launched[-1]["argv"]
     assert argv[argv.index("--model") + 1] == "muse-spark-1.3"
     assert argv[argv.index("--effort") + 1] == "max"
+
+
+async def test_native_orchestrator_precedes_muse_even_with_less_headroom(client, auth, make_dir, monkeypatch):
+    await _seed_muse(client, auth)
+    manager = import_module('ttakkari.runs.manager')
+    monkeypatch.setitem(manager.ADAPTERS, 'muse', type(manager.ADAPTERS['claude'])())
+    monkeypatch.setattr(profiles, '_usage_headroom',
+                        lambda p: (90 if p.engine == 'muse' else 10, 2_000_000_000))
+    orch = await _session(client, auth, make_dir, kind='orchestrator')
+    run = await run_to_end(client, auth, orch['id'], 'Use the native main while it has capacity')
+    assert run['status'] == 'succeeded', run
+    assert run['engine'] in {'claude', 'codex'}, run
+    argv = agent_calls()[-1]['argv']
+    assert argv[argv.index('--model') + 1] in {'opus', 'gpt-6.1-sol'}, argv
+
+
+async def test_mid_run_native_limits_still_reach_muse_fallback(client, auth, make_dir, monkeypatch):
+    await _seed_muse(client, auth)
+    module = import_module('ttakkari.runs.manager')
+
+    class MuseSuccess(type(module.ADAPTERS['claude'])):
+        def build_command(self, spec, extra_env):
+            return super().build_command(replace(spec, prompt='Muse fallback fixture'), extra_env)
+
+    monkeypatch.setitem(module.ADAPTERS, 'muse', MuseSuccess())
+    monkeypatch.setattr(profiles, '_usage_headroom',
+                        lambda p: (90 if p.engine == 'muse' else 10, 2_000_000_000))
+    orch = await _session(client, auth, make_dir, kind='orchestrator')
+    run = await run_to_end(client, auth, orch['id'], 'CODEX_LIMIT CLAUDE_LIMIT')
+    assert run['status'] == 'succeeded' and run['engine'] == 'muse', run
+    from helpers import run_events
+    events = await run_events(client, auth, run['id'])
+    limited = [e['payload']['engine'] for e in events if e['type'] == 'account.limited']
+    assert set(limited) == {'claude', 'codex'}, limited

@@ -133,3 +133,37 @@ flag가 바인딩 실패 후속 전환보다 우선하는 경계를 추가했다
 다른 활성 기획 `d7e7d5c6-571f-4294-a948-97a80d66319c`의 별도 worktree
 `/private/tmp/ttk-muse-tooldiscovery-20261028`에서 해당 guard 수정을 진행 중임을 확인해
 이 트랙에서 중복 수정하지 않는다. 그 변경은 관측 시 미커밋이며 운영 반영을 주장하지 않는다.
+
+## 메인 배정 단계 교정
+
+네이티브 메인이 사용 가능한데도 Muse를 선택할 수 있는 별도 코드 결함을 발견했다.
+기존 선택기는 네이티브와 Muse를 같은 후보 집합에서 계정별 여유량으로 비교했다.
+사용량 rank가 prefer_engine보다 앞서므로 native 여유10/Muse 여유90 fixture에서
+메인이 Muse로 실행되는 red를 관찰했다. 이는 재현된 배정 결함이며 특정 운영 Run의
+당시 quota/선택 원인 전체를 역으로 확정하는 증거는 아니다.
+
+이제 auto 메인은 사용 가능한 native 후보 단계에서 먼저 고르고 그 안에서 부하를 비교한다.
+native가 모두 한도면 기존 Muse 경로를 유지하며, 워커 task별 auto 정책에는 적용하지 않는다.
+native quota가 Muse 실행 중 회복됐을 때 복구 후보를 갱신하는 경계도 보완했다.
+최초 후보에 없었던 회복 계정만 더해 이미 시도·거부된 계정을 재도입하지 않는다.
+해당 경계는 기존 코드에서 failed로 끝나는 red를 재현한 뒤 통과시켰다.
+
+선택 회귀 명령:
+
+```sh
+PYTHONPATH=src ../projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q \
+ tests/test_orchestrator_muse.py tests/test_muse_mcp_recovery.py tests/test_codex_capacity.py \
+ tests/test_mcp_error_diagnostics.py tests/test_agent_scope_auth.py unit_tests/test_muse_mcp_binding.py --tb=short
+# 40 passed in 12.59s
+ruff check src/ttakkari/runs/manager.py tests/test_orchestrator_muse.py tests/test_muse_mcp_recovery.py
+# All checks passed!
+```
+
+기존 Muse MCP 인자 손실 자체의 내부 원인은 계속 미확정이다.
+native discovery guard 수정은 위 다른 소유자가 진행하며, 이 배정 교정과 구분한다.
+
+게임 독립 검증은 `fac27f5e`의 새 컨텍스트에서 진행한다. 원 보고는 `5b4857f` snapshot이며
+그 뒤 다른 작업의 stage2 `f26cbe9`가 들어왔다. `~/work-history/2026-10-27.md`에서
+로그인은 유지하고 각 장만 잠금 해제하라는 사용자 정정 근거를 확인했다.
+게임 문서3종의 “사용자 결정 필요” 표기는 `f2434c5`에서 철회했다(로컬, 실플레이 완료 아님).
+게임 작업 트리의 타 작업 파일은 stage하지 않았고 검증 전 최신 게임 전체를 push하지 않았다.

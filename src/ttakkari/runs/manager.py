@@ -1088,6 +1088,7 @@ class RunManager:
         # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
         remaining = list(profiles)
+        initial_profile_ids = {p.id for p in profiles}
         choose_account = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
 
         async def choose(candidates, run_id, **kwargs):
@@ -1131,6 +1132,12 @@ class RunManager:
                 own = profiles_mod._in_use.get(run_id)
                 if own in counts:
                     counts[own] = max(0, counts[own] - 1)
+            if is_orch and sess.engine == 'auto':
+                # Native main models form a policy stage before account load
+                # balancing. Spare Muse quota must not outrank a usable native.
+                native = [p for p in candidates if p.engine in {'claude', 'codex'}]
+                if native:
+                    candidates = native
             selected = await choose_account(candidates, run_id, **kwargs)
             is_pinned_switched = bool(
                 pinned_fallback and primary_pair and (
@@ -1468,6 +1475,10 @@ class RunManager:
                     excluded.append(prof.engine)
                 run.usage = {**(run.usage or {}), 'mcp_binding_failed_engines': excluded}
                 remaining = [p for p in remaining if p.engine not in excluded]
+                # Admit accounts whose quota recovered during the Muse attempt,
+                # while never reintroducing an already attempted/rejected account.
+                recovered, _ = await available_profiles()
+                remaining.extend(p for p in recovered if p.id not in initial_profile_ids)
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             texts = (state.error, tail, None if rc == 0 else state.result_text, state.limit_text)
             if prof.engine == "antigravity" and prof.config_dir and not stopped:

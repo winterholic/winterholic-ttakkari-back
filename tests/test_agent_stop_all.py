@@ -175,7 +175,7 @@ async def test_stop_all_suppresses_worker_reports(client, auth, make_dir):
 
 
 async def test_work_pool_scope_isolation(client, auth, make_dir):
-    """검증 5: work pool 오케스트레이터는 같은 workspace만 중지할 수 있고, personal 또는 타 workspace는 건드릴 수 없다."""
+    """검증 5: 지정 없는 중지는 같은 workspace만 건드리고, 명시 지정 중지는 표시 분류를 넘나든다."""
     work1, h_work1 = await create_session(client, auth, make_dir, pool="work")
     # 같은 work workspace의 다른 세션
     same_work, _ = await create_session(client, auth, make_dir, pool="work", workspace=work1["workspace_id"])
@@ -196,9 +196,10 @@ async def test_work_pool_scope_isolation(client, auth, make_dir):
     assert str(r_other.id) not in res["stopped"]
     assert str(r_personal.id) not in res["stopped"]
 
-    # 타 workspace 세션을 명시 지정하여 중지 시도 시 403 차단
-    denied = await client.post(f"/api/orchestrator/agents/{other_work['id']}/stop", headers=h_work1)
-    assert denied.status_code == 403
+    # An explicit target may cross display groups; untargeted stop-all stays local.
+    targeted = await client.post(f"/api/orchestrator/agents/{other_work['id']}/stop", headers=h_work1)
+    assert targeted.status_code == 200
+    assert str(r_other.id) in targeted.json()["stopped"]
 
 
 async def test_scheduled_stop_all_action(client, auth, make_dir):
@@ -304,12 +305,12 @@ async def test_stop_all_sweeps_reports_created_by_old_generation(client, auth, m
         assert (await db.get(Run, report.id)).status == RunStatus.cancelled
 
 
-async def test_personal_orchestrator_cannot_target_work_session(client, auth, make_dir):
+async def test_personal_orchestrator_can_target_work_session(client, auth, make_dir):
     _personal, hp = await create_session(client, auth, make_dir, pool="personal")
     work, _ = await create_session(client, auth, make_dir, pool="work")
     await create_run(work)
-    denied = await client.post(f"/api/orchestrator/agents/{work['id']}/stop", headers=hp)
-    assert denied.status_code == 403
+    targeted = await client.post(f"/api/orchestrator/agents/{work['id']}/stop", headers=hp)
+    assert targeted.status_code == 200
 
 
 async def test_resume_interrupted_honors_pending_cancel(client, auth, make_dir):
@@ -329,7 +330,7 @@ async def test_resume_interrupted_honors_pending_cancel(client, auth, make_dir):
 
 
 async def test_scheduled_stop_all_scope_is_clamped_to_orchestrator(client, auth, make_dir):
-    """work 오케스트레이터가 예약 중지 페이로드로 범위를 전체로 넓힐 수 없다."""
+    """지정 없는 예약 중지는 페이로드로 범위를 넓힐 수 없고, 명시 세션 지정은 분류를 넘나든다."""
     work, hw = await create_session(client, auth, make_dir, pool="work")
     other, _ = await create_session(client, auth, make_dir, pool="personal")
     r = await client.post("/api/orchestrator/schedules", headers=hw,
@@ -339,7 +340,9 @@ async def test_scheduled_stop_all_scope_is_clamped_to_orchestrator(client, auth,
     assert payload["scope_pool"] == "work"
     assert payload["workspace_id"] == work["workspace_id"]
 
-    denied = await client.post("/api/orchestrator/schedules", headers=hw,
-                               json={"action_type": "stop_all", "due_at": "+3600s",
-                                     "payload": {"session_id": other["id"]}})
-    assert denied.status_code == 403
+    targeted = await client.post("/api/orchestrator/schedules", headers=hw,
+                                 json={"action_type": "stop_all", "due_at": "+3600s",
+                                       "payload": {"session_id": other["id"]}})
+    assert targeted.status_code == 201
+    assert targeted.json()["payload"]["scope_pool"] == "all"
+    assert targeted.json()["payload"]["session_id"] == other["id"]

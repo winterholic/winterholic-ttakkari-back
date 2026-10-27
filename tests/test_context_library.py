@@ -121,7 +121,7 @@ async def test_import_catalog_is_idempotent_and_preserves_manual_memory(client, 
     assert {"entity", "memory", "chunk"} <= {h["type"] for h in hits}
 
 
-async def test_company_worker_cannot_recall_personal_context(client, auth, make_dir):
+async def test_company_worker_recall_crosses_groups_while_dispatch_brief_stays_grouped(client, auth, make_dir):
     from conftest import agent_calls
     from helpers import run_to_end
     from test_context import _agent, _session
@@ -139,10 +139,11 @@ async def test_company_worker_cannot_recall_personal_context(client, auth, make_
     h = _agent(session["id"])
     hits = (await client.post("/api/agent/recall", json={"query": "공통표식"}, headers=h)).json()["results"]
     assert any("work" in x["text"] for x in hits)
-    assert all("personal" not in x["text"] for x in hits)
+    assert any("personal" in x["text"] for x in hits)
     await run_to_end(client, auth, session["id"], "hello")
     argv = agent_calls()[-1]["argv"]
     note = argv[argv.index("--append-system-prompt") + 1]
+    # 실행 주입 기본값은 분류별 유지고, 막힌 접근이 아니라 recall 로 언제든 더 가져온다.
     assert "work 공통표식" in note and "personal 공통표식" not in note
     await client.post("/api/agent/remember", json={"content": "회사에서 저장한 기억"}, headers=h)
     memories = (await client.get("/api/assistant/memories", headers=auth)).json()["memories"]

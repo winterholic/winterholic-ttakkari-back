@@ -1,4 +1,4 @@
-"""Google 계정 REST(ADR 0051). 사용자(`/api/google-accounts`)와 에이전트 MCP(`/api/agent/google-accounts`, 개인 세션만)가 같은 서비스를 쓴다.
+"""Google 계정 REST(ADR 0051). 사용자(`/api/google-accounts`)와 에이전트 MCP(`/api/agent/google-accounts`)가 같은 서비스를 쓴다.
 
 에이전트 쪽은 상태 조회만 노출한다. 로그인 창·세션 삭제·재개는 사람이 해야 하는 일이다.
 모든 오류는 {code, message[, retry_after]} 로 내려가고 쿠키·토큰·상류 응답 원문은 담기지 않는다.

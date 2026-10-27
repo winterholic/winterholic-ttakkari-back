@@ -461,7 +461,7 @@ async def test_impact_preview_is_readonly_and_scoped(client, auth):
     ] == 1
 
 
-async def test_work_agent_cannot_read_personal_evidence_or_forge_user_review(
+async def test_work_agent_reads_owner_evidence_but_cannot_forge_user_review(
     client, auth, make_dir
 ):
     from ttakkari.orchestrator.runtime import issue_token
@@ -491,13 +491,13 @@ async def test_work_agent_cannot_read_personal_evidence_or_forge_user_review(
         json={"query": "따까리", "scope": "all"},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["assertions"] == [] and r.json()["evidence"] == []
+    assert r.json()["assertions"] and r.json()["evidence"]
     job = await client.post(
         "/api/agent/knowledge/extractions",
         headers=token,
         json={"revision_id": rev["id"]},
     )
-    assert job.status_code == 404
+    assert job.status_code == 201, job.text
     review_response = await client.post(
         "/api/agent/knowledge/assertions/" + a["id"] + "/reviews",
         headers=token,

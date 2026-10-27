@@ -399,21 +399,21 @@ async def test_agent_reads_meetings_scoped_and_has_no_write_path(client, auth, m
 
     lst = (await client.get("/api/agent/meetings", headers=ph)).json()["meetings"]
     assert {x["title"] for x in lst} == {"개인 회의", "회사 회의"}
-    assert [x["title"] for x in (await client.get("/api/agent/meetings", headers=wh)).json()["meetings"]] == ["회사 회의"]
+    assert {x["title"] for x in (await client.get("/api/agent/meetings", headers=wh)).json()["meetings"]} == {"회사 회의", "개인 회의"}
     assert (await client.get("/api/agent/meetings", params={"project": "Alpha"}, headers=ph)).json()["meetings"][0]["title"] == "개인 회의"
     assert (await client.get("/api/agent/meetings", params={"project": "없는 프로젝트"}, headers=ph)).json()["meetings"] == []
 
     detail = (await client.get(f"/api/agent/meetings/{mine['id']}", headers=ph)).json()
     assert detail["summary"] and [d["text"] for d in detail["items"]["action"]] == ["배포 체크리스트를 작성한다"]
     assert "transcript" not in detail and "proposals" not in detail and detail["pending_proposals"] > 0
-    assert (await client.get(f"/api/agent/meetings/{mine['id']}", headers=wh)).status_code == 404
+    assert (await client.get(f"/api/agent/meetings/{mine['id']}", headers=wh)).status_code == 200
     assert (await client.get(f"/api/agent/meetings/{co['id']}", headers=ph)).status_code == 200
 
     hits = (await client.get("/api/agent/meetings/search", params={"kind": "action", "status": "open", "project": "Alpha"}, headers=ph)).json()["items"]
     assert [h["text"] for h in hits] == ["배포 체크리스트를 작성한다"] and hits[0]["meeting"]["title"] == "개인 회의"
     found = (await client.get("/api/agent/meetings/search", params={"q": "모바일 화면", "kind": "decision"}, headers=ph)).json()["items"]
     assert found and found[0]["text"] == "모바일 화면을 먼저 만든다"
-    assert (await client.get("/api/agent/meetings/search", params={"q": "모바일"}, headers=wh)).json()["items"] == []
+    assert (await client.get("/api/agent/meetings/search", params={"q": "모바일"}, headers=wh)).json()["items"]
     # 쓰기·승인 경로는 에이전트 쪽에 없다
     for method, path in (("POST", "/api/agent/meetings"), ("PATCH", f"/api/agent/meetings/{mine['id']}"),
                          ("DELETE", f"/api/agent/meetings/{mine['id']}"),

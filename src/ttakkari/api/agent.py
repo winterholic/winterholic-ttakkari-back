@@ -111,23 +111,6 @@ async def _session(db: Db, sid: uuid.UUID) -> ChatSession:
     return s
 
 
-def _artifact_scope(session: ChatSession):
-    """Work agents see user-shared files and work-session artifacts in their workspace."""
-    if session.pool != "work":
-        return ()
-    work_sessions = select(ChatSession.id).where(
-        ChatSession.pool == "work",
-        ChatSession.workspace_id == session.workspace_id,
-    )
-    return (
-        Artifact.workspace_id == session.workspace_id,
-        or_(
-            and_(Artifact.session_id.is_(None), Artifact.source.in_(("upload", "user_registered"))),
-            Artifact.session_id.in_(work_sessions),
-        ),
-    )
-
-
 def _err(e: store.ContextError) -> HTTPException:
     return HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": str(e)})
 
@@ -136,20 +119,20 @@ def _err(e: store.ContextError) -> HTTPException:
 
 @router.get("/library")
 async def library(sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
-    return await library_catalog(db, scope="work" if session.pool == "work" else "all")
+    await _session(db, sid)
+    return await library_catalog(db, scope="all")
 
 
 @router.post("/recall")
 async def recall(body: RecallIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity", "meeting")),
-                              scope="work" if session.pool == "work" else "all")
+                              scope="all")
     result = {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
     if body.kinds is None or set(body.kinds) & {"chunk", "entity"}:
         from ttakkari.knowledge import store as knowledge
         result["knowledge"] = await knowledge.recall(db, body.query, k=min(body.k,30),
-                                                       scope="work" if session.pool == "work" else "all")
+                                                       scope="all")
     return result
 
 
@@ -168,14 +151,12 @@ async def remember(body: RememberIn, sid: AgentSession, db: Db) -> dict[str, Any
 
 @router.post("/forget")
 async def forget(body: dict[str, str], sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     try:
         mid = uuid.UUID(body.get("id", ""))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id 가 올바르지 않습니다.") from e
     m = await db.get(CtxMemory, mid)
-    if m is not None and session.pool == "work" and m.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "기억을 찾을 수 없습니다.")
     # 사용자가 직접 넣은 기억, 사용자가 승인해 만든 회의 결정(source=meeting)은 에이전트가 지우지 못한다.
     if m is not None and m.source in ("manual", "meeting"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "사용자가 넣거나 승인한 기억은 비서 관리에서만 지울 수 있어요.")
@@ -192,13 +173,13 @@ async def upsert_entity(body: EntityIn, sid: AgentSession, db: Db) -> dict[str, 
     except store.ContextError as e2:
         raise _err(e2) from e2
     await db.commit()
-    return await store.entity_detail(db, e, scope="work" if session.pool == "work" else "all")
+    return await store.entity_detail(db, e, scope="all")
 
 
 @router.get("/entities/{name}")
 async def get_entity(name: str, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
-    scope = "work" if session.pool == "work" else "all"
+    await _session(db, sid)
+    scope = "all"
     e = await store.find_entity(db, name, scope=scope)
     if e is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "그런 항목이 없어요. recall 로 찾아보세요.")
@@ -209,8 +190,9 @@ async def get_entity(name: str, sid: AgentSession, db: Db) -> dict[str, Any]:
 async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     session = await _session(db, sid)
     try:
+        # 기존 항목은 분류와 무관하게 연결하고, 새로 만드는 항목만 세션 분류를 기본값으로 쓴다.
         r = await store.link(db, body.subject, body.predicate, body.object, note=body.note, source="agent",
-                             scope="work" if session.pool == "work" else "all")
+                             scope=session.pool)
     except store.ContextError as e:
         raise _err(e) from e
     await db.commit()
@@ -222,8 +204,8 @@ async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 @router.get("/artifacts")
 async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20,
                     category: str | None = None, area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
-    session = await _session(db, sid)
-    stmt = select(Artifact).where(Artifact.deleted_at.is_(None), *_artifact_scope(session))
+    await _session(db, sid)
+    stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
     if kind:
         stmt = stmt.where(Artifact.kind == kind)
     if category:
@@ -246,11 +228,10 @@ async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSessi
     """보관함 분류를 옮긴다(내 보관함 ↔ AI 작업 파일).
     에이전트는 이 경로로 내 보관함(files)으로 승격할 수 없으며(keep_artifact 사용),
     사용자가 보관한 파일(keep_reason 존재)이나 사용자가 올린 파일은 뺄 수 없다."""
-    session = await _session(db, sid)
+    await _session(db, sid)
     art = await db.scalar(select(Artifact).where(
         Artifact.id == art_id,
         Artifact.deleted_at.is_(None),
-        *_artifact_scope(session),
     ))
     if art is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact 가 없습니다.")
@@ -472,10 +453,8 @@ async def notify(body: NotifyIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 
 @router.get("/sessions")
 async def sessions(sid: AgentSession, db: Db, limit: int = 20) -> dict[str, Any]:
-    curr = await _session(db, sid)
+    await _session(db, sid)
     stmt = select(ChatSession).where(ChatSession.archived_at.is_(None))
-    if curr.pool == "work":
-        stmt = stmt.where(ChatSession.pool == "work")
     rows = await db.scalars(stmt.order_by(ChatSession.updated_at.desc()).limit(min(limit, 100)))
     return {"sessions": [{"id": str(s.id), "title": s.title, "kind": s.kind, "updated_at": s.updated_at.isoformat()}
                          for s in rows]}
@@ -483,12 +462,10 @@ async def sessions(sid: AgentSession, db: Db, limit: int = 20) -> dict[str, Any]
 
 @router.get("/sessions/{session_id}")
 async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: int = 10) -> dict[str, Any]:
-    curr = await _session(db, sid)
+    await _session(db, sid)
     s = await db.get(ChatSession, session_id)
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "세션이 없습니다.")
-    if curr.pool == "work" and s.pool != "work":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "회사 세션에서는 개인 세션을 열람할 수 없습니다.")
     from ttakkari.runs.diagnostics import mcp_tool_errors, session_execution
 
     runs = list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.desc())
@@ -545,10 +522,8 @@ async def agent_list_memo_categories(sid: AgentSession, db: Db) -> dict[str, Any
 @router.get("/memos/tags")
 async def agent_list_memo_tags(sid: AgentSession, db: Db, category: str | None = None) -> dict[str, Any]:
     """메모 태그와 쓰인 메모 수(많은 순). category: 카테고리 이름, "none" 이면 미분류."""
-    session = await _session(db, sid)
+    await _session(db, sid)
     stmt = select(Memo.tags).where(Memo.deleted_at.is_(None))
-    if session.pool == "work":
-        stmt = stmt.where(Memo.scope == "work")
     cat = None if not category else planner.NONE if category.strip().lower() == "none" else await planner.resolve_category(db, category)
     if cat is planner.NONE:
         stmt = stmt.where(Memo.category_id.is_(None))
@@ -565,19 +540,17 @@ async def agent_list_memo_tags(sid: AgentSession, db: Db, category: str | None =
 async def agent_list_memos(sid: AgentSession, db: Db, q: str | None = None, tag: Annotated[list[str] | None, Query()] = None,
                            category: str | None = None, limit: int = 30) -> dict[str, Any]:
     """category: 카테고리 이름, "none" 이면 미분류."""
-    session = await _session(db, sid)
+    await _session(db, sid)
     cat = None if not category else planner.NONE if category.strip().lower() == "none" else await planner.resolve_category(db, category)
-    scope = "work" if session.pool == "work" else None
+    scope = None
     rows = await db.scalars(planner.memo_query(q, tag, category=cat, scope=scope).limit(max(1, min(limit, 100))))
     return {"memos": await _memos_out(db, list(rows), body=False)}
 
 
 @router.get("/memos/{memo_id}")
 async def agent_get_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     m = await planner.get_memo(db, memo_id)
-    if session.pool == "work" and m.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "메모가 없어요."})
     return (await _memos_out(db, [m], body=True))[0]
 
 
@@ -597,14 +570,12 @@ async def agent_create_memo(body: AgentMemoIn, sid: AgentSession, db: Db) -> dic
 
 @router.patch("/memos/{memo_id}")
 async def agent_patch_memo(memo_id: uuid.UUID, body: AgentMemoPatch, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     m = await planner.get_memo(db, memo_id)
     planner.check_rev(m, body.rev)
     if m.source == "user" and (body.body is not None or body.title is not None):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 쓴 메모의 제목·본문은 고칠 수 없어요. append 로 덧붙이거나 새 메모를 만드세요."})
-    if session.pool == "work" and m.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "메모가 없어요."})
     if body.title is not None:
         m.title = body.title.strip()
     if body.body is not None:
@@ -628,13 +599,11 @@ async def agent_patch_memo(memo_id: uuid.UUID, body: AgentMemoPatch, sid: AgentS
 
 @router.delete("/memos/{memo_id}")
 async def agent_delete_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     m = await planner.get_memo(db, memo_id)
     if m.source != "agent":
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 쓴 메모는 앱에서만 지울 수 있어요."})
-    if session.pool == "work" and m.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "메모가 없어요."})
     m.deleted_at = utcnow()
     record(db, actor="agent", action="memo.archive", target_type="memo", target_id=m.id, detail={"session": str(sid)})
     await db.commit()
@@ -645,8 +614,8 @@ async def agent_delete_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> di
 async def agent_list_events(sid: AgentSession, db: Db, from_: FromDate, to: ToDate,
                             q: str | None = None) -> dict[str, Any]:
     """구간의 일정(반복 일정은 펼쳐서)과 그 구간의 한국 공휴일."""
-    session = await _session(db, sid)
-    scope = "work" if session.pool == "work" else None
+    await _session(db, sid)
+    scope = None
     return {"events": await planner.list_events(db, from_, to, q, scope=scope), "holidays": kr_holidays.holidays_between(from_, to)}
 
 
@@ -664,10 +633,8 @@ async def agent_create_event(body: EventIn, sid: AgentSession, db: Db) -> dict[s
 
 @router.patch("/events/{event_id}")
 async def agent_patch_event(event_id: uuid.UUID, body: EventPatch, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     ev = await planner.get_event(db, event_id)
-    if session.pool == "work" and ev.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "일정이 없어요."})
     planner.apply_event_fields(ev, body.model_dump(exclude_unset=True))
     ev.updated_at = utcnow()
     record(db, actor="agent", action="calendar.update", target_type="calendar_event", target_id=ev.id,
@@ -678,13 +645,11 @@ async def agent_patch_event(event_id: uuid.UUID, body: EventPatch, sid: AgentSes
 
 @router.delete("/events/{event_id}")
 async def agent_delete_event(event_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
-    session = await _session(db, sid)
+    await _session(db, sid)
     ev = await planner.get_event(db, event_id)
     if ev.source != "agent":
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 만든 일정은 앱에서만 지울 수 있어요."})
-    if session.pool == "work" and ev.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "일정이 없어요."})
     ev.deleted_at = utcnow()
     record(db, actor="agent", action="calendar.archive", target_type="calendar_event", target_id=ev.id,
            detail={"session": str(sid)})

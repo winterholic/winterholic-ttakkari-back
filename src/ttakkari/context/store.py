@@ -50,8 +50,7 @@ async def upsert_entity(db: AsyncSession, name: str, type_: str = "other", *, su
     if type_ not in ENTITY_TYPES:
         type_ = "other"
     e = await find_entity(db, name)
-    if e is not None and e.scope != scope:
-        raise ContextError("같은 이름의 항목이 다른 범위에 있어요. 고유한 이름을 써 주세요.")
+    # 같은 소유자의 개인/회사 분류는 표시용이라 기존 항목을 찾으면 그 분류를 유지하고 접근을 허용한다.
     if e is None:
         e = CtxEntity(type=type_, name=name[:200], aliases=[], attributes={}, scope=scope)
         db.add(e)
@@ -76,8 +75,8 @@ async def link(db: AsyncSession, subject: str, predicate: str, obj: str, *, note
     if not predicate:
         raise ContextError("관계 이름이 비었어요.")
     target_scope = "work" if scope == "work" else "personal"
-    s = await find_entity(db, subject, scope=scope) or await upsert_entity(db, subject, scope=target_scope)
-    o = await find_entity(db, obj, scope=scope) or await upsert_entity(db, obj, scope=target_scope)
+    s = await find_entity(db, subject) or await upsert_entity(db, subject, scope=target_scope)
+    o = await find_entity(db, obj) or await upsert_entity(db, obj, scope=target_scope)
     rel = await db.scalar(select(CtxRelation).where(CtxRelation.subject_id == s.id, CtxRelation.predicate == predicate,
                                                     CtxRelation.object_id == o.id))
     if rel is None:
@@ -118,7 +117,7 @@ async def remember(db: AsyncSession, content: str, *, kind: str = "fact", entiti
     ids = []
     for n in entities or []:
         if n.strip():
-            e = await find_entity(db, n, scope=scope) or await upsert_entity(db, n, scope=scope)
+            e = await find_entity(db, n) or await upsert_entity(db, n, scope=scope)
             ids.append(str(e.id))
     m = CtxMemory(kind=kind, content=content[:4000], entity_ids=ids, pinned=pinned, source=source, source_ref=source_ref, scope=scope)
     db.add(m)

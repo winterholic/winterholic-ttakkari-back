@@ -308,7 +308,7 @@ async def test_finished_result_is_labelled_partial_in_real_desk_report(client, a
         assert '94 passed' in report.result_text
 
 
-async def test_checkpoint_rejects_cross_scope_project(client, auth, make_dir):
+async def test_checkpoint_can_link_owner_project_across_display_groups(client, auth, make_dir):
     sess, h = await lead(client, auth, make_dir)
     project = (await client.post('/api/pms/projects', headers=auth, json={'name': 'private', 'scope': 'personal'})).json()
     async with sessionmaker()() as db:
@@ -317,7 +317,7 @@ async def test_checkpoint_rejects_cross_scope_project(client, auth, make_dir):
         await db.commit()
     value = state()
     value['pms_project_id'] = project['id']
-    assert (await checkpoint(client, h, value)).status_code == 404
+    assert (await checkpoint(client, h, value)).status_code == 200
 
 
 async def test_persisted_resume_schedule_owns_next_step_without_duplicate_run(client, auth, make_dir):

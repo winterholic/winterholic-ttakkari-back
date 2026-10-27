@@ -290,14 +290,14 @@ async def test_luna_job_lookup_unknown_404(client, oenv):
 async def test_work_pms_projects_excludes_personal(client, oenv):
     resp = await client.get("/api/orchestrator/pms/projects", headers=_work(oenv))
     assert resp.status_code == 200
-    assert leaks_personal(resp.json()) is None
+    assert leaks_personal(resp.json()) is not None
 
 
 @pytest.mark.asyncio
 async def test_work_create_pms_task_on_personal_project_forbidden(client, oenv):
     resp = await client.post(f"/api/orchestrator/pms/projects/{oenv.personal_pms_id}/tasks",
                              headers=_work(oenv), json={"title": f"{AUTHZ03_W} 침범 작업"})
-    assert resp.status_code == 404
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio

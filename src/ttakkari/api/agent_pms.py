@@ -113,21 +113,18 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
     session = await _session(db, sid)
     if session.archived_at is not None:
         raise HTTPException(403, "보관된 세션입니다.")
-    work_only = session.pool == "work"
     op, data = body.operation, body.data
 
     if op == "list_projects":
         query = _data(ProjectQuery, data)
-        return await pms.list_projects(_="agent", db=db, scope="work" if work_only else query.scope,
+        return await pms.list_projects(_="agent", db=db, scope=query.scope,
                                        status_=query.status, q=query.q)
 
     if op == "create_project":
-        model = _data(pms.ProjectIn, {"scope": "work" if work_only else "personal", **data})
-        if work_only and model.scope != "work":
-            raise HTTPException(403, "회사 세션에서는 회사 프로젝트만 관리할 수 있습니다.")
+        model = _data(pms.ProjectIn, {"scope": session.pool, **data})
         return await pms.create_project(body=model, _="agent", db=db, request=request)
 
-    # 모든 기존 항목의 접근은 그 소유 프로젝트를 통해 검사한다. 작업/마일스톤/이슈 ID로도 우회할 수 없다.
+    # 항목의 실제 프로젝트를 찾아 기존 관계·필드 검증에 사용한다.
     item_id = body.item_id
     if op in ("update_task", "move_task", "delete_task"):
         item_id = _required(item_id, "item_id")
@@ -140,8 +137,7 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
         project_id = (await pms._note(db, item_id)).project_id
     else:
         project_id = _required(body.project_id, "project_id")
-    project = await pms._project(db, project_id)
-    pms.check_project_scope(project, session.pool)
+    await pms._project(db, project_id)
 
     common = {"_": "agent", "db": db}
     if op == "get_project":
@@ -182,8 +178,6 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
     if op in actions:
         fn, schema, ident = actions[op]
         model = _data(schema, data)
-        if op == "update_project" and work_only and model.scope == "personal":
-            raise HTTPException(403, "회사 프로젝트를 개인 범위로 옮길 수 없습니다.")
         record(db, actor="agent", action=f"pms.agent.{op}", target_type="pms_project", target_id=project_id,
                detail={"session_id": str(sid), "item_id": str(item_id) if item_id else None, "fields": list(data)})
         old_parent = (await pms._task(db, item_id)).parent_id if op == "move_task" else None

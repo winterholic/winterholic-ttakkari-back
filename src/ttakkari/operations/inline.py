@@ -30,6 +30,64 @@ LOOP_PROBES = 20
 RECENT_DEPLOYS = 5
 
 
+async def collection_report(db: AsyncSession) -> dict:
+    """Recent owner missions: counts and current-run error codes, never document or error bodies."""
+    from ttakkari.collector.control_models import CollectorDelivery
+    from ttakkari.collector_models import CollectionMission as Mission
+    from ttakkari.collector_models import CollectionMissionJob as Link
+    from ttakkari.collector_models import CollectorItem as Item
+    from ttakkari.collector_models import CollectorJob as Job
+
+    recent = (await db.execute(select(
+        Mission.id, func.substr(Mission.plan["title"].astext, 1, 100).label("title"), Mission.status,
+        Mission.created_at, Mission.updated_at, Mission.current_run_seq.label("run_seq"),
+        Mission.plan["research"]["stop"].astext.label("stop"),
+        Mission.plan["research"]["searches_used"].astext.label("searches_used"),
+        *(func.substr(Mission.gaps[i]["reason"].astext, 1, 80).label(f"gap_{i}") for i in range(5)),
+    ).where(Mission.tenant_id == "owner").order_by(Mission.created_at.desc(), Mission.id.desc()).limit(20))).all()
+    report = {"readonly": True, "limit": 20, "missions": []}
+    if not recent:
+        return report
+    ids = [row.id for row in recent]
+    code = func.substr(Job.last_error["code"].astext, 1, 80)
+    job_rows = (await db.execute(select(
+        Link.mission_id, Link.run_seq, Job.status, Job.stage, code.label("error_code"),
+        func.count().label("jobs"), func.sum(Job.attempts).label("attempts"),
+        func.min(Job.not_before).label("next_retry"),
+    ).join(Job, Job.id == Link.job_id).join(Mission, Mission.id == Link.mission_id).where(
+        Link.mission_id.in_(ids), Link.run_seq == Mission.current_run_seq,
+        Mission.tenant_id == "owner", Job.tenant_id == "owner",
+    ).group_by(Link.mission_id, Link.run_seq, Job.status, Job.stage, code)
+        .order_by(Link.mission_id, Job.stage, Job.status, code).limit(201))).all()
+    counts = (await db.execute(select(
+        Link.mission_id,
+        func.count(Item.id.distinct()).filter(Item.raw_sha256.is_not(None)).label("acquired"),
+        *(func.count(Item.id.distinct()).filter(Item.status == status).label(status)
+          for status in ("accepted", "failed", "blocked")),
+        func.count(Item.id.distinct()).filter(CollectorDelivery.outcome == "imported").label("imported"),
+    ).join(Item, Item.job_id == Link.job_id).join(Mission, Mission.id == Link.mission_id)
+        .outerjoin(CollectorDelivery, CollectorDelivery.item_id == Item.id).where(
+            Link.mission_id.in_(ids), Mission.tenant_id == "owner", Item.tenant_id == "owner",
+        ).group_by(Link.mission_id))).all()
+    by_id = {row.mission_id: {key: getattr(row, key) for key in
+                             ("acquired", "accepted", "failed", "blocked", "imported")} for row in counts}
+    report["job_groups_truncated"] = len(job_rows) > 200
+    for row in recent:
+        report["missions"].append({
+            "id": str(row.id), "title": row.title, "status": row.status, "run_seq": row.run_seq,
+            "created_at": row.created_at.isoformat(), "updated_at": row.updated_at.isoformat(),
+            "research": {"stop": row.stop, "searches_used": row.searches_used},
+            "gap_codes": [getattr(row, f"gap_{i}") for i in range(5) if getattr(row, f"gap_{i}")],
+            "gap_codes_limit": 5,
+            "counts": by_id.get(row.id, dict.fromkeys(("acquired", "accepted", "failed", "blocked", "imported"), 0)),
+            "jobs": [{"run_seq": job.run_seq, "status": job.status, "stage": job.stage,
+                      "error_code": job.error_code, "jobs": job.jobs, "attempts": job.attempts,
+                      "next_retry": job.next_retry.isoformat() if job.next_retry else None}
+                     for job in job_rows[:200] if job.mission_id == row.id],
+        })
+    return report
+
+
 def _ms(values: list[float]) -> dict:
     ordered = sorted(values)
     return {"n": len(ordered), "p50_ms": round(statistics.median(ordered), 2),
@@ -70,6 +128,7 @@ async def runtime_report(db: AsyncSession) -> dict:
                          "leases": leases.get(g.id, 0), "process_groups": groups.get(g.id, 0)} for g in gens],
         "runs_running": running,
         "deploy_strategy": strategy, "recent_deploys": deploys,
+        "collection": await collection_report(db),
     }
 
 

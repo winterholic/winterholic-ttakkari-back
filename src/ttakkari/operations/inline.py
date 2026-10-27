@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ttakkari import backup_status, deployment, generation
 from ttakkari.config import get_settings
 from ttakkari.models import (
+    ChatSession,
     Run,
     RunStatus,
     RuntimeControl,
@@ -107,6 +108,14 @@ async def runtime_report(db: AsyncSession) -> dict:
     running = (await db.execute(select(func.count()).select_from(Run).where(Run.status == RunStatus.running))).scalar()
     now = datetime.now(UTC)
     current = generation.current
+    recovery_rows = (await db.execute(select(
+        Run.id, Run.session_id, ChatSession.title, ChatSession.pool, Run.status, Run.engine, Run.model,
+        Run.resume_after, RuntimeLease.generation_id,
+        Run.usage["automatic_recovery"]["attempts"].as_integer().label("recovery_attempts"),
+    ).join(ChatSession, ChatSession.id == Run.session_id)
+        .outerjoin(RuntimeLease, RuntimeLease.run_id == Run.id)
+        .where(ChatSession.archived_at.is_(None), Run.status.in_(("running", "queued", "interrupted")))
+        .order_by((Run.status == "running").desc(), Run.created_at.desc()).limit(40))).all()
     try:
         deploys = [{"id": j["id"], "revision": j["revision"], "status": j["status"], "created_at": j["created_at"]}
                    for j in deployment.JobStore(deployment.state_dir()).all()[-RECENT_DEPLOYS:]]
@@ -127,6 +136,11 @@ async def runtime_report(db: AsyncSession) -> dict:
                          "heartbeat_age_s": round((now - g.heartbeat_at.replace(tzinfo=UTC)).total_seconds(), 1),
                          "leases": leases.get(g.id, 0), "process_groups": groups.get(g.id, 0)} for g in gens],
         "runs_running": running,
+        "recovery_runs": [{"run_id": str(r.id), "session_id": str(r.session_id), "title": r.title,
+                           "pool": r.pool, "status": r.status, "engine": r.engine, "model": r.model,
+                           "resume_after": r.resume_after.isoformat() if r.resume_after else None,
+                           "lease_owner": str(r.generation_id) if r.generation_id else None,
+                           "recovery_attempts": r.recovery_attempts or 0} for r in recovery_rows],
         "deploy_strategy": strategy, "recent_deploys": deploys,
         "collection": await collection_report(db),
     }

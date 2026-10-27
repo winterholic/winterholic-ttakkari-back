@@ -548,11 +548,11 @@ async def env(make_dir) -> Authz03Env:
         return await ensure_authz03(db, make_dir)
 
 
-async def test_agent_route_is_read_only_and_blocked_for_work_sessions(client, env):
+async def test_agent_route_is_read_only_for_both_session_groups(client, env):
     work = {"Authorization": f"Bearer {issue_token(env.work_session_id)}"}
     personal = {"Authorization": f"Bearer {issue_token(env.personal_session_id)}"}
-    assert (await client.get("/api/agent/google-accounts", headers=work)).status_code == 403
-    assert (await client.get("/api/agent/google-accounts/primary", headers=work)).status_code == 403
+    assert (await client.get("/api/agent/google-accounts", headers=work)).status_code == 200
+    assert (await client.get("/api/agent/google-accounts/primary", headers=work)).status_code == 200
     ok = await client.get("/api/agent/google-accounts", headers=personal)
     assert ok.status_code == 200 and ok.json()["accounts"][0]["account_id"] == "primary"
     # 로그인 창·세션 삭제·재개·확인은 에이전트에 노출하지 않는다
@@ -571,5 +571,5 @@ def test_status_tool_is_read_only_and_listed():
 
     assert "google_account_status" in READ_ONLY_TOOLS
     tool = next(t for t in TOOLS if t["name"] == "google_account_status")
-    assert tool["who"] == "개인 실행"
+    assert tool["who"] == "모든 실행"
     assert not {"google_account_login", "google_account_delete_session"} & {t["name"] for t in TOOLS}

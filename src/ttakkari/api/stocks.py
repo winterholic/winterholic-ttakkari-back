@@ -31,8 +31,6 @@ async def agent_access(sid: OrchestratorSession, db: Db) -> None:
     session = await db.get(ChatSession, sid)
     if session is None:
         raise HTTPException(403, "세션이 없습니다.")
-    if session.pool == "work":
-        raise HTTPException(403, "개인 세션에서만 주식 정보를 조회할 수 있습니다.")
 
 
 class RunOut(BaseModel):

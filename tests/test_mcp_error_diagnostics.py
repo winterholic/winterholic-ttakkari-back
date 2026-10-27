@@ -51,3 +51,29 @@ async def test_read_session_returns_mcp_failure_identity_and_argument_keys_only(
     denied = await client.get(f'/api/agent/sessions/{personal.id}',
                              headers={'Authorization': f'Bearer {issue_token(work.id)}'})
     assert denied.status_code == 403
+
+
+async def test_read_session_echoes_args_provenance_and_keeps_legacy_rows_null(client, setup_sessions):  # noqa: F811
+    personal, _work = setup_sessions
+    async with sessionmaker()() as db:
+        run = Run(session_id=personal.id, workspace_id=personal.workspace_id,
+                  engine='muse', status='failed', prompt='diagnose')
+        db.add(run)
+        await db.flush()
+        events.append(db, run, 'tool.call', {'call_id': 'new', 'name': 'mcp__ttakkari__spawn_worker',
+                                           'input': {},
+                                           'input_provenance': {'args_present': False, 'args_type': 'NoneType',
+                                                                'args_parsed': False}})
+        events.append(db, run, 'tool.result', {'call_id': 'new', 'is_error': True, 'output': 'boom'})
+        events.append(db, run, 'tool.call', {'call_id': 'old', 'name': 'mcp__ttakkari__spawn_worker',
+                                           'input': {}})
+        events.append(db, run, 'tool.result', {'call_id': 'old', 'is_error': True, 'output': 'boom'})
+        await db.commit()
+    headers = {'Authorization': f'Bearer {issue_token(personal.id)}'}
+    response = await client.get(f'/api/agent/sessions/{personal.id}', headers=headers)
+    assert response.status_code == 200
+    errors = response.json()['turns'][0]['mcp_tool_errors']
+    assert [row['call_id'] for row in errors] == ['new', 'old']
+    assert errors[0]['input_provenance'] == {'args_present': False, 'args_type': 'NoneType',
+                                             'args_parsed': False}
+    assert errors[1]['input_provenance'] is None

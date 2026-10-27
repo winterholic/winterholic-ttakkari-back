@@ -18,6 +18,15 @@ from ttakkari.models import (
 from ttakkari.oplog.scrub import scrub
 
 
+def _stored_provenance(value):
+    """Echo stored args shape; rows written before the key stay None."""
+    if not isinstance(value, dict):
+        return None
+    return {'args_present': bool(value.get('args_present')),
+            'args_type': scrub(str(value.get('args_type', '')))[:32],
+            'args_parsed': bool(value.get('args_parsed'))}
+
+
 async def mcp_tool_errors(db, runs) -> dict:
     """Three latest correlated failures per authorized Run; argument values stay private."""
     if not runs:
@@ -63,6 +72,7 @@ async def mcp_tool_errors(db, runs) -> dict:
             'call_seq': row['call_seq'], 'result_seq': row['result_seq'],
             'input_keys': sorted(scrub(str(key))[:80] for key in args)[:20] if isinstance(args, dict) else None,
             'input_empty': args == {}, 'recorded_is_error': returned.get('is_error'),
+            'input_provenance': _stored_provenance(called.get('input_provenance')),
             'error_excerpt': scrub(str(returned.get('output') or ''))[:1000],
         })
     return observations

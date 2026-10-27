@@ -237,11 +237,11 @@ async def _queue(db, job: ReverseJob, sess: ChatSession, *, review: bool = False
     return await queue_run(db, sess, followup or job.target, on_queued=tag)
 
 
-async def start(description: str, db, workspace_id: uuid.UUID | None = None) -> dict[str, Any]:
+async def start(description: str, db, workspace_id: uuid.UUID | None = None, *, pool: str | None = None) -> dict[str, Any]:
     description = clean_description(description)
     ws = await _workspace(db, workspace_id)
     sess = ChatSession(workspace_id=ws.id, title=description.splitlines()[0][:80], engine="auto", kind=SessionKind.worker,
-                       pool=_pool(ws), worker_task_type="general")
+                       pool=pool if pool in {"personal", "work"} else _pool(ws), worker_task_type="general")
     db.add(sess)
     await db.flush()
     job = ReverseJob(id=uuid.uuid4(), target=description, kind=KIND, status="queued", stages=fresh_stages(),
@@ -263,11 +263,9 @@ async def follow_up(db, job: ReverseJob, prompt: str) -> dict[str, Any]:
     if active:
         raise ReverseError(409, "job_active", "진행 중인 작업이 끝난 뒤 설명을 보충해 주세요.")
     sess = await db.get(ChatSession, job.session_id)
-    ws = await _workspace(db, job.workspace_id)
+    await _workspace(db, job.workspace_id)
     if sess is None or sess.archived_at is not None:
         raise ReverseError(409, "session_unavailable", "작업 세션이 보관되었거나 없습니다.")
-    if sess.pool != _pool(ws):
-        raise ReverseError(409, "scope_changed", "작업공간의 계정 범위가 바뀌었습니다. 새 작업을 시작해 주세요.")
     prompt = clean_description(prompt)
     job.target = clean_description(job.target + "\n\n[추가 설명·지시]\n" + prompt)
     job.status, job.error, job.result = "queued", None, None

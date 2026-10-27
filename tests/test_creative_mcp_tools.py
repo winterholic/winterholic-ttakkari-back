@@ -149,10 +149,8 @@ def test_managed_comfy_idempotency_reuses_task_and_rejects_changed_arguments(tmp
 
 
 @pytest.mark.asyncio
-async def test_agent_creative_and_comfy_access_rejects_work_sessions():
+async def test_agent_creative_and_comfy_access_allows_work_sessions():
     from types import SimpleNamespace
-
-    from fastapi import HTTPException
 
     from ttakkari.api.comfy_managed import agent_access as comfy_access
     from ttakkari.api.creative_mcp import agent_access as studio_access
@@ -163,12 +161,8 @@ async def test_agent_creative_and_comfy_access_rejects_work_sessions():
         async def get(self, *_):
             return SimpleNamespace(pool="work")
 
-    with pytest.raises(HTTPException) as e:
-        await comfy_access(sid, Db())
-    assert e.value.status_code == 403
-    with pytest.raises(HTTPException) as e:
-        await studio_access(sid, Db())
-    assert e.value.status_code == 403
+    assert await comfy_access(sid, Db()) == f"agent:{sid}"
+    assert await studio_access(sid, Db()) == "personal"
 
 
 @pytest.mark.asyncio

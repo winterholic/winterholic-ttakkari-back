@@ -38,9 +38,7 @@ class StartIn(BaseModel):
 
 
 async def personal(sid: uuid.UUID, db: Db) -> None:
-    session = await _session(db, sid)
-    if session.pool != "personal":
-        raise HTTPException(403, "개인 세션에서만 호스트 운영 작업을 쓸 수 있습니다.")
+    await _session(db, sid)
 
 
 def _job_id(job_id: str) -> str:

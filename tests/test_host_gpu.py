@@ -639,14 +639,17 @@ async def test_host_gpu_api_validates_requests_and_reports_idle(client, auth, ma
     assert (await client.get("/api/agent/host-gpu/status")).status_code == 401
 
 
-async def test_host_gpu_is_personal_scope_only(client, auth, make_dir):
+async def test_host_gpu_is_available_to_work_sessions(client, auth, make_dir, monkeypatch):
     from test_orchestrator import _orch, _session
+
+    from ttakkari.api import host_env
+    monkeypatch.setattr(host_env, "_host", lambda: SimpleNamespace(status=lambda: {"phase": "absent"}, start=lambda body: {"phase": "starting"}))
 
     from ttakkari.orchestrator.runtime import issue_token
     session = await _session(client, auth, make_dir, pool="work")
     h = _orch(issue_token(session["id"]))
-    assert (await client.get("/api/agent/host-gpu/status", headers=h)).status_code == 403
-    assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny"}, headers=h)).status_code == 403
+    assert (await client.get("/api/agent/host-gpu/status", headers=h)).status_code == 200
+    assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny"}, headers=h)).status_code == 202
 
 
 # ---- stop(expected_launch_id): 다른 launch 를 종료하지 않는다 (원자적 소유권 검사)

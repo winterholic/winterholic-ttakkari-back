@@ -23,8 +23,29 @@ def _mcp_binding_error(name: str, args: Any, output: str, failed: bool) -> bool:
     unknown = re.match(r'''(?i)^unknown tool\s*:?[\s`'"]+([^\s`'":]+)''', output)
     if failed and unknown and unknown.group(1) in {name, leaf}:
         return True
+    unavailable = re.match(r'''^tool unavailable: unknown tool\s+`([^`]+)`''', output)
+    if failed and unavailable and unavailable.group(1) in {name, leaf}:
+        return True
     return (args == {} and output.startswith(f'Error executing tool {leaf}:')
             and 'Field required' in output and 'input_value={}' in output)
+
+
+def _msp_args_provenance(item: dict[str, Any]) -> dict[str, Any]:
+    """Record how MSP item args arrived: presence, source type, parse success.
+
+    Values, raw strings, prompts, and credentials are never stored here.
+    """
+    raw = item.get('args')
+    parsed = False
+    if isinstance(raw, str) and raw:
+        try:
+            json.loads(raw)
+        except ValueError:
+            pass
+        else:
+            parsed = True
+    return {'args_present': 'args' in item, 'args_type': type(raw).__name__,
+            'args_parsed': parsed}
 
 
 class MuseAdapter:
@@ -133,7 +154,8 @@ class MuseAdapter:
                     args = {'raw': truncate(item.get('args'))}
                 if iid not in called:
                     called.add(iid)
-                    out.append(Normalized('tool.call', {'call_id': iid, 'name': name, 'input': args}))
+                    out.append(Normalized('tool.call', {'call_id': iid, 'name': name, 'input': args,
+                                                       'input_provenance': _msp_args_provenance(item)}))
                 if done:
                     failed = item.get('status') != 'completed'
                     output = item.get('visibleOutput') or item.get('failureReason') or ''

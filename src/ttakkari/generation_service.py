@@ -74,7 +74,13 @@ async def coordinate_runs(runtime, manager, state) -> None:
         return
     await _commands(runtime, manager)
     if state == "active" and not getattr(runtime, "draining", False):
-        from ttakkari.runs.manager import resume_queued
+        from ttakkari.runs.manager import compensate_runs, resume_queued
+        try:
+            await compensate_runs()
+        except generation.OwnershipLost:
+            raise
+        except Exception:
+            log.exception("Run compensation failed; normal queue dispatch continues")
         await resume_queued()
 
 

@@ -76,20 +76,23 @@ async def _start(client, hdr, kind):
 
 # ---- 권한·입력 거절 ----
 
-async def test_work_session_cannot_use_operations(client, env):
+async def test_work_session_can_use_operations(client, env):
     work = _hdr(env.work_session_id)
-    assert (await _start(client, work, "runtime_report")).status_code == 403
-    assert (await client.get("/api/agent/operations", headers=work)).status_code == 403
-    assert (await client.get(f"/api/agent/operations/{uuid.uuid4()}", headers=work)).status_code == 403
-    assert (await client.post(f"/api/agent/operations/{uuid.uuid4()}/cancel", headers=work)).status_code == 403
+    report = await _start(client, work, "runtime_report")
+    assert report.status_code == 202
+    assert report.json()["status"] == "succeeded", report.text
+    assert "recovery_runs" in report.json()["summary"]
+    assert (await client.get("/api/agent/operations", headers=work)).status_code == 200
+    assert (await client.get(f"/api/agent/operations/{uuid.uuid4()}", headers=work)).status_code == 404
+    assert (await client.post(f"/api/agent/operations/{uuid.uuid4()}/cancel", headers=work)).status_code == 404
 
 
-async def test_non_personal_pool_cannot_use_operations(client, env, monkeypatch):
+async def test_group_label_does_not_override_authenticated_owner_privileges(client, env, monkeypatch):
     from ttakkari.api import operations
     monkeypatch.setattr(operations, "_session", lambda db, sid: asyncio.sleep(0, result=SimpleNamespace(pool="shared")))
     hdr = _hdr(env.personal_session_id)
-    assert (await _start(client, hdr, "runtime_report")).status_code == 403
-    assert (await client.get("/api/agent/operations", headers=hdr)).status_code == 403
+    assert (await _start(client, hdr, "runtime_report")).status_code == 202
+    assert (await client.get("/api/agent/operations", headers=hdr)).status_code == 200
 
 
 async def test_unauthenticated_call_is_rejected(client):

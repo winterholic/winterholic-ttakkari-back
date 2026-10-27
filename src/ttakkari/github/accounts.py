@@ -1,8 +1,8 @@
 """gh 로그인 계정 목록과 계정별 토큰(ADR 0042 §5).
 
-- 전역 active 계정을 바꾸지 않는다(`gh auth switch` 금지). 요청마다 login 으로 토큰을 따로 받는다.
-- 허용 gh 호출은 둘뿐이다: `auth status --json hosts`(메타데이터), `auth token --hostname github.com --user <login>`.
-  셸 없이 배열로 실행하고, 인자 형태를 실행 직전에 다시 검사한다.
+- 탐색 API는 요청마다 login으로 토큰을 고른다. 소유자의 명시적 활성 계정 전환은 switch_account만 담당한다.
+- 허용 gh 호출: `auth status --json hosts`(메타데이터), `auth token --hostname github.com --user <login>`.
+  등록 login의 고정 호스트 auth switch도 허용한다. 셸 없이 배열로 실행하고 인자 형태를 다시 검사한다.
 - 토큰은 `Secret`으로만 다룬다(repr 마스킹, pickle 거부). 메모리에서만 300초 보관한다.
 - `auth status` 의 일시 실패(타임아웃·읽을 수 없는 출력)는 "계정이 모두 사라짐"이 아니다. 실패한 동안은 마지막으로 확인한 목록을
   STATUS_GRACE 안에서만 쓰고 캐시·토큰은 비우지 않는다. 지나면 `no_account`(reason `gh_status_failed`)로 알린다.
@@ -80,7 +80,8 @@ def check_gh_args(args: Sequence[str]) -> None:
     rest = list(args[1:])
     if rest == ["auth", "status", "--json", "hosts"]:
         return
-    if (len(rest) == 6 and rest[:5] == ["auth", "token", "--hostname", GH_HOST, "--user"]
+    if (len(rest) == 6 and rest[:2] in (["auth", "token"], ["auth", "switch"])
+            and rest[2:5] == ["--hostname", GH_HOST, "--user"]
             and targets.OWNER_RE.fullmatch(rest[5])):
         return
     raise ValueError("허용되지 않은 gh 호출입니다.")
@@ -124,6 +125,7 @@ class AccountRegistry:
         self._verified_at: float | None = None  # 마지막으로 목록을 정상으로 읽은 시각
         self._status_failed = False
         self._lock = asyncio.Lock()
+        self._switch_lock = asyncio.Lock()
         self._tokens: dict[str, tuple[Secret, float]] = {}
         self._removed: list[Callable[[str], None]] = []
 
@@ -206,6 +208,21 @@ class AccountRegistry:
 
     def invalidate(self, login: str) -> None:
         self._tokens.pop(login, None)
+
+    async def switch_account(self, login: str) -> dict:
+        """Explicit owner action; explorer reads still select their credentials per request."""
+        async with self._switch_lock:
+            account = await self.require(login)
+            code, _ = await self._runner([self._bin(), "auth", "switch", "--hostname", GH_HOST,
+                                          "--user", account.login])
+            if code != 0:
+                raise GithubError("gh_upstream_error", "GitHub 활성 계정 전환에 실패했습니다.",
+                                  reason="gh_switch_failed", extra={"exit_code": code})
+            accounts = await self.list_accounts(force=True)
+            if self._status_failed or not any(a.login == account.login and a.active for a in accounts):
+                raise GithubError("gh_upstream_error", "전환 후 활성 GitHub 계정을 확인하지 못했습니다.",
+                                  reason="gh_switch_unverified")
+            return {"account": account.login, "active": True}
 
     async def token(self, login: str, *, fresh: bool = False) -> Secret:
         info = await self.require(login)

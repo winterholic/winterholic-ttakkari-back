@@ -89,7 +89,9 @@ def decision(data: dict, policy: dict) -> str | None:
                     return None
             else:
                 return None
-    if tool in {'web_search', 'web_fetch', 'update_plan'}:
+    if tool in {'web_search', 'web_fetch', 'update_plan', 'tool_search', 'read_skill'}:
+        # tool_search/read_skill are read-only discovery/loading with no host effects.
+        # Without them deferred MCP tools stay undiscoverable and skill bodies unloadable.
         return None
     return f'Muse tool is not yet admitted: {tool}'
 

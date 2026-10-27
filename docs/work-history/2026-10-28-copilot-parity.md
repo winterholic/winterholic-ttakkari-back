@@ -33,3 +33,9 @@
 - https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/usage-and-billing
 - https://github.com/github/copilot-sdk/issues/2619 (타 버전/Windows 보고, 현 환경 실측과 범위를 구분)
 - CLI `copilot skill --help`, `copilot instruction list --help`, `copilot --version`
+
+## 병합·게시 (10/28 후속, 배포 지시)
+
+- `origin/main` 11커밋(`c70bce7b`→`873a98d4`, 보상 처리·Muse 바인딩·수집 복구)을 병합. 충돌은 `tests/test_route_inventory.py` 2곳뿐이며 양쪽 추가 항목 합집합으로 해소(코드 변경 없음).
+- 병합 후 검증: `unit_tests/` 8파일 `103 passed, 2 subtests passed`. `tests/` 8파일 169개는 수집 정상이나 DB 접속이 샌드박스 loopback 차단(`PermissionError`)으로 setup 불가. 이는 이 환경 한계이며, 병합 전 동일 묶음 `271 passed`는 이전 런에서 확인됨. 변경 파이썬 전체 Ruff 통과, `git diff --check` 통과.
+- 병합 결과를 `main`에 직접 푸시 후 전체 SHA로 백엔드 배포를 예약한다. 배포 활성화 뒤 운영 확인(CP-USAGE/CP-PARITY/CP-ROUTING)이 남는다.

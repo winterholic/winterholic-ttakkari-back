@@ -24,6 +24,9 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     "tests/test_authz03_host_scope.py",
     "tests/test_authz03_orchestrator_scope.py",
     "tests/test_agent_scope_auth.py",
+    "tests/test_work_service_access.py",
+    "tests/test_github_account_switch.py",
+    "tests/test_run_compensation.py",
     # 로그인 브루트포스 차단·루프백 위조 방어 (SEC2-AUTH-03/LGN)
     "tests/test_login_throttle_shadow.py",
     # 운영 환경 설정 fail-fast (SEC2-AUTH-02)
@@ -46,6 +49,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # managed collection, immutable delivery, scoped knowledge retrieval
     "tests/test_collector_control.py",
     "tests/test_collection_missions.py",
+    "tests/test_collection_agent.py",
     "tests/test_collection_mission_stage2.py",
     "tests/test_collection_scope_merge.py",
     "tests/test_collection_scope_operations.py",

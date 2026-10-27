@@ -233,6 +233,10 @@ def test_mcp_scope_values_valid():
 
 ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/orchestrator/copilot/activate"): "agent-plain",
+    ("GET", "/api/agent/collection/missions/{mission_id}"): "agent-plain",
+    ("POST", "/api/agent/collection/missions/{mission_id}/retry"): "agent-plain",
+    ("GET", "/api/agent/github/accounts"): "agent-plain",
+    ("POST", "/api/agent/github/switch-account"): "agent-plain",
     ("GET", "/api/assistant/collect/missions"): "owner-plain",
     ("POST", "/api/assistant/collect/missions"): "owner-plain",
     ("POST", "/api/assistant/collect/missions/plan"): "owner-plain",
@@ -891,6 +895,10 @@ MCP_ORCHESTRATOR_ONLY = frozenset(
 
 MCP_SCOPE: dict[str, str] = {
     "activate_copilot_account": "planner",
+    "collection_mission_status": "knowledge",
+    "collection_mission_retry": "knowledge",
+    "github_accounts": "host",
+    "github_switch_account": "host",
     "comfy_cancel": "comfy",
     "comfy_job": "comfy",
     "comfy_jobs": "comfy",

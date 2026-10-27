@@ -364,6 +364,8 @@ def create_app() -> FastAPI:
     app.include_router(google_accounts.agent_router)
     google_accounts.install(app)  # Google 계정 공통 오류 핸들러(ADR 0051)
     app.include_router(github_api.router)
+    from ttakkari.api import github_agent
+    app.include_router(github_agent.router)
     app.include_router(remote_desktop.router)
     github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)
     from ttakkari.api import knowledge
@@ -378,6 +380,7 @@ def create_app() -> FastAPI:
     app.include_router(tts_api.router)
     from ttakkari.api import collect, collect_control, collection_missions
     app.include_router(collection_missions.router)
+    app.include_router(collection_missions.agent_router)
     app.include_router(collect_control.router)
     app.include_router(collect.router)
     app.include_router(collect.agent_router)

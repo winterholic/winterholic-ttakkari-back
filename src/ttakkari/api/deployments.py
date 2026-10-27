@@ -22,8 +22,7 @@ class DeployIn(BaseModel):
 
 
 async def personal(sid: uuid.UUID, db: Db) -> None:
-    if (await _session(db, sid)).pool == "work":
-        raise HTTPException(403, "회사 세션에서는 개인 서버를 배포할 수 없습니다.")
+    await _session(db, sid)
 
 
 @router.post("", status_code=202)

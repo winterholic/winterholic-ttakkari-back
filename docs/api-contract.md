@@ -77,7 +77,7 @@
 | `agent.session` | `{engine_session_id, model}` |
 | `message` | `{text}` 에이전트 응답(마크다운) |
 | `thinking` | `{text}` |
-| `tool.call` | `{call_id, name, input}`. name 예: `Bash`, `Write`, `Edit`, `Read`, `shell`, `file_change`, `web_search`, `mcp:<server>/<tool>` |
+| `tool.call` | `{call_id, name, input, input_provenance?}`. name 예: `Bash`, `Write`, `Edit`, `Read`, `shell`, `file_change`, `web_search`, `mcp:<server>/<tool>`. `input_provenance?`는 Muse 인자 형태 `{args_present, args_type, args_parsed}`만 싣고 값은 싣지 않는다 |
 | `tool.result` | `{call_id, is_error, output, exit_code?}` output 은 8000자에서 자름 |
 | `guard.blocked` | `{call_id, reason}` 보험 규칙이 막은 도구 호출 |
 | `plan` | `{items}` (codex todo) |

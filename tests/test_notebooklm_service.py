@@ -852,11 +852,11 @@ async def sessions(make_dir):
     return personal, work
 
 
-async def test_agent_routes_are_personal_only_and_hide_login_actions(client, fake, sessions):
+async def test_agent_routes_allow_both_groups_and_hide_login_actions(client, fake, sessions):
     personal, work = sessions
     p = {"Authorization": f"Bearer {issue_token(personal.id)}"}
     w = {"Authorization": f"Bearer {issue_token(work.id)}"}
-    assert (await client.get("/api/agent/notebooklm/auth/status", headers=w)).status_code == 403
+    assert (await client.get("/api/agent/notebooklm/auth/status", headers=w)).status_code == 200
     assert (await client.get("/api/agent/notebooklm/notebooks", headers=p)).status_code == 200
     # 로그인 창·세션 삭제·재개·업로드는 에이전트에 열지 않는다
     assert (await client.post("/api/agent/notebooklm/auth/login-window", headers=p)).status_code in (404, 405)
@@ -931,7 +931,7 @@ def test_mcp_tool_metadata_matches_assistant_catalog_and_policy():
     assert names == expected and expected <= AUTO_APPROVED_TOOLS
     assert {n for n in READ_ONLY_TOOLS if n.startswith("notebooklm_")} == {
         "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job"}
-    assert all(t["who"] == "개인 실행" for t in TOOLS if t["name"].startswith("notebooklm_"))
+    assert all(t["who"] == "모든 실행" for t in TOOLS if t["name"].startswith("notebooklm_"))
 
 
 async def test_account_id_is_part_of_every_key(client, auth, fake):

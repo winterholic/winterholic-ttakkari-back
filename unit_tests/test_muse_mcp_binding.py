@@ -89,3 +89,60 @@ def test_business_errors_and_quoted_documents_never_trigger_recovery():
         complete(adapter, state, 'one', **kwargs)
         complete(adapter, state, 'two', **kwargs)
         assert not state.is_error, kwargs
+
+
+UNAVAILABLE_OBSERVED = ('tool unavailable: unknown tool `mcp__ttakkari.list_workers`. '
+                        'Session tool ids: mcp__ttakkari__list_workers')
+
+
+def test_tool_unavailable_envelope_triggers_recovery():
+    adapter, state = MuseAdapter(), ParseState()
+    for iid in ['one', 'two']:
+        complete(adapter, state, iid, tool='mcp__ttakkari.list_workers',
+                 output=UNAVAILABLE_OBSERVED)
+    assert state.is_error
+
+
+def test_tool_unavailable_accepts_exact_leaf_or_full_only():
+    for reported in ['mcp__ttakkari__spawn_worker', 'spawn_worker']:
+        adapter, state = MuseAdapter(), ParseState()
+        for iid in ['one', 'two']:
+            complete(adapter, state, iid,
+                     output=f'tool unavailable: unknown tool `{reported}`. Session tool ids: mcp__ttakkari__recall')
+        assert state.is_error, reported
+
+
+def test_tool_unavailable_lookalikes_never_trigger_recovery():
+    for kwargs in [
+        # A different tool is reported; the called tool only appears in session ids.
+        {'output': 'tool unavailable: unknown tool `other_tool`. '
+                   'Session tool ids: mcp__ttakkari__spawn_worker'},
+        # Similar-prefix leaf is not the exact leaf.
+        {'output': 'tool unavailable: unknown tool `spawn_worker_v2`. '
+                   'Session tool ids: mcp__ttakkari__spawn_worker'},
+        # Separator-normalized ids are not assumed equivalent to the called name.
+        {'tool': 'mcp__ttakkari.list_workers',
+         'output': 'tool unavailable: unknown tool `mcp__ttakkari__list_workers`.'},
+        # Envelope wording is matched exactly, including case.
+        {'output': 'Tool Unavailable: Unknown Tool `mcp__ttakkari__spawn_worker`.'},
+        # Reported ids are matched exactly, including case.
+        {'output': 'tool unavailable: unknown tool `MCP__TTAKKARI__SPAWN_WORKER`.'},
+        # Success quoting the envelope is documentation, not a binding failure.
+        {'output': 'tool unavailable: unknown tool `mcp__ttakkari__spawn_worker`.',
+         'status': 'completed'},
+        # Ordinary tool errors stay out of scope.
+        {'output': 'HTTP 403: permission denied'},
+        # The envelope must open the output.
+        {'output': 'note: tool unavailable: unknown tool `mcp__ttakkari__spawn_worker`.'},
+        # Near-miss wording is not the observed envelope.
+        {'output': 'tool unavailable: unknown tools `mcp__ttakkari__spawn_worker`.'},
+        # Non-MCP tools never count, even with the same wording.
+        {'tool': 'read_file', 'output': 'tool unavailable: unknown tool `read_file`.'},
+        # Another MCP tool is called than the one reported.
+        {'tool': 'mcp__ttakkari__recall',
+         'output': 'tool unavailable: unknown tool `mcp__ttakkari__spawn_worker`.'},
+    ]:
+        adapter, state = MuseAdapter(), ParseState()
+        complete(adapter, state, 'one', **kwargs)
+        complete(adapter, state, 'two', **kwargs)
+        assert not state.is_error, kwargs

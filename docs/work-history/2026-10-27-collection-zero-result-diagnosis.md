@@ -57,3 +57,15 @@ result__a 링크 10개였고, 다음 관측은 명시적인 `No results found` H
 - 이번 진단 변경을 main에 push하고 배포를 예약한다. 수집 0건 자체는 아직 복구하지 않았다.
 - 배포 활성화 뒤 MCP runtime_report의 collection에서 해당 제목의 실제 ID·실패 단계·오류 코드·시도 수를 확인한다.
   그 관측을 근거로 검색/정책/수집/적재 중 실제 차단 단계만 교정하고, 원 임무의 안전한 재실행과 적재/검색까지 이어간다.
+
+## main push 결과
+
+- 코드 커밋 `c664eb2e869fb12a0efebc9525a501be3163ca47`을 원격 main에 반영했다.
+- 기본 Git 인증은 daeseon-dev로 403이었다. 기존 승인된 계정별 gh token/askpass 경로를 사용했고,
+  실제 GitHub `/user` 조회의 login=`winterholic`을 확인했다. 전역 계정 전환과 인증 파일 직접 읽기는 하지 않았다.
+- 첫 개인 계정 push는 pre-push의 uv가 `/Users/winterholic/.cache/uv`를 읽다가 명령 샌드박스 권한 오류로 멈췄다.
+  그 경로를 반복/우회 조회하지 않고, UV_CACHE_DIR을 허용된 workspace `back/.uv-cache`로 지정했다.
+- 이 변경 조건에서 pre-push는 Ruff, 계약 84개, 변경 테스트 3개를 통과했고 원격이
+  `26b147fc..c664eb2e HEAD -> main`을 수락했다. 원시 결과는 같은 review 디렉터리 push-gate.txt.
+- 검사 84개는 pre-push의 계약 검사 범위이며 운영 수집 인수/전체 배포 검사가 아니다.
+  여전히 원 임무의 상세 진단과 수집 복구는 미실행이다.

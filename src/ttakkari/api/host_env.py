@@ -34,8 +34,7 @@ class BenchIn(BaseModel):
 
 
 async def _personal(sid, db: Db) -> None:
-    if (await _session(db, sid)).pool == "work":
-        raise HTTPException(403, "회사 세션에서는 개인 호스트 GPU 경로를 쓸 수 없습니다.")
+    await _session(db, sid)
 
 
 def _host() -> host_gpu.HostGpu:

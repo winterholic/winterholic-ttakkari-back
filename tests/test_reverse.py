@@ -143,7 +143,7 @@ async def test_local_repo_end_to_end(client, auth, make_git_dir, monkeypatch):
     assert (await client.get(f"/api/reverse/{job_id}", headers=auth)).status_code == 404
 
 
-async def test_agent_routes_are_personal_only(client, auth, make_git_dir, monkeypatch):
+async def test_agent_routes_allow_owner_sessions_in_both_groups(client, auth, make_git_dir, monkeypatch):
     from ttakkari.orchestrator.runtime import issue_token
     _install_fake_review(monkeypatch)
     root = make_git_dir()
@@ -156,13 +156,13 @@ async def test_agent_routes_are_personal_only(client, auth, make_git_dir, monkey
         assert r.status_code == 201, r.text
         tokens[pool] = {"Authorization": "Bearer " + issue_token(uuid.UUID(r.json()["id"]))}
     assert (await client.post("/api/agent/reverse/start", json={"description": "대상의 계산 동작을 소스로 재현해줘."},
-                              headers=tokens["work"])).status_code == 403
+                              headers=tokens["work"])).status_code == 202
     legacy = await _seed_legacy(root)
     job_id = legacy["id"]
     body = await _wait_done(client, tokens["personal"], job_id, prefix="/api/agent/reverse")
     assert body["status"] == "done", body.get("error")
     assert (await client.get("/api/agent/reverse", headers=tokens["personal"])).status_code == 200
-    assert (await client.get("/api/agent/reverse", headers=tokens["work"])).status_code == 403
+    assert (await client.get("/api/agent/reverse", headers=tokens["work"])).status_code == 200
     assert (await client.get(f"/api/agent/reverse/{job_id}", headers=tokens["personal"])).status_code == 200
     assert (await client.get("/api/agent/design-systems", headers=tokens["personal"])).status_code != 404
 

@@ -28,8 +28,6 @@ async def agent_access(sid: OrchestratorSession, db: Db) -> str:
     row = await db.get(ChatSession, sid)
     if row is None:
         raise HTTPException(403, "세션이 없습니다.")
-    if row.pool == "work":
-        raise HTTPException(403, "개인 세션에서만 managed Comfy를 사용할 수 있습니다.")
     return f"agent:{sid}"
 
 

@@ -542,8 +542,8 @@ async def test_access_control_user_agent_and_company_sessions(client, auth, make
     assert (await client.get("/api/agent/ops-logs/issues", headers=auth)).status_code in (401, 403)
     work = await _agent_headers(client, auth, make_dir, pool="work")
     for path in ("/issues", "/events", "/deploys", "/deploys/latest/log", "/trend"):
-        assert (await client.get(f"/api/agent/ops-logs{path}", headers=work)).status_code == 403, path
-    assert (await client.patch("/api/agent/ops-logs/issues/1", headers=work, json={"status": "ignored"})).status_code == 403
+        assert (await client.get(f"/api/agent/ops-logs{path}", headers=work)).status_code == (404 if path == "/deploys/latest/log" else 200), path
+    assert (await client.patch("/api/agent/ops-logs/issues/1", headers=work, json={"status": "ignored"})).status_code == 200
     assert (await client.patch("/api/ops-logs/issues/1", headers=auth, json={"status": "ignored", "note": "user"})).status_code == 200
 
 

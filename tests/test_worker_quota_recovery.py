@@ -51,6 +51,24 @@ def quota(aid, *, claude=80, gemini=90, argon=70):
     )
 
 
+@pytest.mark.parametrize("fresh,newer,remaining,expected", [
+    (True, True, 80, True), (True, False, 80, False),
+    (False, True, 80, False), (True, True, 0, False),
+])
+def test_newer_quota_observation_can_release_an_obsolete_provider_reset(fresh, newer, remaining, expected):
+    aid = uuid.uuid4()
+    prof = profiles.Profile(id=aid, name="quota recovery", engine="codex", model="gpt-6.1-sol")
+    now = time.time()
+    profiles.cool_down(aid, 86400 * 3)
+    measured = now if fresh else now - 3600
+    after = measured - 1 if newer else measured + 1
+    usage.seed(aid, usage.Usage(windows=[usage.Window("seven_day", "weekly", 100 - remaining,
+                                                              int(now + 86400))],
+                               updated_at=measured), refresh=True)
+    assert profiles.reconcile_observed_cooldown(prof, observed_after=after) is expected
+    assert bool(profiles.cooldown_until(aid)) is not expected
+
+
 @pytest.fixture
 async def accounts(client, auth):
     await client.get("/api/accounts", headers=auth)

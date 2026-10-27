@@ -25,8 +25,8 @@ async def user_access(user: User) -> None:
 
 async def agent_access(sid: OrchestratorSession, db: Db) -> None:
     session = await db.get(ChatSession, sid)
-    if session is None or session.pool == "work":
-        raise HTTPException(403, "개인 세션에서만 개인 디자인시스템을 조회할 수 있습니다.")
+    if session is None:
+        raise HTTPException(403, "세션이 없습니다.")
 
 
 def _read(fn, *args, **kwargs) -> dict:

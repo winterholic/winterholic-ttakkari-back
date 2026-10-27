@@ -293,6 +293,30 @@ def profile_limited_until(profile: Profile) -> float | None:
     return until if until > time.time() else None
 
 
+def reconcile_observed_cooldown(profile: Profile, *, observed_after: float) -> bool:
+    """A newer fresh usable quota observation supersedes an old provider reset hint.
+
+    Keep unknown/stale/exhausted quota and model-capacity cooldowns untouched.
+    Account/group cooldowns are the only keys this can clear.
+    """
+    from ttakkari.runs import usage as usage_mod
+    observation = usage_mod.cached(profile.id)
+    if (observation is None or observation.updated_at is None
+            or observation.updated_at <= observed_after or observation.error
+            or not (headroom := _usage_headroom(profile)) or headroom[0] <= 0):
+        return False
+    keys = {profile.id, profile.limit_key}
+    changed = False
+    for key in keys:
+        if cooldown_until(key):
+            _cooldown.pop(key, None)
+            _cooldown_changes[key] = None
+            changed = True
+    if changed:
+        _persist()
+    return changed
+
+
 # 지금 Run 이 쓰고 있는 계정(run id → 계정 id). 매니저와 같은 프로세스만 바꾸므로 DB 에 두지 않는다
 # (재시작하면 Run 도 함께 끝난다). 한도 대기 중인 Run 은 계정을 쓰지 않으니 넣지 않는다.
 _in_use: dict[uuid.UUID, uuid.UUID] = {}

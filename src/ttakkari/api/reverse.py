@@ -40,19 +40,22 @@ async def user_access(user: User) -> None:
     pass
 
 
-async def agent_access(sid: OrchestratorSession, db: Db) -> None:
+async def agent_access(sid: OrchestratorSession, db: Db):
     session = await db.get(ChatSession, sid)
-    if session is None or session.pool == "work":
-        raise HTTPException(403, "개인 세션에서만 리버스 엔지니어링을 요청할 수 있습니다.")
+    if session is None:
+        raise HTTPException(403, "세션이 없습니다.")
+    return session
 
 
 def make_router(prefix: str, access, *, start_path: str, actor: str) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=["reverse"], dependencies=[Depends(access)])
+    caller_access = Depends(access)
 
     @router.post(start_path, status_code=202)
-    async def start(body: StartIn, request: Request, db: Db) -> dict:
+    async def start(body: StartIn, request: Request, db: Db, caller=caller_access) -> dict:
         try:
-            job = await reverse.start_analysis(body.description, db, body.workspace_id)
+            job = await reverse.start_analysis(body.description, db, body.workspace_id,
+                                                pool=getattr(caller, "pool", None))
         except reverse.ReverseError as exc:
             raise _http(exc) from exc
         record(db, action="reverse.start", actor=actor, target_type="reverse_job", target_id=job["id"],

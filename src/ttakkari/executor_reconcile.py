@@ -115,6 +115,7 @@ async def _read_orphans() -> list[dict]:
         leases = list(await db.scalars(select(RuntimeLease).order_by(RuntimeLease.run_id)))
         result = []
         for lease in leases:
+            run = await db.get(Run, lease.run_id)
             owner = await db.get(RuntimeGeneration, lease.generation_id)
             groups = list(await db.scalars(select(RuntimeProcessGroup).where(
                 RuntimeProcessGroup.run_id == lease.run_id,
@@ -123,6 +124,7 @@ async def _read_orphans() -> list[dict]:
             owner_dead = _process_dead(owner.pid, owner.process_started_at) if owner else None
             states = [_group_state(group) for group in groups]
             result.append({"run_id": str(lease.run_id), "owner_id": str(lease.generation_id),
+                "run_status": run.status if run else None,
                 "owner_pid": owner.pid if owner else None,
                 "owner_process_started_at": owner.process_started_at if owner else None,
                 "owner_dead": owner_dead, "lease_token_matches": bool(owner and owner.id == lease.generation_id),
@@ -206,7 +208,7 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     if {_group_fence_key(x) for x in current_groups} != {_group_fence_key(x) for x in groups}:
         return False
     run = await db.scalar(select(Run).where(Run.id == run_id).with_for_update())
-    if run is None or run.status != RunStatus.running:
+    if run is None:
         return False
     if _process_dead(owner.pid, owner.process_started_at) is not True:
         return False
@@ -223,14 +225,20 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
         return False
     from ttakkari.runs import events
     from ttakkari.runs.manager import _interrupted_handoff
-    run.status = RunStatus.interrupted
-    run.pid = None
-    run.heartbeat_at = utcnow()
-    run.finished_at = utcnow()
-    run.error = "executor orphan reconciled after recorded process groups exited"
-    run.resume_handoff = await _interrupted_handoff(db, run)
-    events.append(db, run, "run.finished", {"status": RunStatus.interrupted, "error": run.error,
-                                              "result_text": None, "cost_usd": None, "exit_code": None})
+    if run.status == RunStatus.running:
+        run.status = RunStatus.interrupted
+        run.pid = None
+        run.heartbeat_at = utcnow()
+        run.finished_at = utcnow()
+        run.error = "executor orphan reconciled after recorded process groups exited"
+        run.resume_handoff = await _interrupted_handoff(db, run)
+        events.append(db, run, "run.finished", {"status": RunStatus.interrupted, "error": run.error,
+                                                  "result_text": None, "cost_usd": None, "exit_code": None})
+    else:
+        # The owner may die after saving a wait/cancel/final result but before
+        # releasing its lease. Preserve that state; only discard proven dead ownership.
+        events.append(db, run, "run.recovery_lease_released", {"status": run.status,
+                                                              "owner_id": entry["owner_id"]})
     await db.execute(delete(RuntimeProcessGroup).where(
         RuntimeProcessGroup.run_id == run_id, RuntimeProcessGroup.lease_token == token))
     await db.delete(lease)
@@ -247,7 +255,8 @@ async def reconcile_orphans(*, apply: bool = False) -> dict:
         retryable_timeout = outcome if outcome in _RETRYABLE_OUTCOMES else None
         results.append({"run_id": entry["run_id"], "owner_id": entry["owner_id"],
             "disposition": entry["disposition"], "groups": entry["groups"], "reconciled": changed,
-            "action": "interrupted_and_released" if changed else (retryable_timeout or (
+            "action": ("interrupted_and_released" if entry.get("run_status", "running") == "running"
+                       else "lease_released") if changed else (retryable_timeout or (
                 "would_reconcile" if entry["disposition"] in
                 {"safe_to_release", "process_group_live"} else "blocked")),
             **({"reason": _RETRYABLE_OUTCOMES[retryable_timeout]} if retryable_timeout else {})})

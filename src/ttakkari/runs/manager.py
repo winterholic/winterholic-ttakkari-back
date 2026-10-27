@@ -75,6 +75,10 @@ from ttakkari.runs import (
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
+from ttakkari.runs.compensation import (
+    MAX_EXECUTION_RECOVERY_ATTEMPTS,
+    retryable_execution_error,
+)
 from ttakkari.schemas import ArtifactOut
 from ttakkari.security import seatbelt
 
@@ -882,7 +886,9 @@ class RunManager:
             async with sm() as db:
                 run = await db.get(Run, run_id)
                 if run is not None:
-                    await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
+                    error = f"내부 오류: {e!r}"
+                    if not await self._retry_execution_failure(db, run, error):
+                        await self._finish(db, run, RunStatus.failed, error=error)
         finally:
             attempt_handle.reset(scope)
             if runtime and token:
@@ -1682,6 +1688,8 @@ class RunManager:
             await self._finish(db, run, RunStatus.cancelled)
         elif timed_out:
             error = f"시간 초과({s.run_timeout_seconds}초)"
+            if await self._retry_execution_failure(db, run, error):
+                return
             if run.resume_attempts:
                 await self._retry_restart_resume(db, run, error)
             else:
@@ -1691,10 +1699,49 @@ class RunManager:
         else:
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             error = state.error or tail.strip() or f"exit code {rc}"
+            if await self._retry_execution_failure(db, run, error):
+                return
             if run.resume_attempts and not (h and h.cancel_requested):
                 await self._retry_restart_resume(db, run, error)
             else:
                 await self._finish(db, run, RunStatus.failed, error=error)
+
+    async def _retry_execution_failure(self, db: AsyncSession, run: Run, error: str, *,
+                                       source: str = "execution", interrupted: bool = False,
+                                       persist: bool = True) -> bool:
+        """Save side effects as handoff; retry the existing Run with a durable finite budget."""
+        from ttakkari.models import RuntimeCommand
+        if self._shutting_down or run.status in (RunStatus.cancelled, RunStatus.succeeded):
+            return False
+        h = self._handles.get(run.id)
+        if h and (h.cancel_requested or (h.proc is not None and h.proc.returncode is None)):
+            return False
+        if not interrupted and not retryable_execution_error(error):
+            return False
+        recovery = dict((run.usage or {}).get("automatic_recovery") or {})
+        attempts = recovery.get("attempts", 0)
+        if attempts >= MAX_EXECUTION_RECOVERY_ATTEMPTS:
+            return False
+        if await db.scalar(select(RuntimeCommand.id).where(RuntimeCommand.run_id == run.id,
+                                                           RuntimeCommand.kind == "cancel").limit(1)):
+            return False
+        delay = 30 * (2 ** attempts)
+        until = time.time() + delay
+        progress = await _interrupted_handoff(db, run)
+        prior = run.resume_handoff or ""
+        run.resume_handoff = (f"[이전 실행 오류: {error[:500]}]\n" + progress[:3000]
+                              + ("\n[보존된 기존 인계]\n" + prior[:2500] if prior else ""))[:WAIT_HANDOFF_CHARS]
+        run.usage = {**(run.usage or {}), "automatic_recovery": {
+            "attempts": attempts + 1, "source": source, "last_error": error[:500]}}
+        run.status, run.finished_at, run.error, run.pid = RunStatus.queued, None, None, None
+        run.resume_after = datetime.fromtimestamp(until, UTC)
+        events.append(db, run, "run.status", {"status": RunStatus.queued, "automatic_recovery": True})
+        events.append(db, run, "run.recovery", {"attempt": attempts + 1, "source": source,
+                                                "error": error[:500], "resume_after": _iso(until)})
+        if persist:
+            await self._commit(db, run)
+            self._arm(run.id, run.session_id, until)
+        return True
 
     async def _retry_restart_resume(self, db: AsyncSession, run: Run, error: str) -> None:
         if run.resume_attempts >= MAX_RESTART_RESUME_ATTEMPTS:
@@ -2119,6 +2166,11 @@ def _inspect_run_process(pid: int) -> str:
         return "unknown"
 
 
+async def compensate_runs() -> dict:
+    from ttakkari.runs.compensation import compensate_runs as compensate
+    return await compensate()
+
+
 async def recover_interrupted() -> int:
     """서버가 죽었다 살아나면 실행 중이던 Run 은 프로세스를 잃은 것이다. 상태를 정리해 사용자가 이어서 지시할 수 있게 한다.
 
@@ -2365,6 +2417,13 @@ async def _reconsider_quota_waits() -> None:
                 continue
             sess = await db.get(ChatSession, run.session_id)
             is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
+            _, waiting_profiles = await _eligible_profiles(db, sess, run, is_meeting)
+            released = [prof.name for prof, _ in waiting_profiles
+                        if profiles_mod.reconcile_observed_cooldown(
+                            prof, observed_after=latest.created_at.timestamp())]
+            if released:
+                events.append(db, run, "run.quota_reconsidered", {
+                    "reason": "newer_usable_quota_observation", "accounts": released})
             ready, _ = await _available_profiles(db, sess, run, is_meeting)
             if ready or (run.resume_after and run.resume_after <= now):
                 # _waiting_handoff retains the previous provider progress even for a

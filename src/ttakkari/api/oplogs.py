@@ -31,8 +31,6 @@ async def agent_access(sid: OrchestratorSession, db: Db) -> None:
     session = await db.get(ChatSession, sid)
     if session is None:
         raise HTTPException(403, "세션이 없습니다.")
-    if session.pool == "work":
-        raise HTTPException(403, "회사 세션에서는 개인 서버의 운영 로그를 볼 수 없습니다.")
 
 
 def _bad(exc: Exception) -> HTTPException:

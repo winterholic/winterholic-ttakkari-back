@@ -296,7 +296,7 @@ async def test_controller_recovers_verified_restart_without_restarting_again(
     assert (tmp_path / "previous").read_text().strip() == "b" * 40
 
 
-async def test_company_session_cannot_deploy_personal_server(client, auth, make_dir):
+async def test_company_session_can_validate_deployment_without_pool_denial(client, auth, make_dir):
     ws = (
         await client.post(
             "/api/workspaces",
@@ -316,10 +316,10 @@ async def test_company_session_cannot_deploy_personal_server(client, auth, make_
         await client.post(
             "/api/agent/deploy", json={"revision": "a" * 40}, headers=headers
         )
-    ).status_code == 403
+    ).status_code == 409
     assert (
         await client.get(f"/api/agent/deploy/{uuid.uuid4()}", headers=headers)
-    ).status_code == 403
+    ).status_code == 404
 
 
 def test_multiple_running_leases_do_not_release_each_other(tmp_path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -12,6 +13,17 @@ from typing import Any
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
 from ttakkari.config import get_settings
 from ttakkari.model_catalog import MUSE_EFFORT
+
+
+def _mcp_binding_error(name: str, args: Any, output: str, failed: bool) -> bool:
+    """Recognize pre-dispatch binding errors, never arbitrary tool/business failures."""
+    if not name.startswith(('mcp__', 'mcp.')):
+        return False
+    if failed and re.match(r'(?i)^unknown tool\b', output) and name in output:
+        return True
+    leaf = name.rsplit('__', 1)[-1].rsplit('.', 1)[-1]
+    return (args == {} and output.startswith(f'Error executing tool {leaf}:')
+            and 'Field required' in output and 'input_value={}' in output)
 
 
 class MuseAdapter:
@@ -124,7 +136,20 @@ class MuseAdapter:
                 if done:
                     failed = item.get('status') != 'completed'
                     output = item.get('visibleOutput') or item.get('failureReason') or ''
+                    binding_error = _mcp_binding_error(name, args, output, failed)
+                    failed = failed or binding_error
                     out.append(Normalized('tool.result', {'call_id': iid, 'is_error': failed, 'output': truncate(output)}))
+                    completed = state.adapter_data.setdefault('completed_tools', set())
+                    if iid not in completed and name.startswith(('mcp__', 'mcp.')):
+                        completed.add(iid)
+                        streak = state.adapter_data.get('mcp_binding_streak', 0)
+                        streak = streak + 1 if binding_error else 0
+                        state.adapter_data['mcp_binding_streak'] = streak
+                        if streak >= 2 and not state.adapter_data.get('mcp_binding_failure'):
+                            state.adapter_data['mcp_binding_failure'] = True
+                            state.is_error = True
+                            state.error = f'Muse MCP binding failed repeatedly for {name}; preserving progress for provider handoff'
+                            out.append(Normalized('error', {'message': state.error, 'kind': 'mcpBindingFailure'}))
                     if not failed and name in {'write_file', 'edit_file'} and isinstance(args, dict) and args.get('path'):
                         state.touched_files.add(abs_path(args['path'], cwd))
                 return out

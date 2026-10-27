@@ -1457,6 +1457,17 @@ class RunManager:
                 sess.engine_session_id = state.engine_session_id
             failed = missing or rc != 0 or state.is_error
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
+            mcp_binding_failure = (failed and not stopped and prof.engine == 'muse'
+                                   and state.adapter_data.get('mcp_binding_failure', False))
+            if mcp_binding_failure:
+                # This is a failed capability, not exhausted subscription quota. Never
+                # guess missing arguments or replay the failed tool here. The next
+                # provider inspects the existing side effects through the normal handoff.
+                excluded = list((run.usage or {}).get('mcp_binding_failed_engines', []))
+                if prof.engine not in excluded:
+                    excluded.append(prof.engine)
+                run.usage = {**(run.usage or {}), 'mcp_binding_failed_engines': excluded}
+                remaining = [p for p in remaining if p.engine not in excluded]
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             texts = (state.error, tail, None if rc == 0 else state.result_text, state.limit_text)
             if prof.engine == "antigravity" and prof.config_dir and not stopped:
@@ -1568,11 +1579,11 @@ class RunManager:
                     # 대기 사유에는 Qwen 실패를 정확히 남긴다(선택 당시 "ready"가 아님).
                     qwen_state = "qwen_attempt_failed"
                     break
-            if stopped or not failed or not (missing or limited or model_capacity or invalid_model or auth_failed) or not remaining:
+            if stopped or not failed or not (missing or limited or model_capacity or invalid_model or auth_failed or mcp_binding_failure) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
-                if (limited or model_capacity) and not stopped:
+                if (limited or model_capacity or mcp_binding_failure) and not stopped:
                     # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
@@ -1591,7 +1602,7 @@ class RunManager:
             last_fallback = {
                 "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
                 "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
-                "reason": "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "model_capacity" if model_capacity else "usage_limit",
+                "reason": "mcp_binding_failure" if mcp_binding_failure else "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "model_capacity" if model_capacity else "usage_limit",
                 "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄
@@ -1882,7 +1893,7 @@ class RunManager:
             if not isinstance(obj, dict):
                 continue
             produced = adapter.parse_line(obj, state, cwd)
-            if state.resume_mismatch:
+            if state.resume_mismatch or (adapter.engine == 'muse' and state.adapter_data.get('mcp_binding_failure')):
                 for n in produced:
                     events.append(db, run, n.type, n.payload)
                 await self._commit(db, run)
@@ -2257,6 +2268,9 @@ async def _qwen_adapter(db: AsyncSession) -> QwenLocalAdapter:
 
 async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
     free, blocked = await _eligible_profiles(db, sess, run, is_meeting)
+    excluded = (run.usage or {}).get('mcp_binding_failed_engines', [])
+    free = [p for p in free if p.engine not in excluded]
+    blocked = [(p, until) for p, until in blocked if p.engine not in excluded]
     ready = []
     for prof in free:
         model = _profile_model(sess, run, prof, free[0], is_meeting)

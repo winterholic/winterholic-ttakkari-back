@@ -23,6 +23,9 @@ def _mcp_binding_error(name: str, args: Any, output: str, failed: bool) -> bool:
     unknown = re.match(r'''(?i)^unknown tool\s*:?[\s`'"]+([^\s`'":]+)''', output)
     if failed and unknown and unknown.group(1) in {name, leaf}:
         return True
+    unavailable = re.match(r'''^tool unavailable: unknown tool\s+`([^`]+)`''', output)
+    if failed and unavailable and unavailable.group(1) in {name, leaf}:
+        return True
     return (args == {} and output.startswith(f'Error executing tool {leaf}:')
             and 'Field required' in output and 'input_value={}' in output)
 

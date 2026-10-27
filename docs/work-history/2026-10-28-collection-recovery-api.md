@@ -21,7 +21,9 @@
 이는 복구 수단의 누락이며 원 수집 장애의 직접 원인을 입증하지 않는다.
 
 - 기존 임무 모듈에 agent GET 진단 / POST retry API를 추가한다. 기존 세션 토큰과 owner tenant를 검사한다.
-  현재 API scope 미들웨어의 work 세션 403을 별도 검사로 확인했고 이 정책은 변경하지 않는다.
+  기존 `operations.personal` 정책을 재사용해 개인 운영 도구의 pool 경계를 유지한다.
+  앞선 work 단독 시험의 403은 묶음 시험에서 재현되지 않아 정책 존재의 근거로 쓰지 않았다.
+  work 토큰이 200인 부정 사례를 확인한 뒤 명시적인 공통 정책 검사를 연결했다.
 - 진단은 count, 현재 회차 job code/type, gap, 검색 실패만 반환한다. 원 요청 context/goal,
   문서 본문, raw error message는 제외하고 문자열을 기존 scrub_value로 마스킹한다.
 - 재시도는 기존 mission-control 트랜잭션 잠금 아래 expected_run_seq를 검사한다.

@@ -42,7 +42,7 @@ def headers(sid):
 async def test_status_returns_failure_type_without_payload_or_credentials(client, seeded):
     env, mid = seeded
     response = await client.get(f"{BASE}/{mid}", headers=headers(env.personal_session_id))
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["id"] == mid
     assert body["jobs"][0]["error"]["type"] == "InvalidRequestError"

@@ -2,11 +2,62 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import aliased
 
 from ttakkari import generation
 from ttakkari.config import get_settings
-from ttakkari.models import Run, RuntimeControl, RuntimeLease, SessionKind, utcnow
+from ttakkari.models import (
+    Run,
+    RunEvent,
+    RuntimeControl,
+    RuntimeLease,
+    SessionKind,
+    utcnow,
+)
+from ttakkari.oplog.scrub import scrub
+
+
+async def mcp_tool_errors(db, runs) -> dict:
+    """Three latest correlated failures per authorized Run; argument values stay private."""
+    if not runs:
+        return {}
+    call, result, intervening = aliased(RunEvent), aliased(RunEvent), aliased(RunEvent)
+    name = call.payload['name'].as_string()
+    output = result.payload['output'].as_string()
+    ranked = select(
+        result.run_id, result.seq.label('result_seq'), result.payload.label('result_payload'),
+        call.seq.label('call_seq'), call.payload.label('call_payload'),
+        func.row_number().over(partition_by=result.run_id, order_by=result.seq.desc()).label('rank'),
+    ).join(call, (call.run_id == result.run_id)
+           & (call.payload['call_id'].as_string() == result.payload['call_id'].as_string())
+           & (call.seq < result.seq)).where(
+        result.run_id.in_([run.id for run in runs]),
+        call.type == 'tool.call', result.type == 'tool.result',
+        ~select(intervening.id).where(
+            intervening.run_id == result.run_id, intervening.type == 'tool.call',
+            intervening.payload['call_id'].as_string() == result.payload['call_id'].as_string(),
+            intervening.seq > call.seq, intervening.seq < result.seq,
+        ).exists(),
+        or_(name.startswith('mcp__', autoescape=True), name.startswith('mcp.', autoescape=True)),
+        or_(result.payload['is_error'].as_boolean().is_(True),
+            output.contains('Field required'), output.contains('unknown tool')),
+    ).subquery()
+    rows = (await db.execute(select(ranked).where(ranked.c.rank <= 3)
+                            .order_by(ranked.c.run_id, ranked.c.result_seq))).mappings()
+    observations = {}
+    for row in rows:
+        called, returned = row['call_payload'], row['result_payload']
+        args = called.get('input')
+        observations.setdefault(row['run_id'], []).append({
+            'call_id': scrub(str(called.get('call_id', '')))[:120],
+            'name': scrub(str(called.get('name', '')))[:200],
+            'call_seq': row['call_seq'], 'result_seq': row['result_seq'],
+            'input_keys': sorted(scrub(str(key))[:80] for key in args)[:20] if isinstance(args, dict) else None,
+            'input_empty': args == {}, 'recorded_is_error': returned.get('is_error'),
+            'error_excerpt': scrub(str(returned.get('output') or ''))[:1000],
+        })
+    return observations
 
 
 def _await_chain(task) -> list[str]:

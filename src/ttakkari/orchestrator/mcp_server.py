@@ -527,7 +527,9 @@ async def list_sessions(limit: int = 20) -> str:
 
 @query_tool
 async def read_session(session_id: str, last: int = 10) -> str:
-    """Read the last turns (instruction and result) of another conversation."""
+    """Read another conversation's last turns and bounded dispatch diagnostics. Includes up to three
+    correlated MCP failures per turn: tool identity, argument keys (never values), recorded error flag
+    and masked error excerpt. These are stored observations, not a diagnosis of the provider internals."""
     return await _agent("GET", f"/sessions/{session_id}", last=last)
 
 

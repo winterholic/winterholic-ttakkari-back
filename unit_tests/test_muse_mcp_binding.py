@@ -52,6 +52,30 @@ def test_unknown_mcp_tool_repeats_trigger_recovery():
     assert state.is_error
 
 
+def test_unknown_tool_accepts_exact_leaf_or_namespace_only():
+    for tool in ['mcp__ttakkari__spawn_worker', 'mcp.ttakkari.spawn_worker']:
+        for reported in ['spawn_worker', tool]:
+            adapter, state = MuseAdapter(), ParseState()
+            for iid in ['one', 'two']:
+                complete(adapter, state, iid, tool=tool, output=f'unknown tool `{reported}`')
+            assert state.is_error, reported
+        for reported in ['spawn_worker_v2', 'other_tool']:
+            adapter, state = MuseAdapter(), ParseState()
+            for iid in ['one', 'two']:
+                complete(adapter, state, iid, tool=tool,
+                         output=f'unknown tool `{reported}` while executing {tool}')
+            assert not state.is_error, reported
+
+
+def test_non_mcp_success_does_not_prove_mcp_binding_has_recovered():
+    adapter, state = MuseAdapter(), ParseState()
+    complete(adapter, state, 'one')
+    complete(adapter, state, 'read', tool='read_file', args='{"path":"README.md"}',
+             output='File contents', status='completed')
+    complete(adapter, state, 'two')
+    assert state.is_error
+
+
 def test_business_errors_and_quoted_documents_never_trigger_recovery():
     for kwargs in [
         {'output': 'HTTP 403: permission denied'},

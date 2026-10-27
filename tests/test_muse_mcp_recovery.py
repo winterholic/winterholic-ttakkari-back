@@ -4,7 +4,8 @@ import sys
 import uuid
 from importlib import import_module
 
-from helpers import run_events, run_to_end, start_run, wait_event
+import pytest
+from helpers import run_events, run_to_end, start_run, wait_event, wait_run
 from test_orchestrator import _session
 from test_orchestrator_muse import _seed_muse
 
@@ -98,4 +99,47 @@ async def test_native_quota_wait_keeps_handoff_and_excludes_broken_muse(client, 
         sess = await db.get(ChatSession, uuid.UUID(orch['id']))
         ready, _ = await module._available_profiles(db, sess, stored, False)
         assert not any(p.engine == 'muse' for p in ready)
-    await client.post(f"/api/runs/{created['id']}/cancel", headers=auth)
+    # Release the native quotas and execute the stored request again, rather
+    # than only inspecting the filtered candidate list.
+    profiles.reset_cooldowns()
+    await module._reconsider_quota_waits()
+    done = await wait_run(client, auth, created['id'])
+    assert done['status'] == 'succeeded', done
+    assert done['engine'] in {'claude', 'codex'}, done
+    assert done['usage']['mcp_binding_failed_engines'] == ['muse']
+    events = await run_events(client, auth, created['id'])
+    calls = [e for e in events if e['type'] == 'tool.call'
+             and e['payload'].get('name') == 'mcp__ttakkari__spawn_worker']
+    assert len(calls) == 2, 'resumed request must not re-enter the broken Muse provider'
+
+
+@pytest.mark.parametrize('stop', ['cancel', 'shutdown'])
+async def test_stop_wins_over_mcp_failure_handoff(client, auth, make_dir, monkeypatch, stop):
+    await _seed_muse(client, auth)
+    module = import_module('ttakkari.runs.manager')
+    monkeypatch.setitem(module.ADAPTERS, 'muse', BrokenMcpMuse())
+    original_choose = profiles.choose_async
+
+    async def start_on_muse(candidates, run_id, **kwargs):
+        return await original_choose([p for p in candidates if p.engine == 'muse'] or candidates,
+                                     run_id, **kwargs)
+
+    monkeypatch.setattr(profiles, 'choose_async', start_on_muse)
+    original_attempt = module.RunManager._attempt
+
+    async def attempt(self, db, run, *args):
+        result = await original_attempt(self, db, run, *args)
+        if stop == 'cancel':
+            response = await client.post(f'/api/runs/{run.id}/cancel', headers=auth)
+            assert response.status_code == 200, response.text
+        else:
+            monkeypatch.setattr(self, '_shutting_down', True)
+        return result
+
+    monkeypatch.setattr(module.RunManager, '_attempt', attempt)
+    orch = await _session(client, auth, make_dir, kind='orchestrator')
+    run = await run_to_end(client, auth, orch['id'], 'Stop takes precedence over recovery')
+    assert run['status'] == ('cancelled' if stop == 'cancel' else 'interrupted'), run
+    assert run['engine'] == 'muse'
+    events = await run_events(client, auth, run['id'])
+    assert not any(e['type'] in {'engine.fallback', 'account.limited'} for e in events)

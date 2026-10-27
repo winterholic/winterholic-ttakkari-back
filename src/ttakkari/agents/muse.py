@@ -19,9 +19,10 @@ def _mcp_binding_error(name: str, args: Any, output: str, failed: bool) -> bool:
     """Recognize pre-dispatch binding errors, never arbitrary tool/business failures."""
     if not name.startswith(('mcp__', 'mcp.')):
         return False
-    if failed and re.match(r'(?i)^unknown tool\b', output) and name in output:
-        return True
     leaf = name.rsplit('__', 1)[-1].rsplit('.', 1)[-1]
+    unknown = re.match(r'''(?i)^unknown tool\s*:?[\s`'"]+([^\s`'":]+)''', output)
+    if failed and unknown and unknown.group(1) in {name, leaf}:
+        return True
     return (args == {} and output.startswith(f'Error executing tool {leaf}:')
             and 'Field required' in output and 'input_value={}' in output)
 

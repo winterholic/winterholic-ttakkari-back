@@ -571,5 +571,5 @@ def test_status_tool_is_read_only_and_listed():
 
     assert "google_account_status" in READ_ONLY_TOOLS
     tool = next(t for t in TOOLS if t["name"] == "google_account_status")
-    assert tool["who"] == "개인 실행"
+    assert tool["who"] == "모든 실행"
     assert not {"google_account_login", "google_account_delete_session"} & {t["name"] for t in TOOLS}

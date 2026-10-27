@@ -27,6 +27,13 @@ async def test_read_session_returns_mcp_failure_identity_and_argument_keys_only(
         events.append(db, run, 'tool.result', {'call_id': 'mcp-4', 'is_error': True, 'output': 'PRIVATE_SHELL_REUSED_ID'})
         events.append(db, run, 'tool.call', {'call_id': 'ok', 'name': 'mcp__ttakkari__recall', 'input': {'query': 'x'}})
         events.append(db, run, 'tool.result', {'call_id': 'ok', 'is_error': False, 'output': '[]'})
+        # Successful documentation responses can quote error messages repeatedly.
+        # They must not occupy the bounded window and hide real older failures.
+        for i in range(5):
+            events.append(db, run, 'tool.call', {'call_id': f'doc-{i}', 'name': 'mcp__ttakkari__recall',
+                                               'input': {'query': 'errors'}})
+            events.append(db, run, 'tool.result', {'call_id': f'doc-{i}', 'is_error': False,
+                'output': 'Documentation: unknown tool spawn_worker; Field required input_value={}'})
         await db.commit()
     headers = {'Authorization': f'Bearer {issue_token(personal.id)}'}
     response = await client.get(f'/api/agent/sessions/{personal.id}', headers=headers)

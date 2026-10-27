@@ -25,6 +25,15 @@ async def mcp_tool_errors(db, runs) -> dict:
     call, result, intervening = aliased(RunEvent), aliased(RunEvent), aliased(RunEvent)
     name = call.payload['name'].as_string()
     output = result.payload['output'].as_string()
+    # Some MCP validation failures were stored as successful tool executions.
+    # Match the dispatch envelope and empty arguments, never quoted prose.
+    leaf = func.regexp_replace(name, r'^.*(__|\.)', '')
+    validation_prefix = 'Error executing tool ' + leaf + ':'
+    embedded_validation = (
+        (call.payload['input'] == {})
+        & (func.left(output, func.length(validation_prefix)) == validation_prefix)
+        & output.contains('Field required') & output.contains('input_value={}')
+    )
     ranked = select(
         result.run_id, result.seq.label('result_seq'), result.payload.label('result_payload'),
         call.seq.label('call_seq'), call.payload.label('call_payload'),
@@ -40,8 +49,7 @@ async def mcp_tool_errors(db, runs) -> dict:
             intervening.seq > call.seq, intervening.seq < result.seq,
         ).exists(),
         or_(name.startswith('mcp__', autoescape=True), name.startswith('mcp.', autoescape=True)),
-        or_(result.payload['is_error'].as_boolean().is_(True),
-            output.contains('Field required'), output.contains('unknown tool')),
+        or_(result.payload['is_error'].as_boolean().is_(True), embedded_validation),
     ).subquery()
     rows = (await db.execute(select(ranked).where(ranked.c.rank <= 3)
                             .order_by(ranked.c.run_id, ranked.c.result_seq))).mappings()

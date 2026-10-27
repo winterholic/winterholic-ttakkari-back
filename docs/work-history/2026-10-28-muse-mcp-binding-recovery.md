@@ -116,3 +116,20 @@ flag가 바인딩 실패 후속 전환보다 우선하는 경계를 추가했다
 
 기존 배포 `dd335cf9-9a09-4629-a176-566a219bc265`는 후속 턴의 단일 조회에서 `testing`이었다.
 후속 누적 커밋 배포 예약과 원시 운영 호출 진단은 manage_work에서 이어간다.
+
+## 진단 오탐 보완
+
+독립 검증의 정상 MCP 문서 응답 오탐을 채택했다. 오류 flag가 false인데 본문에
+`unknown tool` 또는 `Field required`가 들어간 성공 결과 다섯 개를 넣었을 때
+실제 오류 세 개 대신 문서 세 개가 반환되는 red를 확인했다.
+이제 저장된 오류 flag가 true인 결과 또는 빈 인자와 정확한 현재 도구명의
+`Error executing tool <leaf>:` 검증 오류 envelope가 일치하는 결과만 집계한다.
+문자열 포함만으로 오류라고 판단하지 않으며 정상 문서가 과거 오류를 밀어내지 않는다.
+선택 MCP·진단·권한 회귀는 26 passed in 7.94s였다.
+
+게임 작업자 `2391716e`는 별도의 `tool_search` 가드 거부와 MCP 도구 부재를 보고했다.
+현재 소스 `muse_hook.decision(tool_search,{query,limit})`도 거부를 반환함을 재현했다.
+이는 native discovery 차단의 코드 증거이며 원래 빈 인자 손실의 원인까지 확정하지 않는다.
+다른 활성 기획 `d7e7d5c6-571f-4294-a948-97a80d66319c`의 별도 worktree
+`/private/tmp/ttk-muse-tooldiscovery-20261028`에서 해당 guard 수정을 진행 중임을 확인해
+이 트랙에서 중복 수정하지 않는다. 그 변경은 관측 시 미커밋이며 운영 반영을 주장하지 않는다.

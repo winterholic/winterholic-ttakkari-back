@@ -16,9 +16,10 @@ async def test_collection_scope_operation_is_personal_and_uses_the_guarded_domai
         return {"applied": apply, "tables": {}, "unresolved": []}
 
     monkeypatch.setattr(scope_merge, "operate", operate)
+    # ba4f0220: 소유자 작업은 회사 세션에도 열려 있어 pool 로 거부하지 않는다.
     work = await _start(client, _hdr(env.work_session_id), kind)
-    assert work.status_code == 403
-    assert calls == []
+    assert work.status_code == 202, work.text
+    calls.clear()
     result = await _start(client, _hdr(env.personal_session_id), kind)
     assert result.status_code == 202, result.text
     body = result.json()

@@ -280,7 +280,7 @@ async def test_mcp_tool_items_match_server_tools(client, auth, fake_home):
         tools.update({i["name"]: i for i in page["items"]})
         cursor = page["next_cursor"]
     assert set(tools) == names
-    assert tools["spawn_worker"]["sessions"] == ["lead", "orchestrator"]
+    assert tools["spawn_worker"]["sessions"] == ["lead", "worker", "orchestrator"]  # 7bd8be44: 워커도 한 단계 위임
     assert tools["recall"]["sessions"] == ["lead", "worker", "orchestrator"]
 
 

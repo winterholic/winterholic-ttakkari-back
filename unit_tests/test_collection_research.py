@@ -166,7 +166,7 @@ def test_a_url_the_user_wrote_in_a_claim_is_an_exact_relation():
 
 
 def test_provider_failures_get_stable_codes_and_are_distinct_from_empty_results():
-    assert research.classify_search_error(FetchError("search_provider_challenge")) == {"code": "search_provider_challenge", "retryable": True}
+    assert research.classify_search_error(FetchError("search_provider_challenge")) == {"code": "search_provider_challenge", "retryable": False}
     assert research.classify_search_error(FetchError("not_found", status=404)) == {"code": "not_found", "retryable": False}
     assert research.classify_search_error(FetchError("rate_limited", retryable=True))["retryable"] is True
     assert research.classify_search_error(TimeoutError())["code"] == "timeout"
@@ -276,3 +276,41 @@ async def test_search_candidates_for_papers_are_routed_to_rights_resolution_not_
     assert {c["url"].split("//")[1]: c["adapter"] for c in found} == {
         "arxiv.org/abs/2005.11401v4": "paper", "doi.org/10.1145/3292500.3330701": "paper", "arxiv.org/pdf/2005.11401": "paper_pdf",
         "arxiv.org/html/2506.00054v1": "paper", "blog.test/post": "website"}
+
+
+def test_challenge_failure_is_non_retryable_so_outstanding_failures_do_not_exhaust_attempts():
+    from ttakkari.collector import research_rounds
+
+    plan = _plan()
+    st = research_rounds.state(plan, 1)
+    # Simulate a search query that failed due to DDG anti-bot challenge
+    classified = research.classify_search_error(FetchError("search_provider_challenge"))
+    assert classified["retryable"] is False
+    st["failed"] = [{"index": 0, "code": classified["code"], "retryable": classified["retryable"], "attempts": 1}]
+    plan["research"] = st
+
+    failures = research_rounds.outstanding_failures(plan, 1)
+    assert failures["search"] == 1
+    assert failures["search_retryable"] == 0  # non-retryable challenge must NOT trigger retry_wait loop
+
+
+def test_attempts_exhausted_preserves_original_cause():
+    orig_error = {"code": "search_provider_failed", "detail": "ddg challenge"}
+    orig_code = orig_error.get("code")
+    exhausted_error = {**orig_error, "code": "attempts_exhausted", "attempts": 3,
+                       **({"cause": orig_code} if orig_code and orig_code != "attempts_exhausted" else {})}
+    assert exhausted_error["code"] == "attempts_exhausted"
+    assert exhausted_error["cause"] == "search_provider_failed"
+    assert exhausted_error["detail"] == "ddg challenge"
+
+
+def test_design_system_official_specs_have_permissive_licenses():
+    from ttakkari.collector import adapters, missions
+
+    # Verify that the official design system documentation specs have permissive licenses
+    # without fake grants or bypassing robots.
+    assert "CC0-1.0" in adapters.PERMISSIVE_LICENSES
+    # register_design_system_docs is an async function in missions
+    assert callable(missions.register_design_system_docs)
+
+

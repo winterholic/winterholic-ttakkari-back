@@ -494,7 +494,10 @@ def classify_search_error(exc: BaseException) -> dict[str, Any]:
     from ttakkari.collector.netguard import UrlRejected
 
     if isinstance(exc, FetchError):
-        return {"code": exc.code, "retryable": bool(exc.retryable or exc.code == "search_provider_challenge")}
+        # Anti-bot challenges cannot be resolved by automated retries; keep them non-retryable
+        # so they do not exhaust attempt budgets and stall subsequent collection of valid sources.
+        is_challenge = exc.code == "search_provider_challenge"
+        return {"code": exc.code, "retryable": False if is_challenge else bool(exc.retryable)}
     if isinstance(exc, UrlRejected):
         return {"code": "search_url_rejected", "retryable": False}
     if isinstance(exc, TimeoutError):

@@ -272,7 +272,9 @@ async def finish(
     elif status == "retry_wait":
         if job.attempts >= job.max_attempts:
             status = "failed"
-            error = {**(error or {}), "code": "attempts_exhausted", "attempts": job.attempts}
+            orig = (error or {}).get("code")
+            error = {**(error or {}), "code": "attempts_exhausted", "attempts": job.attempts,
+                     **({"cause": orig} if orig and orig != "attempts_exhausted" else {})}
         else:
             not_before = now + retry_delay(job.attempts, retry_after)
     _release(job, status, now=now, error=error, not_before=not_before)
@@ -406,7 +408,7 @@ async def recover_orphans(
         elif state == "offline":
             error = {"code": "owner_lost", "owner": job.owner_generation, "at": now.isoformat()}
             if job.attempts >= job.max_attempts:
-                error["code"] = "attempts_exhausted"
+                error = {"code": "attempts_exhausted", "cause": "owner_lost", "owner": job.owner_generation, "at": now.isoformat()}
                 _release(job, "failed", now=now, error=error)
             else:
                 _release(job, "retry_wait", now=now, error=error, not_before=now)

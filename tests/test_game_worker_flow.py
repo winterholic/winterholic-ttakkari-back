@@ -204,7 +204,7 @@ async def test_spawn_worker_game_errors_leave_no_session(client, auth, make_dir,
     work = (await client.post("/api/sessions", json={"workspace_id": orch["workspace_id"], "kind": "orchestrator", "pool": "work"}, headers=auth)).json()
     wh = {"Authorization": f"Bearer {issue_token(work['id'])}"}
     r = await client.post("/api/orchestrator/workers", headers=wh, json={"title": "t", "prompt": "p", "engine": "claude", "game_id": game["id"]})
-    assert r.status_code == 403  # 회사 범위 오케스트레이터는 개인 게임 저장소를 다루지 않는다
+    assert r.status_code == 201, r.text  # 0f6f0a77: 소유자 도구는 회사 세션에도 열려 있어 pool 로 막지 않는다
 
 
 def test_mcp_spawn_worker_exposes_game_arguments():

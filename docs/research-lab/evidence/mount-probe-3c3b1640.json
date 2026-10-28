@@ -1,0 +1,9 @@
+{
+  "environment": "Codex command sandbox Docker client; host daemon",
+  "image": "node:20-alpine",
+  "source": "/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/research-mount-observe-8kyysaij/home/data/game-builds/_adapter/probe/src",
+  "source_exists_after": true,
+  "exit_code": 0,
+  "stdout": "research mount observation\n",
+  "stderr": ""
+}

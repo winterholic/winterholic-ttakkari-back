@@ -475,7 +475,8 @@ async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: i
         RunEvent.run_id.in_(run_ids)).group_by(RunEvent.run_id).subquery()
     latest_types = dict((await db.execute(select(RunEvent.run_id, RunEvent.type).join(last_seq, and_(
         RunEvent.run_id == last_seq.c.run_id, RunEvent.seq == last_seq.c.seq)))).all()) if run_ids else {}
-    leased = set(await db.scalars(select(RuntimeLease.run_id).where(RuntimeLease.run_id.in_(run_ids)))) if run_ids else set()
+    lease_owners = dict((await db.execute(select(RuntimeLease.run_id, RuntimeLease.generation_id)
+                                         .where(RuntimeLease.run_id.in_(run_ids)))).all()) if run_ids else {}
     execution, local_dispatch = await session_execution(db, s, runs)
     tool_errors = await mcp_tool_errors(db, runs)
     return {"title": s.title, "kind": s.kind,
@@ -485,7 +486,11 @@ async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: i
         {"id": str(r.id), "at": r.created_at.isoformat(), "origin": r.origin,
          "engine": r.engine, "model": r.model,
          "resume_after": r.resume_after.isoformat() if r.resume_after else None,
-         "last_event_type": latest_types.get(r.id), "lease_owned": r.id in leased,
+         "last_event_type": latest_types.get(r.id), "lease_owned": r.id in lease_owners,
+         "lease_owner_matches_claim_owner": (
+             str(lease_owners[r.id]) == execution["claim_owner_generation_id"]
+             if r.id in lease_owners and execution["claim_owner_generation_id"] else None),
+         "pid_recorded": r.pid is not None,
          "local_dispatch": local_dispatch[r.id],
          "mcp_tool_errors": tool_errors.get(r.id, []),
          "prompt": r.prompt[:2000],

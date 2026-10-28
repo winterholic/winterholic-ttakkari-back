@@ -1,0 +1,49 @@
+{
+  "job_id": "b6444f6a-7d55-4b3f-a435-08cc239b1b77",
+  "revision": "5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1",
+  "status": "failed",
+  "strategy": "generations",
+  "created_at": "2026-10-26T13:45:31.098585+00:00",
+  "updated_at": "2026-10-26T13:53:11.353132+00:00",
+  "error": "release stage pytest failed (exit 1); last 12 log lines:\n    return self.__pydantic_serializer__.to_python(\n\ntests/test_collector_control.py::test_manual_documents_are_scope_bound_and_detail_is_hidden\n  /Users/winterholic/.ttakkari/deploy/releases/5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1/src/ttakkari/api/kb_library.py:81: DeprecationWarning: deprecated\n    locator=body.locator, pool=pool_for_scope",
+  "log": {
+    "exists": true,
+    "bytes": 7610,
+    "lines": 110,
+    "clipped_head": false
+  },
+  "stage": "pytest",
+  "cause": "FAILED tests/test_e2e_game_studio.py::test_game_studio_flow_with_recorded_worker_output",
+  "sections": [
+    {
+      "from_line": 20,
+      "to_line": 26,
+      "text": "20| ........................................................................ [ 22%]\n21| ........................................................................ [ 23%]\n22| ...........................ssssssss..........................F\n23| =================================== FAILURES ===================================\n24| ______________ test_game_studio_flow_with_recorded_worker_output _______________\n25| \n26| client = <httpx.AsyncClient object at 0x11bee0710>"
+    },
+    {
+      "from_line": 29,
+      "to_line": 35,
+      "text": "29| tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5568/test_game_studio_flow_with_rec0')\n30| \n31|     @requires_runtime\n32|     @pytest.mark.timeout(1500)\n33|     async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkeypatch, tmp_path):\n34|         require_browser()\n35|         base = os.environ.get(\"TTAKKARI_GAME_EVIDENCE_DIR\")"
+    },
+    {
+      "from_line": 54,
+      "to_line": 60,
+      "text": "54|         async def build() -> dict:\n55|             started = await client.post(f\"/api/games/{gid}/builds\", json={}, headers=auth)\n56|             assert started.status_code == 202, started.text\n57|             done = await wait_build(client, auth, gid, started.json()[\"id\"], timeout=600)\n58|             assert done[\"status\"] == \"succeeded\", (done[\"error\"], done[\"log_tail\"])\n59|             assert done[\"lock_verified\"] is True\n60|             return done"
+    },
+    {
+      "from_line": 68,
+      "to_line": 90,
+      "text": "68|     async def build() -> dict:\n69|         started = await client.post(f\"/api/games/{gid}/builds\", json={}, headers=auth)\n70|         assert started.status_code == 202, started.text\n71|         done = await wait_build(client, auth, gid, started.json()[\"id\"], timeout=600)\n72| >       assert done[\"status\"] == \"succeeded\", (done[\"error\"], done[\"log_tail\"])\n73| E       AssertionError: ('의존성 설치 실패(exit 127)', \"== install (exit=127, 0.8s) ==\n74| E         docker: Error response from daemon: error while creating moun...ter/a1c8b84a-b280-4edc-a8bb-d249c44b4b45: no such file or directory\n75| E         \n76| E         Run 'docker run --help' for more information\n77| E         \")\n78| E       assert 'failed' == 'succeeded'\n79| E         \n80| E         - succeeded\n81| E         + failed\n82| \n83| tests/test_e2e_game_studio.py:78: AssertionError\n84| ------------------------------ Captured log call -------------------------------\n85| WARNING  ttakkari.games.builds:builds.py:240 Game build a1c8b84a-b280-4edc-a8bb-d249c44b4b45 failed: 의존성 설치 실패(exit 127)\n86| == install (exit=127, 0.8s) ==\n87| docker: Error response from daemon: error while creating mount source path '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/ttk-it-sdn0d2av/home/data/game-builds/_adapter/a1c8b84a-b280-4edc-a8bb-d249c44b4b45/src': mkdir /private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/ttk-it-sdn0d2a\n88| \n89| Run 'docker run --help' for more information\n90| =============================== warnings summary ==============================="
+    },
+    {
+      "from_line": 92,
+      "to_line": 101,
+      "text": "92|   /Users/winterholic/.ttakkari/deploy/releases/5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1/.venv/lib/python3.13/site-packages/fastapi/routing.py:360: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.\n93|     return await dependant.call(**values)\n94| \n95| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n96| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n97|   /Users/winterholic/.ttakkari/deploy/releases/5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:\n98|     PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])\n99|     return self.__pydantic_serializer__.to_python(\n100| \n101| tests/test_collector_control.py::test_manual_documents_are_scope_bound_and_detail_is_hidden"
+    },
+    {
+      "from_line": 105,
+      "to_line": 110,
+      "text": "105| -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n106| db reset: 1365 selective (avg 3.9/120 tables), 0 forced full, 0 fell back to full\n107| =========================== short test summary info ============================\n108| FAILED tests/test_e2e_game_studio.py::test_game_studio_flow_with_recorded_worker_output\n109| !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n110| 1 failed, 1407 passed, 16 skipped, 4 warnings, 6 subtests passed in 213.17s (0:03:33)"
+    }
+  ]
+}

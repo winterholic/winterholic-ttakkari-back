@@ -1,0 +1,202 @@
+{
+  "runtime": {
+    "id": "34b7e693-95de-4d39-85ce-90f973967516",
+    "kind": "runtime_report",
+    "status": "succeeded",
+    "created_at": "2026-10-26T14:35:55.967465+00:00",
+    "started_at": "2026-10-26T14:35:55.967465+00:00",
+    "finished_at": "2026-10-26T14:35:55.982326+00:00",
+    "updated_at": "2026-10-26T14:35:55.986588+00:00",
+    "summary": {
+      "this_process": {
+        "pid": 57410,
+        "release_revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+        "generation_id": "93f5d24a-df0f-42b7-a949-767a3ff377b0",
+        "role": "api",
+        "execution_mode": "local"
+      },
+      "control": {
+        "active_generation": "93f5d24a-df0f-42b7-a949-767a3ff377b0",
+        "executor_generation": null,
+        "epoch": 115
+      },
+      "generations": [
+        {
+          "id": "93f5d24a-df0f-42b7-a949-767a3ff377b0",
+          "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+          "role": "api",
+          "state": "active",
+          "execution_mode": "local",
+          "pid": 57410,
+          "pid_alive": true,
+          "heartbeat_age_s": 0,
+          "leases": 4,
+          "process_groups": 4
+        },
+        {
+          "id": "cf1d8921-2070-4659-879c-697c2ae2dc0d",
+          "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 10029,
+          "pid_alive": false,
+          "heartbeat_age_s": 1264.7,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+          "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 61529,
+          "pid_alive": false,
+          "heartbeat_age_s": 4150,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "fd750caa-1538-4436-9478-ea38b9f6ca20",
+          "revision": "e6b4fd0df9513058f9e30845c08f4b0c9172b095",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 77451,
+          "pid_alive": false,
+          "heartbeat_age_s": 4144.9,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "77e28a51-3f92-4ab3-823c-a562afa19a39",
+          "revision": "dd9748675b5744ca0ec73f6726bfd5ffae5e7c41",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 32228,
+          "pid_alive": false,
+          "heartbeat_age_s": 14453.3,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "3b0bb4ee-5945-4029-9abf-590526fcca4e",
+          "revision": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 87194,
+          "pid_alive": false,
+          "heartbeat_age_s": 17386.2,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "e2b02089-35ce-4f71-b3dc-989790ac4241",
+          "revision": "600eb8432f7e1a3e64a9f3a07f175cd183fb90eb",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 6372,
+          "pid_alive": false,
+          "heartbeat_age_s": 54898,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "96b4138b-cd38-49c3-8e64-1870c1dd8e68",
+          "revision": "bc37116801807918cd8b9a515e4ca8d2940ae6f0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 16631,
+          "pid_alive": false,
+          "heartbeat_age_s": 105722,
+          "leases": 0,
+          "process_groups": 0
+        }
+      ],
+      "runs_running": 4,
+      "deploy_strategy": "generations",
+      "recent_deploys": [
+        {
+          "id": "1f459249-e2d3-4dae-87de-adb3f91a3470",
+          "revision": "70b70941ce79c822393d0e28bd0f855860c2c46b",
+          "status": "superseded",
+          "created_at": "2026-10-26T12:56:15.801417+00:00"
+        },
+        {
+          "id": "4a36d067-f2d1-4776-9642-d83982c9c6a9",
+          "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+          "status": "succeeded",
+          "created_at": "2026-10-26T13:02:43.042531+00:00"
+        },
+        {
+          "id": "d277424d-3e74-49b0-94da-f70fdeaf915f",
+          "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+          "status": "succeeded",
+          "created_at": "2026-10-26T13:11:00.806530+00:00"
+        },
+        {
+          "id": "b6444f6a-7d55-4b3f-a435-08cc239b1b77",
+          "revision": "5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1",
+          "status": "failed",
+          "created_at": "2026-10-26T13:45:31.098585+00:00"
+        },
+        {
+          "id": "c5fb3942-2c7a-493b-a873-cdf73c9994fc",
+          "revision": "1083a0cee98879da6869a6b224f5a11282ec290d",
+          "status": "failed",
+          "created_at": "2026-10-26T13:58:54.340497+00:00"
+        }
+      ]
+    },
+    "identity": {},
+    "inline": true,
+    "requested_by_session": "e416bc01-66ed-4ad6-a654-fecdbec85d32",
+    "deduplicated": false,
+    "audit_error": null,
+    "audit_pending": false
+  },
+  "latest_deploy_failure": {
+    "job_id": "c5fb3942-2c7a-493b-a873-cdf73c9994fc",
+    "revision": "1083a0cee98879da6869a6b224f5a11282ec290d",
+    "status": "failed",
+    "strategy": "generations",
+    "created_at": "2026-10-26T13:58:54.340497+00:00",
+    "updated_at": "2026-10-26T14:14:46.083844+00:00",
+    "error": "release stage pytest failed (exit 1); last 12 log lines:\ntests/test_kb_agent_api.py: 1 warning\ntests/test_kb_library_api.py: 14 warnings\ntests/test_kb_retrieval.py: 5 warnings\n  /Users/winterholic/.ttakkari/deploy/releases/1083a0cee98879da6869a6b224f5a11282ec290d/src/ttakkari/api/kb_library.py:81: DeprecationWarning: deprecated\n    locator=body.locator, pool=pool_for_scope(body.scope),\n\n-- Docs: h",
+    "log": {
+      "exists": true,
+      "bytes": 7861,
+      "lines": 113,
+      "clipped_head": false
+    },
+    "stage": "pytest",
+    "cause": "FAILED tests/test_scheduled_actions.py::test_quota_wait_persists_resume_after_across_restart",
+    "sections": [
+      {
+        "from_line": 46,
+        "to_line": 52,
+        "text": "46| ........................................................................ [ 53%]\n47| ........................................................................ [ 55%]\n48| .............................F\n49| =================================== FAILURES ===================================\n50| _____________ test_quota_wait_persists_resume_after_across_restart _____________\n51| \n52| new_session = <function new_session.<locals>._new at 0x12319b100>"
+      },
+      {
+        "from_line": 84,
+        "to_line": 90,
+        "text": "84| >   capacity_wait = any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))\n85|                                                                                               ^^^^^^^\n86|                         for p, _ in blocked)\n87| E   AttributeError: 'FakeProfile' object has no attribute 'model'\n88| \n89| src/ttakkari/runs/manager.py:640: AttributeError\n90| =============================== warnings summary ==============================="
+      },
+      {
+        "from_line": 92,
+        "to_line": 101,
+        "text": "92|   /Users/winterholic/.ttakkari/deploy/releases/1083a0cee98879da6869a6b224f5a11282ec290d/.venv/lib/python3.13/site-packages/fastapi/routing.py:360: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.\n93|     return await dependant.call(**values)\n94| \n95| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n96| tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]\n97|   /Users/winterholic/.ttakkari/deploy/releases/1083a0cee98879da6869a6b224f5a11282ec290d/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:\n98|     PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])\n99|     return self.__pydantic_serializer__.to_python(\n100| \n101| tests/test_collector_control.py: 1 warning"
+      },
+      {
+        "from_line": 108,
+        "to_line": 113,
+        "text": "108| -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n109| db reset: 3151 selective (avg 3.9/120 tables), 1 forced full, 1 fell back to full\n110| =========================== short test summary info ============================\n111| FAILED tests/test_scheduled_actions.py::test_quota_wait_persists_resume_after_across_restart\n112| !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n113| 1 failed, 3244 passed, 17 skipped, 2 xfailed, 24 warnings, 6 subtests passed in 938.15s (0:15:38)"
+      }
+    ]
+  }
+}

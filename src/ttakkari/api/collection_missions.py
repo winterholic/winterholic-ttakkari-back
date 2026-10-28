@@ -59,18 +59,18 @@ async def _diagnostic_view(db, mission):
 
 @agent_router.get("/{mission_id}")
 async def agent_status(mission_id: uuid.UUID, sid: AgentSession, db: Db):
-    from ttakkari.api.operations import personal
+    from ttakkari.api.operations import caller
 
-    await personal(sid, db)
+    await caller(sid, db)
     return await _diagnostic_view(db, await _owner_mission(db, mission_id))
 
 
 @agent_router.post("/{mission_id}/retry", status_code=202)
 async def agent_retry(mission_id: uuid.UUID, body: RetryInput, sid: AgentSession, db: Db):
-    from ttakkari.api.operations import personal
+    from ttakkari.api.operations import caller
     from ttakkari.audit import record
 
-    await personal(sid, db)
+    await caller(sid, db)
     await store._lock(db, "mission-control", "owner", str(mission_id))
     mission = await _owner_mission(db, mission_id, lock=True)
     if (mission.current_run_seq or 1) != body.expected_run_seq:

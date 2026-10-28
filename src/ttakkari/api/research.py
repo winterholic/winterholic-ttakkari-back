@@ -288,6 +288,7 @@ class ReportIn(Strict):
 
 
 class SelectionIn(Strict):
+    candidate_source: Literal["research", "catalog"] = "research"
     query: str = Field(default="", max_length=500)
     budget_seconds: int = Field(default=60, ge=1, le=86400)
     environment: dict[str, Any] = Field(default_factory=dict)
@@ -381,6 +382,18 @@ async def relation(study_id: uuid.UUID, body: RelationIn, _: User, db: Db):
 @router.post("/studies/{study_id}/select")
 async def select_methods(study_id: uuid.UUID, body: SelectionIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
+    if body.candidate_source == "catalog":
+        await ensure_catalog(db)
+        result = await svc.catalog_selection_candidates(db, study.scope, body.query)
+        ranked = rank_methods(result["methods"], body.environment or study.environment, body.budget_seconds)
+        svc.event(db, study.id, "selection_recorded", str(_), request=body.model_dump(),
+                  candidates=[{"id": m["id"], "eligibility": m["eligibility"], "reason": m["reason"]}
+                              for m in ranked], candidate_source="catalog", truncated=result["truncated"])
+        await db.commit()
+        return {"candidates": ranked, "candidate_source": "catalog", "limit": 200,
+                "truncated": result["truncated"], "selection_contract": 1,
+                "ranking": "deterministic investigation priority; no predicted effect",
+                "combination_policy": "Individual effects do not establish combined effects; propose a separate hypothesis and experiment."}
     # Search all same-scope studies; failed experiences remain available across research projects.
     q = (
         select(Node)

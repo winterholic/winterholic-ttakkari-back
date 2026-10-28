@@ -196,7 +196,10 @@ async def test_generation_server_terminates_only_its_owned_child(monkeypatch, tm
     assert q.state == "ready" and desk_qwen_server.status()["status"] == "running"
     pid = q._child.pid
     await desk_qwen_server.stop()
-    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    try:
+        assert psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        pass
     assert desk_qwen_server.status()["status"] == "not_started"
 
 

@@ -315,6 +315,18 @@ class Slots:
         if proc.returncode:
             raise RuntimeError("launchd operation failed: " + err.decode(errors="replace")[-500:])
 
+    @staticmethod
+    def api_executor_mode(release: Path) -> str:
+        """Fail closed: boot a remote API only for an explicitly enabled pinned contract."""
+        try:
+            contract = Releases.contract(release)
+        except (OSError, ValueError, TypeError):
+            return "local"
+        executor = contract.get("run_executor") if isinstance(contract, dict) else None
+        if not isinstance(executor, dict):
+            return "local"
+        return "remote" if executor.get("activation") == "enabled" else "local"
+
     async def start(self, slot: int, release: Path, revision: str) -> dict:
         existing = await self.snapshot(slot)
         if existing:
@@ -332,6 +344,7 @@ class Slots:
         source = str(get_settings().deploy_source_root or Path(__file__).resolve().parents[2])
         env = {"HOME": str(Path.home()), "PATH": os.environ.get("PATH", ""),
             "TTAKKARI_HOME": str(get_settings().home), "TTAKKARI_RUNTIME_GENERATION": "true",
+            "TTAKKARI_RUN_EXECUTOR_MODE": self.api_executor_mode(release),
             "TTAKKARI_RUNTIME_API_URL": self.origin(slot), "TTAKKARI_RELEASE_REVISION": revision,
             "TTAKKARI_DEPLOY_SOURCE_ROOT": source, "TTAKKARI_DEPLOY_STRATEGY": "generations"}
         plist.write_bytes(plistlib.dumps({"Label": label, "WorkingDirectory": str(release),

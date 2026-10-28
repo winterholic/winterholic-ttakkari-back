@@ -1,8 +1,13 @@
 """Research invariants: unknown applicability is never compatibility."""
 
+import uuid
+
+import pydantic
 import pytest
 
+from ttakkari.api.research import SelectionIn
 from ttakkari.research.rules import applicability, comparable, rank_methods
+from ttakkari.runs import profiles
 
 
 def test_unknown_environment_and_mismatch_are_distinct():
@@ -156,3 +161,129 @@ def test_relation_and_other_node_conditions_are_conjunctive_without_overwriting(
     edge = result['reason']['research_context']['relations'][0]
     assert edge['conditions'] == edge_conditions and edge['other_node']['conditions'] == node_conditions
     assert 'other_node_applicability' in edge
+
+
+def test_catalog_selection_request_model_accepts_catalog_source_and_rejects_invalid():
+    """Validates SelectionIn schema contract from dac9737b (candidate_source='catalog')."""
+    default_req = SelectionIn()
+    assert default_req.candidate_source == "research"
+
+    catalog_req = SelectionIn(candidate_source="catalog", query="kv_cache", budget_seconds=120)
+    assert catalog_req.candidate_source == "catalog"
+    assert catalog_req.query == "kv_cache"
+    assert catalog_req.budget_seconds == 120
+
+    with pytest.raises(pydantic.ValidationError):
+        SelectionIn(candidate_source="unsupported_source")
+
+
+def test_catalog_selection_novel_candidate_without_cost_requires_review():
+    """Catalog candidates without an underlying method Node (cost_seconds=None) require review (dac9737b)."""
+    method = {
+        "id": "catalog-m1",
+        "title": "Unmeasured Catalog Method",
+        "candidate_source": "catalog",
+        "conditions": {"backend": ["metal"]},
+        "cost_seconds": None,
+        "evidence_count": 0,
+        "execution_status": "hypothesis_stage",
+        "is_executable": False,
+    }
+    ranked = rank_methods([method], {"backend": "metal"}, 60)
+    assert len(ranked) == 1
+    assert ranked[0]["id"] == "catalog-m1"
+    assert ranked[0]["eligibility"] == "needs_review"
+    assert ranked[0]["reason"]["expected_effect"] == "unknown_until_measured"
+    assert ranked[0]["reason"]["information_value"] == "unassessed"
+
+
+def test_catalog_selection_direct_failures_distinguish_applicable_and_conflicting_conditions():
+    """Direct catalog failures (selection_failures with catalog_ids) filter by applicability (dac9737b)."""
+    base = {
+        "id": "catalog-m2",
+        "title": "Catalog Method With Failure History",
+        "candidate_source": "catalog",
+        "conditions": {"backend": "metal"},
+        "cost_seconds": 10,
+        "evidence_count": 2,
+    }
+
+    # Case A: Applicable failure under matching conditions -> forces needs_review
+    matching_failure = {
+        "experiment_id": str(uuid.uuid4()),
+        "run_id": str(uuid.uuid4()),
+        "declared_environment": {"dataset": "A"},
+        "observed_environment": {"dataset": "A", "research_execution_owner": "worker-1"},
+    }
+    method_a = {
+        **base,
+        "research_context": {"truncated": False, "failures": [matching_failure]},
+    }
+    ranked_a = rank_methods([method_a], {"backend": "metal", "dataset": "A"}, 60)
+    assert ranked_a[0]["eligibility"] == "needs_review"
+    fail_a = ranked_a[0]["reason"]["research_context"]["failures"][0]
+    assert fail_a["applicability"]["status"] == "applicable"
+    assert fail_a["affects_selection"] is True
+    assert fail_a["execution_metadata_fields"] == ["research_execution_owner"]
+
+    # Case B: Incompatible failure (different backend) -> affects_selection is False, remains candidate
+    incompatible_failure = {
+        "experiment_id": str(uuid.uuid4()),
+        "run_id": str(uuid.uuid4()),
+        "declared_environment": {"backend": "cuda"},
+        "observed_environment": {"backend": "cuda"},
+    }
+    method_b = {
+        **base,
+        "research_context": {"truncated": False, "failures": [incompatible_failure]},
+    }
+    ranked_b = rank_methods([method_b], {"backend": "metal"}, 60)
+    assert ranked_b[0]["eligibility"] == "candidate"
+    fail_b = ranked_b[0]["reason"]["research_context"]["failures"][0]
+    assert fail_b["applicability"]["status"] == "incompatible"
+    assert fail_b["affects_selection"] is False
+
+    # Case C: Conflicting failure (declared vs observed mismatch) -> unknown status, affects_selection True
+    conflicting_failure = {
+        "experiment_id": str(uuid.uuid4()),
+        "run_id": str(uuid.uuid4()),
+        "declared_environment": {"backend": "metal"},
+        "observed_environment": {"backend": "cuda"},
+    }
+    method_c = {
+        **base,
+        "research_context": {"truncated": False, "failures": [conflicting_failure]},
+    }
+    ranked_c = rank_methods([method_c], {"backend": "metal"}, 60)
+    assert ranked_c[0]["eligibility"] == "needs_review"
+    fail_c = ranked_c[0]["reason"]["research_context"]["failures"][0]
+    assert fail_c["applicability"]["status"] == "unknown"
+    assert fail_c["environment_conflicts"] == ["backend"]
+    assert fail_c["affects_selection"] is True
+
+
+def test_schedule_quota_wait_profile_contract_and_model_capacity_key():
+    """Quota wait manager._wait_for_reset contract requires Profile with .engine and .model (beea9a89)."""
+    # Real Profile dataclass has model: str | None = None
+    prof = profiles.Profile(id=uuid.uuid4(), name="claude-main", engine="claude")
+    assert prof.model is None
+
+    # model_capacity_key succeeds with None model (maps to 'default')
+    key_default = profiles.model_capacity_key(prof.engine, prof.model)
+    assert isinstance(key_default, uuid.UUID)
+
+    # Key with explicit model is distinct
+    key_model = profiles.model_capacity_key("claude", "claude-sonnet-5-5-high")
+    assert isinstance(key_model, uuid.UUID)
+    assert key_default != key_model
+
+    # Passing an object lacking .model (such as the legacy FakeProfile) raises AttributeError
+    class LegacyFakeProfile:
+        def __init__(self, name: str, engine: str):
+            self.name = name
+            self.engine = engine
+
+    fake = LegacyFakeProfile("claude-main", "claude")
+    with pytest.raises(AttributeError):
+        profiles.model_capacity_key(fake.engine, fake.model)
+

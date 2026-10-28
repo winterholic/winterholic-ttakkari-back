@@ -1,0 +1,204 @@
+{
+  "runtime": {
+    "id": "3cef9956-36f4-4212-8eff-8ce050b8aa78",
+    "kind": "runtime_report",
+    "status": "succeeded",
+    "created_at": "2026-10-26T13:47:49.987609+00:00",
+    "started_at": "2026-10-26T13:47:49.987609+00:00",
+    "finished_at": "2026-10-26T13:47:49.999944+00:00",
+    "updated_at": "2026-10-26T13:47:50.002909+00:00",
+    "summary": {
+      "this_process": {
+        "pid": 10029,
+        "release_revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+        "generation_id": "cf1d8921-2070-4659-879c-697c2ae2dc0d",
+        "role": "api",
+        "execution_mode": "local"
+      },
+      "control": {
+        "active_generation": "cf1d8921-2070-4659-879c-697c2ae2dc0d",
+        "executor_generation": null,
+        "epoch": 114
+      },
+      "generations": [
+        {
+          "id": "cf1d8921-2070-4659-879c-697c2ae2dc0d",
+          "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+          "role": "api",
+          "state": "active",
+          "execution_mode": "local",
+          "pid": 10029,
+          "pid_alive": true,
+          "heartbeat_age_s": 0,
+          "leases": 3,
+          "process_groups": 3
+        },
+        {
+          "id": "a0d8e2de-70e4-4dad-bccd-6da38ae132c2",
+          "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 61529,
+          "pid_alive": false,
+          "heartbeat_age_s": 1264,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "fd750caa-1538-4436-9478-ea38b9f6ca20",
+          "revision": "e6b4fd0df9513058f9e30845c08f4b0c9172b095",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 77451,
+          "pid_alive": false,
+          "heartbeat_age_s": 1258.9,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "77e28a51-3f92-4ab3-823c-a562afa19a39",
+          "revision": "dd9748675b5744ca0ec73f6726bfd5ffae5e7c41",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 32228,
+          "pid_alive": false,
+          "heartbeat_age_s": 11567.3,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "3b0bb4ee-5945-4029-9abf-590526fcca4e",
+          "revision": "fcd3dd161406a12e32ed9a9c9a65fb5e58c207b0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 87194,
+          "pid_alive": false,
+          "heartbeat_age_s": 14500.3,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "e2b02089-35ce-4f71-b3dc-989790ac4241",
+          "revision": "600eb8432f7e1a3e64a9f3a07f175cd183fb90eb",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 6372,
+          "pid_alive": false,
+          "heartbeat_age_s": 52012,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "96b4138b-cd38-49c3-8e64-1870c1dd8e68",
+          "revision": "bc37116801807918cd8b9a515e4ca8d2940ae6f0",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 16631,
+          "pid_alive": false,
+          "heartbeat_age_s": 102836,
+          "leases": 0,
+          "process_groups": 0
+        },
+        {
+          "id": "a554932c-e135-4ec8-b127-4b7e82849a12",
+          "revision": "23e0cbe691efed2ca699a7a0c1d984510fb543f7",
+          "role": "api",
+          "state": "offline",
+          "execution_mode": "local",
+          "pid": 73943,
+          "pid_alive": false,
+          "heartbeat_age_s": 109921.9,
+          "leases": 0,
+          "process_groups": 0
+        }
+      ],
+      "runs_running": 3,
+      "deploy_strategy": "generations",
+      "recent_deploys": [
+        {
+          "id": "f5194370-e954-4469-a9a7-5f6f3b45027f",
+          "revision": "116dad45203fad2c81a862309016d430eb3eae49",
+          "status": "succeeded",
+          "created_at": "2026-10-26T12:41:55.617697+00:00"
+        },
+        {
+          "id": "1f459249-e2d3-4dae-87de-adb3f91a3470",
+          "revision": "70b70941ce79c822393d0e28bd0f855860c2c46b",
+          "status": "superseded",
+          "created_at": "2026-10-26T12:56:15.801417+00:00"
+        },
+        {
+          "id": "4a36d067-f2d1-4776-9642-d83982c9c6a9",
+          "revision": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+          "status": "succeeded",
+          "created_at": "2026-10-26T13:02:43.042531+00:00"
+        },
+        {
+          "id": "d277424d-3e74-49b0-94da-f70fdeaf915f",
+          "revision": "e4899781e95f3350314b82b90f940914d65ef27d",
+          "status": "testing",
+          "created_at": "2026-10-26T13:11:00.806530+00:00"
+        },
+        {
+          "id": "b6444f6a-7d55-4b3f-a435-08cc239b1b77",
+          "revision": "5a0b4ed151cfe588e0e6f03eca0d50ed975d40b1",
+          "status": "requested",
+          "created_at": "2026-10-26T13:45:31.098585+00:00"
+        }
+      ]
+    },
+    "identity": {},
+    "inline": true,
+    "requested_by_session": "e416bc01-66ed-4ad6-a654-fecdbec85d32",
+    "deduplicated": false,
+    "audit_error": null,
+    "audit_pending": false
+  },
+  "baseline_comparison": {
+    "runtime": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+    "fields_compared": 575,
+    "changed_or_missing": [],
+    "additions": [
+      {
+        "group": "study",
+        "id": "eb41e3a7-43cd-4f2b-8c03-79380a2e1163",
+        "fields": [
+          "best_result_id",
+          "primary_target"
+        ]
+      }
+    ],
+    "truncated": false,
+    "scope": "same eb41 study only; no whole DB/lock-time claim"
+  },
+  "A_comparison": {
+    "runtime": "d5bf5df7f366927d86f27f7cb96433ed4b444583",
+    "runs": [
+      {
+        "id": "7de4d2d5-f06b-4ec5-8dbd-fa20379148ef",
+        "raw_sha256": "f1f253d3b9886d3b15b7fe200cff15e7d4c94608d49e7740be76295ff8c38e44",
+        "environment_sha256": "adc4d0809ca9e6bb93f39a406652fd4d43c54fda6243e6b72828eb325aff4ca2",
+        "measurement_count": 5,
+        "preserved": true
+      },
+      {
+        "id": "0b3d1f3c-e86a-4488-8dd4-e2a3f15b4382",
+        "raw_sha256": "3234cf166bf7453e748755a8d989c7c37e35f7618a03b64c1a520efb65aafb96",
+        "environment_sha256": "adc4d0809ca9e6bb93f39a406652fd4d43c54fda6243e6b72828eb325aff4ca2",
+        "measurement_count": 5,
+        "preserved": true
+      }
+    ],
+    "adoption_resume_preserved": true
+  },
+  "production_browser": {
+    "url": "https://ttakkari.winterholic.net/login?next=%2Fresearch",
+    "observed": "auth refresh401; authenticated research UI unverified; browser closed"
+  }
+}

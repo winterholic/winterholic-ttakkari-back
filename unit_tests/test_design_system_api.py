@@ -48,7 +48,7 @@ async def test_agent_session_scope_blocks_work(api):
     app.dependency_overrides[get_db] = lambda: Db()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         r = await c.get('/api/agent/design-systems')
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 async def test_mcp_routes_queries_and_has_read_only_annotations(monkeypatch):

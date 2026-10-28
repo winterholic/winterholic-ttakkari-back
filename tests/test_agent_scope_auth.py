@@ -163,10 +163,9 @@ async def test_agent_stocks_scope_enforcement(client, setup_sessions):
     w_token = issue_token(work_s.id)
     p_token = issue_token(personal_s.id)
 
-    # Work session calling agent stocks -> 403 Forbidden
+    # ba4f0220 이후 소유자 도구는 work 세션에서도 열려 있다(개인 세션 제한 제거).
     resp = await client.get("/api/agent/stocks/tossinvest/status", headers={"Authorization": f"Bearer {w_token}"})
-    assert resp.status_code == 403
-    assert "개인 세션" in resp.json()["message"]
+    assert resp.status_code == 200
 
     # Personal session calling agent stocks -> 200 OK
     resp = await client.get("/api/agent/stocks/tossinvest/status", headers={"Authorization": f"Bearer {p_token}"})

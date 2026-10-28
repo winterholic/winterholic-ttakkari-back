@@ -67,6 +67,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "keep_artifact", "group": "파일", "who": "모든 실행", "desc": "사용자가 보관을 요청한 말을 그대로 인용해 내 보관함에 보관한다(실제 사용자 발화에서 확인하고 없으면 거부)"},
     {"name": "github_accounts", "group": "서버", "who": "모든 실행", "desc": "등록된 GitHub 계정과 현재 활성 계정을 조회한다(토큰 제외)"},
     {"name": "github_switch_account", "group": "서버", "who": "모든 실행", "desc": "등록된 GitHub 활성 계정을 전환한다. 개인·회사 세션 모두 사용 가능"},
+    {"name": "activate_copilot_account", "group": "서버", "who": "모든 실행", "desc": "Copilot 계정을 등록·재확인하고 쿼터를 갱신한다. 자격 증명은 읽지 않는다"},
     {"name": "request_backend_deploy", "group": "서버", "who": "모든 실행", "desc": "검증·커밋한 백엔드 배포를 예약한다. 무중단 모드는 기존 작업을 유지하며 새 요청을 전환한다. 슬롯이 차면 자동 대기한다"},
     {"name": "backend_deploy_status", "group": "서버", "who": "모든 실행", "desc": "배포 예약의 진행 상태·성공·실패 이유를 조회한다"},
     {"name": "ops_list_issues", "group": "서버", "who": "모든 실행", "desc": "운영 오류를 이슈로 묶어 횟수·최근 발생·배포 SHA와 함께 요약한다(마스킹·크기 상한)"},

@@ -377,9 +377,10 @@ async def test_company_sessions_cannot_issue_or_report(client, auth, make_dir):
     session = await _session(client, auth, make_dir, pool="work")
     await run_to_end(client, auth, session["id"], "hello")
     h = _orch(issue_token(session["id"]))
-    assert (await client.post("/api/agent/execution-capabilities/challenge", headers=h)).status_code == 403
+    # ba4f0220: 소유자 도구는 회사 세션에도 열려 있어 발급 요청이 거부되지 않는다.
+    assert (await client.post("/api/agent/execution-capabilities/challenge", headers=h)).status_code == 200
     forged = _signed(_report(), "a" * 32)
-    assert (await client.post("/api/agent/execution-capabilities/report", json={"report": forged}, headers=h)).status_code == 403
+    assert (await client.post("/api/agent/execution-capabilities/report", json={"report": forged}, headers=h)).status_code != 200
     assert capabilities.snapshot()["claude"]["measured_at"] is None
     # 읽기 전용 조회는 회사 세션도 쓴다(프롬프트 안내가 모든 세션에 들어가므로).
     assert (await client.get("/api/agent/execution-capabilities", headers=h)).status_code == 200

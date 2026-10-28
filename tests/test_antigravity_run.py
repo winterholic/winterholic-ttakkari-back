@@ -20,6 +20,10 @@ async def test_mcp_config_survives_init_until_cli_exit_and_is_always_removed(
     """agy emits init before loading MCP; exercise that order with a real child process."""
     from ttakkari.agents import antigravity
     from ttakkari.config import get_settings
+    from ttakkari.runs import manager as manager_mod
+
+    # ba4f0220: 일시 오류는 같은 Run 을 자동 재시도한다. 이 시험은 최종 실패 기록을 보므로 재시도 예산을 0 으로 둔다.
+    monkeypatch.setattr(manager_mod, "MAX_EXECUTION_RECOVERY_ATTEMPTS", 0)
 
     account = await client.post("/api/accounts", json={
         "name": "MCP lifecycle fixture", "engine": "antigravity",

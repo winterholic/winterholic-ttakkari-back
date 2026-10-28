@@ -58,6 +58,9 @@ def agy_id(rows):
     return uuid.UUID(next(a["id"] for a in rows if a["engine"] == "antigravity"))
 
 
+COPILOT = {"engine": "copilot", "model": "auto"}
+
+
 def engines(policy, task):
     return {entry["engine"] for stage in policy[task] for entry in stage}
 
@@ -85,8 +88,8 @@ def test_both_flags_are_required(monkeypatch):
 
 def test_enabled_policy_places_muse_only_in_general_and_routine_first_stage(muse_gate):
     policy = routing.policy()
-    assert policy["general"][0] == [{"engine": "antigravity", "model": SONNET}, {"engine": "muse", "model": MUSE_MODEL}]
-    assert policy["routine"][0] == [{"engine": "antigravity", "model": FLASH}, {"engine": "muse", "model": MUSE_MODEL}]
+    assert policy["general"][0] == [{"engine": "antigravity", "model": SONNET}, {"engine": "muse", "model": MUSE_MODEL}, COPILOT]
+    assert policy["routine"][0] == [{"engine": "antigravity", "model": FLASH}, {"engine": "muse", "model": MUSE_MODEL}, COPILOT]
     for task in ("design", "verification", "reasoning"):
         assert "muse" not in engines(policy, task)
     assert routing.accepts_model("general", MUSE_MODEL) and routing.accepts_model("routine", MUSE_MODEL)

@@ -970,6 +970,15 @@ def discover_tools(ctx: AuditContext) -> DiscoveryResult:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
 
+        # NOTE: `if ROLE == "<role>":` 최상위 블록 안의 도구는 역할 게이트일 뿐 동적 등록이 아니므로 정적으로 해석한다.
+        role_gated_funcs = {
+            child
+            for node in tree.body
+            if isinstance(node, ast.If) and ast.unparse(node.test).startswith("ROLE ==")
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 is_tool = False
@@ -982,7 +991,7 @@ def discover_tools(ctx: AuditContext) -> DiscoveryResult:
                         is_tool = True
                         break
                 if is_tool:
-                    if node in top_level_funcs:
+                    if node in top_level_funcs or node in role_gated_funcs:
                         tools.add(node.name)
                     else:
                         unresolved.append(
@@ -1453,7 +1462,7 @@ def classify_route(method: str, path: str) -> str:
         )
     ):
         return "core.workspaces_transfers"
-    if p.startswith("/api/accounts"):
+    if p.startswith(("/api/accounts", "/api/agent/github")):
         return "core.accounts_quota"
     if any(
         p.startswith(x)
@@ -1619,8 +1628,10 @@ def classify_mcp_tool(name: str) -> str:
     n = name.lower()
     if n in ("list_sessions", "read_session"):
         return "core.auth_session"
-    if n in ("account_usage",):
+    if n in ("account_usage", "activate_copilot_account", "github_accounts", "github_switch_account"):
         return "core.accounts_quota"
+    if n.startswith("collection_mission_"):
+        return "domain.collector"
     if n in ("request_backend_deploy", "backend_deploy_status"):
         return "core.generation_deploy"
     if n in ("notify_user", "host_operation_start", "host_operation_status", "host_operation_cancel"):

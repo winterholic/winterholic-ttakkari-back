@@ -28,7 +28,7 @@ async def test_owner_and_scoped_agent_read_same_committed_source(client, auth, m
     assert preview.status_code == 200 and '<button>확인</button>' in preview.json()['html']
     assert preview.json()['revision'] == catalog.json()['revision']
     ws = (await client.post('/api/workspaces', json={'name': 'design systems', 'root_path': str(root)}, headers=auth)).json()
-    for pool, code in [('personal', 200), ('work', 403)]:
+    for pool, code in [('personal', 200), ('work', 200)]:
         r = await client.post('/api/sessions', json={'workspace_id': ws['id'], 'pool': pool}, headers=auth)
         assert r.status_code == 201, r.text
         session = r.json()

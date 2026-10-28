@@ -229,6 +229,9 @@ async def test_cancel_run_without_live_process_is_409(client, auth, new_session)
 
 
 async def test_timeout_marks_failed_and_kills_process(client, auth, new_session, monkeypatch):
+    # ba4f0220: 일시 오류는 같은 Run 을 자동 재시도한다. 이 시험은 최종 실패 기록을 보므로 재시도 예산을 0 으로 둔다.
+    from ttakkari.runs import manager as manager_mod
+    monkeypatch.setattr(manager_mod, "MAX_EXECUTION_RECOVERY_ATTEMPTS", 0)
     monkeypatch.setattr(get_settings(), "run_timeout_seconds", 2)
     _ws, sess = await new_session()
     run = await start_run(client, auth, sess["id"], "SLEEP")

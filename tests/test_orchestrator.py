@@ -505,7 +505,9 @@ AGENT_TOOLS = {"github_accounts", "github_switch_account", "kb_search", "kb_docu
                "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
                "creative_v2_production_dispatch", "creative_v2_production_render",
                "creative_v2_production_status", "creative_v2_production_media_link"}
-WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
+# 7bd8be44: 에이전트도 한 단계 위임(spawn/message/list/get/stop worker)을 쓴다.
+AGENT_DELEGATION_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}
+WORKER_TOOLS = {"activate_copilot_account", "spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
                 "my_context", "reset_my_context", "manage_work"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
 
@@ -527,7 +529,7 @@ def _mcp_tools(role: str) -> tuple[set[str], dict]:
 
 def test_mcp_server_tools_by_role():
     agent, replies = _mcp_tools("agent")
-    assert agent == AGENT_TOOLS and 3 in replies
+    assert agent == AGENT_TOOLS | AGENT_DELEGATION_TOOLS and 3 in replies
     orch, _ = _mcp_tools("orchestrator")
     assert orch == AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS
 

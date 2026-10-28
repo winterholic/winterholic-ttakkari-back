@@ -184,6 +184,8 @@ async def test_pool_timeout_after_status_running_goes_back_to_queued(new_session
 
 
 async def test_pool_timeout_gives_up_after_the_retry_budget(new_session, isolated_manager, monkeypatch):
+    # ba4f0220: 일시 오류는 같은 Run 을 자동 재시도한다. 이 시험은 최종 실패 기록을 보므로 재시도 예산을 0 으로 둔다.
+    monkeypatch.setattr(manager_mod, "MAX_EXECUTION_RECOVERY_ATTEMPTS", 0)
     m = isolated_manager
     (run_id,) = await make_runs(new_session, 1)
 

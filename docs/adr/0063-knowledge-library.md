@@ -1,5 +1,19 @@
 # ADR 0063. 범용 지식 도서관(Knowledge Library)과 2층 아키텍처
 
+## 2026-10-28 연구 맥락과 일반 지식의 등록 경계
+
+사용자는 일시적인 작업 상태·인수·미완료·파일 해시 기록이 지식도서관에 들어가는 것을 거부했다.
+Research Lab의 `source`는 immutable KB 바이트/인용 저장소를 재사용하되, 저장 사실 자체로 일반 지식에 등록하지 않는다.
+새 등록의 `purpose` 기본값은 `research_context`이며 목록·lexical/hybrid 검색·집계·신규 임베딩 대상에서 제외한다.
+원문·리비전·패시지·인용 ID와 연구 resume은 보존하고 기존 접근 권한도 유지한다. 삭제나 권한 회수가 아니다.
+
+명시적으로 고른 문서·논문·재사용 지식만 `purpose=knowledge_reference`로 일반 지식에 노출한다. 정리된 사내/로컬 참고자료도 가능하다.
+작업 상태·사용자 작업 지시·handoff·인수/검증 영수증은 이 목적으로 등록하지 않는다.
+source 메타데이터는 불변이므로 같은 source_key를 다른 목적으로 재등록하면 409를 반환한다. 별도 계보로 큐레이션해야 한다.
+purpose가 없던 legacy `research_text`는 HTTP(S) locator가 있는 외부 인용을 보존하고, 로컬/repo/session 자료를 연구 맥락으로 분리한다.
+이 호환 규칙은 출처 위치에 따른 분류이며 외부 자료의 사실성·품질 승인이 아니다. 일반 웹 수집/사용자 지식 등록은 유지한다.
+사전 운영 인벤토리와 검증 범위는 [작업 기록](../work-history/2026-10-28-kb-research-boundary.md)을 따른다.
+
 - 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 로직 완료 승인(2026-10-22, DB·UI·추론 제외). **2026-10-23 사용자의 명시 지시에 따라 검색·수집 제품 경로를 구현했다: 출처 등록·실행, 품질 검토, 권한 검증된 KB 전달, 개인/회사 범위 검색·근거 열람.** 통합 구현·검증 기록은 [작업 기록](../work-history/2026-10-23-kb-collector-product.md)에 둔다. 이번 구현은 v2 KB7 품질 gate(사람 확인 holdout, 검정력, coverage/abstain 보정)를 통과한 것이 아니다. KB-E1b·E0.5·검색 품질 입증은 미완료로 남는다. 이전 상태: KB-E0 착수 조건부 승인, 제품검색 미승인.
 - 활성 후속 설계: [v2](../design/kb-v2/knowledge-library-design-v2.md), [검토 대응표](../design/kb-v2/reviews/v2-review-response.md). [v1](../kb/design-v1.md)·[v1 사본](../design/knowledge-library.md)은 역사 기록.
 - 선행: ADR 0007·0009(맥락 도서관), ADR 0031(근거 중심 원장)

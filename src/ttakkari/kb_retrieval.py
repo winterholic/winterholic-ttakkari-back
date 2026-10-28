@@ -60,7 +60,9 @@ async def index_pending(*, limit=16):
     async with _lock:
         async with sessionmaker()() as db:
             indexed = select(V.passage_id).where(V.passage_id == KbPassage.id, V.model_key == model_key()).exists()
-            query = select(KbPassage).where(~indexed).order_by(KbPassage.created_at, KbPassage.id)
+            query = select(KbPassage).join(KbRevision).join(KbDocument).where(
+                ~indexed, lib.library_filter(), ~lib.research_context_revision_filter(KbRevision),
+            ).order_by(KbPassage.created_at, KbPassage.id)
             if _failed_passages:
                 query = query.where(KbPassage.id.not_in(_failed_passages.keys()))
             passages = list(await db.scalars(query.limit(limit)))
@@ -101,12 +103,13 @@ async def index_pending(*, limit=16):
 
 async def status(db, pool="personal"):
     total = await db.scalar(select(func.count()).select_from(KbPassage).join(KbRevision).join(KbDocument)
-                            .where(lib.library_filter(pool))) or 0
+                            .where(lib.library_filter(pool), ~lib.research_context_revision_filter(KbRevision))) or 0
     indexed = await db.scalar(select(func.count()).select_from(V).join(KbPassage).join(KbRevision).join(KbDocument)
                               .where(V.model_key == model_key(), V.text_sha256 == KbPassage.sha256,
-                                     lib.library_filter(pool))) or 0
+                                     lib.library_filter(pool), ~lib.research_context_revision_filter(KbRevision))) or 0
     passage_ids = {str(passage_id) for passage_id in await db.scalars(
-        select(KbPassage.id).join(KbRevision).join(KbDocument).where(lib.library_filter(pool)))}
+        select(KbPassage.id).join(KbRevision).join(KbDocument).where(
+            lib.library_filter(pool), ~lib.research_context_revision_filter(KbRevision)))}
     failed = len(passage_ids.intersection(_failed_passages))
     return {"model": embedder.model_name(), "model_key": model_key(), "indexed": indexed, "total": total, "failed": failed,
             "enabled": get_settings().kb_semantic_enabled, "last_error": _last_error,
@@ -124,7 +127,8 @@ async def search(db, *, query, limit=10, offset=0, document_id=None, current_onl
     cosine = V.vector.cosine_distance(vector).label("distance")
     stmt = select(KbPassage, KbRevision, KbDocument, cosine).join(V, V.passage_id == KbPassage.id).join(
         KbRevision, KbPassage.revision_id == KbRevision.id).join(KbDocument, KbRevision.document_id == KbDocument.id).where(
-            V.model_key == model_key(), V.text_sha256 == KbPassage.sha256, lib.library_filter(pool))
+            V.model_key == model_key(), V.text_sha256 == KbPassage.sha256,
+            lib.library_filter(pool), ~lib.research_context_revision_filter(KbRevision))
     if current_only:
         stmt = stmt.where(lib._current_revision_filter())
     if document_id is not None:

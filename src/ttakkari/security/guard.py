@@ -434,8 +434,71 @@ def check_path_tool(tool: str, tool_input: dict, cwd: Path, cfg: GuardConfig) ->
     return None
 
 
+_HEREDOC_OP_RE = re.compile(r"<<(-?)\s*(?:'([^']+)'|\"([^\"]+)\"|\\(\w+))")
+_SHELL_HEREDOC_VERBS = frozenset({"bash", "sh", "zsh"})
+
+
+def _split_quoted_heredocs(command: str) -> tuple[str, list[tuple[str, str]]]:
+    """따옴표 구분자(<<'EOF')의 heredoc 본문을 떼어 낸다. 본문은 셸이 해석하지 않는 데이터다.
+
+    본문 줄을 명령으로 쪼개면 코드의 `$VAR`·백틱·`;` 때문에 멀쩡한 파일 작성이 '변수로 만든 명령'으로 막힌다
+    (2026-10 한 주에 244건). 인터프리터로 들어가는 본문은 (verb, body)로 돌려줘 호출자가 따로 검사한다.
+    따옴표 없는 구분자는 셸 치환이 일어나므로 그대로 둔다.
+    """
+    lines = command.split("\n")
+    out: list[str] = []
+    bodies: list[tuple[str, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        m = _HEREDOC_OP_RE.search(line)
+        if not m:
+            continue
+        delim = m.group(2) or m.group(3) or m.group(4)
+        strip_tabs = bool(m.group(1))
+        body: list[str] = []
+        j = i
+        while j < len(lines) and (lines[j].lstrip("\t") if strip_tabs else lines[j]) != delim:
+            body.append(lines[j])
+            j += 1
+        if j >= len(lines):  # 닫는 구분자가 없으면 판단하지 않고 원문 그대로 검사한다
+            continue
+        head = line[:m.start()].split()
+        verbs = {Path(w).name for w in head if "=" not in w and not w.startswith(("-", ">"))}
+        bodies.append((next((v for v in verbs if v in _INTERPRETER_VERBS | _SHELL_HEREDOC_VERBS), ""), "\n".join(body)))
+        i = j  # 닫는 구분자 줄은 다음 반복에서 out 에 들어간다
+    return "\n".join(out), bodies
+
+
+def _newlines_as_separators(command: str) -> str:
+    """따옴표 밖의 줄바꿈을 `;`로 바꾼다. shlex 는 줄바꿈을 공백으로 봐서 둘째 줄 이후 명령이 첫 명령의 인자로 묻혔다."""
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if ch == "\\" and quote != "'" and i + 1 < len(command):
+            out.append(command[i:i + 2])  # 백슬래시-줄바꿈은 이어쓰기라 그대로 둔다
+            i += 2
+            continue
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "\n":
+            out.append(";")
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _split_commands(command: str) -> list[list[str]]:
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+    lexer = shlex.shlex(_newlines_as_separators(command), posix=True, punctuation_chars=";&|()")
     lexer.whitespace_split = True
     cmds: list[list[str]] = [[]]
     try:
@@ -472,7 +535,14 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> st
             return f"고위험 명령 차단({why})"
     if reason := _check_sql_drop(command):
         return reason
-    split = _split_commands(command)
+    stripped, heredocs = _split_quoted_heredocs(command)
+    for verb, body in heredocs:
+        if verb in _SHELL_HEREDOC_VERBS and _depth < _MAX_NESTING:
+            if reason := check_bash(body, cwd, cfg, _depth + 1):
+                return reason
+        elif verb and (reason := _check_code_payload(body, cwd)):
+            return reason
+    split = _split_commands(stripped)
     if reason := _check_nosql_destructive(command, _command_verbs(split)):
         return reason
     if reason := _check_client_stdin(command):

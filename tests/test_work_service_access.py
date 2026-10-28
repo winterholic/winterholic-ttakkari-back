@@ -12,7 +12,7 @@ pytestmark = [pytest.mark.security]
 
 @pytest.mark.parametrize("module,guard", [
     ("oplogs", "agent_access"), ("host_env", "_personal"),
-    ("deployments", "personal"), ("operations", "personal"),
+    ("deployments", "personal"), ("operations", "caller"),
     ("reverse", "agent_access"), ("design_system", "agent_access"),
     ("notebooklm", "agent_access"), ("google_accounts", "agent_access"),
     ("stocks", "agent_access"), ("comfy_managed", "agent_access"),

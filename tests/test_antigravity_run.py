@@ -330,3 +330,22 @@ async def test_antigravity_empty_stdout_is_not_reported_as_success(client, auth,
 
     assert run["status"] == "failed"
     assert "operation not permitted" in run["error"].lower()
+
+
+async def test_terminate_tolerates_eperm_on_the_second_signal_after_reaping(monkeypatch):
+    """회수 뒤 재신호에서도 EPERM 이 날 수 있다. 운영에서 Muse Run 이 '내부 오류'로 실패한 경로다(2026-10-27)."""
+    from ttakkari.runs.manager import RunManager
+
+    class ExitedLeader:
+        pid = 12345
+        returncode = None
+
+        async def wait(self):
+            self.returncode = 0
+            return self.returncode
+
+    def denied(pid, sig):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr("ttakkari.runs.manager.os.killpg", denied)
+    await RunManager()._terminate(ExitedLeader())

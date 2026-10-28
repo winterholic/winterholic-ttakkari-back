@@ -327,12 +327,13 @@ class RunManager:
             # process group even though its original leader has exited.
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # 리더가 이미 회수됐고 그룹이 사라지는 중이다. EPERM 은 같은 경합의 다른 얼굴이라 Run 을 실패시키지 않는다.
                 return
         try:
             await asyncio.wait_for(proc.wait(), grace)
         except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(proc.pid, signal.SIGKILL)
             await proc.wait()
 

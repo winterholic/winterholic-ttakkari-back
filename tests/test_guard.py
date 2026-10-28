@@ -450,3 +450,45 @@ def test_v2_blocks_bare_kubeconfig_read(tmp_path: Path) -> None:
 )
 def test_v2_allows_normal_development_commands(tmp_path: Path, command: str) -> None:
     assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is None
+
+
+# ---- heredoc 본문은 데이터다. 코드의 `$VAR`·백틱·세미콜론이 '변수로 만든 명령'으로 오탐되면 안 된다(주 244건).
+
+def _cfg(tmp_path: Path) -> GuardConfig:
+    return GuardConfig(write_roots=[tmp_path])
+
+
+@pytest.mark.parametrize("command", [
+    "cd /x/y && cat > a.tsx <<'EOF'\nconst a = `hello ${name}`;\n`tail`\n$FOO bar\nEOF",
+    "cd /x && python3 - <<'PYEOF'\np='a'\ns=open(p).read()\n$HOME\nPYEOF",
+    "git commit -m \"$(cat <<'EOF'\nfix: `x` handling\n\n$HOME note\nEOF\n)\"",
+])
+def test_quoted_heredoc_body_is_not_parsed_as_commands(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _cfg(tmp_path)) is None
+
+
+def test_real_variable_command_is_still_blocked(tmp_path: Path) -> None:
+    assert check_bash("W=/tmp/x; $W/run.sh", tmp_path, _cfg(tmp_path)) is not None
+    assert check_bash("cat > f <<'EOF'\nx\nEOF\n$CMD arg", tmp_path, _cfg(tmp_path)) is not None
+
+
+def test_dangerous_command_after_a_heredoc_is_still_blocked(tmp_path: Path) -> None:
+    command = "cat > f <<'EOF'\nharmless\nEOF\nrm -rf /"
+    assert check_bash(command, tmp_path, _cfg(tmp_path)) is not None
+
+
+def test_shell_heredoc_body_is_still_inspected(tmp_path: Path) -> None:
+    command = "bash <<'EOF'\nrm -rf /\nEOF"
+    assert check_bash(command, tmp_path, _cfg(tmp_path)) is not None
+
+
+def test_interpreter_heredoc_body_still_checked_for_sensitive_files(tmp_path: Path) -> None:
+    secret = tmp_path / ".env"
+    secret.write_text("TOKEN=x")
+    command = f"python3 - <<'PYEOF'\nprint(open('{secret}').read())\nPYEOF"
+    assert check_bash(command, tmp_path, _cfg(tmp_path)) is not None
+
+
+def test_unquoted_heredoc_keeps_shell_expansion_scrutiny(tmp_path: Path) -> None:
+    command = "cat <<EOF\n$(rm -rf /)\nEOF"
+    assert check_bash(command, tmp_path, _cfg(tmp_path)) is not None

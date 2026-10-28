@@ -143,6 +143,8 @@ async def _schedules_loop(interval: float = 5.0) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from ttakkari.fd_limit import raise_nofile_limit
+    raise_nofile_limit()  # launchd 기본 soft 한도 256 이 동시 Run 에서 OSError(24)를 낸다
     s = get_settings()
     s.ensure_dirs()
     from ttakkari.deployment import revision

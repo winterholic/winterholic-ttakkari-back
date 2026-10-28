@@ -67,6 +67,18 @@ def access_filter(pool: str = "personal"):
     return and_(~closed, work_open)
 
 
+def _current_revision_filter():
+    newer = KbRevision.__table__.alias("newer")
+    obs = KbObservation.__table__.alias("current_observation")
+    observed = select(obs.c.revision_id).where(obs.c.document_id == KbRevision.document_id).order_by(
+        obs.c.event_time.desc(), obs.c.recorded_at.desc(), obs.c.id.desc(),
+    ).limit(1).correlate(KbRevision).scalar_subquery()
+    legacy = ~select(literal(1)).where(
+        newer.c.document_id == KbRevision.document_id, newer.c.rev_no > KbRevision.rev_no
+    ).exists()
+    return or_(KbRevision.id == observed, and_(observed.is_(None), legacy))
+
+
 def research_source_purpose(source: KbSource) -> str:
     """Legacy external citations stay references; unclassified local receipts stay research context.
 
@@ -80,14 +92,36 @@ def research_source_purpose(source: KbSource) -> str:
             else "research_context")
 
 
-def research_context_filter():
-    """Matches documents containing research-only evidence, including pre-fix rows."""
-    purpose = KbSource.origin_meta["library_purpose"].astext
-    legacy_external = func.coalesce(KbSource.locator.op("~*")(r"^https?://[^/\s;]+"), False)
+def _research_source_is_reference(source_model=KbSource):
+    """SQL expression returning True if the source is reusable knowledge/reference."""
+    purpose = source_model.origin_meta["library_purpose"].astext
+    legacy_external = func.coalesce(source_model.locator.op("~*")(r"^https?://[^/\s;]+"), False)
     reference = or_(purpose == "knowledge_reference", and_(purpose.is_(None), legacy_external))
+    return or_(source_model.kind != "research_text", func.coalesce(reference, False))
+
+
+def _source_is_research_context(source_model=KbSource):
+    """SQL expression returning True if the source is research-only context (not reusable knowledge)."""
+    purpose = source_model.origin_meta["library_purpose"].astext
+    legacy_external = func.coalesce(source_model.locator.op("~*")(r"^https?://[^/\s;]+"), False)
+    reference = or_(purpose == "knowledge_reference", and_(purpose.is_(None), legacy_external))
+    return and_(source_model.kind == "research_text", ~func.coalesce(reference, False))
+
+
+def research_context_revision_filter(revision_cls=KbRevision):
+    """Matches revisions whose source is research-only context."""
+    return select(KbSource.id).where(
+        KbSource.id == revision_cls.source_id,
+        _source_is_research_context(KbSource),
+    ).correlate(revision_cls).exists()
+
+
+def research_context_filter():
+    """Matches documents whose CURRENT revision is research-only context."""
     return select(KbRevision.id).join(KbSource, KbSource.id == KbRevision.source_id).where(
-        KbRevision.document_id == KbDocument.id, KbSource.kind == "research_text",
-        ~func.coalesce(reference, False),
+        KbRevision.document_id == KbDocument.id,
+        _current_revision_filter(),
+        _source_is_research_context(KbSource),
     ).correlate(KbDocument).exists()
 
 
@@ -146,18 +180,6 @@ async def document_aliases(db, document_id) -> list[dict]:
              "relation": a.relation, "reason": a.reason} for a in rows]
 
 
-def _current_revision_filter():
-    newer = KbRevision.__table__.alias("newer")
-    obs = KbObservation.__table__.alias("current_observation")
-    observed = select(obs.c.revision_id).where(obs.c.document_id == KbRevision.document_id).order_by(
-        obs.c.event_time.desc(), obs.c.recorded_at.desc(), obs.c.id.desc(),
-    ).limit(1).correlate(KbRevision).scalar_subquery()
-    legacy = ~select(literal(1)).where(
-        newer.c.document_id == KbRevision.document_id, newer.c.rev_no > KbRevision.rev_no
-    ).exists()
-    return or_(KbRevision.id == observed, and_(observed.is_(None), legacy))
-
-
 def snippet_with_highlights(body: str, words: list[str]) -> tuple[str, list[list[int]]]:
     """첫 일치 주변의 짧은 발췌와 그 안의 강조 구간([start, end), 발췌 기준 코드포인트)을 만든다."""
     lowered = body.casefold()
@@ -211,9 +233,11 @@ async def summary(db: AsyncSession, *, pool: str = "personal") -> dict:
             stmt = stmt.join(KbRevision, KbPassage.revision_id == KbRevision.id)
         if model is not KbDocument:
             stmt = stmt.join(KbDocument, KbRevision.document_id == KbDocument.id)
+            stmt = stmt.where(~research_context_revision_filter(KbRevision))
         counts[name] = await db.scalar(stmt.where(library_filter(pool))) or 0
     src = select(KbSource.id, KbSource.collected_at).join(KbRevision, KbSource.id == KbRevision.source_id).join(
-        KbDocument, KbRevision.document_id == KbDocument.id).where(library_filter(pool)).distinct().subquery()
+        KbDocument, KbRevision.document_id == KbDocument.id).where(
+        library_filter(pool), ~_source_is_research_context(KbSource)).distinct().subquery()
     counts["sources"] = await db.scalar(select(func.count()).select_from(src)) or 0
     last = await db.scalar(select(func.max(src.c.collected_at)))
     return {"counts": counts, "last_collected_at": last.isoformat() if last else None}
@@ -357,7 +381,7 @@ async def search_passages(
         select(KbPassage, KbRevision, KbDocument, score)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
         .join(KbDocument, KbDocument.id == KbRevision.document_id)
-        .where(predicate, library_filter(pool))
+        .where(predicate, library_filter(pool), ~research_context_revision_filter(KbRevision))
     )
     if current_only:
         stmt = stmt.where(_current_revision_filter())

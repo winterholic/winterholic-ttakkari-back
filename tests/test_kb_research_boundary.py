@@ -159,3 +159,173 @@ async def test_hybrid_search_excludes_already_indexed_research_context(monkeypat
         hits = await kb_retrieval.search(db, query="boundarytoken")
         assert {row["document"]["id"] for row in hits["items"]} == {str(reference.document_id)}
         assert hits["retrieval"]["total"] == 1
+
+
+async def test_mixed_history_context_then_reference_appears_in_library():
+    """P2 defect regression: context -> reference mixed history must show document and reference passages, but hide context passages."""
+    async with sessionmaker()() as db:
+        # Rev 1: Legacy local research task receipt
+        rev1 = await kb_store.ingest_source(
+            db, source_key="doc:mixed-evolution", kind="research_text",
+            title="Local task receipt", locator="/repo/work/receipt.md",
+            data=b"firstmixedcontext unique_receipt_token task completed",
+            origin_meta={},
+        )
+        [p1] = await kb_store.segment_revision(db, rev1.revision_id)
+
+        # Rev 2: Subsequent reference manual on the same document lineage
+        rev2 = await kb_store.ingest_source(
+            db, source_key="doc:mixed-evolution", kind="research_text",
+            title="Official reference guide", locator="https://example.org/guide",
+            data=b"secondmixedreference unique_guide_token official documentation",
+            origin_meta={"library_purpose": "knowledge_reference"},
+        )
+        [p2] = await kb_store.segment_revision(db, rev2.revision_id)
+        assert rev1.document_id == rev2.document_id
+
+        # 1. Document listing: current revision is reference, so document MUST appear
+        listing = await kb_library.list_documents(db, q=None, limit=100, offset=0)
+        assert listing["total"] == 1
+        assert listing["items"][0]["id"] == str(rev2.document_id)
+        assert listing["items"][0]["current_revision"]["id"] == str(rev2.revision_id)
+
+        # 2. Search current: reference guide is discoverable
+        hits_cur = await kb_library.search_passages(
+            db, query="unique_guide_token", limit=10, offset=0,
+            document_id=None, current_only=True,
+        )
+        assert len(hits_cur["items"]) == 1
+        assert hits_cur["items"][0]["passage_id"] == str(p2.id)
+
+        # 3. Search historical (current_only=False): context task receipt must NOT leak
+        hits_hist = await kb_library.search_passages(
+            db, query="unique_receipt_token", limit=10, offset=0,
+            document_id=None, current_only=False,
+        )
+        assert len(hits_hist["items"]) == 0
+
+        # 4. Summary counts: only the valid reference revision/passage/source is counted in knowledge library
+        summary = await kb_library.summary(db)
+        assert summary["counts"]["documents"] == 1
+        assert summary["counts"]["revisions"] == 1
+        assert summary["counts"]["passages"] == 1
+        assert summary["counts"]["sources"] == 1
+
+        # 5. Direct citation / byte inspection: rev1 and rev2 remain fully intact
+        doc = await kb_library.get_document(
+            db, rev1.document_id, revision_id=rev1.revision_id, passage_limit=10, passage_offset=0,
+        )
+        assert doc["selected_revision_id"] == str(rev1.revision_id)
+        ev1 = await kb_library.get_evidence(db, p1.id, start=None, end=None)
+        assert ev1["quote"] == p1.body
+        assert ev1["span"]["hash_verified"] is True
+        ev2 = await kb_library.get_evidence(db, p2.id, start=None, end=None)
+        assert ev2["quote"] == p2.body
+        assert ev2["span"]["hash_verified"] is True
+
+        await db.rollback()
+
+
+async def test_mixed_history_reference_then_context_hidden_from_library():
+    """Reference -> context mixed history: when latest revision is context, document is excluded and context text does not leak."""
+    async with sessionmaker()() as db:
+        # Rev 1: Initial reference
+        rev1 = await kb_store.ingest_source(
+            db, source_key="doc:mixed-demoted", kind="research_text",
+            title="Initial reference", locator="https://example.org/paper",
+            data=b"initialreference unique_initial_ref_token",
+            origin_meta={"library_purpose": "knowledge_reference"},
+        )
+        await kb_store.segment_revision(db, rev1.revision_id)
+
+        # Rev 2: Replaced by work context
+        rev2 = await kb_store.ingest_source(
+            db, source_key="doc:mixed-demoted", kind="research_text",
+            title="Overriding work notes", locator="/local/scratch/notes.md",
+            data=b"overridingcontext unique_work_notes_token task handoff",
+            origin_meta={"library_purpose": "research_context"},
+        )
+        [p2] = await kb_store.segment_revision(db, rev2.revision_id)
+        assert rev1.document_id == rev2.document_id
+
+        # Document listing: current revision is context, so document MUST be hidden
+        listing = await kb_library.list_documents(db, q=None, limit=100, offset=0)
+        assert listing["total"] == 0
+
+        # General search must not leak overriding context
+        hits = await kb_library.search_passages(
+            db, query="unique_work_notes_token", limit=10, offset=0,
+            document_id=None, current_only=False,
+        )
+        assert len(hits["items"]) == 0
+
+        # Direct access remains intact
+        doc = await kb_library.get_document(
+            db, rev2.document_id, revision_id=None, passage_limit=10, passage_offset=0,
+        )
+        assert doc["selected_revision_id"] == str(rev2.revision_id)
+        ev = await kb_library.get_evidence(db, p2.id, start=None, end=None)
+        assert ev["quote"] == p2.body
+        await db.rollback()
+
+
+@pytest.mark.parametrize("locator", ["/local/shared/handbook.md", "session:architecture-review-2026"])
+async def test_explicit_knowledge_reference_with_local_and_session_locators(locator):
+    """Explicit knowledge_reference purpose is preserved even with local or session locators."""
+    async with sessionmaker()() as db:
+        ref = await kb_store.ingest_source(
+            db, source_key=f"doc:explicit:{locator}", kind="research_text",
+            title="Explicit local knowledge", locator=locator,
+            data=b"explicitlocal unique_explicit_local_token architecture guide",
+            origin_meta={"library_purpose": "knowledge_reference"},
+        )
+        [p] = await kb_store.segment_revision(db, ref.revision_id)
+
+        listing = await kb_library.list_documents(db, q=None, limit=100, offset=0)
+        assert listing["total"] == 1
+        assert listing["items"][0]["id"] == str(ref.document_id)
+
+        hits = await kb_library.search_passages(
+            db, query="unique_explicit_local_token", limit=10, offset=0,
+            document_id=None, current_only=True,
+        )
+        assert len(hits["items"]) == 1
+        assert hits["items"][0]["passage_id"] == str(p.id)
+        await db.rollback()
+
+
+async def test_canonical_and_covered_alias_with_research_boundary():
+    """Covered duplicate is hidden from library filter, while canonical document remains."""
+    from ttakkari.collector.control_models import KbDocumentAlias
+
+    async with sessionmaker()() as db:
+        # Canonical reference document
+        canonical = await kb_store.ingest_source(
+            db, source_key="doc:canonical-ref", kind="research_text",
+            title="Canonical reference", locator="https://example.org/canonical",
+            data=b"canonical content unique_alias_token",
+            origin_meta={"library_purpose": "knowledge_reference"},
+        )
+        await kb_store.segment_revision(db, canonical.revision_id)
+
+        # Duplicate reference document marked as covered
+        duplicate = await kb_store.ingest_source(
+            db, source_key="doc:duplicate-ref", kind="research_text",
+            title="Duplicate reference", locator="https://example.org/canonical-mirror",
+            data=b"canonical content unique_alias_token",
+            origin_meta={"library_purpose": "knowledge_reference"},
+        )
+        await kb_store.segment_revision(db, duplicate.revision_id)
+
+        db.add(KbDocumentAlias(
+            document_id=duplicate.document_id,
+            canonical_document_id=canonical.document_id,
+            relation="covered",
+            reason="duplicate_content",
+        ))
+        await db.flush()
+
+        listing = await kb_library.list_documents(db, q=None, limit=100, offset=0)
+        assert listing["total"] == 1
+        assert listing["items"][0]["id"] == str(canonical.document_id)
+        await db.rollback()

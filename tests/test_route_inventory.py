@@ -878,20 +878,17 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
 MCP_ORCHESTRATOR_ONLY = frozenset(
     {
         "account_usage",
-        "get_worker",
-        "list_workers",
         "luna_common30_v2_cancel",
         "luna_common30_v2_status",
-        "message_worker",
         "my_context",
         "reset_my_context",
         "manage_work",
-        "spawn_worker",
         "start_luna_common30_v2",
         "stop_agents",
-        "stop_worker",
     }
 )
+# Worker management (spawn/message/list/get/stop_worker) registers for both MCP roles;
+# the API enforces one-level delegation and subtree ownership (2026-10-28).
 
 MCP_SCOPE: dict[str, str] = {
     "activate_copilot_account": "planner",

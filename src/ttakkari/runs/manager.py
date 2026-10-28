@@ -564,7 +564,7 @@ class RunManager:
 
     async def _replay_spawn_queue(self, db: AsyncSession, sess: ChatSession,
                                     run: Run, outbox: Path) -> None:
-        """degraded Qwen 기획자가 남긴 위임 intent를 작업 세션으로 띄운다.
+        """기획자가 남긴 위임 intent를 작업 세션으로 띄운다(모든 오케스트레이터 Run).
 
         큐: <outbox>/spawn-queue/*.json. 한 파일에 지시 하나. 검증 실패분은
         실행하지 않고 invalid/ 로 옮긴다(fail closed). 처리분은 done/ 으로
@@ -1458,7 +1458,9 @@ class RunManager:
                     await self._finish(db, run, RunStatus.failed, error="Qwen 로컬 슬롯을 확보하지 못했습니다.")
                 return
             attempts_started += 1
-            if prof.engine == "qwen-local" and is_orch:
+            if is_orch:
+                # spawn-queue 는 도구가 없는 기획 Run 의 위임 탈출구다. Qwen degraded 전용에서
+                # 전체 오케스트레이터로 일반화했다(검증 실패분은 fail closed, 상한 내만 재생).
                 await self._replay_spawn_queue(db, sess, run, outbox)
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))

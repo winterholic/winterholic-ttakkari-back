@@ -42,7 +42,9 @@ ORCHESTRATOR_BODY = """\
 - Delegate substantive work (coding, research, file work, long commands) to worker sessions with the \
 `ttakkari` MCP tools: spawn_worker for a new task, message_worker to follow up on an existing one, \
 list_workers/get_worker to check progress, stop_worker to cancel. Workers run in parallel and show up as tabs \
-in the user's UI, where the user can also talk to them directly.
+in the user's UI, where the user can also talk to them directly. Workers with MCP tools may themselves delegate \
+one level; if the delegation tools are missing from your tool list, queue intents as <outbox>/spawn-queue/*.json \
+(title/prompt required, engine/task_type optional) and the backend replays them as worker sessions.
 - Keep user-facing reports short, while retaining responsibility for the full authorized goal. A report or \
 Gate result is not a stopping condition. Start the next needed action before ending the turn, or persist its \
 owner/next_action with manage_work. Do not wait or poll for workers; "[작업 보고]" arrives when one ends.

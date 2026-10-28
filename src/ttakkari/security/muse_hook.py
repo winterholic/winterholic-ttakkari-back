@@ -83,9 +83,9 @@ def decision(data: dict, policy: dict) -> str | None:
         parts = tool.split('__', 2)
         if len(parts) == 3 and parts[1] in policy['mcp_servers']:
             if parts[2] in {'spawn_worker', 'message_worker'}:
-                # 작업 세션 위임은 오케스트레이터 역할의 Muse 세션에만 허용한다.
-                # 역할이 없거나 agent 이면 재귀 위임을 막기 위해 계속 차단한다.
-                if policy.get('role') == 'orchestrator':
+                # 작업 세션 위임은 양쪽 역할에 허용한다. 1단계 상한·소유권은 DB 를 보는
+                # 서버(api/orchestrator)가 강제하므로 훅은 역할이 알려진 세션만 통과시킨다.
+                if policy.get('role') in {'orchestrator', 'agent'}:
                     return None
             else:
                 return None

@@ -22,7 +22,7 @@ from ttakkari.orchestrator.runtime import (
     ORCHESTRATOR_NOTE,
     issue_token,
 )
-from ttakkari.runs import profiles
+from ttakkari.runs import profiles, worker_routing
 from ttakkari.runs.manager import manager
 
 
@@ -395,6 +395,74 @@ async def test_orchestrator_token_is_scoped(client, auth, make_dir):
     assert (await client.get("/api/sessions", headers=hb)).status_code == 401
     # 일반 대화 세션에 묶인 토큰은 거절한다.
     assert (await client.get("/api/orchestrator/workers", headers=_orch(issue_token(chat["id"])))).status_code == 403
+
+
+async def test_worker_may_spawn_one_level_and_manage_own_child(client, auth, make_dir):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    h = _orch(issue_token(orch["id"]))
+    w1 = (await client.post("/api/orchestrator/workers", json={"title": "w1", "prompt": "go"},
+                            headers=h)).json()["worker_id"]
+    h1 = _orch(issue_token(w1))
+    r = await client.post("/api/orchestrator/workers", json={"title": "sub", "prompt": "go"}, headers=h1)
+    assert r.status_code == 201, r.text
+    sub = r.json()["worker_id"]
+    row = (await client.get(f"/api/sessions/{sub}", headers=auth)).json()
+    assert row["kind"] == "worker" and row["parent_id"] == w1
+    # 손자는 다시 띄울 수 없다(1단계 상한).
+    r = await client.post("/api/orchestrator/workers", json={"title": "x", "prompt": "go"},
+                          headers=_orch(issue_token(sub)))
+    assert r.status_code == 403
+    # 소유권: 작업자는 자기 자식, 오케스트레이터는 손자까지 본다. 목록은 직계 자식만이다.
+    assert (await client.get(f"/api/orchestrator/workers/{sub}", headers=h1)).status_code == 200
+    assert (await client.get(f"/api/orchestrator/workers/{sub}", headers=h)).status_code == 200
+    assert [w["worker_id"] for w in (await client.get("/api/orchestrator/workers", headers=h1)).json()] == [sub]
+    assert [w["worker_id"] for w in (await client.get("/api/orchestrator/workers", headers=h)).json()] == [w1]
+    # 손자 완료 보고는 부모 작업자에게 붙는다.
+    async def report_on_parent():
+        runs = (await client.get(f"/api/sessions/{w1}/runs", headers=auth)).json()
+        return next((x for x in runs if x["origin"] == "report" and f"worker_id={sub}" in x["prompt"]), None)
+    rep = await _wait(report_on_parent, what="하위 작업 보고")
+    assert rep["prompt"].startswith("[작업 보고] 작업 세션 'sub'")
+    # 자기 자식에게 후속 지시·정지.
+    r = await client.post(f"/api/orchestrator/workers/{sub}/messages", json={"prompt": "after"}, headers=h1)
+    assert r.status_code == 202, r.text
+    stopped = await client.post(f"/api/orchestrator/workers/{sub}/stop", headers=h1)
+    assert stopped.status_code == 200, stopped.text
+
+
+async def test_worker_spawn_cap_and_cross_tree_isolation(client, auth, make_dir):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    h = _orch(issue_token(orch["id"]))
+    w1 = (await client.post("/api/orchestrator/workers", json={"title": "w1", "prompt": "go"},
+                            headers=h)).json()["worker_id"]
+    h1 = _orch(issue_token(w1))
+    children = []
+    for i in range(worker_routing.WORKER_SPAWN_MAX_ACTIVE):
+        r = await client.post("/api/orchestrator/workers", json={"title": f"s{i}", "prompt": "SLEEP"}, headers=h1)
+        assert r.status_code == 201, r.text
+        children.append(r.json()["worker_id"])
+    r = await client.post("/api/orchestrator/workers", json={"title": "overflow", "prompt": "go"}, headers=h1)
+    assert r.status_code == 429
+    try:
+        # 형제 작업자는 남의 자식을 볼 수 없다.
+        w2 = (await client.post("/api/orchestrator/workers", json={"title": "w2", "prompt": "go"},
+                                headers=h)).json()["worker_id"]
+        h2 = _orch(issue_token(w2))
+        assert (await client.get(f"/api/orchestrator/workers/{children[0]}", headers=h2)).status_code == 404
+        r = await client.post(f"/api/orchestrator/workers/{children[0]}/messages", json={"prompt": "x"}, headers=h2)
+        assert r.status_code == 404
+        assert (await client.post(f"/api/orchestrator/workers/{children[0]}/stop", headers=h2)).status_code == 404
+        assert (await client.get("/api/orchestrator/workers", headers=h2)).json() == []
+        # 일반 대화 세션은 띄우지도 관리하지도 못한다.
+        chat = await _session(client, auth, make_dir)
+        hc = _orch(issue_token(chat["id"]))
+        r = await client.post("/api/orchestrator/workers", json={"title": "x", "prompt": "go"}, headers=hc)
+        assert r.status_code == 403
+    finally:
+        for wid in children:
+            await client.post(f"/api/orchestrator/workers/{wid}/stop", headers=h1)
+            for x in (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json():
+                assert (await wait_run(client, auth, x["id"]))["status"] == "cancelled"
 
 
 async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, make_dir):

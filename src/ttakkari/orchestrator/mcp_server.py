@@ -1,7 +1,8 @@
 """모든 Run 에 붙는 stdio MCP 서버 `ttakkari`(ADR 0006·0007). 엔진이 띄우고 백엔드 API 를 부른다.
 
 env: TTK_ORCH_TOKEN(세션 한정 토큰), TTK_API_URL(백엔드 주소), TTK_ROLE(agent | orchestrator). 직접 실행하지 않는다.
-작업 세션 도구는 orchestrator 일 때만 등록한다(목록에 안 보이게).
+작업 세션 관리(spawn/message/list/get/stop)는 양쪽 역할에 등록하고, 서버가 1단계 위임·소유권을 강제한다.
+목표·계정·벤치·전역 중지(manage_work/account_usage/luna_*/stop_agents/...)는 orchestrator 일 때만 등록한다.
 """
 
 from __future__ import annotations
@@ -27,7 +28,9 @@ server = MCPServer(
                  "(list_artifacts/share_file), notifications, other conversations, and the user's memos and calendar "
                  "(Asia/Seoul), managed Comfy and Creative Studio production."
                  + (" As orchestrator, delegate work with spawn_worker; results come back as '[작업 보고]' messages, "
-                    "so do not poll." if ROLE == "orchestrator" else ""),
+                    "so do not poll." if ROLE == "orchestrator" else
+                    " As worker, you may delegate one level with spawn_worker; your sub-workers' results come back "
+                    "as '[작업 보고]' messages, so do not poll; their own spawn attempts are rejected."),
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -1042,7 +1045,7 @@ async def ops_update_issue(issue: str, status: Literal["unresolved", "resolved",
     return await _ops("PATCH", f"/issues/{issue}", body)
 
 
-# ---- 오케스트레이터 전용
+# ---- 오케스트레이터 전용(목표·계정·벤치·전역 중지). 작업 세션 관리 5종은 공용 등록이다.
 
 def orchestrator_tool(fn):
     if ROLE != "orchestrator":
@@ -1066,7 +1069,7 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state})
 
 
-@orchestrator_tool
+@server.tool()
 async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
@@ -1110,6 +1113,8 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     locked decisions to `prompt`, so write only the task itself. task_type="verification" makes it an independent review that
     does not edit source. The worker must not change locked decisions; builds and activation are rejected if they differ.
     Read its state with get_worker as usual.
+    Worker sessions may also call this to delegate one level: their sub-workers report back with
+    '[작업 보고]' like any worker, but a sub-worker cannot spawn again (the API rejects it).
     Returns worker_id, task_type, verification_required and the latest routing receipt when available."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine, "strict_engine": strict_engine}
     if game_id:
@@ -1218,7 +1223,7 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
     return await _pms({"operation": operation, "project_id": project_id, "item_id": item_id, "data": data or {}})
 
 
-@orchestrator_tool
+@server.tool()
 async def message_worker(worker_id: str, prompt: str = "", fresh_context: bool = False, reroute: bool = False,
                          task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
                          escalation_reason: str | None = None,
@@ -1265,19 +1270,19 @@ async def reset_my_context() -> str:
     return await _call("POST", "/context/reset")
 
 
-@orchestrator_tool
+@query_tool
 async def list_workers() -> str:
-    """List this orchestrator's worker sessions with status and a short last result."""
+    """List your worker sessions with status and a short last result (your direct children only)."""
     return await _call("GET", "/workers")
 
 
-@orchestrator_tool
+@query_tool
 async def get_worker(worker_id: str) -> str:
     """Get one worker's status, latest result (up to 4000 chars), error and produced file names."""
     return await _call("GET", f"/workers/{worker_id}")
 
 
-@orchestrator_tool
+@server.tool()
 async def stop_worker(worker_id: str) -> str:
     """Cancel the worker's running and queued instructions."""
     return await _call("POST", f"/workers/{worker_id}/stop")

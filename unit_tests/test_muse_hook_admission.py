@@ -28,10 +28,10 @@ def test_unlisted_tools_stay_denied(tool):
     assert reason == f'Muse tool is not yet admitted: {tool}'
 
 
-def test_worker_tools_need_orchestrator_role():
+def test_worker_tools_need_known_role():
     spawn = {'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {'title': 't'}}
     assert decision(spawn, policy('orchestrator')) is None
-    assert decision(spawn, policy('agent')) is not None
+    assert decision(spawn, policy('agent')) is None
     assert decision(spawn, policy('')) is not None
     recall = {'tool_name': 'mcp__ttakkari__recall', 'tool_input': {'query': 'q'}}
     assert decision(recall, policy('agent')) is None

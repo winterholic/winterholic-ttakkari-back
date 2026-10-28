@@ -25,12 +25,12 @@ class MuseGuardTests(unittest.TestCase):
         self.assertIsNotNone(decision({'tool_name': 'unknown', 'tool_input': {}}, self.policy))
         self.assertIsNotNone(decision({'tool_name': 'exec_command', 'tool_input': {}}, self.policy))
 
-    def test_force_push_and_recursive_delegation_are_denied(self):
+    def test_force_push_and_unknown_role_delegation_are_denied(self):
         self.assertIsNotNone(decision({'tool_name': 'exec_command', 'tool_input': {'cmd': 'git push --force origin main'}}, self.policy))
         self.assertIsNotNone(decision({'tool_name': 'spawn_agent', 'tool_input': {}}, self.policy))
         self.assertIsNotNone(decision({'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {}}, self.policy))
 
-    def test_worker_delegation_needs_orchestrator_role(self):
+    def test_worker_delegation_needs_known_role(self):
         spawn = {'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {}}
         msg = {'tool_name': 'mcp__ttakkari__message_worker', 'tool_input': {}}
         self.assertIsNotNone(decision(spawn, self.policy))
@@ -39,8 +39,8 @@ class MuseGuardTests(unittest.TestCase):
         self.assertIsNone(decision(spawn, orch))
         self.assertIsNone(decision(msg, orch))
         agent = {**self.policy, 'role': 'agent'}
-        self.assertIsNotNone(decision(spawn, agent))
-        self.assertIsNotNone(decision(msg, agent))
+        self.assertIsNone(decision(spawn, agent))
+        self.assertIsNone(decision(msg, agent))
 
     def test_search_checks_each_path_like_grep(self):
         ok = {'tool_name': 'search', 'tool_input': {'pattern': 'foo', 'paths': ['a.py']}}

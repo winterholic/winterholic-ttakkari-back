@@ -1,4 +1,6 @@
-"""오케스트레이터 MCP 서버가 부르는 API(ADR 0006). 토큰에 묶인 오케스트레이터 세션의 작업 세션만 다룬다."""
+"""오케스트레이터·작업 MCP 서버가 부르는 API(ADR 0006). 토큰에 묶인 세션 자신의 작업 세션만 다룬다.
+
+오케스트레이터는 손자 세션까지, 작업 세션은 자신이 띄운 1단계 하위까지만 닿는다."""
 
 from __future__ import annotations
 
@@ -167,6 +169,31 @@ async def _orchestrator(db: Db, sid: uuid.UUID) -> ChatSession:
     return s
 
 
+async def _manager(db: Db, sid: uuid.UUID) -> ChatSession:
+    """Worker-management caller: an orchestrator or a worker session (chat/desk excluded).
+
+    Which targets each caller may touch is decided by _owned_worker; whether it may
+    spawn at all is decided by _spawner. Archived or missing sessions stay rejected.
+    """
+    s = await db.get(ChatSession, sid)
+    if s is None or s.archived_at is not None or s.kind not in (SessionKind.orchestrator, SessionKind.worker):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "오케스트레이터·작업 세션만 쓸 수 있습니다.")
+    return s
+
+
+async def _spawner(db: Db, sid: uuid.UUID) -> ChatSession:
+    """Session allowed to create worker sessions: an orchestrator, or a worker whose own
+    parent is an orchestrator (one delegation level below workers, 2026-10-28 사용자 요청)."""
+    s = await _manager(db, sid)
+    parent_kind = None
+    if s.kind == SessionKind.worker:
+        parent = await db.get(ChatSession, s.parent_id) if s.parent_id is not None else None
+        parent_kind = parent.kind if parent is not None else None
+    if not worker_routing.can_spawn(s.kind, parent_kind):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "작업 세션의 위임은 1단계까지만 허용됩니다.")
+    return s
+
+
 @router.post("/work")
 async def manage_work(body: work.WorkIn, sid: OrchestratorSession, db: Db) -> dict:
     sess = await _orchestrator(db, sid)
@@ -179,10 +206,18 @@ async def manage_work(body: work.WorkIn, sid: OrchestratorSession, db: Db) -> di
     return saved
 
 
-async def _worker(db: Db, sid: uuid.UUID, worker_id: uuid.UUID) -> ChatSession:
+async def _owned_worker(db: Db, caller: ChatSession, worker_id: uuid.UUID) -> ChatSession:
+    """Target of a worker-management call: a direct child of the caller, or (for
+    orchestrator callers) a grandchild. Cross-tree targets stay 404 without a hint."""
     w = await db.get(ChatSession, worker_id)
-    if w is None or w.parent_id != sid:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "이 오케스트레이터의 작업 세션이 아닙니다.")
+    grandparent_id = None
+    if w is not None and w.parent_id is not None and w.parent_id != caller.id:
+        parent = await db.get(ChatSession, w.parent_id)
+        grandparent_id = parent.parent_id if parent is not None else None
+    if w is None or not worker_routing.owns_worker_target(caller.id, caller.kind, w.parent_id, grandparent_id):
+        if caller.kind == SessionKind.orchestrator:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "이 오케스트레이터의 작업 세션이 아닙니다.")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "이 작업 세션의 하위 세션이 아닙니다.")
     return w
 
 
@@ -287,13 +322,13 @@ async def _record_verification(
     return target
 
 
-async def _game_worker_context(db: Db, orch: ChatSession, body: WorkerIn, task_type: str):
+async def _game_worker_context(db: Db, spawner: ChatSession, body: WorkerIn, task_type: str):
     """게임 작업이면 worker 를 게임 저장소 workspace 에서 돌리고 prompt 에 게임·빌드·잠금 결정을 붙인다(TASK-G08). 별도 큐는 없다."""
     from ttakkari.games import worker as game_worker
     from ttakkari.games.contract import GameContractError
     from ttakkari.models import GameProject
-    if orch.pool != "personal":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "게임 스튜디오 프로젝트는 개인 모드 오케스트레이터만 다룰 수 있습니다.")
+    if spawner.pool != "personal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "게임 스튜디오 프로젝트는 개인 모드 세션만 다룰 수 있습니다.")
     game = await db.get(GameProject, body.game_id)
     if game is None or game.archived_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "게임 프로젝트를 찾을 수 없습니다.")
@@ -310,12 +345,13 @@ async def _game_worker_context(db: Db, orch: ChatSession, body: WorkerIn, task_t
 
 @router.post("/workers", response_model=WorkerOut, status_code=201)
 async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
-    orch = await _orchestrator(db, sid)
+    spawner = await _spawner(db, sid)
+    cap = MAX_ACTIVE_WORKERS if spawner.kind == SessionKind.orchestrator else worker_routing.WORKER_SPAWN_MAX_ACTIVE
     active = await db.scalar(
         select(func.count(func.distinct(ChatSession.id))).join(Run, Run.session_id == ChatSession.id)
-        .where(ChatSession.parent_id == orch.id, Run.status.in_(ACTIVE)))
-    if (active or 0) >= MAX_ACTIVE_WORKERS:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"동시에 돌 수 있는 작업 세션은 {MAX_ACTIVE_WORKERS}개입니다.")
+        .where(ChatSession.parent_id == spawner.id, Run.status.in_(ACTIVE)))
+    if (active or 0) >= cap:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"동시에 돌 수 있는 작업 세션은 {cap}개입니다.")
     s = get_settings()
     default = s.worker_default_models.get(body.engine) or {}
     task_type = body.task_type or worker_routing.infer_task_type(body.model)
@@ -345,12 +381,12 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"{model} 은(는) 오케스트레이터와 같은 급이라 작업 세션에는 escalation_reason 이 필요합니다. "
                             "중요한 설계 결정·어려운 추론·새로운 발상이 필요한 부분만 맡기고, 아니면 sonnet 이나 gpt-6-luna 를 쓰세요.")
-    workspace_id, prompt, on_queued = orch.workspace_id, body.prompt, None
+    workspace_id, prompt, on_queued = spawner.workspace_id, body.prompt, None
     if body.game_id is not None:
-        workspace_id, prompt, on_queued = await _game_worker_context(db, orch, body, task_type)
+        workspace_id, prompt, on_queued = await _game_worker_context(db, spawner, body, task_type)
     worker_id = uuid.uuid4()
     w = ChatSession(id=worker_id, workspace_id=workspace_id, title=body.title, engine=engine, model=model,
-                    effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool,
+                    effort=effort, kind=SessionKind.worker, parent_id=spawner.id, pool=spawner.pool,
                     worker_task_type=task_type, strict_engine=body.strict_engine)
     db.add(w)
     await db.flush()
@@ -402,8 +438,8 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
 
 @router.post("/workers/{worker_id}/messages", response_model=WorkerOut, status_code=202)
 async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
-    await _orchestrator(db, sid)
-    w = await _worker(db, sid, worker_id)
+    caller = await _manager(db, sid)
+    w = await _owned_worker(db, caller, worker_id)
     if w.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 작업 세션입니다.")
     if body.task_type and not body.reroute:
@@ -453,8 +489,8 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
 
 @router.post("/workers/{worker_id}/verification", response_model=WorkerOut)
 async def verify_worker(worker_id: uuid.UUID, body: VerificationIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
-    await _orchestrator(db, sid)
-    w = await _worker(db, sid, worker_id)
+    caller = await _manager(db, sid)
+    w = await _owned_worker(db, caller, worker_id)
     await _record_verification(db, w, body.outcome, body.note, body.verifier_worker_id, body.run_id)
     await db.commit()
     return await _out(db, w, detail=True)
@@ -524,22 +560,22 @@ async def reset_my_context(sid: OrchestratorSession, db: Db) -> dict:
 
 @router.get("/workers", response_model=list[WorkerOut])
 async def list_workers(sid: OrchestratorSession, db: Db) -> list[WorkerOut]:
-    await _orchestrator(db, sid)
-    rows = await db.scalars(select(ChatSession).where(ChatSession.parent_id == sid, ChatSession.archived_at.is_(None))
+    caller = await _manager(db, sid)
+    rows = await db.scalars(select(ChatSession).where(ChatSession.parent_id == caller.id, ChatSession.archived_at.is_(None))
                             .order_by(ChatSession.created_at))
     return [await _out(db, w) for w in rows]
 
 
 @router.get("/workers/{worker_id}", response_model=WorkerOut)
 async def get_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) -> WorkerOut:
-    await _orchestrator(db, sid)
-    return await _out(db, await _worker(db, sid, worker_id), detail=True)
+    caller = await _manager(db, sid)
+    return await _out(db, await _owned_worker(db, caller, worker_id), detail=True)
 
 
 @router.post("/workers/{worker_id}/stop", response_model=WorkerOut)
 async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) -> WorkerOut:
-    await _orchestrator(db, sid)
-    w = await _worker(db, sid, worker_id)
+    caller = await _manager(db, sid)
+    w = await _owned_worker(db, caller, worker_id)
     runs = list(await db.scalars(select(Run).where(Run.session_id == w.id, Run.status.in_(ACTIVE))))
     # 대기 중인 것부터 지워야 실행 중인 것이 끝나는 순간 다음 것이 시작되지 않는다.
     running = [r for r in runs if await manager.is_owned(r.id)]

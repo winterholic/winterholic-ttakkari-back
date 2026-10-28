@@ -53,9 +53,43 @@ def qwen_local_model() -> str:
 # would otherwise make the worker fallback unreachable, since nothing can spawn.
 QWEN_EMERGENCY_TASKS = ("general", "routine")
 QWEN_EMERGENCY_KINDS = ("worker", "orchestrator")
-# Delegation intents a degraded Qwen orchestrator may queue (see manager replay).
+# Delegation intents an orchestrator without working MCP tools may queue (see manager
+# replay). Originally Qwen-degraded only; generalized so any tool-less orchestrator run
+# (hook regression, future engine without MCP) can still delegate via files.
 QWEN_SPAWN_QUEUE_DIR = "spawn-queue"
 QWEN_SPAWN_QUEUE_MAX_PER_RUN = 10
+# Worker-originated delegation (2026-10-28, 사용자 요청): a worker session may spawn its
+# own sub-workers one level deep. Grandchildren (workers spawned by workers) cannot spawn
+# again, and the active cap is smaller than the orchestrator cap (api/orchestrator.py).
+WORKER_SPAWN_MAX_ACTIVE = 5
+
+
+def can_spawn(spawner_kind: str, spawner_parent_kind: str | None) -> bool:
+    """Whether a session kind may create worker sessions.
+
+    Orchestrators always may. A worker may only when its own parent is an
+    orchestrator (one delegation level below workers). chat/desk sessions never
+    manage workers.
+    """
+    if spawner_kind == "orchestrator":
+        return True
+    if spawner_kind == "worker":
+        return spawner_parent_kind == "orchestrator"
+    return False
+
+
+def owns_worker_target(caller_id: uuid.UUID, caller_kind: str, target_parent_id: uuid.UUID | None,
+                       target_grandparent_id: uuid.UUID | None) -> bool:
+    """Whether a worker-management caller may read/message/stop a target session.
+
+    Direct children are always visible to their own spawner. Orchestrators also see
+    grandchildren (one extra hop); deeper trees cannot exist because can_spawn()
+    caps worker-originated delegation at one level.
+    """
+    if target_parent_id is not None and target_parent_id == caller_id:
+        return True
+    return (caller_kind == "orchestrator" and target_grandparent_id is not None
+            and target_grandparent_id == caller_id)
 QWEN_SPAWN_INTENT_MAX_TITLE = 120
 QWEN_SPAWN_INTENT_MAX_PROMPT = 20000
 QWEN_SPAWN_INTENT_ENGINES = ("auto", "claude", "codex", "antigravity", "muse", "qwen-local")

@@ -1513,6 +1513,13 @@ class RunManager:
                               and profiles_mod.is_model_capacity(*texts))
             limited = (failed and not model_capacity and prof.engine != "qwen-local"
                        and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
+            # 스트림 끊김·5xx·SDK 프로토콜 불일치는 한도가 아니어도 같은 경로(쉬고 다른 계정 또는 같은 Run 재개)로 넘긴다.
+            # 안 그러면 Run 이 실패로 끝나거나 멈춘다.
+            transient_s = (profiles_mod.transient_cooldown(*texts)
+                           if failed and not stopped and not model_capacity and not limited
+                           and prof.engine != "qwen-local" else None)
+            if transient_s is not None:
+                limited = True
             reset_at: float | None = None
             if model_capacity:
                 key = profiles_mod.model_capacity_key(prof.engine, model)
@@ -1524,10 +1531,13 @@ class RunManager:
                 })
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
-                reset_at = state.limit_resets_at or profiles_mod.reset_epoch_from(*texts)
-                profiles_mod.cool_down(prof.limit_key, None if reset_at is None else max(1, int(reset_at - time.time()) + profiles_mod.RESET_BUFFER))
+                reset_at = None if transient_s is not None else (
+                    state.limit_resets_at or profiles_mod.reset_epoch_from(*texts))
+                profiles_mod.cool_down(prof.limit_key, transient_s if transient_s is not None else (
+                    None if reset_at is None else max(1, int(reset_at - time.time()) + profiles_mod.RESET_BUFFER)))
                 events.append(db, run, "account.limited", {
                     "account": prof.name, "engine": prof.engine, "model": model, "reset_at": _iso(reset_at),
+                    "kind": "transient" if transient_s is not None else "usage_limit",
                     "detail": (state.error or tail or "")[:300],
                 })
             # 계정이 모르는 모델이라 CLI 가 거절했다. 같은 계정·모델을 다시 고르지 않고 다음 후보로 넘어간다.
@@ -1621,7 +1631,7 @@ class RunManager:
             last_fallback = {
                 "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
                 "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
-                "reason": "mcp_binding_failure" if mcp_binding_failure else "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "model_capacity" if model_capacity else "usage_limit",
+                "reason": "mcp_binding_failure" if mcp_binding_failure else "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "model_capacity" if model_capacity else "transient" if transient_s is not None else "usage_limit",
                 "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄

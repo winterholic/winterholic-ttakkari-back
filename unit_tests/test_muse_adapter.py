@@ -121,7 +121,8 @@ class MuseAdapterTests(unittest.TestCase):
             settings = Settings(_env_file=None, muse_enabled=True, muse_runtime_root=runtime)
             spec = LaunchSpec(root, 'PRIVATE_PROMPT', None, None, None, root, [root], 'note',
                               mcp_servers={'fixture': {'command': 'fixture', 'env': {'TOKEN': 'TEST_FIXTURE'}}})
-            env = {'META_API_KEY': 'TEST_ENV_FIXTURE'}
+            # 호스트의 ~/.config/muse(Orca 가 managed_hooks_path 를 심는다)가 시험에 새지 않게 빈 설정 홈을 준다.
+            env = {'META_API_KEY': 'TEST_ENV_FIXTURE', 'XDG_CONFIG_HOME': str(root / 'xdg')}
             with patch('ttakkari.agents.muse.get_settings', return_value=settings):
                 cmd = self.adapter.build_command(spec, env)
             private_file = Path(cmd[-1])

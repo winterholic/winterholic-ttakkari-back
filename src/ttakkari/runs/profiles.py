@@ -718,6 +718,31 @@ async def load_cooldowns(db: AsyncSession) -> int:
     return n
 
 
+# 한도는 아니지만 잠시 뒤 또는 다른 계정에서 되는 엔진 쪽 일시 장애. 실패로 끝내지 않고 짧게 쉬고 이어 간다.
+# Codex: "stream disconnected before completion". 모델 혼잡("is at capacity")은 MODEL_CAPACITY_RE 가 따로 맡는다.
+TRANSIENT_RE = re.compile(
+    r"over capacity|capacity (limit|constraints?)|high demand|server (is )?busy|service unavailable|"
+    r"temporarily unavailable|\b50[0234]\b|bad gateway|gateway time-?out|stream disconnected|"
+    r"connection (reset|closed)|econnreset|etimedout|internal server error|server_error",
+    re.IGNORECASE,
+)
+# SDK 와 설치된 CLI 의 프로토콜이 어긋난 경우. 재시도해도 그대로라 오래 쉬고 다른 엔진으로 넘어간다.
+ENGINE_BROKEN_RE = re.compile(r"schema fingerprint differs", re.IGNORECASE)
+TRANSIENT_COOLDOWN_SECONDS = 90
+ENGINE_BROKEN_COOLDOWN_SECONDS = 900
+
+
+def transient_cooldown(*texts: str | None) -> int | None:
+    """일시 장애면 그 계정을 쉬게 할 초, 아니면 None. 권한 오류는 다른 공급자로 재생하지 않는다."""
+    lines = [line for text in texts if text for line in text.splitlines()
+             if not PERMISSION_ERROR_RE.search(line)]
+    if any(ENGINE_BROKEN_RE.search(line) for line in lines):
+        return ENGINE_BROKEN_COOLDOWN_SECONDS
+    if any(TRANSIENT_RE.search(line) for line in lines):
+        return TRANSIENT_COOLDOWN_SECONDS
+    return None
+
+
 def is_usage_limit(*texts: str | None) -> bool:
     # File/tool names can contain 'quota' or '429'. An ordinary permission failure
     # must not replay side effects through another provider. Check separate lines

@@ -43,3 +43,43 @@ The `designsystem.digital.gov/robots.txt` endpoint was inaccessible through the 
 3. Read the deployed revision and source-policy/reservation state through supported tools. The current API does not expose policy rows, so treat policy availability as unverified unless a supported read is added by the owner.
 4. After the correction is deployed and no active mission job/reservation exists, read the then-current `run_seq` and issue exactly one `collection_mission_retry` with that value. Do not use stale expected sequence 3.
 5. Verify acquisition, knowledge import, search, and remaining source/challenge gaps separately. The mission is not complete until those runtime values are real and the required policy/coverage gaps remain visible.
+
+## Independent CB9 verdict and confirmed follow-up corrections
+
+The independent verifier's scoped verdict for candidate `cb9e8f0d55168f6413a628c084b9c5c9c7341607` was **FAILED as an integration/deployment gate**. It verified the two new candidate tests (`2 passed`) and the no-grant/active-policy boundary tests (`2 passed`) with exact import/blob provenance. Its synthetic provider trace preserved failures `[0, 1, 2]` and search budget, and confirmed no unbounded retry. It did not use real network or PostgreSQL.
+
+The verifier identified two concrete code defects in the candidate:
+
+1. When fallback query index 4 ran before unvisited query index 3, `search_cursor` remained at 3; after query 3 completed, index 4 ran again. The skip itself was not falsely recorded complete, and budget bounded the loop, but the fallback duplicated and consumed a search slot.
+2. The registration and enqueue error gaps retained only reason/message; they discarded exception class and explicit code. A synthetic exception's explicit `retryable` attribute was also lost. This does not prove every production contract error has a `retryable` field.
+
+On isolated branch `fix/collection-continuation-20261029`, added regression tests before production edits. RED runs:
+
+```text
+test_advanced_alternate_query_is_not_repeated_after_cursor_catches_up
+1 failed: actual calls contained an extra `UI UX research paper arxiv`
+
+test_reconcile_mission_isolates_register_source_contract_error
+test_reconcile_mission_preserves_enqueue_error_classification
+2 failed: KeyError: 'error_type'
+```
+
+The correction adds per-run `consumed_indices` so an ahead-of-cursor query is not re-run, while skipped lower queries remain pending and retryable failures still take precedence. It also stores `error_type`, explicit `error_code` (preferring `.code`, then `.error_code`), and `retryable` only when the caught exception supplies a boolean. It does not invent retry semantics for `CollectorContractError`, whose actual class has `error_code="invalid_envelope"` and no `retryable` attribute.
+
+GREEN and regression output:
+
+```text
+$ env -u TTAKKARI_TEST_DB -u TTAKKARI_DATABASE_URL -u DATABASE_URL PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_design_system_flow.py unit_tests/test_collection_mission_policy_boundary.py unit_tests/test_collection_research.py --tb=short
+.............................. [100%]
+30 passed in 0.42s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/collector/research_rounds.py src/ttakkari/collector/missions.py unit_tests/test_collection_design_system_flow.py
+All checks passed!
+
+$ git diff --check
+(exit 0; no output)
+```
+
+These are unit/fake-provider/fake-DB checks. PostgreSQL transaction/fencing, the exact active source policies, actual public-source fetches, and all real acquisition/import/search remain unverified. The verifier's earlier `initdb` denial was `shmget(...): Operation not permitted` in its `exec_command` environment before test collection; do not retry that target or treat it as a host-wide failure. No mission retry, policy write, main push, or deployment reservation was performed by this continuation.
+
+This source branch now contains the documentation commit `1a023e32d3bb5a1eec118e01985ffb7a14a00e04` plus the isolated code corrections pending their own commit. Recheck the branch SHA after commit/push; independent verification of this follow-up code and normal integration/deploy gates remain with the coordinator/owner.

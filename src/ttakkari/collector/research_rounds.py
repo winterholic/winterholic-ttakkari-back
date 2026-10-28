@@ -26,7 +26,8 @@ from ttakkari.collector_models import (
 
 NO_NEW_STOP = 2  # consecutive searches without a new source before the first round gives up
 FOLLOWUP_NO_NEW_STOP = 3  # follow-up queries were chosen on purpose, so they get a little more patience
-_STATE_KEYS = {"run_seq": None, "round": 0, "search_cursor": 0, "no_new": 0, "searches_used": 0, "failed": [], "stop": None,
+_STATE_KEYS = {"run_seq": None, "round": 0, "search_cursor": 0, "no_new": 0, "searches_used": 0, "failed": [],
+               "consumed_indices": [], "stop": None,
                "rounds": [], "accepted_total": 0, "model_calls": 0}
 
 
@@ -130,6 +131,10 @@ async def search_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
         queries = plan.get("queries", [])
         retry = next((f["index"] for f in st["failed"] if f["retryable"] and f["index"] not in tried and f["index"] < len(queries)), None)
         index = retry if retry is not None else st["search_cursor"]
+        consumed_indices = {int(i) for i in st.get("consumed_indices", [])}
+        if retry is None:
+            while index in consumed_indices:
+                index += 1
         patience = NO_NEW_STOP if st["round"] == 0 else FOLLOWUP_NO_NEW_STOP
         if (index >= len(queries) or st["no_new"] >= patience or st["searches_used"] >= plan["budget"]["searches"]):
             return None
@@ -139,7 +144,7 @@ async def search_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
             alt_idx = next(
                 (i for i in range(index, len(queries))
                  if (plan.get("query_topics") or {}).get(queries[i]) == "papers" and re.search(r"[A-Za-z]{3}", queries[i])
-                 and i not in tried),
+                 and i not in tried and i not in consumed_indices),
                 None
             )
             if alt_idx is not None:
@@ -173,6 +178,9 @@ async def search_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
                 known[candidate["url"]] = entry
                 additions.append(entry)
             st["searches_used"] += 1
+            consumed_indices = {int(i) for i in st.get("consumed_indices", [])}
+            consumed_indices.add(_index)
+            st["consumed_indices"] = sorted(consumed_indices)
             failed = [f for f in st["failed"] if f["index"] != _index]
             if _outcome["status"] == "failed":
                 previous = next((f for f in st["failed"] if f["index"] == _index), {"attempts": 0})
@@ -182,6 +190,8 @@ async def search_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
                 st["no_new"] = 0 if additions else st["no_new"] + 1
             if _index == st["search_cursor"]:
                 st["search_cursor"] += 1
+                while st["search_cursor"] in consumed_indices:
+                    st["search_cursor"] += 1
             st["failed"] = failed
             history = [*(plan.get("search_history") or []),
                        {"query": _query, "candidates": len(_outcome["candidates"]), "new_sources": len(additions),

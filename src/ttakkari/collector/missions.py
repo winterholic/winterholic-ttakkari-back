@@ -53,6 +53,18 @@ TERMINAL = {"succeeded", "partial", "failed", "cancelled", "policy_blocked", "qu
 log = logging.getLogger(__name__)
 
 
+def _exception_metadata(exc: Exception) -> dict[str, Any]:
+    """Retain only classifications explicitly supplied by the caught exception contract."""
+    metadata: dict[str, Any] = {"error_type": type(exc).__name__}
+    code = getattr(exc, "code", None) or getattr(exc, "error_code", None)
+    if isinstance(code, str) and code:
+        metadata["error_code"] = code[:100]
+    retryable = getattr(exc, "retryable", None)
+    if isinstance(retryable, bool):
+        metadata["retryable"] = retryable
+    return metadata
+
+
 def source_key_for(mission_id: uuid.UUID, url: str) -> str:
     return f"mission:{mission_id}:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
 
@@ -336,7 +348,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
                 await db.flush()
             except (CollectorContractError, control.SourceKeyExists, ValueError) as exc:
                 gaps.append({"url": entry["url"], "reason": "source_unavailable",
-                             "message": "출처 등록에 실패했습니다: " + str(exc)[:200]})
+                             "message": "출처 등록에 실패했습니다: " + str(exc)[:200], **_exception_metadata(exc)})
                 continue
 
         if item["kind"] == "new":
@@ -347,7 +359,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
                         cursor=await refresh_cursor(db, source, latest_by_source.get(item["key"])))
             except (CollectorContractError, JobStateError) as exc:
                 gaps.append({"url": entry["url"], "reason": "daily_page_budget" if "daily" in str(exc) else "source_unavailable",
-                             "message": "지금은 이 출처를 수집할 수 없습니다: " + str(exc)[:200]})
+                             "message": "지금은 이 출처를 수집할 수 없습니다: " + str(exc)[:200], **_exception_metadata(exc)})
                 continue
             remaining -= pages
             queued += 1

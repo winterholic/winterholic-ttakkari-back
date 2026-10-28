@@ -77,6 +77,7 @@ class SourceIn(Strict):
     title: str = Field(min_length=1, max_length=240)
     locator: str = Field(min_length=1, max_length=2000)
     body: str = Field(min_length=1, max_length=200_000)
+    purpose: Literal["research_context", "knowledge_reference"] = "research_context"
 
 
 class NodeIn(Strict):

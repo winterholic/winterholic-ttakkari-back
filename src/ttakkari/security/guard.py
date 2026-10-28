@@ -540,9 +540,8 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> st
         if verb in _SHELL_HEREDOC_VERBS and _depth < _MAX_NESTING:
             if reason := check_bash(body, cwd, cfg, _depth + 1):
                 return reason
-        elif verb:
-            if reason := _check_code_payload(body, cwd):
-                return reason
+        elif verb and (reason := _check_code_payload(body, cwd)):
+            return reason
     split = _split_commands(stripped)
     if reason := _check_nosql_destructive(command, _command_verbs(split)):
         return reason

@@ -233,10 +233,6 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     ctx = AuthContext(tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner")
     if any(urlsplit(entry["url"]).hostname == "docs.python.org" for entry in mission.plan["sources"]):
         await register_python_docs(db, ctx)
-    if any(urlsplit(entry["url"]).hostname in ("design-tokens.github.io", "designsystem.digital.gov", "design-system.service.gov.uk")
-           or "디자인 시스템" in (mission.goal or "") or "UI/UX" in (mission.goal or "")
-           for entry in mission.plan["sources"]):
-        await register_design_system_docs(db, ctx)
     sources = list(await db.scalars(select(CollectorSource).where(
         CollectorSource.tenant_id == mission.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.enabled.is_(True))))
@@ -422,64 +418,6 @@ async def register_python_docs(db, ctx):
                 "basis": "Official History and License: Python software and documentation are PSF License v2; preserve attribution and license URL. Code examples since 3.8.6 are also 0BSD.",
                 "excluded_path_prefixes": ["/dev/", "/_static/", "/_images/"]},
         interval_minutes=None, max_pages=500, max_depth=3)
-    await db.flush()
-
-
-async def register_design_system_docs(db, ctx):
-    """Reviewed official design system and UI/UX standard documentation grants.
-
-    W3C Design Tokens Community Group specification, US Web Design System (USWDS, CC0-1.0),
-    and GOV.UK Design System (OGL-UK-3.0) with explicit policy and checked permissions.
-    """
-    specs = [
-        {
-            "source_key": "official:design-tokens-spec",
-            "title": "W3C Design Tokens 사양",
-            "seeds": ["https://design-tokens.github.io/community-group/format/"],
-            "policy": {
-                "allowed_hosts": ["design-tokens.github.io"],
-                "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
-                "license_id": "W3C-20150513",
-                "policy_url": "https://design-tokens.github.io/community-group/format/",
-                "checked_at": "2026-10-29T00:00:00Z",
-                "max_pages_per_job": 100,
-                "max_depth": 2,
-                "basis": "W3C Design Tokens Community Group Specification under W3C CLA; preserve attribution and specification URL.",
-            },
-            "max_pages": 100,
-            "max_depth": 2,
-        },
-        {
-            "source_key": "official:uswds-docs",
-            "title": "USWDS 디자인 시스템",
-            "seeds": ["https://designsystem.digital.gov/"],
-            "policy": {
-                "allowed_hosts": ["designsystem.digital.gov"],
-                "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
-                "license_id": "CC0-1.0",
-                "policy_url": "https://designsystem.digital.gov/about/open-source/",
-                "checked_at": "2026-10-29T00:00:00Z",
-                "max_pages_per_job": 200,
-                "max_depth": 2,
-                "basis": "US Web Design System (USWDS) is a work of the United States Government in the public domain (CC0-1.0); preserve attribution.",
-            },
-            "max_pages": 200,
-            "max_depth": 2,
-        },
-    ]
-    for spec in specs:
-        await store._lock(db, "control-source", ctx.tenant_id, spec["source_key"])
-        if await db.scalar(select(CollectorSource.id).where(
-            CollectorSource.tenant_id == ctx.tenant_id,
-            in_library(CollectorSource.scope),
-            CollectorSource.source_key == spec["source_key"],
-        )):
-            continue
-        await control.register_source(
-            db, ctx, source_key=spec["source_key"], title=spec["title"],
-            seeds=spec["seeds"], policy=spec["policy"],
-            interval_minutes=None, max_pages=spec["max_pages"], max_depth=spec["max_depth"],
-        )
     await db.flush()
 
 

@@ -304,13 +304,3 @@ def test_attempts_exhausted_preserves_original_cause():
     assert exhausted_error["detail"] == "ddg challenge"
 
 
-def test_design_system_official_specs_have_permissive_licenses():
-    from ttakkari.collector import adapters, missions
-
-    # Verify that the official design system documentation specs have permissive licenses
-    # without fake grants or bypassing robots.
-    assert "CC0-1.0" in adapters.PERMISSIVE_LICENSES
-    # register_design_system_docs is an async function in missions
-    assert callable(missions.register_design_system_docs)
-
-

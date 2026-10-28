@@ -129,6 +129,7 @@ async def _read_orphans(run_id: uuid.UUID | None = None) -> list[dict]:
             states = [_group_state(group) for group in groups]
             result.append({"run_id": str(lease.run_id), "owner_id": str(lease.generation_id),
                 "run_status": run.status if run else None,
+                "owner_revision": owner.revision if owner else None,
                 "owner_pid": owner.pid if owner else None,
                 "owner_process_started_at": owner.process_started_at if owner else None,
                 "owner_dead": owner_dead, "lease_token_matches": bool(owner and owner.id == lease.generation_id),
@@ -282,6 +283,33 @@ async def cancel_orphan(run_id: uuid.UUID) -> bool:
     entry = entries[0]
     entry["require_cancel"] = True
     return await _apply_one(entry) is True
+
+
+async def reconcile_one(run_id: uuid.UUID, *, expected_owner_generation_id: uuid.UUID,
+                        expected_owner_revision: str, expected_run_status: str) -> dict:
+    """Reconcile one explicitly named orphan after matching its persisted identity fence.
+
+    The response deliberately excludes PID, process-group and lease-token material.
+    `_apply_one` rechecks generation PID/start-time, lease token and every recorded
+    process-group identity under the same control/lease locks before changing state.
+    """
+    entries = await _read_orphans(run_id)
+    if len(entries) != 1:
+        return {"run_id": str(run_id), "reconciled": False, "action": "fence_mismatch"}
+    entry = entries[0]
+    if (entry["owner_id"] != str(expected_owner_generation_id)
+            or entry["owner_revision"] != expected_owner_revision
+            or entry["run_status"] != expected_run_status):
+        return {"run_id": str(run_id), "reconciled": False, "action": "fence_mismatch"}
+    outcome = await _apply_one(entry)
+    changed = outcome is True
+    if changed:
+        action = "interrupted_and_released" if expected_run_status == RunStatus.running else "lease_released"
+    elif isinstance(outcome, str):
+        action = outcome
+    else:
+        action = "blocked"
+    return {"run_id": str(run_id), "reconciled": changed, "action": action}
 
 
 async def reconcile_orphans(*, apply: bool = False) -> dict:

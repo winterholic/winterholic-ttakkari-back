@@ -162,6 +162,26 @@ class ScheduleCreateIn(BaseModel):
     max_attempts: int = 3
 
 
+class DispatchQueuedRunIn(BaseModel):
+    run_id: uuid.UUID
+    expected_status: Literal["queued"]
+    expected_pool: Literal["personal", "work"]
+    expected_claim_owner_generation_id: uuid.UUID
+    expected_claim_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    idempotency_key: str = Field(min_length=1, max_length=120)
+
+
+class ReconcileWorkerLeaseIn(BaseModel):
+    run_id: uuid.UUID
+    expected_status: Literal["running"]
+    expected_pool: Literal["personal", "work"]
+    expected_claim_owner_generation_id: uuid.UUID
+    expected_claim_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_lease_owner_generation_id: uuid.UUID
+    expected_lease_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    idempotency_key: str = Field(min_length=1, max_length=120)
+
+
 async def _orchestrator(db: Db, sid: uuid.UUID) -> ChatSession:
     s = await db.get(ChatSession, sid)
     if s is None or s.kind != SessionKind.orchestrator or s.archived_at is not None:
@@ -204,6 +224,91 @@ async def manage_work(body: work.WorkIn, sid: OrchestratorSession, db: Db) -> di
            detail={"revision": saved["revision"], "status": saved["state"]["status"]})
     await db.commit()
     return saved
+
+
+@router.post("/workers/{worker_id}/dispatch")
+async def dispatch_queued_worker_run(worker_id: uuid.UUID, body: DispatchQueuedRunIn,
+                                     sid: OrchestratorSession, db: Db) -> dict:
+    """Resume one existing queued Run under its owner and generation fence.
+
+    The request key is bound to the exact session/run pair; this operation never
+    creates a Run, and manager dispatch deduplicates concurrent starts.
+    """
+    caller = await _manager(db, sid)
+    target = await _owned_worker(db, caller, worker_id)
+    expected_key = f"dispatch:{worker_id}:{body.run_id}"
+    if body.idempotency_key != expected_key:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "idempotency_key가 대상 Run과 일치하지 않습니다.")
+    if target.pool != body.expected_pool or caller.pool != target.pool:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 pool을 찾을 수 없습니다.")
+    from ttakkari import generation
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    control = await db.get(RuntimeControl, 1)
+    owner_id = generation.claim_owner(control) if control else None
+    owner = await db.get(RuntimeGeneration, owner_id) if owner_id else None
+    runtime = manager.runtime
+    if (owner_id != body.expected_claim_owner_generation_id or owner is None
+            or owner.revision != body.expected_claim_owner_revision or owner.state != "active"
+            or runtime is None or runtime.id != owner_id or runtime.draining or manager.remote):
+        raise HTTPException(status.HTTP_409_CONFLICT, "claim owner 또는 active generation이 바뀌었습니다.")
+
+    run = await db.scalar(select(Run).where(Run.id == body.run_id, Run.session_id == target.id)
+                           .execution_options(populate_existing=True))
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 Run이 없습니다.")
+    if run.status == RunStatus.queued:
+        started = await manager.dispatch(
+            target.id, expected_run_id=body.run_id, expected_pool=body.expected_pool,
+            expected_claim_owner_generation_id=body.expected_claim_owner_generation_id,
+            expected_claim_owner_revision=body.expected_claim_owner_revision,
+        )
+        await db.refresh(run)
+        if run.status == RunStatus.queued and started is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "현재 세션 대기열·claim fence에서 dispatch되지 않았습니다.")
+    elif run.status not in (RunStatus.running, RunStatus.succeeded, RunStatus.failed,
+                             RunStatus.cancelled, RunStatus.interrupted):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Run 상태가 expected_status와 다릅니다.")
+    return {"session_id": str(target.id), "run_id": str(run.id), "pool": target.pool,
+            "status": run.status, "idempotent": True}
+
+
+@router.post("/workers/{worker_id}/reconcile")
+async def reconcile_worker_lease(worker_id: uuid.UUID, body: ReconcileWorkerLeaseIn,
+                                 sid: OrchestratorSession, db: Db) -> dict:
+    """Fenced reconciliation of one owned worker's recorded orphan lease."""
+    caller = await _manager(db, sid)
+    target = await _owned_worker(db, caller, worker_id)
+    expected_key = f"reconcile:{worker_id}:{body.run_id}:{body.expected_lease_owner_generation_id}"
+    if body.idempotency_key != expected_key:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "idempotency_key가 대상 lease와 일치하지 않습니다.")
+    if target.pool != body.expected_pool or caller.pool != target.pool:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 pool을 찾을 수 없습니다.")
+    from ttakkari import generation
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    control = await db.get(RuntimeControl, 1)
+    current_id = generation.claim_owner(control) if control else None
+    current = await db.get(RuntimeGeneration, current_id) if current_id else None
+    runtime = manager.runtime
+    if (current_id != body.expected_claim_owner_generation_id or current is None
+            or current.revision != body.expected_claim_owner_revision or current.state != "active"
+            or runtime is None or runtime.id != current_id or runtime.draining or manager.remote):
+        raise HTTPException(status.HTTP_409_CONFLICT, "현재 active claim owner가 바뀌었습니다.")
+    run = await db.scalar(select(Run).where(Run.id == body.run_id, Run.session_id == target.id)
+                           .execution_options(populate_existing=True))
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 Run이 없습니다.")
+    if run.status != body.expected_status:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Run 상태가 expected_status와 다릅니다.")
+    from ttakkari import executor_reconcile
+
+    result = await executor_reconcile.reconcile_one(
+        body.run_id, expected_owner_generation_id=body.expected_lease_owner_generation_id,
+        expected_owner_revision=body.expected_lease_owner_revision,
+        expected_run_status=body.expected_status,
+    )
+    return {"session_id": str(target.id), "pool": target.pool, **result}
 
 
 async def _owned_worker(db: Db, caller: ChatSession, worker_id: uuid.UUID) -> ChatSession:

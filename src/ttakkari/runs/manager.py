@@ -336,7 +336,10 @@ class RunManager:
                 os.killpg(proc.pid, signal.SIGKILL)
             await proc.wait()
 
-    async def dispatch(self, session_id: uuid.UUID) -> uuid.UUID | None:
+    async def dispatch(self, session_id: uuid.UUID, *, expected_run_id: uuid.UUID | None = None,
+                       expected_pool: str | None = None,
+                       expected_claim_owner_generation_id: uuid.UUID | None = None,
+                       expected_claim_owner_revision: str | None = None) -> uuid.UUID | None:
         """세션 대기열의 다음 Run 을 시작한다. 엔진 대화는 순서대로만 이어갈 수 있어 세션당 하나씩만 돌린다.
 
         세션 행을 FOR UPDATE 로 잠가, 지시 접수와 Run 종료가 동시에 들어와도 두 개가 함께 시작되지 않게 한다.
@@ -351,7 +354,22 @@ class RunManager:
         if self.runtime and (getattr(self.runtime, "draining", False) or await self.runtime.refresh() != "active"):
             return None
         async with sessionmaker()() as db:
-            kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == session_id).with_for_update())
+            session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id).with_for_update())
+            kind = session.kind if session is not None else None
+            if session is None or (expected_pool is not None and session.pool != expected_pool):
+                await db.rollback()
+                return None
+            if expected_claim_owner_generation_id is not None:
+                from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+                control = await db.get(RuntimeControl, 1)
+                owner_id = generation.claim_owner(control) if control else None
+                owner = await db.get(RuntimeGeneration, owner_id) if owner_id else None
+                if (owner_id != expected_claim_owner_generation_id or owner is None
+                        or owner.revision != expected_claim_owner_revision or owner.state != "active"
+                        or self.runtime is None or self.runtime.id != owner_id or self.remote):
+                    await db.rollback()
+                    return None
             if kind == SessionKind.desk:
                 # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
                 queued = list(await db.scalars(select(Run.id).where(Run.session_id == session_id,
@@ -362,6 +380,9 @@ class RunManager:
             rows = list(await db.scalars(
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
                 .order_by(Run.created_at)))
+            if expected_run_id is not None and not any(r.id == expected_run_id for r in rows):
+                await db.rollback()
+                return None
             if any(r.status == RunStatus.running or r.id in self._handles for r in rows):
                 await db.rollback()
                 return None
@@ -369,6 +390,9 @@ class RunManager:
             from ttakkari.runs.agent_control import drop_suppressed_reports
             rows = await drop_suppressed_reports(db, rows)
             nxt = rows[0] if rows else None
+            if expected_run_id is not None and (nxt is None or nxt.id != expected_run_id):
+                await db.rollback()
+                return None
             now_dt = utcnow()
             if nxt is not None:
                 is_future = bool(nxt.resume_after and nxt.resume_after > now_dt)

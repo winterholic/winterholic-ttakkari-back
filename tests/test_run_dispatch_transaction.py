@@ -134,3 +134,26 @@ async def test_concurrent_dispatch_still_starts_one_task(new_session, monkeypatc
     finally:
         release.set()
         await asyncio.gather(*tasks)
+
+
+async def test_targeted_dispatch_never_skips_an_older_queued_run(new_session, monkeypatch):
+    sid, first = await queued_run(new_session)
+    async with sessionmaker()() as db:
+        chat = await db.get(ChatSession, sid)
+        second = Run(session_id=sid, workspace_id=chat.workspace_id, prompt="second",
+                     engine="claude", status=RunStatus.queued)
+        db.add(second)
+        await db.commit()
+        second_id = second.id
+
+    m = manager_mod.RunManager()
+    started = []
+    monkeypatch.setattr(m, "start", lambda run_id, **_: started.append(run_id) or True)
+
+    result = await m.dispatch(sid, expected_run_id=second_id, expected_pool="personal")
+
+    assert result is None
+    assert started == []
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, first)).status == RunStatus.queued
+        assert (await db.get(Run, second_id)).status == RunStatus.queued

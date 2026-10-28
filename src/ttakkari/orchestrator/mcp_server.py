@@ -1074,6 +1074,49 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state})
 
 
+@orchestrator_tool
+async def dispatch_queued_worker_run(worker_id: str, run_id: str, expected_status: Literal["queued"],
+                                     expected_pool: Literal["personal", "work"],
+                                     expected_claim_owner_generation_id: str,
+                                     expected_claim_owner_revision: str) -> str:
+    """Resume exactly one existing queued Run owned by this orchestrator's worker tree.
+
+    Pass the session/run IDs and claim-owner generation/revision from a fresh read_session.
+    The idempotency key is bound to that exact worker/run pair. This never creates a Run;
+    pool, queued status, current active claim owner and session order are checked again by the backend.
+    """
+    key = f"dispatch:{worker_id}:{run_id}"
+    return await _call("POST", f"/workers/{quote(worker_id, safe='')}/dispatch", {
+        "run_id": run_id, "expected_status": expected_status, "expected_pool": expected_pool,
+        "expected_claim_owner_generation_id": expected_claim_owner_generation_id,
+        "expected_claim_owner_revision": expected_claim_owner_revision, "idempotency_key": key,
+    })
+
+
+@orchestrator_tool
+async def reconcile_worker_lease(worker_id: str, run_id: str, expected_status: Literal["running"],
+                                 expected_pool: Literal["personal", "work"],
+                                 expected_claim_owner_generation_id: str,
+                                 expected_claim_owner_revision: str,
+                                 expected_lease_owner_generation_id: str,
+                                 expected_lease_owner_revision: str) -> str:
+    """Reconcile only an owned worker's orphan lease after a fresh runtime report.
+
+    Supply both the current active claim owner and the recorded lease owner generation/revision.
+    The backend checks the named Run state and repeats the existing PID-start-time, lease-token,
+    and process-group identity fences under lock. It returns no PID or token data.
+    """
+    key = f"reconcile:{worker_id}:{run_id}:{expected_lease_owner_generation_id}"
+    return await _call("POST", f"/workers/{quote(worker_id, safe='')}/reconcile", {
+        "run_id": run_id, "expected_status": expected_status, "expected_pool": expected_pool,
+        "expected_claim_owner_generation_id": expected_claim_owner_generation_id,
+        "expected_claim_owner_revision": expected_claim_owner_revision,
+        "expected_lease_owner_generation_id": expected_lease_owner_generation_id,
+        "expected_lease_owner_revision": expected_lease_owner_revision,
+        "idempotency_key": key,
+    })
+
+
 @server.tool()
 async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto",
                        model: str | None = None,

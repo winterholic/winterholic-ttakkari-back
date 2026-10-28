@@ -50,7 +50,8 @@ HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environ
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
 # 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 상태 조회도 끝난 러너를 실패로 정리하므로 읽기 전용으로 표시하지 않는다. 종류 허용 목록·단일 실행은 API 가 검사한다.
 HOST_OPERATION_TOOLS = frozenset({"host_operation_start", "host_operation_status", "host_operation_cancel"})
-WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "stop_agents", "reset_my_context", "manage_work"})
+WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "stop_agents", "reset_my_context",
+                                    "manage_work", "dispatch_queued_worker_run", "reconcile_worker_lease"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 # Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
 RESEARCH_TOOLS = frozenset({"manage_research"})

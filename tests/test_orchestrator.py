@@ -92,6 +92,96 @@ async def test_orchestrator_can_record_deferred_design_in_pms(client, auth, make
     assert created.json()["task"]["status"] == "todo"
 
 
+async def test_orchestrator_dispatches_only_explicit_queued_worker_run(client, auth, make_dir, monkeypatch):
+    from types import SimpleNamespace
+
+    from ttakkari.models import Run, RunStatus, RuntimeControl, RuntimeGeneration
+
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    headers = _orch(issue_token(orch["id"]))
+    async def suppress_dispatch(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(manager, "dispatch", suppress_dispatch)
+    created = await client.post("/api/orchestrator/workers", headers=headers, json={
+        "title": "queued recovery fixture", "prompt": "must keep this Run", "engine": "codex",
+    })
+    assert created.status_code == 201, created.text
+    worker_id = created.json()["worker_id"]
+    run_id = created.json()["active_run_id"]
+
+    generation_id = UUID("89f8ccbc-e9de-493d-9191-91307220d85b")
+    async with sessionmaker()() as db:
+        db.add(RuntimeGeneration(id=generation_id, revision="a" * 40, api_url="http://test",
+                                pid=0, process_started_at=0, state="active"))
+        await db.flush()
+        db.add(RuntimeControl(id=1, active_generation=generation_id))
+        await db.commit()
+    monkeypatch.setattr(manager, "_runtime", SimpleNamespace(
+        id=generation_id, draining=False, role="api", execution_mode="local"))
+    calls = []
+
+    async def dispatch(session_id, **kwargs):
+        calls.append((session_id, kwargs))
+        async with sessionmaker()() as db:
+            run = await db.get(Run, UUID(run_id))
+            run.status = RunStatus.running
+            await db.commit()
+        return UUID(run_id)
+
+    monkeypatch.setattr(manager, "dispatch", dispatch)
+    payload = {
+        "run_id": run_id, "expected_status": "queued", "expected_pool": "personal",
+        "expected_claim_owner_generation_id": str(generation_id),
+        "expected_claim_owner_revision": "a" * 40,
+        "idempotency_key": f"dispatch:{worker_id}:{run_id}",
+    }
+    response = await client.post(f"/api/orchestrator/workers/{worker_id}/dispatch",
+                                 headers=headers, json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"session_id": worker_id, "run_id": run_id, "pool": "personal",
+                               "status": RunStatus.running, "idempotent": True}
+    assert calls == [(UUID(worker_id), {
+        "expected_run_id": UUID(run_id), "expected_pool": "personal",
+        "expected_claim_owner_generation_id": generation_id,
+        "expected_claim_owner_revision": "a" * 40,
+    })]
+
+    stale_owner_id = UUID("f84f2b63-79aa-480a-bb39-c0efea420f2b")
+    async with sessionmaker()() as db:
+        db.add(RuntimeGeneration(id=stale_owner_id, revision="b" * 40, api_url="http://old",
+                                pid=0, process_started_at=0, state="offline"))
+        await db.commit()
+    reconciled = []
+
+    async def reconcile_one(target_run_id, **kwargs):
+        reconciled.append((target_run_id, kwargs))
+        return {"run_id": str(target_run_id), "reconciled": False, "action": "owner_alive"}
+
+    from ttakkari import executor_reconcile
+    monkeypatch.setattr(executor_reconcile, "reconcile_one", reconcile_one)
+    reconcile_payload = {
+        "run_id": run_id, "expected_status": "running", "expected_pool": "personal",
+        "expected_claim_owner_generation_id": str(generation_id),
+        "expected_claim_owner_revision": "a" * 40,
+        "expected_lease_owner_generation_id": str(stale_owner_id),
+        "expected_lease_owner_revision": "b" * 40,
+        "idempotency_key": f"reconcile:{worker_id}:{run_id}:{stale_owner_id}",
+    }
+    reconcile_response = await client.post(
+        f"/api/orchestrator/workers/{worker_id}/reconcile", headers=headers, json=reconcile_payload,
+    )
+    assert reconcile_response.status_code == 200, reconcile_response.text
+    assert reconcile_response.json()["action"] == "owner_alive"
+    assert reconciled == [(UUID(run_id), {
+        "expected_owner_generation_id": stale_owner_id,
+        "expected_owner_revision": "b" * 40,
+        "expected_run_status": "running",
+    })]
+    assert "pid" not in reconcile_response.text and "token" not in reconcile_response.text
+
+
 async def _session(client, auth, make_dir, **body) -> dict:
     root = make_dir()
     ws = (await client.post("/api/workspaces", json={"name": root.name, "root_path": str(root)}, headers=auth)).json()
@@ -508,7 +598,7 @@ AGENT_TOOLS = {"github_accounts", "github_switch_account", "kb_search", "kb_docu
 # 7bd8be44: 에이전트도 한 단계 위임(spawn/message/list/get/stop worker)을 쓴다.
 AGENT_DELEGATION_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}
 WORKER_TOOLS = {"activate_copilot_account", "spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
-                "my_context", "reset_my_context", "manage_work"}
+                "my_context", "reset_my_context", "manage_work", "dispatch_queued_worker_run", "reconcile_worker_lease"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
 
 

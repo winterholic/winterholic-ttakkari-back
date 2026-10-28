@@ -16,6 +16,7 @@ from ttakkari.generation import _control
 from ttakkari.models import (
     Run,
     RunStatus,
+    RuntimeCommand,
     RuntimeGeneration,
     RuntimeLease,
     RuntimeProcessGroup,
@@ -110,9 +111,12 @@ async def _stop_verified_group(record: RuntimeProcessGroup) -> bool:
     return False
 
 
-async def _read_orphans() -> list[dict]:
+async def _read_orphans(run_id: uuid.UUID | None = None) -> list[dict]:
     async with sessionmaker()() as db:
-        leases = list(await db.scalars(select(RuntimeLease).order_by(RuntimeLease.run_id)))
+        query = select(RuntimeLease).order_by(RuntimeLease.run_id)
+        if run_id is not None:
+            query = query.where(RuntimeLease.run_id == run_id)
+        leases = list(await db.scalars(query))
         result = []
         for lease in leases:
             run = await db.get(Run, lease.run_id)
@@ -210,6 +214,17 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     run = await db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if run is None:
         return False
+    cancel_commands = []
+    if entry.get("require_cancel"):
+        # Explicit cancellation may recover its dead owner; ordinary orphan
+        # recovery remains an external-operator operation. Verify the durable
+        # request under the same fence before signaling anything.
+        cancel_commands = list(await db.scalars(select(RuntimeCommand).where(
+            RuntimeCommand.run_id == run_id, RuntimeCommand.kind == "cancel",
+            RuntimeCommand.generation_id == lease.generation_id,
+            RuntimeCommand.acknowledged_at.is_(None)).with_for_update()))
+        if not cancel_commands:
+            return False
     if _process_dead(owner.pid, owner.process_started_at) is not True:
         return False
     # Recheck every fenced identity under the locks immediately before any signal.
@@ -226,17 +241,26 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     from ttakkari.runs import events
     from ttakkari.runs.manager import _interrupted_handoff
     if run.status == RunStatus.running:
-        run.status = RunStatus.interrupted
+        run.status = RunStatus.cancelled if cancel_commands else RunStatus.interrupted
         run.pid = None
         run.heartbeat_at = utcnow()
         run.finished_at = utcnow()
-        run.error = "executor orphan reconciled after recorded process groups exited"
-        run.resume_handoff = await _interrupted_handoff(db, run)
-        events.append(db, run, "run.finished", {"status": RunStatus.interrupted, "error": run.error,
+        run.error = ("사용자 중지 요청: 종료된 소유 세대의 프로세스 정리 후 취소" if cancel_commands else
+                     "executor orphan reconciled after recorded process groups exited")
+        if cancel_commands:
+            run.resume_after = None
+            for command in cancel_commands:
+                command.acknowledged_at = utcnow()
+        else:
+            run.resume_handoff = await _interrupted_handoff(db, run)
+        events.append(db, run, "run.finished", {"status": run.status, "error": run.error,
                                                   "result_text": None, "cost_usd": None, "exit_code": None})
     else:
         # The owner may die after saving a wait/cancel/final result but before
         # releasing its lease. Preserve that state; only discard proven dead ownership.
+        if cancel_commands:
+            for command in cancel_commands:
+                command.acknowledged_at = utcnow()
         events.append(db, run, "run.recovery_lease_released", {"status": run.status,
                                                               "owner_id": entry["owner_id"]})
     await db.execute(delete(RuntimeProcessGroup).where(
@@ -244,6 +268,20 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     await db.delete(lease)
     await db.commit()
     return True
+
+
+async def cancel_orphan(run_id: uuid.UUID) -> bool:
+    """Finish only this explicitly cancelled Run after fenced OS verification.
+
+    Live/unknown owners and missing/unknown process evidence stay quarantined.
+    This never resumes work or scans/mutates another Run's lease.
+    """
+    entries = await _read_orphans(run_id)
+    if not entries:
+        return False
+    entry = entries[0]
+    entry["require_cancel"] = True
+    return await _apply_one(entry) is True
 
 
 async def reconcile_orphans(*, apply: bool = False) -> dict:

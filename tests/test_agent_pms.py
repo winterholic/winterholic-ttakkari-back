@@ -67,11 +67,14 @@ async def test_agent_pms_work_scope_and_token_boundaries(client, auth, make_dir)
     personal = (await client.post("/api/pms/projects", headers=auth, json={"name": "개인", "scope": "personal"})).json()
     h = await agent(client, auth, make_dir, pool="work")
     work = await call(client, h, "create_project", data={"name": "회사", "scope": "work"})
-    assert [p["id"] for p in (await call(client, h, "list_projects"))["projects"]] == [work["id"]]
-    for op in ("get_project", "update_project", "delete_project", "list_tasks", "create_task"):
-        r = await client.post("/api/agent/pms", headers=h, json={"operation": op, "project_id": personal["id"], "data": {"title": "x"}})
-        assert r.status_code == 404, (op, r.text)
-    assert (await client.post("/api/agent/pms", headers=h, json={"operation": "update_project", "project_id": work["id"], "data": {"scope": "personal"}})).status_code == 403
+    assert {p["id"] for p in (await call(client, h, "list_projects"))["projects"]} == {work["id"], personal["id"]}
+    assert (await call(client, h, "get_project", project_id=personal["id"]))["id"] == personal["id"]
+    assert (await call(client, h, "update_project", project_id=work["id"], data={"scope": "personal"}))["scope"] == "personal"
+    # New records retain the work display default; explicit personal classification is allowed.
+    default = await call(client, h, "create_project", data={"name": "default work"})
+    assert default["scope"] == "work"
+    explicit = await call(client, h, "create_project", data={"name": "explicit personal", "scope": "personal"})
+    assert explicit["scope"] == "personal"
     for headers in ({}, auth):
         assert (await client.post("/api/agent/pms", headers=headers, json={"operation": "list_projects"})).status_code == 401
     for kind, create in (("task", {"title": "개인 작업"}),
@@ -83,7 +86,7 @@ async def test_agent_pms_work_scope_and_token_boundaries(client, auth, make_dir)
         for action in ("update", "delete"):
             r = await client.post("/api/agent/pms", headers=h,
                                   json={"operation": f"{action}_{kind}", "item_id": ident, "data": {}})
-            assert r.status_code == 404
+            assert r.status_code == 200, r.text
 
 
 def test_codex_pms_management_is_preapproved_without_mislabeling_writes(make_dir):
@@ -301,7 +304,7 @@ async def test_task_write_summary_respects_project_and_work_scope(client, auth, 
                    ("move_task", {"item_id": task["id"], "data": {"parent_id": None}}),
                    ("delete_task", {"item_id": task["id"]}), ("create_task", {"project_id": p, "data": {"title": "y"}})):
         r = await client.post("/api/agent/pms", headers=work, json={"operation": op, **kw})
-        assert r.status_code == 404 and "task" not in r.text and "ancestors" not in r.text
+        assert r.status_code == 200, r.text
 
 
 async def test_list_tasks_filters_respect_project_and_work_scope(client, auth, make_dir):
@@ -310,10 +313,10 @@ async def test_list_tasks_filters_respect_project_and_work_scope(client, auth, m
     h = await agent(client, auth, make_dir, pool="work")
     work = await call(client, h, "create_project", data={"name": "회사", "scope": "work"})
     w_task = (await call(client, h, "create_task", project_id=work["id"], data={"title": "회사 작업"}))["task"]
-    # work 세션: 개인 프로젝트는 필터·페이지 옵션과 무관하게 404
+    # Both session groups can query the owner's personal project
     for data in ({}, {"q": "개인"}, {"parent_id": p_task["id"]}, {"compact": False}, {"limit": 1, "offset": 0}):
         r = await client.post("/api/agent/pms", headers=h, json={"operation": "list_tasks", "project_id": personal["id"], "data": data})
-        assert r.status_code == 404, data
+        assert r.status_code == 200, (data, r.text)
     # 개인 프로젝트의 작업 id 를 회사 프로젝트의 parent_id 로 써도 내용이 새지 않는다
     r = await client.post("/api/agent/pms", headers=h, json={"operation": "list_tasks", "project_id": work["id"],
                                                               "data": {"parent_id": p_task["id"]}})

@@ -175,7 +175,7 @@ async def test_stop_all_suppresses_worker_reports(client, auth, make_dir):
 
 
 async def test_work_pool_scope_isolation(client, auth, make_dir):
-    """검증 5: work pool 오케스트레이터는 같은 workspace만 중지할 수 있고, personal 또는 타 workspace는 건드릴 수 없다."""
+    """검증 5: 지정 없는 중지는 같은 workspace만 건드리고, 명시 지정 중지는 표시 분류를 넘나든다."""
     work1, h_work1 = await create_session(client, auth, make_dir, pool="work")
     # 같은 work workspace의 다른 세션
     same_work, _ = await create_session(client, auth, make_dir, pool="work", workspace=work1["workspace_id"])
@@ -196,9 +196,10 @@ async def test_work_pool_scope_isolation(client, auth, make_dir):
     assert str(r_other.id) not in res["stopped"]
     assert str(r_personal.id) not in res["stopped"]
 
-    # 타 workspace 세션을 명시 지정하여 중지 시도 시 403 차단
-    denied = await client.post(f"/api/orchestrator/agents/{other_work['id']}/stop", headers=h_work1)
-    assert denied.status_code == 403
+    # An explicit target may cross display groups; untargeted stop-all stays local.
+    targeted = await client.post(f"/api/orchestrator/agents/{other_work['id']}/stop", headers=h_work1)
+    assert targeted.status_code == 200
+    assert str(r_other.id) in targeted.json()["stopped"]
 
 
 async def test_scheduled_stop_all_action(client, auth, make_dir):
@@ -304,12 +305,12 @@ async def test_stop_all_sweeps_reports_created_by_old_generation(client, auth, m
         assert (await db.get(Run, report.id)).status == RunStatus.cancelled
 
 
-async def test_personal_orchestrator_cannot_target_work_session(client, auth, make_dir):
+async def test_personal_orchestrator_can_target_work_session(client, auth, make_dir):
     _personal, hp = await create_session(client, auth, make_dir, pool="personal")
     work, _ = await create_session(client, auth, make_dir, pool="work")
     await create_run(work)
-    denied = await client.post(f"/api/orchestrator/agents/{work['id']}/stop", headers=hp)
-    assert denied.status_code == 403
+    targeted = await client.post(f"/api/orchestrator/agents/{work['id']}/stop", headers=hp)
+    assert targeted.status_code == 200
 
 
 async def test_resume_interrupted_honors_pending_cancel(client, auth, make_dir):
@@ -329,7 +330,7 @@ async def test_resume_interrupted_honors_pending_cancel(client, auth, make_dir):
 
 
 async def test_scheduled_stop_all_scope_is_clamped_to_orchestrator(client, auth, make_dir):
-    """work 오케스트레이터가 예약 중지 페이로드로 범위를 전체로 넓힐 수 없다."""
+    """지정 없는 예약 중지는 페이로드로 범위를 넓힐 수 없고, 명시 세션 지정은 분류를 넘나든다."""
     work, hw = await create_session(client, auth, make_dir, pool="work")
     other, _ = await create_session(client, auth, make_dir, pool="personal")
     r = await client.post("/api/orchestrator/schedules", headers=hw,
@@ -339,7 +340,102 @@ async def test_scheduled_stop_all_scope_is_clamped_to_orchestrator(client, auth,
     assert payload["scope_pool"] == "work"
     assert payload["workspace_id"] == work["workspace_id"]
 
-    denied = await client.post("/api/orchestrator/schedules", headers=hw,
-                               json={"action_type": "stop_all", "due_at": "+3600s",
-                                     "payload": {"session_id": other["id"]}})
-    assert denied.status_code == 403
+    targeted = await client.post("/api/orchestrator/schedules", headers=hw,
+                                 json={"action_type": "stop_all", "due_at": "+3600s",
+                                       "payload": {"session_id": other["id"]}})
+    assert targeted.status_code == 201
+    assert targeted.json()["payload"]["scope_pool"] == "all"
+    assert targeted.json()["payload"]["session_id"] == other["id"]
+
+
+async def seed_orphan(sess):
+    from ttakkari.models import RuntimeGeneration, RuntimeLease, RuntimeProcessGroup
+
+    run = await create_run(sess, status=RunStatus.running)
+    owner_id, token = uuid.uuid4(), uuid.uuid4()
+    async with sessionmaker()() as db:
+        db.add(RuntimeGeneration(id=owner_id, revision="a" * 40, api_url="http://127.0.0.1:18793",
+                                pid=987654321, process_started_at=1.0, state="offline"))
+        await db.flush()
+        db.add(RuntimeLease(run_id=run.id, session_id=run.session_id, generation_id=owner_id,
+                            token=token, lane="leads"))
+        db.add(RuntimeProcessGroup(run_id=run.id, generation_id=owner_id, lease_token=token,
+                                   attempt=1, pid=987654320, pgid=987654320, process_started_at=1.0))
+        await db.commit()
+    return run
+
+
+async def test_ui_cancel_releases_dead_owner_without_touching_other_runs(client, auth, make_dir, tmp_path, monkeypatch):
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.models import RuntimeLease, RuntimeProcessGroup
+
+    sess, _ = await create_session(client, auth, make_dir)
+    other, _ = await create_session(client, auth, make_dir)
+    run, untouched = await seed_orphan(sess), await seed_orphan(other)
+    runtime = generation.GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+    await runtime.register()
+    monkeypatch.setattr(manager, "_runtime", runtime)
+    monkeypatch.setattr(executor_reconcile, "_process_dead", lambda *_: True)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+
+    response = await client.post(f"/api/runs/{run.id}/cancel", headers=auth)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == RunStatus.cancelled
+    async with sessionmaker()() as db:
+        assert await db.get(RuntimeLease, run.id) is None
+        assert await db.scalar(select(RuntimeProcessGroup.id).where(RuntimeProcessGroup.run_id == run.id)) is None
+        assert (await db.get(Run, untouched.id)).status == RunStatus.running
+        assert await db.get(RuntimeLease, untouched.id) is not None
+        pending = await db.scalar(select(RuntimeCommand.id).where(
+            RuntimeCommand.run_id == run.id, RuntimeCommand.kind == "cancel", RuntimeCommand.acknowledged_at.is_(None)))
+        assert pending is None
+
+
+async def test_targeted_stop_releases_dead_owner(client, auth, make_dir, tmp_path, monkeypatch):
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.runs.agent_control import stop_all_agents
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run = await seed_orphan(sess)
+    runtime = generation.GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+    await runtime.register()
+    monkeypatch.setattr(manager, "_runtime", runtime)
+    monkeypatch.setattr(executor_reconcile, "_process_dead", lambda *_: True)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    async with sessionmaker()() as db:
+        result = await stop_all_agents(db, session_id=uuid.UUID(sess["id"]), wait_timeout=0)
+    assert result["stopped"] == [str(run.id)]
+    assert result["remaining"] == []
+
+
+async def test_orphan_cancel_requires_persisted_request(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+    from ttakkari.models import RuntimeLease
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run = await seed_orphan(sess)
+    monkeypatch.setattr(executor_reconcile, "_process_dead", lambda *_: True)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.cancel_orphan(run.id) is False
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+        assert await db.get(RuntimeLease, run.id) is not None
+
+
+async def test_orphan_cancel_preserves_unknown_group(client, auth, make_dir, tmp_path, monkeypatch):
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.models import RuntimeLease
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run = await seed_orphan(sess)
+    runtime = generation.GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+    await runtime.register()
+    monkeypatch.setattr(manager, "_runtime", runtime)
+    monkeypatch.setattr(executor_reconcile, "_process_dead", lambda *_: True)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("unknown", False))
+    assert await manager.cancel(run.id) is True  # Request accepted, termination unverified.
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+        assert await db.get(RuntimeLease, run.id) is not None
+        assert await db.scalar(select(RuntimeCommand.id).where(
+            RuntimeCommand.run_id == run.id, RuntimeCommand.kind == "cancel", RuntimeCommand.acknowledged_at.is_(None)))

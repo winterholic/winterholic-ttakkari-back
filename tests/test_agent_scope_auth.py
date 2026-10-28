@@ -66,13 +66,13 @@ async def test_agent_sessions_list_isolation(client, setup_sessions):
     assert "Personal Session" in titles
     assert "Work Session" in titles
 
-    # 2. Work session listing: sees only work sessions
+    # 2. Work grouping does not revoke owner access to personal sessions
     w_token = issue_token(work_s.id)
     resp = await client.get("/api/agent/sessions", headers={"Authorization": f"Bearer {w_token}"})
     assert resp.status_code == 200
     w_titles = [s["title"] for s in resp.json()["sessions"]]
     assert "Work Session" in w_titles
-    assert "Personal Session" not in w_titles
+    assert "Personal Session" in w_titles
 
 
 @pytest.mark.asyncio
@@ -101,10 +101,10 @@ async def test_agent_read_session_scope_enforcement(client, setup_sessions):
     w_token = issue_token(work_s.id)
     p_token = issue_token(personal_s.id)
 
-    # 1. Work session trying to read personal session -> 403 Forbidden
+    # 1. Work session can explicitly read the owner's personal session
     resp = await client.get(f"/api/agent/sessions/{personal_s.id}", headers={"Authorization": f"Bearer {w_token}"})
-    assert resp.status_code == 403
-    assert "회사 세션" in resp.json()["message"]
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "Personal Session"
 
     # 2. Work session reading work session -> 200 OK
     resp = await client.get(f"/api/agent/sessions/{work_s.id}", headers={"Authorization": f"Bearer {w_token}"})
@@ -118,7 +118,7 @@ async def test_agent_read_session_scope_enforcement(client, setup_sessions):
 
 
 @pytest.mark.asyncio
-async def test_work_agent_cannot_forget_personal_memory(client, setup_sessions):
+async def test_work_agent_can_archive_owner_agent_memory_across_groups(client, setup_sessions):
     _, work_s = setup_sessions
     personal_memory = CtxMemory(content="private synthetic memory", scope="personal", source="agent")
     work_memory = CtxMemory(content="work synthetic memory", scope="work", source="agent")
@@ -128,19 +128,19 @@ async def test_work_agent_cannot_forget_personal_memory(client, setup_sessions):
 
     headers = {"Authorization": f"Bearer {issue_token(work_s.id)}"}
     forbidden = await client.post("/api/agent/forget", headers=headers, json={"id": str(personal_memory.id)})
-    assert forbidden.status_code == 404
+    assert forbidden.status_code == 200
     allowed = await client.post("/api/agent/forget", headers=headers, json={"id": str(work_memory.id)})
     assert allowed.status_code == 200
     assert allowed.json() == {"forgotten": True}
     async with sessionmaker()() as db:
         stored_personal = await db.get(CtxMemory, personal_memory.id)
         stored_work = await db.get(CtxMemory, work_memory.id)
-        assert stored_personal is not None and stored_personal.archived_at is None
+        assert stored_personal is not None and stored_personal.archived_at is not None
         assert stored_work is not None and stored_work.archived_at is not None
 
 
 @pytest.mark.asyncio
-async def test_work_entity_detail_does_not_include_personal_relations(client, setup_sessions):
+async def test_work_entity_detail_includes_owner_relations_across_groups(client, setup_sessions):
     _, work_s = setup_sessions
     subject = CtxEntity(type="topic", name="work-subject", scope="work", aliases=[], attributes={})
     private_target = CtxEntity(type="topic", name="personal-target", scope="personal", aliases=[], attributes={})
@@ -154,7 +154,8 @@ async def test_work_entity_detail_does_not_include_personal_relations(client, se
     headers = {"Authorization": f"Bearer {issue_token(work_s.id)}"}
     response = await client.post("/api/agent/entities", headers=headers, json={"name": "work-subject"})
     assert response.status_code == 200
-    assert response.json()["relations"] == []
+    assert len(response.json()["relations"]) == 1
+    assert "personal-target" in response.text
 
 
 @pytest.mark.asyncio
@@ -163,7 +164,7 @@ async def test_agent_stocks_scope_enforcement(client, setup_sessions):
     w_token = issue_token(work_s.id)
     p_token = issue_token(personal_s.id)
 
-    # ba4f0220 이후 소유자 도구는 work 세션에서도 열려 있다(개인 세션 제한 제거).
+    # ba4f0220 / c8be9694 이후 소유자 도구는 work 세션에서도 열려 있다(표시 분류 제한 제거).
     resp = await client.get("/api/agent/stocks/tossinvest/status", headers={"Authorization": f"Bearer {w_token}"})
     assert resp.status_code == 200
 
@@ -204,7 +205,8 @@ async def test_agent_work_artifacts_are_workspace_and_session_scoped(client, set
     work_resp = await client.get("/api/agent/artifacts", headers=work_headers)
     assert work_resp.status_code == 200
     work_names = {item["filename"] for item in work_resp.json()["artifacts"]}
-    assert work_names == {"work-allowed.txt", "shared-workspace.txt"}
+    assert work_names == {"personal-private.txt", "work-allowed.txt", "shared-workspace.txt",
+                          "unowned-orphan.txt", "other-workspace.txt"}
     injected_filter = await client.get(
         "/api/agent/artifacts", headers=work_headers, params={"q": "%' OR 1=1 --"}
     )
@@ -215,7 +217,7 @@ async def test_agent_work_artifacts_are_workspace_and_session_scoped(client, set
         headers=work_headers,
         json={"area": "files"},
     )
-    assert forbidden_move.status_code == 404
+    assert forbidden_move.status_code == 409  # owner access still cannot implicitly keep a file
     # 범위 안의 파일이어도 에이전트는 files 로 올릴 수 없다(409). agent 로 두는 것은 허용된다.
     promote = await client.patch(
         f"/api/agent/artifacts/{work_artifact.id}",

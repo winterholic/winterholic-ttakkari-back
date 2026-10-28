@@ -581,7 +581,7 @@ async def _agent_scope(db: AsyncSession, sid: uuid.UUID) -> str:
     s = await db.get(ChatSession, sid)
     if s is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "세션이 없습니다.")
-    return "work" if s.pool == "work" else "all"
+    return "all"
 
 
 @agent_router.get("")
@@ -610,7 +610,7 @@ async def agent_search(sid: AgentSession, db: Db, q: str | None = None, kind: Li
 @agent_router.get("/semantic")
 async def agent_semantic(sid: AgentSession, db: Db, q: Annotated[str, Query(min_length=1, max_length=500)],
                          project: str | None = None, kind: str | None = None, limit: int = Query(8, ge=1, le=30)) -> dict[str, Any]:
-    """회의록 조각 의미 검색(어휘 + 로컬 벡터, ADR 0021). 회사 세션은 회사 회의만."""
+    """회의록 조각 의미 검색(어휘 + 로컬 벡터, ADR 0021). 같은 사용자의 양쪽 회의 분류를 검색한다."""
     scope = await _agent_scope(db, sid)
     entity_id = None
     if project:
@@ -625,9 +625,7 @@ async def agent_semantic(sid: AgentSession, db: Db, q: Annotated[str, Query(min_
 
 @agent_router.get("/{mid}")
 async def agent_get(mid: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
-    scope = await _agent_scope(db, sid)
+    await _agent_scope(db, sid)
     m = await _get(db, mid)
-    if scope == "work" and m.scope != "work":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "회의록이 없어요.")
     items = await db.scalars(select(MeetingItem).where(MeetingItem.meeting_id == m.id).order_by(MeetingItem.kind, MeetingItem.position))
     return read.agent_meeting((await read.meeting_rows(db, [m]))[0], list(items))

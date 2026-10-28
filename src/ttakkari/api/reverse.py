@@ -1,4 +1,4 @@
-"""리버스 엔지니어링 API. 소유자 화면과 개인 세션 MCP가 같은 작업 기록을 쓴다."""
+"""리버스 엔지니어링 API. 소유자 화면과 세션 MCP가 같은 작업 기록을 쓴다."""
 from __future__ import annotations
 
 import uuid

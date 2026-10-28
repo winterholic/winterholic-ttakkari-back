@@ -263,12 +263,12 @@ class RunManager:
 
     async def cancel(self, run_id: uuid.UUID) -> bool:
         if self.remote:
-            await self.runtime.command("cancel", run_id=run_id)
+            await self._cancel_leased(run_id)
             return True
         h = self._handles.get(run_id)
         if h is None:
             if self.runtime and await self.is_owned(run_id):
-                await self.runtime.command("cancel", run_id=run_id)
+                await self._cancel_leased(run_id)
                 return True
             async with sessionmaker()() as db:
                 run = await db.get(Run, run_id)
@@ -292,6 +292,19 @@ class RunManager:
             return True
         await self._terminate(h.proc)
         return True
+
+    async def _cancel_leased(self, run_id: uuid.UUID) -> None:
+        await self.runtime.command("cancel", run_id=run_id)
+        # A dead generation cannot consume the command. Reuse the fenced
+        # process-group recovery checks, scoped to this explicit cancellation.
+        from ttakkari.executor_reconcile import cancel_orphan
+
+        try:
+            await cancel_orphan(run_id)
+        except Exception:
+            # Keep the durable command and ownership intact when verification
+            # fails; never report a failed check as successful termination.
+            log.exception("orphan cancellation verification failed for run %s", run_id)
 
     async def _terminate(self, proc: asyncio.subprocess.Process) -> None:
         if proc.returncode is not None:

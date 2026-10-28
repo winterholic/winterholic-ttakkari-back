@@ -1,4 +1,4 @@
-"""에이전트의 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 개인 세션만, 종류 허용 목록만."""
+"""에이전트의 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 소유자 세션 모두, 종류 허용 목록만."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class StartIn(BaseModel):
                   "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply"]
 
 
-async def personal(sid: uuid.UUID, db: Db) -> None:
+async def caller(sid: uuid.UUID, db: Db) -> None:
     await _session(db, sid)
 
 
@@ -50,7 +50,7 @@ def _job_id(job_id: str) -> str:
 
 @router.get("")
 async def list_operations(sid: AgentSession, db: Db) -> dict:
-    await personal(sid, db)
+    await caller(sid, db)
     recent = await asyncio.to_thread(jobs.recent, 10)
     for job in recent:
         if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
@@ -61,7 +61,7 @@ async def list_operations(sid: AgentSession, db: Db) -> dict:
 
 @router.post("", status_code=202)
 async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
-    await personal(sid, db)
+    await caller(sid, db)
     if body.kind in plans.INLINE:
         job = await asyncio.to_thread(jobs.create, body.kind, str(sid), inline=True)
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
@@ -117,7 +117,7 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
 
 @router.get("/{job_id}")
 async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
-    await personal(sid, db)
+    await caller(sid, db)
     try:
         job = await asyncio.to_thread(jobs.reconciled, _job_id(job_id))
         if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
@@ -129,7 +129,7 @@ async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
 
 @router.post("/{job_id}/cancel")
 async def cancel_operation(job_id: str, sid: AgentSession, db: Db) -> dict:
-    await personal(sid, db)
+    await caller(sid, db)
     try:
         job = await asyncio.to_thread(jobs.cancel, _job_id(job_id))
     except FileNotFoundError as exc:

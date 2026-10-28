@@ -1605,15 +1605,18 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
     session = await _session(db, sid)
     if session.archived_at is not None:
         raise HTTPException(403, "archived_session")
-    scope, actor = ("work" if session.pool == "work" else "personal"), f"agent:{sid}"
+    write_scope = "work" if session.pool == "work" else "personal"
+    actor = f"agent:{sid}"
+    # 스터디 접근은 소유자 전체에 열려 있고, 새 스터디만 세션 분류를 기본값으로 쓴다.
+    # 방법·집계 조회(scope)는 실험 방법론·환경 집계와 묶여 있어 세션 분류를 유지한다.
+    scope = write_scope
     op = body.operation
     if op == "list":
-        return await studies(actor, db, scope, 50, 0)
+        return await studies(actor, db, "all", 50, 0)
     if op == "create":
-        if body.data.get("scope", scope) != scope:
-            raise HTTPException(403, "research_scope_mismatch")
+        create_scope = body.data.get("scope", write_scope)
         return await create_study(
-            validate(StudyIn, {**body.data, "scope": scope}), actor, db
+            validate(StudyIn, {**body.data, "scope": create_scope}), actor, db
         )
     if op == "discover":
         return await discover(actor, str(body.data.get("q", ""))[:240])
@@ -1664,7 +1667,7 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
     # Operations requiring experiment_id
     if op in ("execute", "report", "control", "compare_series"):
         exp = await get_experiment(db, body.experiment_id)
-        await svc.get_study(db, exp.study_id, scope)
+        await svc.get_study(db, exp.study_id, "all")
         if op == "execute":
             return await execute(exp.id, actor, db)
         if op == "compare_series":
@@ -1687,7 +1690,7 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
             else control(exp.id, validate(ControlIn, body.data), actor, db)
         )
 
-    study = await svc.get_study(db, body.study_id, scope)
+    study = await svc.get_study(db, body.study_id, "all")
     if op == "resume":
         page = validate(ResumePageIn, body.data)
         return await resume(study.id, actor, db, offset=page.offset, limit=page.limit)

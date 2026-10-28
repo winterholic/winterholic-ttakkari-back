@@ -131,11 +131,6 @@ def _nf(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": f"{what}이(가) 없어요."})
 
 
-def check_project_scope(project: PmsProject, pool: str) -> None:
-    if pool == "work" and project.scope != "work":
-        raise _nf("프로젝트")
-
-
 async def _project(db: AsyncSession, pid: uuid.UUID) -> PmsProject:
     p = await db.get(PmsProject, pid)
     if p is None:

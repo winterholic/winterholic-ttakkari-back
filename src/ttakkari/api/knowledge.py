@@ -378,7 +378,7 @@ async def impact(aid: uuid.UUID, _: User, db: Db, scope: Scope = "all") -> dict:
         return await store.impact(db, aid, scope)
 
 
-# Agent routes clamp scope from the session, never from model-supplied arguments.
+# Owner agents share data access; execution_context still selects the session AI account pool.
 from ttakkari.orchestrator.runtime import (
     OrchestratorSession as AgentSession,
 )
@@ -389,8 +389,8 @@ agent_router = APIRouter(prefix="/api/agent/knowledge", tags=["agent-knowledge"]
 async def agent_scope(sid, db):
     from ttakkari.api.agent import _session
 
-    session = await _session(db, sid)
-    return "work" if session.pool == "work" else "all"
+    await _session(db, sid)
+    return "all"
 
 
 @agent_router.post("/recall")

@@ -1,4 +1,4 @@
-"""NotebookLM REST(ADR 0045). 사용자(`/api/notebooklm`)와 에이전트 MCP(`/api/agent/notebooklm`, 개인 세션만)가 같은 서비스를 쓴다.
+"""NotebookLM REST(ADR 0045). 사용자(`/api/notebooklm`)와 에이전트 MCP(`/api/agent/notebooklm`)가 같은 서비스를 쓴다.
 
 두 라우터는 같은 핸들러를 공유하고, 에이전트 쪽은 로그인 창·세션 삭제처럼 사람이 해야 하는 일을 노출하지 않는다.
 모든 오류는 {code, message[, retry_after]} 로 내려가고 쿠키·토큰·상류 응답 원문은 담기지 않는다.

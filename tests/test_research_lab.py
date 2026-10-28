@@ -379,7 +379,7 @@ async def test_agent_scope_and_new_session_resume(client, auth, make_dir):
             headers=work,
             json={"operation": "resume", "study_id": sid},
         )
-    ).status_code == 404
+    ).status_code == 200
     for body in [
         {
             "operation": "update",

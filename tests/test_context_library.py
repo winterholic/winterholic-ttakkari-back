@@ -121,7 +121,7 @@ async def test_import_catalog_is_idempotent_and_preserves_manual_memory(client, 
     assert {"entity", "memory", "chunk"} <= {h["type"] for h in hits}
 
 
-async def test_company_worker_cannot_recall_personal_context(client, auth, make_dir):
+async def test_company_worker_recall_crosses_groups_while_dispatch_brief_stays_grouped(client, auth, make_dir):
     from conftest import agent_calls
     from helpers import run_to_end
     from test_context import _agent, _session
@@ -139,10 +139,11 @@ async def test_company_worker_cannot_recall_personal_context(client, auth, make_
     h = _agent(session["id"])
     hits = (await client.post("/api/agent/recall", json={"query": "공통표식"}, headers=h)).json()["results"]
     assert any("work" in x["text"] for x in hits)
-    assert all("personal" not in x["text"] for x in hits)
+    assert any("personal" in x["text"] for x in hits)
     await run_to_end(client, auth, session["id"], "hello")
     argv = agent_calls()[-1]["argv"]
     note = argv[argv.index("--append-system-prompt") + 1]
+    # 실행 주입 기본값은 분류별 유지고, 막힌 접근이 아니라 recall 로 언제든 더 가져온다.
     assert "work 공통표식" in note and "personal 공통표식" not in note
     await client.post("/api/agent/remember", json={"content": "회사에서 저장한 기억"}, headers=h)
     memories = (await client.get("/api/assistant/memories", headers=auth)).json()["memories"]
@@ -193,7 +194,7 @@ async def test_library_catalog_lists_project_landmarks_with_scope(client, auth, 
     session = await _session(client, auth, make_dir, pool="work")
     result = await client.get("/api/agent/library", headers=_agent(session["id"]))
     assert result.status_code == 200
-    assert [p["name"] for p in result.json()["projects"]] == ["work-project"]
+    assert {p["name"] for p in result.json()["projects"]} == {"personal-project", "work-project"}
 
 
 async def test_library_catalog_indexes_knowledge_collections_by_scope(client, auth, make_dir):
@@ -212,4 +213,4 @@ async def test_library_catalog_indexes_knowledge_collections_by_scope(client, au
     assert {c["name"] for c in result["collections"]} == {"공용 스킬", "사내 스킬", "개인 스킬"}
     session = await _session(client, auth, make_dir, pool="work")
     result = (await client.get("/api/agent/library", headers=_agent(session["id"]))).json()
-    assert {c["name"] for c in result["collections"]} == {"공용 스킬", "사내 스킬"}
+    assert {c["name"] for c in result["collections"]} == {"공용 스킬", "사내 스킬", "개인 스킬"}

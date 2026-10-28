@@ -47,3 +47,18 @@ Codex nested command sandbox에서 넓힌 호스트 검사 일부는 psutil/sysc
 - 검증된 변경을 게시하기 위해 저장소가 문서화한 로컬 pre-push 생략 옵션을 사용하고, 배포 컨트롤러의 전체 pytest·보안·프로토콜·ready/ownership 검증은 정상 실행하도록 예약한다. 이는 운영 검증 통과 주장이 아니다. 전역 GitHub 활성 계정은 바꾸지 않으며 자격증명은 Git 프로토콜 안에서만 전달한다.
 
 - Google 계정 회귀 전체(설명 기대값 교정 포함): **27 passed in 4.47s**.
+
+## 소유자 접근 완성 (2026-10-28 후속, Muse 세션)
+
+사용자 의도(표시 분리 유지 + 회사 AI 계정만 제한)에 맞춰 자료·대화·작업 제어의 명시 cross-scope guard를 열었다. 새 기록은 세션 분류를 기본값으로 유지하고 기존 자료는 재분류하지 않는다.
+
+- `context/store.py`: 엔터티 cross-scope upsert 400 제거(기존 분류 유지), `remember`/`link`의 기존 항목 조회를 전체 범위로. agent `link`는 신규 생성 기본값만 세션 pool로 전달한다.
+- `api/research.py` agent: 스터디 목록/조회/실험 연산을 `all`로 개방, 생성은 세션 분류 기본 + 명시 scope 허용. 방법·대시보드 집계는 실험 방법론·환경 집계와 묶여 세션 분류 유지.
+- `api/orchestrator.py`: 명시 세션 중지(`/agents/{id}/stop`)의 403 제거. 범위 안이면 기존 풀 필터, 밖이면 세션 지정만으로 중지한다. 예약 중지는 지정 없으면 오케스트레이터 범위로 고정하고, 명시 세션이 밖이면 `scope_pool=all` + 세션 지정만 남긴다. 지정 없는 stop-all 지역성은 유지한다.
+- 빠진 구형 단언 2건도 새 계약으로 교정했다. `test_research_resume_pagination`의 work resume 404→200, `test_context_library`의 work recall을 소유자 전체로(실행 주입 pinned brief는 분류별 기본값 유지).
+- 이미 열린 경로(oplogs/notebooklm/google/reverse/comfy/creative/operations)의 낡은 "개인 세션만" 문구·주석과 `operations.personal` 도우미명을 정리했다. 동작 변경 없음.
+- 유지한 경계: 회사 AI 계정 정책(계정 선택·라우팅·사용량·메트릭), 워커 부모 소유권, 지정 없는 중지 지역성, 사용자 소유 자료 보호, KB 문서별 회사 엔진 접근 제어, Luna 벤치 개인 한정, Qwen personal 전용.
+
+검증: 변경 26개 파일 `py_compile` + `ruff check` 통과, `git diff --check` 통과. DB 검사는 이 Muse sandbox에서 TCP/Unix 소켓 loopback이 모두 EPERM이고 승인 프롬프트가 꺼져 있어 unsandboxed 실행이 거부돼 **미실행**이다. 같은 환경에서 반복하지 않는다. 브랜치 푸시까지만 수행하고 main 병합·배포 예약은 DB 검증 가능 세션에서 한다.
+
+복구 공백 검토(코드 검사, 미구현): owner 프로세스가 살아 있으나 메모리 handle/task를 잃은 lease는 `compensate_runs`의 lease-없음 조건과 `executor_reconcile.disposition`의 `owner_alive` 차단에 모두 걸려 자동 회수되지 않는다. 안전한 모양은 살아 있는 owner가 자기 lease를 self-audit(handle·프로세스 그룹·heartbeat 확인 후 해제+interrupted)하는 것이며 DB 검사가 필요해 이번에는 손대지 않았다. 해당 좀비는 runtime_report recovery_rows에 보이며, 명시 세션 중지로 수동 정리가 가능할 것으로 보이나 미검증이다.

@@ -17,6 +17,7 @@
 4. 순서: 대기 Run 을 먼저 `manager.cancel_queued`(= `_finish`)로 마감하고, 실행 중 Run 은 `manager.cancel` 로 넘긴다. 실행 중인 Run 이 끝나는 순간 다음 Run 이 시작되지 않게 한다.
 5. 다른 세대 소유 running Run: 기존 `cancel` RuntimeCommand 를 lease 의 generation_id 로 보낸다. 소유 세대의 coordinator 가 `runtime_poll_seconds` 주기와 NOTIFY 로 집행한다. 구세대도 이미 이해하는 명령이라 새 컬럼과 마이그레이션이 없다(`schema_revision` 불변, `deploy/generation-contract.json` 변경 없음).
 6. lease 도 프로세스도 없는 고아 running Run 은 소유자가 없으므로 DB 에서 취소로 마감한다.
+   - 2026-10-28 보완: lease 가 남아 있지만 소유 세대가 종료된 경우에도 명시 중지 요청을 처리한다. `manager.cancel` 이 영속 cancel 명령을 기록한 뒤 해당 Run 하나에만 `executor_reconcile.cancel_orphan` 을 적용한다. 소유 PID·시작 시각, lease token, 전체 process-group 원장을 잠금 안에서 재확인하며, 살아 있는 자식은 기존 검증된 그룹 종료 절차를 사용한다. 모든 그룹의 종료가 확인돼야 cancelled 이벤트·명령 확인·lease 해제를 한 트랜잭션으로 기록한다. 소유자 생존/불명, 그룹 증거 누락/불명은 보존한다. 운영자 전용 일반 orphan 복구 CLI의 제한은 유지한다.
 7. 결과는 `stopped`, `remaining`, `unstopped[{run_id, session_id, reason}]`, `total`, `swept_reports` 를 모두 돌려준다. 다른 세대가 아직 집행하지 않은 Run 은 멈춘 것으로 세지 않고 이유를 적는다.
 
 ## 3. 취소 보고의 재작업 경로 차단
@@ -25,5 +26,5 @@
 - 한계: 이 가드는 신세대 코드가 활성화된 뒤에만 동작한다. 소유 세대가 제한 시간(기본 3초) 안에 끝내지 못한 Run 은 `remaining` 으로 보인다.
 
 ## 4. 남은 위험
-- 소유 세대가 cancel 명령 집행 전에 죽어 Run 이 interrupted 로 남은 경우: 신세대 `resume_interrupted` 가 미집행 cancel 명령을 회수하고(`_consume_pending_cancel`) 재개하지 않고 취소로 마감한다. 이 경우는 세대가 죽은 뒤 새 코드가 뜰 때만 생긴다(살아 있는 구세대는 cancel 명령을 직접 집행한다). 롤백으로 구코드가 다시 뜨면 가드 없이 재개할 수 있다.
+- 소유 세대가 cancel 명령 집행 전에 죽어 Run 이 interrupted 로 남은 경우: 신세대 `resume_interrupted` 가 미집행 cancel 명령을 회수하고(`_consume_pending_cancel`) 재개하지 않고 취소로 마감한다. Run 이 running 으로 남고 lease 도 잔존한 경우는 위의 명시 중지 경로로 처리한다. 롤백으로 구코드가 다시 뜨면 해당 보완 없이 이전 동작을 따른다.
 - `ScheduledAction` 목록 조회는 풀 구분이 없다(기존 동작, 이번 범위 밖).

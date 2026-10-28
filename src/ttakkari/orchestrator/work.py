@@ -127,10 +127,9 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
         if await db.scalar(select(Run.id).where(Run.session_id.in_(children), Run.status.in_(ACTIVE)).limit(1)):
             raise HTTPException(422, "unfinished worker execution; reconcile worker results before completion")
     if value.get("pms_project_id"):
-        from ttakkari.api.pms import _project, check_project_scope
+        from ttakkari.api.pms import _project
         from ttakkari.pms import service as pms
         project = await _project(db, uuid.UUID(value["pms_project_id"]))
-        check_project_scope(project, sess.pool)
         if value["status"] == "complete":
             ordered, _ = await pms.tree(db, project.id)
             unfinished = [n.wbs for n in ordered if n.is_leaf and n.status != "done"]

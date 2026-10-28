@@ -39,7 +39,7 @@ class Submit(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
 
 
-# 자동 소재 생성(creative-v2)이 만든 작업은 receipt 의 task_id 로 개인 세션이 조회할 수 있어야 한다. 읽기 전용이며
+# 자동 소재 생성(creative-v2)이 만든 작업은 receipt 의 task_id 로 소유자 세션이 조회할 수 있어야 한다. 읽기 전용이며
 # 취소·reconcile 은 계속 소유자 일치를 요구한다.
 READABLE_OWNER_PREFIXES = ("creative-v2:",)
 

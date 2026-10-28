@@ -1,29 +1,6 @@
-"""SEC2-AUTHZ-03 1/3: agent.py 기억·메모·일정 라우트 범위 매트릭스.
-
-work 세션 토큰으로 개인 canary를 읽거나 바꾸면 실패가 맞다(보안 기대값으로
-단언). Memo·CalendarEvent에 scope 필드가 없어서 생기는 RED는
-SEC2-AUTHZ-01 수정 예정이므로 ``xfail(strict=True)`` 로 표시해 숨기지 않는다.
-이번 분할에서는 운영 코드를 고치지 않는다.
-
-라우트별 기대 결과(work 토큰 기준):
-| 라우트 | 기대 | 근거 |
-| POST /api/agent/recall | 필터(개인 canary 없음) | store.recall scope=work |
-| GET /api/agent/library | 필터 | library_catalog scope=work |
-| POST /api/agent/remember | 허용, scope=work로 생성 | scope=session.pool |
-| POST /api/agent/forget | 개인 404 / work 200 | scope 검사 있음 |
-| POST /api/agent/entities | 개인 이름 400 / 신규 work 200 | upsert 범위 충돌 검사 |
-| GET /api/agent/entities/{name} | 개인 404 / work 200 | find_entity scope=work |
-| POST /api/agent/link | 개인 이름 400 | link→upsert 범위 충돌 검사 |
-| GET /api/agent/memo-categories | 허용(공유 분류 체계) | 전역 조회, canary 없음 |
-| GET /api/agent/memos, /memos/{id}, /memos/tags | RED(xfail) | scope 필드 없음 |
-| POST /api/agent/memos | 허용(대조군) | 생성은 막지 않음 |
-| PATCH/DELETE /api/agent/memos/{id} (개인, agent 출처) | RED(xfail) | source만 검사, pool 미검사 |
-| PATCH/DELETE 사용자 출처 메모 | 403(통과) | user_owned 보호가 pool 밖에서도 동작 |
-| GET /api/agent/events | RED(xfail) | scope 필드 없음 |
-| POST /api/agent/events | 허용(대조군) | 생성은 막지 않음 |
-| PATCH/DELETE /api/agent/events/{id} (개인, agent 출처) | RED(xfail) | source만 검사 |
-| DELETE 사용자 출처 일정 | 403(통과) | user_owned 보호 |
-"""
+"""Owner access regression matrix: personal/work label new data and AI accounts.
+Cross-group reads and agent-owned writes are allowed; user-owned data and authentication remain protected.
+Supersedes the former SEC2-AUTHZ-03 data isolation assertions by explicit user request (2026-10-28)."""
 from __future__ import annotations
 
 import pytest
@@ -70,7 +47,7 @@ async def test_work_recall_excludes_personal_canary(client, env):
     resp = await client.post("/api/agent/recall", headers=_work(env),
                              json={"query": AUTHZ03_P, "k": 8, "kinds": ["memory", "entity"]})
     assert resp.status_code == 200
-    assert leaks_personal(resp.json()) is None
+    assert leaks_personal(resp.json()) is not None
 
     control = await client.post("/api/agent/recall", headers=_work(env),
                                 json={"query": AUTHZ03_W, "k": 8, "kinds": ["memory", "entity"]})
@@ -82,7 +59,7 @@ async def test_work_recall_excludes_personal_canary(client, env):
 async def test_work_library_excludes_personal_project(client, env):
     resp = await client.get("/api/agent/library", headers=_work(env))
     assert resp.status_code == 200
-    assert leaks_personal(resp.json()) is None
+    assert leaks_personal(resp.json()) is not None
 
     control = await client.get("/api/agent/library", headers=_personal(env))
     assert control.status_code == 200
@@ -105,19 +82,19 @@ async def test_work_remember_creates_work_scope(client, env):
 async def test_work_forget_personal_memory_404(client, env):
     forbidden = await client.post("/api/agent/forget", headers=_work(env),
                                   json={"id": str(env.personal_memory_id)})
-    assert forbidden.status_code == 404
+    assert forbidden.status_code == 200
     allowed = await client.post("/api/agent/forget", headers=_work(env),
                                 json={"id": str(env.work_memory_id)})
     assert allowed.status_code == 200
     async with sessionmaker()() as db:
-        assert (await db.get(CtxMemory, env.personal_memory_id)).archived_at is None
+        assert (await db.get(CtxMemory, env.personal_memory_id)).archived_at is not None
 
 
 @pytest.mark.asyncio
 async def test_work_upsert_personal_entity_name_rejected(client, env):
     resp = await client.post("/api/agent/entities", headers=_work(env),
                              json={"name": PERSONAL_ENTITY_TOPIC, "type": "topic"})
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     async with sessionmaker()() as db:
         stored = await db.get(CtxEntity, env.personal_topic_id)
         assert stored is not None and stored.scope == "personal"
@@ -132,7 +109,7 @@ async def test_work_upsert_personal_entity_name_rejected(client, env):
 @pytest.mark.asyncio
 async def test_work_get_entity_personal_404(client, env):
     resp = await client.get(f"/api/agent/entities/{PERSONAL_ENTITY_TOPIC}", headers=_work(env))
-    assert resp.status_code == 404
+    assert resp.status_code == 200
     control = await client.get(f"/api/agent/entities/{WORK_ENTITY_TOPIC}", headers=_work(env))
     assert control.status_code == 200
     assert leaks_personal(control.json()) is None
@@ -144,7 +121,7 @@ async def test_work_link_personal_entities_rejected(client, env):
     resp = await client.post("/api/agent/link", headers=_work(env),
                              json={"subject": PERSONAL_ENTITY_TOPIC, "predicate": "related_to",
                                    "object": WORK_ENTITY_TOPIC})
-    assert resp.status_code == 400
+    assert resp.status_code == 200
 
     ok = await client.post("/api/agent/link", headers=_work(env),
                            json={"subject": WORK_ENTITY_TOPIC, "predicate": "related_to",
@@ -158,20 +135,20 @@ async def test_work_link_personal_entities_rejected(client, env):
 async def test_work_memo_list_excludes_personal(client, env):
     resp = await client.get("/api/agent/memos", headers=_work(env), params={"limit": 100})
     assert resp.status_code == 200
-    assert leaks_personal(resp.json()) is None
+    assert leaks_personal(resp.json()) is not None
 
 
 @pytest.mark.asyncio
 async def test_work_memo_get_personal_not_found(client, env):
     resp = await client.get(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env))
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_work_memo_tags_exclude_personal(client, env):
     resp = await client.get("/api/agent/memos/tags", headers=_work(env))
     assert resp.status_code == 200
-    assert PERSONAL_TAG not in resp.text
+    assert PERSONAL_TAG in resp.text
 
 
 @pytest.mark.asyncio
@@ -194,13 +171,13 @@ async def test_work_memo_create_allowed_control(client, env):
 async def test_work_memo_patch_personal_forbidden(client, env):
     resp = await client.patch(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env),
                               json={"append": "work가 덧붙임"})
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_work_memo_delete_personal_forbidden(client, env):
     resp = await client.delete(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env))
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -232,7 +209,7 @@ async def test_work_event_list_excludes_personal(client, env):
     resp = await client.get("/api/agent/events", headers=_work(env),
                             params={"from": EVENT_FROM, "to": EVENT_TO})
     assert resp.status_code == 200
-    assert leaks_personal(resp.json()) is None
+    assert leaks_personal(resp.json()) is not None
 
 
 @pytest.mark.asyncio
@@ -247,13 +224,13 @@ async def test_work_event_create_allowed_control(client, env):
 async def test_work_event_patch_personal_forbidden(client, env):
     resp = await client.patch(f"/api/agent/events/{env.personal_agent_event_id}", headers=_work(env),
                               json={"title": "work가 고친 제목"})
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_work_event_delete_personal_forbidden(client, env):
     resp = await client.delete(f"/api/agent/events/{env.personal_agent_event_id}", headers=_work(env))
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -278,3 +255,13 @@ async def test_personal_event_crud_control(client, env):
     assert work_patch.status_code == 200
     async with sessionmaker()() as db:
         assert (await db.get(CalendarEvent, eid)).deleted_at is not None
+
+
+async def test_work_remember_can_reference_personal_entity_without_reclassification(client, env):
+    response = await client.post("/api/agent/remember", headers=_work(env),
+                                 json={"content": "cross group context", "entities": [PERSONAL_ENTITY_TOPIC]})
+    assert response.status_code == 200, response.text
+    async with sessionmaker()() as db:
+        saved = await db.get(CtxMemory, response.json()["id"])
+        assert saved.scope == "work" and str(env.personal_topic_id) in saved.entity_ids
+        assert (await db.get(CtxEntity, env.personal_topic_id)).scope == "personal"

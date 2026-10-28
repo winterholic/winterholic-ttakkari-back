@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
-from ttakkari.api.pms import TaskIn, _project, _task_response, check_project_scope
+from ttakkari.api.pms import TaskIn, _project, _task_response
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
@@ -327,8 +327,6 @@ async def _game_worker_context(db: Db, spawner: ChatSession, body: WorkerIn, tas
     from ttakkari.games import worker as game_worker
     from ttakkari.games.contract import GameContractError
     from ttakkari.models import GameProject
-    if spawner.pool != "personal":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "게임 스튜디오 프로젝트는 개인 모드 세션만 다룰 수 있습니다.")
     game = await db.get(GameProject, body.game_id)
     if game is None or game.archived_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "게임 프로젝트를 찾을 수 없습니다.")
@@ -634,14 +632,13 @@ async def orchestrator_stop_session(
     target = await db.get(ChatSession, session_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "대상을 찾을 수 없습니다.")
-    # 범위 밖 대상은 조용히 0건으로 끝내지 않고 거부한다.
-    if target.pool != orch.pool or (orch.pool == "work" and target.workspace_id != orch.workspace_id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 풀 또는 워크스페이스의 세션은 중지할 수 없습니다.")
+    # 명시 지정 중지는 표시 분류를 넘나든다. 범위 안이면 기존 풀 필터를 유지하고, 밖이면 세션 지정만으로 멈춘다.
+    inside = target.pool == orch.pool and (orch.pool != "work" or target.workspace_id == orch.workspace_id)
     reason = body.reason if body else f"세션 {session_id} 중지"
     return await stop_all_agents(
         db,
-        pool=orch.pool,
-        workspace_id=orch.workspace_id,
+        pool=orch.pool if inside else "all",
+        workspace_id=orch.workspace_id if inside else None,
         session_id=session_id,
         reason=reason,
         actor_id=str(sid),
@@ -734,9 +731,8 @@ async def cancel_luna_benchmark(job_id: uuid.UUID, sid: OrchestratorSession, db:
 @router.get("/pms/projects")
 async def pms_projects(sid: OrchestratorSession, db: Db, q: str | None = None) -> dict:
     """Claude 한도 대기 작업을 WBS 에 기록할 PMS 프로젝트를 찾는다."""
-    orch = await _orchestrator(db, sid)
-    scope = "work" if orch.pool == "work" else "personal"
-    stmt = select(PmsProject).where(PmsProject.scope == scope).order_by(PmsProject.updated_at.desc())
+    await _orchestrator(db, sid)
+    stmt = select(PmsProject).order_by(PmsProject.updated_at.desc())
     if q:
         stmt = stmt.where(PmsProject.name.ilike(f"%{q.strip()}%"))
     rows = list(await db.scalars(stmt.limit(50)))
@@ -746,9 +742,8 @@ async def pms_projects(sid: OrchestratorSession, db: Db, q: str | None = None) -
 @router.post("/pms/projects/{pid}/tasks", status_code=201)
 async def create_pms_task(pid: uuid.UUID, body: TaskIn, sid: OrchestratorSession, db: Db) -> dict:
     """작업자를 배정하지 않고 Claude 초기화 후 처리할 일을 PMS WBS 에 등록한다."""
-    orch = await _orchestrator(db, sid)
+    await _orchestrator(db, sid)
     project = await _project(db, pid)
-    check_project_scope(project, orch.pool)
     tasks = await pms_svc.load_tasks(db, pid)
     if len(tasks) >= pms_svc.MAX_TASKS:
         raise pms_svc.bad(f"작업은 프로젝트당 {pms_svc.MAX_TASKS}개까지예요.", "too_many")
@@ -806,7 +801,8 @@ async def create_schedule_route(body: ScheduleCreateIn, sid: OrchestratorSession
     orch = await _orchestrator(db, sid)
     payload = dict(body.payload)
     if body.action_type == "stop_all":
-        # 예약 중지는 예약한 오케스트레이터의 풀·워크스페이스를 넘지 못한다. 페이로드로 범위를 넓힐 수 없다.
+        # 지정 없는 예약 중지는 예약한 오케스트레이터의 풀·워크스페이스를 넘지 못한다. 페이로드로 범위를 넓힐 수 없다.
+        # 명시 세션 지정은 표시 분류를 넘나들 수 있어 풀 필터를 떼고 세션 지정만 남긴다.
         payload["scope_pool"] = orch.pool
         payload.pop("workspace_id", None)
         if orch.pool == "work":
@@ -816,9 +812,11 @@ async def create_schedule_route(body: ScheduleCreateIn, sid: OrchestratorSession
                 target = await db.get(ChatSession, uuid.UUID(str(payload["session_id"])))
             except ValueError as exc:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "session_id 형식이 올바르지 않습니다.") from exc
-            if target is None or target.pool != orch.pool or (
-                    orch.pool == "work" and target.workspace_id != orch.workspace_id):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 풀 또는 워크스페이스의 세션은 예약 중지할 수 없습니다.")
+            if target is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 세션을 찾을 수 없습니다.")
+            if target.pool != orch.pool or (orch.pool == "work" and target.workspace_id != orch.workspace_id):
+                payload["scope_pool"] = "all"
+                payload.pop("workspace_id", None)
     try:
         item = await create_schedule(
             db,

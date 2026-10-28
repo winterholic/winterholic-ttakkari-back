@@ -39,23 +39,23 @@ ASSISTANT_WRITE_TOOLS = frozenset({
     "remember", "describe_entity", "link", "forget", "share_file", "keep_artifact", "set_artifact_area", "notify_user",
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
 })
-# 운영 로그 이슈의 해결·메모. 조회는 READ_ONLY_TOOLS, 개인 세션 한정은 API가 검사한다(ADR 0033).
+# 운영 로그 이슈의 해결·메모. 조회는 READ_ONLY_TOOLS, 세션 검사는 API가 한다(ADR 0033).
 OPS_LOG_TOOLS = frozenset({"ops_update_issue"})
 # NotebookLM 쓰기·질의(ADR 0045). 사용자 지시로 쓰는 도구라 승인 프롬프트를 만들지 않고, 삭제는 confirm=true 를 요구한다.
-# 개인 세션 한정과 계정 상태·쿨다운 검사는 API 가 한다. 쓰기를 readOnlyHint 로 위장하지 않는다.
+# 세션·계정 상태·쿨다운 검사는 API 가 한다. 쓰기를 readOnlyHint 로 위장하지 않는다.
 NOTEBOOKLM_TOOLS = frozenset({"notebooklm_create", "notebooklm_rename", "notebooklm_delete", "notebooklm_add_source",
                               "notebooklm_delete_source", "notebooklm_query", "notebooklm_job_cancel"})
 # 엔진 무관 실행 환경 보고와 호스트 GPU 시험 경로(ADR 0037). 상태 조회도 고아 정리를 하므로 읽기 전용으로 표시하지 않는다.
 HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environment", "host_gpu_start",
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
-# 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 상태 조회도 끝난 러너를 실패로 정리하므로 읽기 전용으로 표시하지 않는다. 종류 허용 목록·개인 세션 한정·단일 실행은 API 가 검사한다.
+# 승인된 호스트 운영 작업(백업·격리 복원·소유권/성능 확인). 상태 조회도 끝난 러너를 실패로 정리하므로 읽기 전용으로 표시하지 않는다. 종류 허용 목록·단일 실행은 API 가 검사한다.
 HOST_OPERATION_TOOLS = frozenset({"host_operation_start", "host_operation_status", "host_operation_cancel"})
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "stop_agents", "reset_my_context", "manage_work"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 # Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
 RESEARCH_TOOLS = frozenset({"manage_research"})
 SCHEDULE_TOOLS = frozenset({"schedule_action", "cancel_scheduled_action"})
-# Creative Studio and managed Comfy are explicit personal-session services. Plan approval,
+# Creative Studio and managed Comfy are owner-session services. Plan approval,
 # fixed profiles, host leases and runtime ownership remain enforced by their service layer.
 CREATIVE_TOOLS = frozenset({
     "comfy_cancel", "comfy_readiness", "comfy_reconcile", "comfy_submit",

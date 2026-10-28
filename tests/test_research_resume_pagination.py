@@ -94,7 +94,7 @@ async def test_resume_rejects_invalid_page_bounds(client, auth, params):
     assert response.status_code == 422, response.text
 
 
-async def test_agent_resume_forwards_pages_and_keeps_scope_boundary(client, auth, make_dir):
+async def test_agent_resume_forwards_pages_across_display_groups(client, auth, make_dir):
     from ttakkari.orchestrator.runtime import issue_token
 
     async def agent(pool):
@@ -116,7 +116,7 @@ async def test_agent_resume_forwards_pages_and_keeps_scope_boundary(client, auth
     assert response.json()['nodes'] == []
     assert response.json()['pagination']['offset'] == 500
     assert response.json()['pagination']['limit'] == 25
-    assert (await client.post('/api/agent/research', headers=work, json=body)).status_code == 404
+    assert (await client.post('/api/agent/research', headers=work, json=body)).status_code == 200
     assert (await client.post('/api/agent/research', headers=personal,
         json={**body, 'data': {'offset': -1}})).status_code == 422
 

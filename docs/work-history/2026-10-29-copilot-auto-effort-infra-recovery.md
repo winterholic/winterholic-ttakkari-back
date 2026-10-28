@@ -5,7 +5,7 @@
 - 작업 소유자: 이 INFRA 후속 세션 (backend `main` 통합·배포 단일 소유).
 - 격리 checkout: `/Users/winterholic/development/ttakkari-infra-integ-20261029`, branch `integ/infra-permissions-orphan-stop-20261029`.
 - 시작 기준 HEAD와 `origin/main`: `0f6f0a7730d4aebdd866e2c8abff2262bc5f0449`. `git fetch origin` 뒤에도 일치했다.
-- 최신 누적 통합 상태: local HEAD `4e5936215c6f46e0b1b1c13101d8970516aaef10`, clean, origin/main=`aa305cb768433e251b2546e4a5d0a11e67801f2e`. Copilot·Research 누적 코드는 격리 checkout에만 있고 push/deploy되지 않았다. KB `d3ac880b8c9769070bb0e4e89d5d8974f029ed84`는 독립 코드 검증 PASS 후속을 받았으나 PostgreSQL 통합 gate 전이므로 아직 통합하지 않았다.
+- 2026-10-29 이번 증거 기록 전 bounded snapshot: local HEAD `4e5936215c6f46e0b1b1c13101d8970516aaef10`, clean, origin/main=`aa305cb768433e251b2546e4a5d0a11e67801f2e`. Copilot·Research 누적 코드는 격리 checkout에만 있고 push/deploy되지 않았다. KB `d3ac880b8c9769070bb0e4e89d5d8974f029ed84`는 독립 코드 검증 PASS 후속을 받았으나 PostgreSQL 통합 gate 전이므로 아직 통합하지 않았다.
 - 최신 배포 조회: `abcb3f7d-a291-4789-9117-ec5c08220eba` revision `12347b3f24f56f2a7c029e8ca3f394495dd240c8`는 `draining`; 기존 `e7d441b9-ca41-4faa-a76e-63a7438a3c6e` revision `0f6f0a7730d4aebdd866e2c8abff2262bc5f0449`는 `failed`(`skip_tests=false`). 배포 pytest는 `tests/test_collection_agent.py::test_status_returns_failure_type_without_payload_or_credentials`에서 `ttakkari.api.operations.personal` import error로 실패했다(LOG-290). 별도 revision `c04c5a37` 예약 `971a0529-c5e1-4145-ac59-59c25139de0f`는 현재 `testing`; 이를 이 수정의 예약으로 간주하지 않는다.
 - 공유 dirty checkout `projects/winterholic-ttakkari/back`는 수정하지 않았다.
 

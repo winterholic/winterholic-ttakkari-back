@@ -131,9 +131,21 @@ async def search_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
         retry = next((f["index"] for f in st["failed"] if f["retryable"] and f["index"] not in tried and f["index"] < len(queries)), None)
         index = retry if retry is not None else st["search_cursor"]
         patience = NO_NEW_STOP if st["round"] == 0 else FOLLOWUP_NO_NEW_STOP
-        if (index >= len(queries) or st["no_new"] >= patience or st["searches_used"] >= plan["budget"]["searches"]
-                or consecutive_failures >= 3):
+        if (index >= len(queries) or st["no_new"] >= patience or st["searches_used"] >= plan["budget"]["searches"]):
             return None
+        if consecutive_failures >= 3:
+            # When one provider (e.g. DDG) repeatedly fails, advance past remaining single-provider queries
+            # to any remaining query that calls alternate providers (e.g. arxiv_api).
+            alt_idx = next(
+                (i for i in range(index, len(queries))
+                 if (plan.get("query_topics") or {}).get(queries[i]) == "papers" and re.search(r"[A-Za-z]{3}", queries[i])
+                 and i not in tried),
+                None
+            )
+            if alt_idx is not None:
+                index = alt_idx
+            else:
+                return None
         query = queries[index]
         topic = (plan.get("query_topics") or {}).get(query)
         outcome = await _run_providers(query, topic)

@@ -327,12 +327,17 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
             CollectorSource.source_key == item["key"]))
         if source is None:
-            source, _ = await control.register_source(
-                db, ctx, source_key=item["key"], title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
-                interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
-                max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
-                profile="general", auto_import=True)
-            await db.flush()
+            try:
+                source, _ = await control.register_source(
+                    db, ctx, source_key=item["key"], title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
+                    interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
+                    max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
+                    profile="general", auto_import=True)
+                await db.flush()
+            except (CollectorContractError, control.SourceKeyExists, ValueError) as exc:
+                gaps.append({"url": entry["url"], "reason": "source_unavailable",
+                             "message": "출처 등록에 실패했습니다: " + str(exc)[:200]})
+                continue
 
         if item["kind"] == "new":
             try:

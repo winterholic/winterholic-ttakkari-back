@@ -1,10 +1,20 @@
-# Research Lab v2 및 플랫폼 V2 실제 미게시 차이 통합 및 검증 (교정 후속)
+# Research Lab v2 및 플랫폼 V2 통합 기록 (Git 식별자 교정 및 누적 통합)
 
 - **날짜**: 2026-10-29
 - **작업 브랜치**: `integ/research-platform-v2-20261029`
-- **기준 `origin/main`**: `f95cef4b036bf64cb25f5a4317f2bc21ee274352` (`chore(inventory): classify fd_limit.py as core runtime`)
-- **기능 통합 커밋 SHA**: `dd747e661605e714652c78da0c78a0dca0fcad10`
-- **최신 merge HEAD SHA**: `277f71e319bf5228514930be34927b508f7ce682`
+- **당시 기준 `origin/main`**: `f95cef4bf92c042437bc37d6a11969d50b7ea5b5` (`chore(inventory): classify fd_limit.py as core runtime`)
+- **focused 회귀 커밋**: `dd747e66e33292a39b9e59a3d06329d8114dc1f8` (Research 규칙 테스트 추가)
+- **당시 merge commit**: `277f71e3045b26b992626f02a08cd78e448e766a`
+- **문서/evidence 전용 commit**: `5bf88bddec0e0002c0f6b5cccd24c96ff74585e5`
+- **검토된 후보 HEAD**: `3abd497a7c93132c26bb8bedb4c86756f9195811`
+
+## Git 식별자 및 소유권 교정
+
+이 기록의 이전 판본에는 기준·회귀·merge의 전체 SHA가 잘못 적혀 있었다. 현재 실제 Git 객체를 기준으로 정정했다. 확인 명령 `git rev-parse f95cef4b dd747e66 277f71e3 5bf88bdd`의 출력은 위 네 SHA와 일치한다. 예전 기록에 적힌 `f95cef4b036bf64cb25f5a4317f2bc21ee274352`는 `git cat-file -t`에서 `fatal: could not get object info`로 존재하지 않았다.
+
+`5bf88bddec0e0002c0f6b5cccd24c96ff74585e5`는 `docs/research-lab/evidence/capacity-schedule-fixture-9548e0ce.md`와 `docs/research-lab/evidence/runtime-and-deploy-9548e0ce.json`만 추가한 문서/evidence 전용 commit이다. 실행 코드 변경으로 계산하지 않는다. `dd747e66…`는 focused 회귀 테스트 추가 commit이며, `277f71e3…`는 upstream inventory 변경을 합친 merge commit이다.
+
+이전 기록의 §3·§4에 적힌 단일 통합 소유자 `INFRA 441ae34d`는 오래된 지정이다. 현재 backend `main` 통합·게시·배포 소유자는 기획의 최신 계약에 따라 `fcb55b7d`다. 이전 소유자는 이 후속에서 재개하거나 배포를 예약하지 않는다.
 
 ---
 
@@ -38,7 +48,7 @@
 - **백엔드 (`back-research-v2`)**:
   - `origin/research-v2`(`5a0b4ed1`) 대비 HEAD(`beea9a89`)는 6커밋 앞섬.
   - 이 중 1커밋(`1083a0ce`)은 이미 main에 병합되어 있으므로, 실제 unreleased 커밋은 4건(`dac9737b`, `3c3b1640`, `9548e0ce`, `beea9a89`).
-  - 플랫폼 V2 `ba14ee63` 1건과 결합하여 총 5건의 기능/문서 차이를 `integ/research-platform-v2-20261029`에 체리픽 이식 후 신규 focused 회귀 커밋(`dd747e66`) 및 최신 `origin/main`(`f95cef4b`) 머지(`277f71e3`) 완료.
+  - 플랫폼 V2 `ba14ee63`와 Research 변경 묶음을 당시 기준 `f95cef4b…` 위에 이식했다. 회귀 커밋은 `dd747e66…`, 당시 upstream merge는 `277f71e3…`, 후속 evidence 전용 commit은 `5bf88bdd…`다. 각 SHA와 역할은 위 교정표를 따른다.
 - **프론트엔드 (`front-research-v2`)**:
   - `origin/research-v2`(`02d871c`) 대비 HEAD(`57730bd`)는 17커밋 앞섬.
   - 그러나 16개 커밋은 이미 `origin/main`(`b2b3600`)에 병합 완료됨 (`git rev-list --left-right --count origin/main...HEAD` -> `0 1`).
@@ -55,8 +65,8 @@
   - 에이전트 Run 내부에서 `launchctl` 또는 백엔드 재시작 스크립트 실행은 엄격히 금지됨.
   - 안전한 런타임 상태 확인 경로: MCP 도구 `backend_deploy_status`, `ops_deploy_log`, `ops_search_logs` 및 `/api/status`, `Slots.snapshot`을 통한 generation 상태 관측 확보.
 - **배포 및 통합 소유권**:
-  - `INFRA 441ae34d`가 유일한 `main` 통합 및 배포 소유자임.
-  - 검증 브랜치(`integ/research-platform-v2-20261029`) 및 full SHA(`277f71e319bf5228514930be34927b508f7ce682`)를 기획 세션(`af14105d`)에 인계함.
+  - 이 과거 단계에서는 `INFRA 441ae34d`가 소유자로 기록됐으나, 그 지정은 현재 계약에서 대체됐다. 현재 유일한 backend `main` 통합·게시·배포 소유자는 `fcb55b7d`다.
+  - 이 검증 브랜치는 후보 기록으로 보존한다. 현재 누적 통합 상태는 소유자 격리 작업공간 `/Users/winterholic/development/ttakkari-infra-integ-20261029`의 git log와 후속 기록을 기준으로 판단한다.
 
 ---
 
@@ -64,7 +74,7 @@
 
 - **최근 100세션 감사 범위 및 연결**:
   - 독립 검증자가 전수 재감사를 돌리지 않았음을 확인하고, 본 작업자가 대조한 범위/목록(4건 발굴: 권한 c8be9694, GitHub 403, OpenCode ecc176d9, 좀비 2ea0d05a)을 repo 기록에 보존.
-  - 권한 완화(`c8be9694`) 및 고아 프로세스 취소(`439bc9af`), 좀비 Run(`2ea0d05a`)은 이미 `INFRA 441ae34d`의 통합/운영 검증 범위에 속해 있으므로 **신규 누락으로 계수하지 않음**.
+  - 권한 완화(`c8be9694`) 및 고아 프로세스 취소(`439bc9af`), 좀비 Run(`2ea0d05a`)은 당시 `INFRA 441ae34d`에 배정됐던 범위다. 현재 누적 통합과 운영 gate는 `fcb55b7d`가 소유한다. 과거 귀속은 **신규 누락으로 계수하지 않음** 판정의 기록으로만 남긴다.
   - 좀비 Run `2ea0d05a`의 프로세스 부재 및 lease 상태는 독립 감사에서 미입증(`미입증`)되었으므로 임의 단정하지 않음.
 - **OpenCode / Copilot 작업 분리**:
   - Copilot 담당(`a56dce83`)이 원 세션(`ecc176d9` / Run `8cba5845`)의 Claude 독립 검증 요구를 복원 중이므로 중복 배정하지 않음.

@@ -32,10 +32,20 @@
 ## Research 후보와 통합 경계
 
 - 독립 e3 검토 결과(기존 e3 session `e3bdd110-703e-4029-9000-0ec444f6f062`, 두 보고 turn): Research 후보 `3abd497a7c93132c26bb8bedb4c86756f9195811`에서 `PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest unit_tests/test_research_rules.py -k 'test_catalog_selection_request_model_accepts_catalog_source_and_rejects_invalid or test_catalog_selection_novel_candidate_without_cost_requires_review or test_catalog_selection_direct_failures_distinguish_applicable_and_conflicting_conditions or test_schedule_quota_wait_profile_contract_and_model_capacity_key' -q`는 `4 passed, 19 deselected in 0.80s`; `PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q tests/test_scheduled_actions.py::test_quota_wait_persists_resume_after_across_restart`는 `1 passed in 0.85s`; INFRA 선택 반례 6개는 `6 passed, 12 deselected in 4.62s`로 보고됐다. 통합·운영은 미검증이며 현재 branch는 origin/main보다 9 ahead / 1 behind라 main에 합치지 않았다.
-- 현 branch `git log --first-parent`로 확인한 SHA: base `f95cef4bf92c042437bc37d6a11969d50b7ea5b5`, regression `dd747e66e33292a39b9e59a3d06329d8114dc1f8`, merge `277f71e3045b26b992626f02a08cd78e448e766a`. Research work-history의 같은 위치에 기록된 세 full SHA는 서로 일치하지 않는다. Git object를 기준으로 차이를 추후 통합 기록에서 교정한다. 그 문서는 §3에서 소유자를 INFRA 441로 적고 있어 현재 이전된 단일 소유권과도 다르다.
+- Research 후보 Git object를 직접 확인해 오래된 work-history의 세 SHA 오기를 교정했다: base `f95cef4bf92c042437bc37d6a11969d50b7ea5b5`, regression `dd747e66e33292a39b9e59a3d06329d8114dc1f8`, merge `277f71e3045b26b992626f02a08cd78e448e766a`. 문서/evidence 전용 `5bf88bddec0e0002c0f6b5cccd24c96ff74585e5`는 실행 코드 변경이 아니다. 상세 교정은 `2026-10-29-research-platform-v2-integration.md`에 기록했다. 해당 문서의 구 INFRA 441 소유자 표기는 최신 계약에 따라 `fcb55b7d`로 정정했다.
 - 독립 d9 재검증은 KB 후보 `fix/kb-context-boundary-20261029` HEAD `d3ac880b8c9769070bb0e4e89d5d8974f029ed84`의 코드 경계에 한해 PASS. `/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_kb_research_boundary_unit.py` 결과는 `4 passed in 0.32s`였다. 실제 PostgreSQL 회귀 및 배포 readback은 미실행이고 직접 ID/연구 resume의 DB 동작은 확인 범위 밖이다. 정상 DB 게이트 전에는 통합하지 않는다.
 
 ## 완료 판정과 다음 단계
 
 - 코드 한정: 현재 diff의 회귀/라우팅/계약 테스트는 통과했고 변경 경계 독립검토도 통과했다. 공식 pre-push gate, 게시 및 운영 수정동작은 미검증이다. 이 결과를 LOG-287/288의 운영 복구 완료로 확대하지 않는다.
 - 다음 단계: 알려진 workspace-write denial `/Users/winterholic/.cache/uv`를 재접근·우회하지 않고 수행할 승인된 정상 push/CI 게이트 경로를 찾는다. Plugin search에서 GitHub connector를 찾았지만 미설치 상태라 연결 제안만 했고, 아직 Actions/workflow 실행은 확인하지 않았다. pre-push 훅을 bypass하거나 gate를 생략하지 않는다. 게시된 full SHA만 새 `request_backend_deploy`에 예약한다. e7은 이미 `failed`이므로 재사용/중복 예약하지 않고, `c04c5a37`의 현재 testing은 다른 예약이다. 배포된 `12347b3f`의 운영 동작도 아직 별도로 재검증하지 않았다.
+
+## 2026-10-29 누적 통합 후속
+
+- 현재 owner는 `fcb55b7d`이며 이 단일 격리 checkout에서 backend `main` 통합·게시·배포를 계속 맡는다. 구 owner `441ae34d`는 재개하지 않는다.
+- 최신 fetch 결과 `origin/main=aa305cb768433e251b2546e4a5d0a11e67801f2e`; 이는 `c04c5a37a6750f9fafe7641a62afba4244d499b8`와 `0f6f0a7730d4aebdd866e2c8abff2262bc5f0449`를 포함한다. 먼저 이를 기존 Copilot 커밋 `f630c610b7f5cf2245332cdd73f87a73c7739101`과 병합해 `b6195cf56d376cffb301517b01b483d66709b240`를 만들었다.
+- Research 후보 `3abd497a7c93132c26bb8bedb4c86756f9195811`를 그 위에 병합해 `1336252c73322d1700e5820cd12b91c29899df66`를 만들었다. 두 merge 모두 `ort`로 자동 완료되어 충돌이 없었다. Research의 코드·회귀·문서/evidence 차이를 누적했으며, 원래의 candidate SHA는 `docs/work-history/2026-10-29-research-platform-v2-integration.md`에서 실제 Git 객체에 맞게 정정했다.
+- 보존한 실행 증거(테스트를 다시 돌리지 않음): Research focused 4개 `4 passed, 19 deselected in 0.80s`; schedule quota restart `1 passed in 0.85s`; INFRA stop/cancel 반례 `6 passed, 12 deselected in 4.62s`. 이 결과들은 지정된 candidate revisions에 대한 코드 범위 결과다.
+- KB 후보 `d3ac880b8c9769070bb0e4e89d5d8974f029ed84`의 독립 unit 결과 `4 passed in 0.32s`는 코드 범위만 확인한다. PostgreSQL boundary 회귀 및 운영 readback이 완료되지 않아 이 후보는 현재 통합에 포함하지 않았다.
+- 남은 gate: Research 전체 DB catalog 4 회귀/runtime 접수, Copilot 실경로 stage1 및 후속 MCP/resume/auto-routing 분리 확인, 공식 pre-push/full deploy gate, 게시, 누적 SHA 배포예약과 readback. frontend 577 및 전체 coverage도 미완이다.
+- 기존 work-history의 공식 pre-push 경로는 `scripts/verify_deploy_gate.sh`→`uv sync --frozen`이며, 이전 Codex command sandbox에서 `/Users/winterholic/.cache/uv` 접근 `EPERM`이 기록돼 있다. 이 후속에서는 같은 보호 cache에 재접근하거나 gate를 생략하지 않았다. 따라서 현재 merge SHA는 아직 로컬이며, push와 배포 예약은 실행하지 않았다.

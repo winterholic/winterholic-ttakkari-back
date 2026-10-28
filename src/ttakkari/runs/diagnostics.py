@@ -115,6 +115,7 @@ async def session_execution(db, sess, runs) -> tuple[dict, dict]:
         "observed_at": utcnow().isoformat(), "local_coordinator": local,
         "observer_generation_id": str(runtime.id) if runtime else None,
         "claim_owner_generation_id": str(owner) if owner else None,
+        "claim_owner_epoch": control.epoch if control else None,
         "remote": manager.remote, "shutting_down": manager._shutting_down,
         "draining": bool(runtime and getattr(runtime, "draining", False)),
         "restart_waker_exists": restart_waker is not None,

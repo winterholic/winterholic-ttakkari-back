@@ -340,10 +340,11 @@ class RunManager:
     async def dispatch(self, session_id: uuid.UUID, *, expected_run_id: uuid.UUID | None = None,
                        expected_pool: str | None = None,
                        expected_claim_owner_generation_id: uuid.UUID | None = None,
-                       expected_claim_owner_revision: str | None = None) -> uuid.UUID | None:
+                       expected_claim_owner_revision: str | None = None,
+                       expected_claim_owner_epoch: int | None = None) -> uuid.UUID | None:
         """세션 대기열의 다음 Run 을 시작한다. 엔진 대화는 순서대로만 이어갈 수 있어 세션당 하나씩만 돌린다.
 
-        세션 행을 FOR UPDATE 로 잠가, 지시 접수와 Run 종료가 동시에 들어와도 두 개가 함께 시작되지 않게 한다.
+        세션 행과 RuntimeControl 을 잠가, dispatch 순서와 claim-owner epoch를 함께 fence한다.
         """
         if self._shutting_down:
             return None
@@ -363,10 +364,14 @@ class RunManager:
             if expected_claim_owner_generation_id is not None:
                 from ttakkari.models import RuntimeControl, RuntimeGeneration
 
-                control = await db.get(RuntimeControl, 1)
+                if expected_claim_owner_epoch is None:
+                    await db.rollback()
+                    return None
+                control = await db.scalar(select(RuntimeControl).where(RuntimeControl.id == 1).with_for_update())
                 owner_id = generation.claim_owner(control) if control else None
                 owner = await db.get(RuntimeGeneration, owner_id) if owner_id else None
-                if (owner_id != expected_claim_owner_generation_id or owner is None
+                if (owner_id != expected_claim_owner_generation_id or control.epoch != expected_claim_owner_epoch
+                        or owner is None
                         or owner.revision != expected_claim_owner_revision or owner.state != "active"
                         or self.runtime is None or self.runtime.id != owner_id or self.remote):
                     await db.rollback()

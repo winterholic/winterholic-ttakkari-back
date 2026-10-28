@@ -168,6 +168,7 @@ class DispatchQueuedRunIn(BaseModel):
     expected_pool: Literal["personal", "work"]
     expected_claim_owner_generation_id: uuid.UUID
     expected_claim_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_claim_owner_epoch: int = Field(ge=0, strict=True)
     idempotency_key: str = Field(min_length=1, max_length=120)
 
 
@@ -177,6 +178,7 @@ class ReconcileWorkerLeaseIn(BaseModel):
     expected_pool: Literal["personal", "work"]
     expected_claim_owner_generation_id: uuid.UUID
     expected_claim_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    expected_claim_owner_epoch: int = Field(ge=0, strict=True)
     expected_lease_owner_generation_id: uuid.UUID
     expected_lease_owner_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     idempotency_key: str = Field(min_length=1, max_length=120)
@@ -248,7 +250,8 @@ async def dispatch_queued_worker_run(worker_id: uuid.UUID, body: DispatchQueuedR
     owner_id = generation.claim_owner(control) if control else None
     owner = await db.get(RuntimeGeneration, owner_id) if owner_id else None
     runtime = manager.runtime
-    if (owner_id != body.expected_claim_owner_generation_id or owner is None
+    if (owner_id != body.expected_claim_owner_generation_id or control.epoch != body.expected_claim_owner_epoch
+            or owner is None
             or owner.revision != body.expected_claim_owner_revision or owner.state != "active"
             or runtime is None or runtime.id != owner_id or runtime.draining or manager.remote):
         raise HTTPException(status.HTTP_409_CONFLICT, "claim owner 또는 active generation이 바뀌었습니다.")
@@ -262,6 +265,7 @@ async def dispatch_queued_worker_run(worker_id: uuid.UUID, body: DispatchQueuedR
             target.id, expected_run_id=body.run_id, expected_pool=body.expected_pool,
             expected_claim_owner_generation_id=body.expected_claim_owner_generation_id,
             expected_claim_owner_revision=body.expected_claim_owner_revision,
+            expected_claim_owner_epoch=body.expected_claim_owner_epoch,
         )
         await db.refresh(run)
         if run.status == RunStatus.queued and started is None:
@@ -291,7 +295,8 @@ async def reconcile_worker_lease(worker_id: uuid.UUID, body: ReconcileWorkerLeas
     current_id = generation.claim_owner(control) if control else None
     current = await db.get(RuntimeGeneration, current_id) if current_id else None
     runtime = manager.runtime
-    if (current_id != body.expected_claim_owner_generation_id or current is None
+    if (current_id != body.expected_claim_owner_generation_id or control.epoch != body.expected_claim_owner_epoch
+            or current is None
             or current.revision != body.expected_claim_owner_revision or current.state != "active"
             or runtime is None or runtime.id != current_id or runtime.draining or manager.remote):
         raise HTTPException(status.HTTP_409_CONFLICT, "현재 active claim owner가 바뀌었습니다.")
@@ -307,6 +312,9 @@ async def reconcile_worker_lease(worker_id: uuid.UUID, body: ReconcileWorkerLeas
         body.run_id, expected_owner_generation_id=body.expected_lease_owner_generation_id,
         expected_owner_revision=body.expected_lease_owner_revision,
         expected_run_status=body.expected_status,
+        expected_claim_owner_generation_id=body.expected_claim_owner_generation_id,
+        expected_claim_owner_revision=body.expected_claim_owner_revision,
+        expected_claim_owner_epoch=body.expected_claim_owner_epoch,
     )
     return {"session_id": str(target.id), "pool": target.pool, **result}
 

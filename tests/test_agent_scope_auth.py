@@ -261,6 +261,7 @@ async def test_read_session_exposes_bounded_wait_diagnostics(client, setup_sessi
     assert response.status_code == 200
     data = response.json()
     assert data["routing"]["strict_engine"] is True
+    assert "claim_owner_epoch" in data["execution"]
     turn = data["turns"][0]
     assert turn["id"] == str(rid)
     assert datetime.fromisoformat(turn["resume_after"]) == until

@@ -173,6 +173,8 @@ TOOLS: list[dict[str, str]] = [
     {"name": "list_pms_projects", "group": "PMS", "who": "모든 실행", "desc": "PMS 프로젝트와 진행 상태를 찾는다(회사 실행은 회사 범위)"},
     {"name": "create_pms_task", "group": "PMS", "who": "모든 실행", "desc": "WBS 작업·계층·선행관계·담당·일정·진행률을 등록한다"},
     {"name": "manage_work", "group": "기획", "who": "기획", "desc": "원래 목표·요구·전략·증거·다음 동작을 영속 보존하고 완료/자동 재개를 연결한다"},
+    {"name": "dispatch_queued_worker_run", "group": "작업 세션", "who": "오케스트레이터", "desc": "소유 중인 작업 세션의 기존 queued Run 하나를 세대·pool·순서 fence로 재개한다(새 Run 미생성)"},
+    {"name": "reconcile_worker_lease", "group": "작업 세션", "who": "오케스트레이터", "desc": "소유 중인 Run 한 건의 고아 lease를 generation·process identity fence로 확인하고 안전할 때만 회수한다"},
     {"name": "manage_pms", "group": "PMS", "who": "모든 실행", "desc": "사용자를 대신해 프로젝트·작업 트리·선행관계·마일스톤·이슈를 생성·조회·수정·삭제한다"},
     {"name": "message_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션에 추가 지시"},
     {"name": "list_workers", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 목록"},

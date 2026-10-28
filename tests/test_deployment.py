@@ -296,7 +296,12 @@ async def test_controller_recovers_verified_restart_without_restarting_again(
     assert (tmp_path / "previous").read_text().strip() == "b" * 40
 
 
-async def test_company_session_can_validate_deployment_without_pool_denial(client, auth, make_dir):
+async def test_company_session_can_validate_deployment_without_pool_denial(client, auth, make_dir, monkeypatch):
+    # 릴리스 폴더에는 .git 이 없어 실제 ensure_revision 은 RuntimeError 가 된다. 검증 단계 도달만 본다.
+    def unknown_revision(_revision):
+        raise ValueError("예약한 커밋이 없습니다")
+
+    monkeypatch.setattr(deployment(), "ensure_revision", unknown_revision)
     ws = (
         await client.post(
             "/api/workspaces",

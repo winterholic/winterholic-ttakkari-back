@@ -2104,6 +2104,7 @@ def classify_source_file(rel_path: str) -> str:
                 "/sysinfo.py",
                 "/schema_aliases.py",
                 "/textsafe.py",
+                "/fd_limit.py",
                 "/harness_view/",
             )
         )

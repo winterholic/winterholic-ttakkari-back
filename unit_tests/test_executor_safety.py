@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import plistlib
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -232,3 +233,25 @@ async def test_explicit_executor_replacement_remains_separate_from_api_revision(
     slots.stop_executor.assert_awaited_once()
     assert slots.executor_snapshot.await_args_list[0].kwargs["revision"] == target
     assert slots._launchctl.await_args.args[0] == "bootstrap"
+
+
+@pytest.mark.parametrize(("contract", "expected"), [
+    ({"run_executor": {"activation": "enabled"}}, "remote"),
+    ({"run_executor": {"activation": "disabled"}}, "local"),
+    ({}, "local"),
+    ({"run_executor": {"activation": "yes"}}, "local"),
+])
+async def test_api_start_pins_executor_mode_from_release_contract(tmp_path, monkeypatch, contract, expected):
+    revision = "c" * 40
+    release = pinned_release(tmp_path, revision)
+    slots = deployment.Slots(tmp_path)
+    slots._launchctl = AsyncMock()
+    slots.snapshot = AsyncMock(side_effect=[None, {"protocol": 1, "ready": True, "revision": revision}])
+    monkeypatch.setattr(deployment, "get_settings",
+                        lambda: SimpleNamespace(home=tmp_path, deploy_source_root=tmp_path))
+    monkeypatch.setattr(deployment.Releases, "contract", lambda path: contract)
+    ready = await slots.start(0, release, revision)
+    assert ready["revision"] == revision
+    plist = plistlib.loads((tmp_path / "services"
+        / f"net.winterholic.ttakkari.generation.{deployment.PORTS[0]}.plist").read_bytes())
+    assert plist["EnvironmentVariables"]["TTAKKARI_RUN_EXECUTOR_MODE"] == expected

@@ -2,9 +2,13 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from ttakkari.agents.base import LaunchSpec, ParseState
 from ttakkari.agents.copilot import CopilotAdapter
+from ttakkari.models import SessionKind
+from ttakkari.runs.profiles import Profile
 
 
 class CopilotAdapterTests(unittest.TestCase):
@@ -52,6 +56,51 @@ class CopilotAdapterTests(unittest.TestCase):
         self.assertIn("gpt-5.6-luna", cmd)
         self.assertIn("--reasoning-effort", cmd)
         self.assertIn("high", cmd)
+
+    def test_auto_model_omits_reasoning_effort_even_when_requested(self):
+        for effort in ("medium", "high"):
+            with self.subTest(effort=effort):
+                spec = LaunchSpec(
+                    cwd=self.cwd, prompt="work", engine_session_id=None, model="auto", effort=effort,
+                    outbox=self.cwd / "out", write_roots=[self.cwd], system_note="note",
+                )
+                cmd = self.adapter.build_command(spec, {})
+                self.assertIn("--model", cmd)
+                self.assertEqual(cmd[cmd.index("--model") + 1], "auto")
+                self.assertNotIn("--reasoning-effort", cmd)
+
+    def test_default_auto_model_omits_default_reasoning_effort(self):
+        spec = LaunchSpec(
+            cwd=self.cwd, prompt="work", engine_session_id=None, model=None, effort="medium",
+            outbox=self.cwd / "out", write_roots=[self.cwd], system_note="note",
+        )
+        cmd = self.adapter.build_command(spec, {})
+        self.assertEqual(cmd[cmd.index("--model") + 1], "auto")
+        self.assertNotIn("--reasoning-effort", cmd)
+
+    def test_named_model_keeps_requested_reasoning_effort(self):
+        spec = LaunchSpec(
+            cwd=self.cwd, prompt="work", engine_session_id=None, model="gpt-5.6-luna", effort="high",
+            outbox=self.cwd / "out", write_roots=[self.cwd], system_note="note",
+        )
+        cmd = self.adapter.build_command(spec, {})
+        self.assertEqual(cmd[cmd.index("--model") + 1], "gpt-5.6-luna")
+        self.assertEqual(cmd[cmd.index("--reasoning-effort") + 1], "high")
+
+    def test_orchestrator_copilot_auto_fallback_drops_effort_at_cli_boundary(self):
+        from ttakkari.runs.manager import _launch_model
+
+        profile = Profile(uuid4(), "copilot", "copilot", model="auto")
+        model, effort = _launch_model(
+            SimpleNamespace(kind=SessionKind.orchestrator), None, profile, profile,
+        )
+        self.assertEqual((model, effort), ("auto", "high"))
+
+        spec = LaunchSpec(
+            cwd=self.cwd, prompt="continue", engine_session_id=None, model=model, effort=effort,
+            outbox=self.cwd / "out", write_roots=[self.cwd], system_note="note",
+        )
+        self.assertNotIn("--reasoning-effort", self.adapter.build_command(spec, {}))
 
     def test_failed_process_scrubs_credentials_from_stderr(self):
         self.adapter.finalize_process(

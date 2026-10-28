@@ -239,7 +239,7 @@ def test_supervisor_runs_until_stopped_and_cleans_up(env):
     t.join(20)
     final = host_gpu._read_state(env.dir)
     assert final["phase"] == "stopped" and final["stop_reason"] == "requested"
-    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    assert _gone(pid)
 
 
 def test_only_one_supervisor_can_own_an_instance(env):
@@ -267,7 +267,7 @@ def test_swap_growth_of_one_gib_stops_the_instance(env):
     final = host_gpu._read_state(env.dir)
     assert final["phase"] == "stopped" and final["stop_reason"].startswith("swap_guard")
     assert final["peak_swap_growth_bytes"] >= GIB - 1 and final["baseline_swap_bytes"] == 5 * GIB
-    assert not psutil.pid_exists(state["server_pid"]) or psutil.Process(state["server_pid"]).status() == psutil.STATUS_ZOMBIE
+    assert _gone(state["server_pid"])
 
 
 def test_instance_stops_at_the_max_runtime(env):
@@ -373,7 +373,7 @@ def test_start_status_bench_stop_through_a_detached_supervisor(env):
     assert stopped["stopped_now"] is True and stopped["running"] is False
     assert stopped["phase"] == "stopped" and stopped["stop_reason"] == "requested"
     # stop()은 상태 파일이 stopped가 되면 돌아오고 감독자 프로세스 종료는 그 뒤라 잠깐 기다린다.
-    _wait(lambda: not psutil.pid_exists(sup_pid) or psutil.Process(sup_pid).status() == psutil.STATUS_ZOMBIE,
+    _wait(lambda: _gone(sup_pid),
           what="supervisor exit")
     with pytest.raises(Busy, match="no ready"):
         env.gpu.bench("hello")
@@ -508,7 +508,11 @@ def test_state_file_is_private_and_holds_no_secrets(env):
 # ---- 감독자가 SIGKILL 로 죽는 경우(finally 정리가 돌지 않는다)
 
 def _gone(pid: int) -> bool:
-    return not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    # pid_exists 와 status 사이에 프로세스가 사라질 수 있다(부하가 높을 때 게이트에서 실제로 발생했다).
+    try:
+        return psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return True
 
 
 def test_sigkilled_supervisor_leaves_no_unguarded_server(env):

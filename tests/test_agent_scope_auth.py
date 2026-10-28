@@ -14,6 +14,7 @@ from ttakkari.models import (
     CtxRelation,
     Run,
     RunStatus,
+    RuntimeLease,
     Workspace,
 )
 from ttakkari.orchestrator.runtime import issue_token
@@ -312,6 +313,7 @@ async def test_read_session_observes_local_dispatch_without_exposing_task_locals
     monkeypatch.setattr(manager, "_runtime", None)
     monkeypatch.setattr(manager, "_handles", {rid: SimpleNamespace(task=task)})
     monkeypatch.setattr(manager, "_waiting", {rid: (until.timestamp(), personal.id)})
+    monkeypatch.setattr(manager, "_restart_waker", task)
     try:
         response = await client.get(f"/api/agent/sessions/{personal.id}",
             headers={"Authorization": f"Bearer {issue_token(personal.id)}"})
@@ -322,6 +324,8 @@ async def test_read_session_observes_local_dispatch_without_exposing_task_locals
         assert data["execution"]["lane"] == "workers"
         assert data["execution"]["lane_leases"] == 0
         assert data["execution"]["lane_limit"] > 0
+        assert data["execution"]["restart_waker_exists"] is True
+        assert data["execution"]["restart_waker_done"] is False
         obs = data["turns"][0]["local_dispatch"]
         assert obs["task_exists"] is True
         assert obs["task_done"] is False
@@ -335,6 +339,47 @@ async def test_read_session_observes_local_dispatch_without_exposing_task_locals
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("same_owner", [False, True])
+async def test_read_session_reports_lease_owner_match_and_pid_presence(
+    client, setup_sessions, monkeypatch, same_owner,
+):
+    from types import SimpleNamespace
+
+    from ttakkari import generation
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+    from ttakkari.runs.manager import manager
+
+    personal, _ = setup_sessions
+    owner_id = uuid.uuid4()
+    lease_owner_id = owner_id if same_owner else uuid.uuid4()
+    async with sessionmaker()() as db:
+        for gid in {owner_id, lease_owner_id}:
+            db.add(RuntimeGeneration(id=gid, revision="a" * 40, api_url="http://test",
+                                    pid=0, process_started_at=0, state="active"))
+        await db.flush()
+        db.add(RuntimeControl(id=1, active_generation=owner_id))
+        run = Run(session_id=personal.id, workspace_id=personal.workspace_id,
+                  engine="codex", status=RunStatus.running, prompt="review", pid=4321)
+        db.add(run)
+        await db.flush()
+        db.add(RuntimeLease(run_id=run.id, generation_id=lease_owner_id,
+                            session_id=personal.id, lane="workers"))
+        await db.commit()
+    runtime = SimpleNamespace(id=owner_id, role="api", execution_mode="local", draining=False,
+                              http_inflight=0)
+    monkeypatch.setattr(generation, "current", runtime)
+    monkeypatch.setattr(manager, "_runtime", None)
+    monkeypatch.setattr(manager, "_restart_waker", None)
+    response = await client.get(f"/api/agent/sessions/{personal.id}",
+        headers={"Authorization": f"Bearer {issue_token(personal.id)}"})
+    assert response.status_code == 200
+    turn = response.json()["turns"][0]
+    assert turn["lease_owned"] is True
+    assert turn["lease_owner_matches_claim_owner"] is same_owner
+    assert turn["pid_recorded"] is True
+    assert '"pid": 4321' not in response.text
 
 
 @pytest.mark.parametrize("execution_mode", ["local", "remote"])

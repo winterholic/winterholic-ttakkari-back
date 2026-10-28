@@ -90,7 +90,8 @@ async def manage_research(operation: Literal['list', 'create', 'resume', 'update
     Page each collection beyond a truncated snapshot; tail pages are still partial. data schemas: create(title,goal,environment,criteria); update(expected_version,
     phase,next_actions); source(source_key,title,locator,body); node(kind,title,summary,conditions,details,
     unit_id,start,quote,supersedes_id); relation(from_id,to_id,predicate,rationale,conditions);
-    select(query,budget_seconds,environment); experiment(title,hypothesis,rationale,adapter,config,environment,
+    select(query,budget_seconds,environment,candidate_source=research|catalog); catalog candidates preserve runtime readiness and condition-bound failures; no predicted gains.
+    experiment(title,hypothesis,rationale,adapter,config,environment,
     budget={seconds,memory_mb},method_ids); report(result,interpretation,next_actions); control(action,reason);
     discover(q); dashboard(study_id?); catalog_search(q,target,layer,goal,intervention,research_method,execution_status);
     method_get(id/slug); method_register(...); method_promote(run_id,decision_note,target_status);

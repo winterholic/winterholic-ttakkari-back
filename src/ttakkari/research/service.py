@@ -174,14 +174,18 @@ async def selection_evidence(db, nodes: list[Node], scope: str) -> dict:
     } for e, unit, revision, source, current in entries}
 
 
-async def selection_failures(db, node_ids: list[uuid.UUID], scope: str, limit: int) -> tuple[dict, bool]:
+async def selection_failures(db, node_ids: list[uuid.UUID], scope: str, limit: int,
+                             *, catalog_ids: list[uuid.UUID] | None = None) -> tuple[dict, bool]:
     """Read existing failure rows; association with a method is not causal attribution."""
-    failures = {str(ident): [] for ident in node_ids}
+    failures = {str(ident): [] for ident in [*node_ids, *(catalog_ids or [])]}
+    if not failures:
+        return {}, False
     # Explicit registry lineage also connects runs linked through v2 method_id/compared IDs.
     catalog = (await db.execute(select(Method.id, Method.source_node_id).where(
         Method.source_node_id.in_(node_ids), Method.scope.in_([scope, "system"]),
     ).order_by(Method.created_at.desc(), Method.id).limit(limit + 1))).all()
     lineage = {str(mid): str(nid) for mid, nid in catalog[:limit]}
+    lineage.update({str(mid): str(mid) for mid in catalog_ids or []})
     linked = [cast(Experiment.method_ids, JSONB).contains([ident]) for ident in failures]
     if lineage:
         linked.append(Experiment.method_id.in_([uuid.UUID(mid) for mid in lineage]))
@@ -227,6 +231,77 @@ async def selection_failures(db, node_ids: list[uuid.UUID], scope: str, limit: i
                 "detail_path": f"/api/research/runs/{run.id}", "causal_status": "unassessed",
             })
     return failures, truncated
+
+
+async def catalog_selection_candidates(db, scope: str, query: str, limit: int = 200) -> dict:
+    """Registry investigation candidates, without fabricating method Nodes or costs."""
+    q = select(Method).where(Method.scope.in_([scope, "system"]))
+    if query:
+        pattern = "%" + query.replace("%", "\\%").replace("_", "\\_") + "%"
+        q = q.where(or_(Method.name.ilike(pattern), Method.name_ko.ilike(pattern),
+                        Method.summary.ilike(pattern), Method.slug.ilike(pattern)))
+    rows = (await db.scalars(q.order_by(Method.updated_at.desc(), Method.id).limit(limit + 1))).all()
+    methods, truncated = rows[:limit], len(rows) > limit
+    ids = [m.id for m in methods]
+    if not ids:
+        return {"methods": [], "truncated": False}
+    nodes = (await db.scalars(select(Node).join(Study, Study.id == Node.study_id).where(
+        Node.id.in_([m.source_node_id for m in methods if m.source_node_id]), Study.scope == scope,
+        Node.kind == "method",
+    ))).all()
+    node_by_id = {n.id: n for n in nodes}
+    contexts = await selection_context(db, nodes, scope, limit)
+    direct_failures, failures_truncated = await selection_failures(db, [], scope, limit, catalog_ids=ids)
+    source, target = aliased(Method), aliased(Method)
+    relations = (await db.execute(select(MethodRelation, source, target)
+        .join(source, source.id == MethodRelation.from_method_id)
+        .join(target, target.id == MethodRelation.to_method_id)
+        .where(MethodRelation.scope.in_([scope, "system"]), source.scope.in_([scope, "system"]),
+               target.scope.in_([scope, "system"]),
+               or_(MethodRelation.from_method_id.in_(ids), MethodRelation.to_method_id.in_(ids)))
+        .order_by(MethodRelation.id).limit(limit + 1))).all()
+    relation_node_ids = {m.source_node_id for _, a, b in relations[:limit] for m in (a, b) if m.source_node_id}
+    if relation_node_ids:
+        related_nodes = (await db.scalars(select(Node).join(Study, Study.id == Node.study_id).where(
+            Node.id.in_(relation_node_ids), Study.scope == scope, Node.kind == "method",
+        ))).all()
+        node_by_id.update({n.id: n for n in related_nodes})
+    history_truncated = failures_truncated or len(relations) > limit
+    result = []
+    for method in methods:
+        node = node_by_id.get(method.source_node_id)
+        context = dict(contexts.get(str(method.source_node_id), {"relations": [], "truncated": False}))
+        # Remap Node direction IDs for the existing condition/direction rules, while
+        # retaining the exact source relation inside the record.
+        context["relations"] = [{**r, "source_relation": r,
+            "from_id": str(method.id) if r["from_id"] == str(method.source_node_id) else r["from_id"],
+            "to_id": str(method.id) if r["to_id"] == str(method.source_node_id) else r["to_id"]}
+            for r in context["relations"]]
+        for relation, from_method, to_method in relations[:limit]:
+            if method.id not in (from_method.id, to_method.id):
+                continue
+            other = to_method if method.id == from_method.id else from_method
+            other_node = node_by_id.get(other.source_node_id)
+            context["relations"].append({"id": str(relation.id), "from_id": str(from_method.id),
+                "to_id": str(to_method.id), "predicate": relation.relation_type,
+                "conditions": relation.conditions, "rationale": relation.note,
+                "other_node": {"id": str(other.id), "title": other.name_ko,
+                               "conditions": other_node.conditions if other_node else {},
+                               "epistemic_status": other.evidence_status},
+                "source": "catalog"})
+        failures = { (f["experiment_id"], f["run_id"]): f
+                     for f in [*context.get("failures", []), *direct_failures[str(method.id)]] }
+        if failures:
+            context["failures"] = list(failures.values())
+        context["truncated"] = context["truncated"] or history_truncated or truncated
+        readiness = compute_execution_status(method, scope=scope)
+        result.append({**out(method), "method_id": str(method.id), "candidate_source": "catalog",
+            "title": method.name_ko, "conditions": node.conditions if node else {},
+            "cost_seconds": node.details.get("cost_seconds") if node else None,
+            "evidence_count": len(method.evidence or []), "research_context": context,
+            "execution_status": readiness.status, "execution_status_label_ko": readiness.status_label_ko,
+            "is_executable": readiness.is_executable, "unavailable_reason": readiness.unavailable_reason})
+    return {"methods": result, "truncated": truncated}
 
 
 async def get_node(db, study, ident):

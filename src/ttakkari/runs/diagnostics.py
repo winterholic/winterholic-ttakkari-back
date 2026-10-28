@@ -107,6 +107,7 @@ async def session_execution(db, sess, runs) -> tuple[dict, dict]:
     limit = {"leads": settings.max_concurrent_leads, "desk": settings.max_concurrent_desk}.get(
         lane, settings.max_concurrent_workers)
     leases = await db.scalar(select(func.count()).select_from(RuntimeLease).where(RuntimeLease.lane == lane))
+    restart_waker = manager._restart_waker
     head = await db.scalar(select(Run.id).where(
         Run.session_id == sess.id, Run.status.in_(("queued", "running")),
     ).order_by(Run.created_at).limit(1))
@@ -116,6 +117,8 @@ async def session_execution(db, sess, runs) -> tuple[dict, dict]:
         "claim_owner_generation_id": str(owner) if owner else None,
         "remote": manager.remote, "shutting_down": manager._shutting_down,
         "draining": bool(runtime and getattr(runtime, "draining", False)),
+        "restart_waker_exists": restart_waker is not None,
+        "restart_waker_done": restart_waker.done() if restart_waker else None,
         "lane": lane, "lane_leases": leases, "lane_limit": limit,
         "head_run_id": str(head) if head else None,
     }

@@ -65,7 +65,7 @@ class CopilotAdapter:
         if spec.engine_session_id:
             cmd.extend(["--session-id", spec.engine_session_id])
 
-        if spec.effort and spec.effort in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+        if model != "auto" and spec.effort and spec.effort in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
             cmd.extend(["--reasoning-effort", spec.effort])
 
         if spec.session_id and spec.mcp_servers:

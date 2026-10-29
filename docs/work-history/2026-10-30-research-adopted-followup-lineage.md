@@ -19,7 +19,7 @@
   1 passed in 1.01s
   ```
 
-- 이 테스트는 backend API test fixture/SQLite에서 기존 preset 기반 `retrieval_eval`을 사용했다. 실제 PostgreSQL, 배포 API, 인증 UI, 호스트 ML 실행 증거가 아니다. 외부 운영 side effect/DB 변경은 수행하지 않았다.
+- 이 테스트는 backend API test fixture에서 기존 preset 기반 `retrieval_eval`을 사용했다. 해당 개별 실행의 DB 종류는 원 실행 시점의 환경 기록이 없어 미확정이다. `tests/conftest.py`의 source는 기본 경로에서 `pg_sandbox.start_cluster()`를 시작하고, `TTAKKARI_TEST_DB` 명시 경로에서는 `patch_asyncpg_test_port`를 적용한다. 이는 가능한 fixture 동작에 대한 source 확인이며 원 실행에서 어느 경로가 선택됐는지 증명하지 않는다. 원격 PostgreSQL, 배포 API, 인증 UI, 호스트 ML 실행은 검증하지 않았고 외부 운영 side effect/DB 변경은 수행하지 않았다.
 
 ## 남은 범위
 
@@ -36,6 +36,7 @@
   ```
 
 - 정상 hook 출력: Ruff 변경 Python 1개 통과; `pytest -m contract`: `85 passed, 6092 deselected in 15.73s`; 변경 테스트: `1 passed in 1.10s`. 결과 요약은 "사전 검증 통과: 계약 묶음과 바뀐 테스트 파일 범위만 확인했습니다. 전체 통과를 뜻하지 않습니다."였다.
+- 정상 hook의 출력은 `db reset: 85 selective ... 120 tables`를 보였으며 격리 test DB에서 선택적 reset을 수행했다는 범위만 확인한다. 이 receipt만으로 원 test 실행 또는 hook의 DB backend 종류를 특정하지 않는다.
 - Push 결과: `282ca335..10874f8c HEAD -> main`. `git ls-remote origin refs/heads/main`과 local `HEAD` 모두 `10874f8c37f2e9ec90876e5a98968c3e8b582ab3`; 작업 트리는 clean이다.
 - `request_backend_deploy(revision="10874f8c37f2e9ec90876e5a98968c3e8b582ab3")` 응답: 예약 `5d09e942-b4e5-4ab7-a4f0-ce09fd7ad27e`, `status=requested`, `skip_tests=false`, `strategy=generations`. 후속 `backend_deploy_status`도 `requested`를 반환했다. 이는 배포 수락이며 활성화/운영 성공 증거가 아니다.
 - 프론트 main은 `f610d6652175fcd97b4f69b40fa9d2b52c4c7118`로 게시했다. GitHub Vercel status 1회 조회 시 `pending`, description `Vercel is deploying your app`; 이 check 시점에 한해 배포가 진행 중이었다. 인증된 운영 화면 및 실제 backend 활성 revision은 미검증이다.

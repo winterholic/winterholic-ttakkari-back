@@ -1,7 +1,6 @@
 """Vertical end-to-end integration test for Research Lab v2 using real retrieval_eval adapter."""
 
 import uuid
-import pytest
 
 from ttakkari.db import sessionmaker
 from ttakkari.research import runner
@@ -62,7 +61,6 @@ async def test_vertical_e2e_rag_research_flow(client, auth):
     configs = exp["configurations"]
     assert len(configs) == 2
     cfg_base = configs[0]
-    cfg_treat = configs[1]
 
     # 4. 실제 어댑터 동기 실행 (Run experiment synchronously via runner)
     sm = sessionmaker()

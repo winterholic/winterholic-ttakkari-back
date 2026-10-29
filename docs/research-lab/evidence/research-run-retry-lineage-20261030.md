@@ -16,6 +16,8 @@
 
 ## 검증 근거
 
+Backend implementation commit: `add75ebda42759055a6b9fe0146fb5d1c8fb4ecd` (topic branch `topic/research-lab-v2-execution-20261030`). Frontend topic commit: `ff129e8f7458225d3a50158d5b96f0cb4e3c2877` (branch `topic/research-run-retry-lineage-20261030`). Both are based on the recorded backend/frontend bases below and remain topic-only.
+
 기존 integration worktree의 잠금 의존성/테스트 환경을 사용해 새 backend topic의 코드를 검증했다.
 
 ```text

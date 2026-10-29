@@ -43,3 +43,13 @@
 
 - 승인/실 PostgreSQL 및 세부 후속: [KB P2 독립 재검증 기록](../../../projects/winterholic-ttakkari/back-kb-p2-review-d3ac880/docs/work-history/2026-10-29-kb-p2-independent-reverification.md).
 - 통합 checkout main 대조 기록: [KB P2 main integration readback](../../../projects/winterholic-ttakkari/back-kb-p2-integration-20261029/docs/work-history/2026-10-29-kb-p2-main-integration-readback.md).
+
+## 2026-10-30 bounded observation surface 후속
+
+기존 운영 readback의 한정 PASS와 audit 100원 FAILED는 그대로 둔다. 새 코드는 기존 owner/auth 경계를 재사용해 부족한 메타데이터 관측 surface만 추가했다. 제품 commit `256c19db95695097bbb70507b0184654e272ca31`은 main에 게시됐다. 이 변경은 운영 DB를 조회하거나 데이터를 수정했다는 뜻이 아니다.
+
+- owner 경로 `GET /api/assistant/kb/observations`는 기존 owner 인증 및 personal/owner 범위로 제한된다. agent 경로 `/api/agent/kb/summary`와 `/observations`는 호출 세션의 기존 `AuthContext.pool`을 유지하고 owner 범위로 승격하지 않는다.
+- 관측 응답은 접근 허용된 후보의 전·후 count와 context/covered/visible 분류, 범위 메타데이터, revision/source/hash/passage/evidence 수 및 alias 관계를 bounded하게 제공한다. 본문, title, document key/locator, 임의 원본 metadata를 내보내지 않는다. 접근 불가 다른 tenant 자료의 수를 추정하거나 노출하지 않는다.
+- MCP에는 `kb_summary`, `kb_observations`를 추가하고 `kb_search`의 `offset`/`document_id`/`current_only`, `kb_document`의 `revision_id` 및 bounded passage paging을 노출했다. 이는 HTTP의 기존 summary와 revision/current-only 선택을 MCP에서 접근 가능하게 한다. `kb_library_inventory`라는 기존 도구가 있었다고 주장하지 않는다.
+- 회귀 범위는 변경 5개 테스트 파일 64 passed, MCP options 단독 DB-free 테스트 1 passed, ruff 변경파일 통과다. 정상 pre-push gate에서 contract 84 passed 및 선택 DB reset 사용/전체 fallback 미사용을 확인했고 `git push`가 `a30a5882..256c19db HEAD -> main`으로 끝났다. 테스트 DB 결과는 운영 호출 증거가 아니다. formatting 전체 저장소 검사에서 기존 파일 포맷 차이가 있었으며 대량 재포맷은 하지 않았다.
+- 새 API의 실제 운영 운영검증은 미수행이다. 특히 mixed current/historical context-reference filtering, candidate counts와 scope boundary, alias/direct IDs, summary·revision-specific MCP 조회, quote/evidence 보존을 fresh independent owner가 exact SHA에서 확인해야 한다. `d9a009a9-0879-4585-ad7d-586725fa8da5`에 전달할 검증 범위이며, 그 결과 전까지 이 추가 surface의 운영 검증은 미확인이다. 과거 17개 실 PostgreSQL/initdb 사례 및 동일 sandbox denial은 반복하지 않는다.

@@ -32,3 +32,10 @@
 - 과거 전수완료 주장은 **FAILED 유지**. 미복원된 원 100개와 선정·제외 기준은 이 작업으로 회복되지 않았다.
 - 네 요구의 출처를 승인 저장소/지원 대화에서 연결했으며, 사용자 원문이 없는 감사자 요약은 문서 근거로 표시했다. 보호된 다른 Run outbox는 읽지 않았다.
 - 수행한 변경은 이 새 문서 추가뿐이다. 테스트, worker 생성/취소, 코드·main·배포 변경, 운영 dispatch/reconcile은 하지 않았다.
+
+## 2026-10-30 현재 main 대조 후속
+
+- `c8be969453bcb028fdef6175ae5352c2faa4e28c`는 `origin/main`의 조상이 아니다. 다만 main의 `0f6f0a77` (`fix(infra): open owner data/session controls and cancel verified orphaned runs`)가 c8be 변경 파일 대부분과 회사 세션 도구 권한 완화의 의미를 포함한다. 두 revision 사이에 남은 차이는 이후 runtime 진단, LOG-297 소유권 fence, KB 도구 등 후속 변경을 포함하므로 c8be 전체 cherry-pick을 회사 권한 누락의 증거로 삼지 않았다. c8be에서 추가된 `research.py` catalog 선택 기능은 회사 세션 권한 변경과 별개의 제품 동작이며 이번 범위에 임의 이식하지 않았다.
+- 기존 권한 기록의 원래 경계(회사 AI 계정 정책, 워커 부모 소유권, 사용자 소유 자료 보호, 문서별 회사 엔진 접근 제어)는 보존한다. 이 비교는 승인 저장소 코드와 work-history에 대한 정적 대조이며 현재 회사 계정으로 실제 실행한 운영 검증은 아니다. root는 회사 레그나에 개입하지 않는다.
+- GitHub main/운영 allowlist와 과거 push 403의 현재 해결 여부는 **미확인**이다. 과거 credential 공급 실패는 GitHub 403 자체를 관측한 증거가 아니며, 다른 계정으로 회사 작업을 실행하거나 전역 `gh` 계정을 바꾸지 않았다. 동일 403 재시도도 하지 않았다. 남은 것은 승인된 회사 AI 계정 범위에서 allowlist 및 정상 push 권한을 확인하는 독립 검증이다.
+- 기존 OpenCode strict-Claude 검증 및 75c6/58a161 수집 PASS 범위는 원기록 그대로 보존한다. 전체 100 항목 원감사는 **FAILED**이며 복원되지 않았다. 이 추가 대조는 새 분모를 만들거나 과거 판정을 승격하지 않는다.

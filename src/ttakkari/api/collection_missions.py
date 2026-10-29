@@ -35,6 +35,20 @@ class RetryInput(BaseModel):
 _ERROR_CLASSIFICATION_FIELDS = {
     "code", "type", "cause", "cause_code", "attempts", "error_type", "error_code", "retryable",
 }
+_ERROR_CODES = frozenset({
+    "all_items_blocked", "attempt_fenced", "attempts_exhausted", "cancelled", "collector_error",
+    "current_source_retention_expired", "envelope_id_conflict", "handler_error", "idempotency_conflict",
+    "invalid_envelope", "invalid_job_state", "invalid_reprocess_request", "invalid_request", "invalid_source_retention",
+    "items_failed", "job_not_found", "mission_page_budget", "owner_lost", "quality_model_invalid",
+    "raw_blob_hash_mismatch", "raw_blob_unavailable", "raw_reprocessing_not_permitted",
+    "raw_retention_expired", "reprocess_source_changed", "reprocess_source_unavailable",
+    "reprocessed_item_failed", "scope_binding_mismatch", "search_provider_failed", "source_policy_missing",
+    "storage_cap_reached", "store_not_permitted", "unsupported_source_kind",
+})
+_ERROR_TYPES = frozenset({
+    "CollectorContractError", "FetchError", "KeyError", "OSError", "RuntimeError", "TimeoutError",
+    "TypeError", "ValueError",
+})
 
 
 def _classified_error(error):
@@ -44,8 +58,17 @@ def _classified_error(error):
     result = {}
     for key in _ERROR_CLASSIFICATION_FIELDS:
         value = error.get(key)
-        if isinstance(value, (str, int, bool)) and (not isinstance(value, str) or value):
-            result[key] = value[:80] if isinstance(value, str) else value
+        if key in {"code", "cause", "cause_code", "error_code"}:
+            if isinstance(value, str) and value in _ERROR_CODES:
+                result[key] = value
+        elif key in {"type", "error_type"}:
+            if isinstance(value, str) and value in _ERROR_TYPES:
+                result[key] = value
+        elif key == "attempts":
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000:
+                result[key] = value
+        elif key == "retryable" and isinstance(value, bool):
+            result[key] = value
     return result
 
 

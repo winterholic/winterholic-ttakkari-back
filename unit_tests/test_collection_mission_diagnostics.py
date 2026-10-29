@@ -47,13 +47,22 @@ class _ReadOnlyDb:
 
 def test_diagnostic_classification_keeps_exception_contract_without_raw_message():
     assert _classified_error({
-        "code": "attempts_exhausted", "cause": "invalid_envelope", "error_type": "CollectorContractError",
+        "code": "attempts_exhausted", "type": "RuntimeError", "cause": "invalid_envelope",
+        "error_type": "CollectorContractError",
         "error_code": "invalid_envelope", "retryable": False, "attempts": 3,
         "message": "password=should-not-leak",
     }) == {
-        "code": "attempts_exhausted", "cause": "invalid_envelope", "error_type": "CollectorContractError",
+        "code": "attempts_exhausted", "type": "RuntimeError", "cause": "invalid_envelope",
+        "error_type": "CollectorContractError",
         "error_code": "invalid_envelope", "retryable": False, "attempts": 3,
     }
+
+
+def test_diagnostic_classification_drops_unrecognized_free_text_fields():
+    raw = "synthetic private exception detail"
+    for key in ("code", "type", "cause", "cause_code", "error_type", "error_code"):
+        assert key not in _classified_error({key: raw})
+    assert _classified_error({"cause": {"message": raw}, "message": raw}) == {}
 
 
 def test_policy_diagnostic_is_bounded_to_rights_and_strips_query_credentials():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -47,6 +48,9 @@ def _dispatch_body(epoch: int) -> orchestrator.DispatchQueuedRunIn:
 
 
 async def test_api_rejects_aba_claim_epoch_before_dispatch(monkeypatch):
+    from pathlib import Path
+
+    from ttakkari.generation import GenerationRuntime
     from ttakkari.models import RuntimeControl, RuntimeGeneration
 
     control = SimpleNamespace(active_generation=OWNER_ID, executor_generation=None, epoch=19)
@@ -75,12 +79,137 @@ async def test_api_rejects_aba_claim_epoch_before_dispatch(monkeypatch):
     monkeypatch.setattr(orchestrator, "_manager", manager_session)
     monkeypatch.setattr(orchestrator, "_owned_worker", owned_worker)
     monkeypatch.setattr(orchestrator.manager, "dispatch", forbidden_dispatch)
-    monkeypatch.setattr(orchestrator.manager, "_runtime", SimpleNamespace(
-        id=OWNER_ID, draining=False, role="api", execution_mode="local"))
+    runtime = GenerationRuntime(Path("/tmp"), revision=REVISION,
+                                api_url="http://127.0.0.1:18791")
+    runtime.id = OWNER_ID
+    runtime.execution_mode = "local"
+    monkeypatch.setattr(orchestrator.manager, "_runtime", runtime)
 
     with pytest.raises(HTTPException) as exc:
         await orchestrator.dispatch_queued_worker_run(WORKER_ID, _dispatch_body(18), SESSION_ID, FakeDb())
     assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("operation", ["dispatch", "reconcile"])
+@pytest.mark.parametrize("owner_state,expected_status", [("active", None), ("draining", 409)])
+async def test_recovery_routes_use_real_generation_runtime_contract(
+    tmp_path, monkeypatch, operation, owner_state, expected_status
+):
+    from pathlib import Path
+
+    from ttakkari.generation import GenerationRuntime
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    control = SimpleNamespace(active_generation=OWNER_ID, executor_generation=None, epoch=19)
+    owner = SimpleNamespace(id=OWNER_ID, revision=REVISION, state=owner_state)
+    caller = SimpleNamespace(id=SESSION_ID, pool="personal")
+    target = SimpleNamespace(id=WORKER_ID, pool="personal")
+    run = SimpleNamespace(id=RUN_ID, session_id=WORKER_ID, status="queued" if operation == "dispatch" else "running")
+
+    async def manager_session(_db, _sid):
+        return caller
+
+    async def owned_worker(_db, _caller, _worker_id):
+        return target
+
+    class FakeDb:
+        async def get(self, model, _key):
+            if model is RuntimeControl:
+                return control
+            if model is RuntimeGeneration:
+                return owner
+            raise AssertionError(model)
+
+        async def scalar(self, _statement):
+            return run
+
+        async def refresh(self, _row):
+            return None
+
+    runtime = GenerationRuntime(Path(tmp_path), revision=REVISION, api_url="http://127.0.0.1:18791")
+    runtime.id = OWNER_ID
+    runtime.execution_mode = "local"
+    monkeypatch.setattr(orchestrator, "_manager", manager_session)
+    monkeypatch.setattr(orchestrator, "_owned_worker", owned_worker)
+    monkeypatch.setattr(orchestrator.manager, "_runtime", runtime)
+
+    if operation == "dispatch":
+        dispatch = AsyncMock(return_value=RUN_ID)
+        monkeypatch.setattr(orchestrator.manager, "dispatch", dispatch)
+        body = _dispatch_body(19)
+        endpoint = orchestrator.dispatch_queued_worker_run
+    else:
+        reconcile = AsyncMock(return_value={"reconciled": True})
+        monkeypatch.setattr("ttakkari.executor_reconcile.reconcile_one", reconcile)
+        body = orchestrator.ReconcileWorkerLeaseIn(
+            run_id=RUN_ID, expected_status="running", expected_pool="personal",
+            expected_claim_owner_generation_id=OWNER_ID, expected_claim_owner_revision=REVISION,
+            expected_claim_owner_epoch=19, expected_lease_owner_generation_id=uuid.uuid4(),
+            expected_lease_owner_revision="b" * 40,
+            idempotency_key=f"reconcile:{WORKER_ID}:{RUN_ID}:{uuid.uuid4()}",
+        )
+        # Bind the idempotency key to the supplied lease owner exactly.
+        body = body.model_copy(update={
+            "idempotency_key": f"reconcile:{WORKER_ID}:{RUN_ID}:{body.expected_lease_owner_generation_id}"
+        })
+        endpoint = orchestrator.reconcile_worker_lease
+
+    if expected_status is not None:
+        with pytest.raises(HTTPException) as exc:
+            await endpoint(WORKER_ID, body, SESSION_ID, FakeDb())
+        assert exc.value.status_code == expected_status
+        if operation == "dispatch":
+            dispatch.assert_not_awaited()
+        else:
+            reconcile.assert_not_awaited()
+    else:
+        response = await endpoint(WORKER_ID, body, SESSION_ID, FakeDb())
+        if operation == "dispatch":
+            assert response["run_id"] == str(RUN_ID)
+            dispatch.assert_awaited_once()
+        else:
+            assert response["reconciled"]
+            reconcile.assert_awaited_once()
+
+
+async def test_compensation_reads_persisted_drain_state_with_generation_runtime(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.generation import GenerationRuntime
+    from ttakkari.models import RuntimeGeneration
+    from ttakkari.runs import compensation
+    from ttakkari.runs.manager import manager
+
+    runtime = GenerationRuntime(Path(tmp_path), revision=REVISION, api_url="http://127.0.0.1:18791")
+    runtime.id = OWNER_ID
+    runtime.execution_mode = "local"
+    owner = SimpleNamespace(id=OWNER_ID, state="draining")
+    control = SimpleNamespace(active_generation=OWNER_ID, executor_generation=None)
+
+    class FakeDb:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, model, _key):
+            assert model is RuntimeGeneration
+            return owner
+
+        async def commit(self):
+            return None
+
+    db = FakeDb()
+    reconcile = AsyncMock()
+    monkeypatch.setattr(compensation, "sessionmaker", lambda: lambda: db)
+    monkeypatch.setattr(generation, "_control", AsyncMock(return_value=control))
+    monkeypatch.setattr(manager, "_runtime", runtime)
+    monkeypatch.setattr(executor_reconcile, "reconcile_orphans", reconcile)
+
+    assert await compensation.compensate_runs() == {"requeued": 0, "orphans": 0}
+    reconcile.assert_not_awaited()
 
 
 async def test_api_rejects_spoofed_idempotency_key_before_owner_read(monkeypatch):
@@ -103,11 +232,17 @@ async def test_api_rejects_spoofed_idempotency_key_before_owner_read(monkeypatch
 
 
 async def test_manager_rechecks_claim_epoch_while_holding_session_lock(monkeypatch):
+    from pathlib import Path
+
+    from ttakkari.generation import GenerationRuntime
     from ttakkari.runs.manager import RunManager
 
     m = RunManager()
-    m._runtime = SimpleNamespace(
-        id=OWNER_ID, draining=False, role="api", execution_mode="local", refresh=lambda: _active())
+    runtime = GenerationRuntime(Path("/tmp"), revision=REVISION, api_url="http://127.0.0.1:18791")
+    runtime.id = OWNER_ID
+    runtime.execution_mode = "local"
+    runtime.refresh = lambda: _active()
+    m._runtime = runtime
     control = SimpleNamespace(active_generation=OWNER_ID, executor_generation=None, epoch=20)
     session = SimpleNamespace(id=WORKER_ID, kind="worker", pool="personal")
     scalar_calls = 0

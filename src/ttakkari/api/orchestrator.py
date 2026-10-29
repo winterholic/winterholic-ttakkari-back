@@ -253,7 +253,7 @@ async def dispatch_queued_worker_run(worker_id: uuid.UUID, body: DispatchQueuedR
     if (owner_id != body.expected_claim_owner_generation_id or control.epoch != body.expected_claim_owner_epoch
             or owner is None
             or owner.revision != body.expected_claim_owner_revision or owner.state != "active"
-            or runtime is None or runtime.id != owner_id or runtime.draining or manager.remote):
+            or runtime is None or runtime.id != owner_id or getattr(runtime, "draining", False) or manager.remote):
         raise HTTPException(status.HTTP_409_CONFLICT, "claim owner 또는 active generation이 바뀌었습니다.")
 
     run = await db.scalar(select(Run).where(Run.id == body.run_id, Run.session_id == target.id)
@@ -298,7 +298,7 @@ async def reconcile_worker_lease(worker_id: uuid.UUID, body: ReconcileWorkerLeas
     if (current_id != body.expected_claim_owner_generation_id or control.epoch != body.expected_claim_owner_epoch
             or current is None
             or current.revision != body.expected_claim_owner_revision or current.state != "active"
-            or runtime is None or runtime.id != current_id or runtime.draining or manager.remote):
+            or runtime is None or runtime.id != current_id or getattr(runtime, "draining", False) or manager.remote):
         raise HTTPException(status.HTTP_409_CONFLICT, "현재 active claim owner가 바뀌었습니다.")
     run = await db.scalar(select(Run).where(Run.id == body.run_id, Run.session_id == target.id)
                            .execution_options(populate_existing=True))

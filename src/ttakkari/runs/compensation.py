@@ -56,24 +56,33 @@ async def restore_failure_contract(db, run) -> bool:
 
 async def compensate_runs() -> dict:
     from ttakkari import executor_reconcile, generation
-    from ttakkari.models import RuntimeProcessGroup
+    from ttakkari.models import RuntimeGeneration, RuntimeProcessGroup
     from ttakkari.runs.manager import _inspect_run_process, manager
+
+    async def runtime_owns_active_generation(db) -> bool:
+        runtime = manager.runtime
+        if runtime is None:
+            return True
+        if manager.remote or getattr(runtime, "draining", False):
+            return False
+        control = await generation._control(db)
+        owner_id = generation.claim_owner(control)
+        if owner_id != runtime.id:
+            return False
+        owner = await db.get(RuntimeGeneration, owner_id)
+        return owner is not None and owner.state == "active"
 
     # Standby/draining processes must never recover work on behalf of an owner.
     async with sessionmaker()() as db:
-        if manager.runtime:
-            control = await generation._control(db)
-            if generation.claim_owner(control) != manager.runtime.id or manager.runtime.draining:
-                return {"requeued": 0, "orphans": 0}
+        if not await runtime_owns_active_generation(db):
+            return {"requeued": 0, "orphans": 0}
         await db.commit()
     reconciled = await executor_reconcile.reconcile_orphans(apply=True)
     count = 0
     waiting = []
     async with sessionmaker()() as db:
-        if manager.runtime:
-            control = await generation._control(db)
-            if generation.claim_owner(control) != manager.runtime.id or manager.runtime.draining:
-                return {"requeued": 0, "orphans": reconciled["reconciled"]}
+        if not await runtime_owns_active_generation(db):
+            return {"requeued": 0, "orphans": reconciled["reconciled"]}
         newer = aliased(Run)
         rows = list(await db.scalars(select(Run).join(ChatSession, ChatSession.id == Run.session_id).where(
             ChatSession.archived_at.is_(None),

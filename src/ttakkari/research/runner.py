@@ -61,6 +61,15 @@ def _fence_owner(run: Run, owner: ExecutionOwner) -> None:
         raise generation.OwnershipLost(str(run.id))
 
 
+def _run_environment_snapshot(owner: ExecutionOwner, adapter_environment: dict,
+                              previous: dict | None) -> dict:
+    snapshot = owner.snapshot(adapter_environment, previous=previous)
+    retry = (previous or {}).get("research_retry")
+    if isinstance(retry, dict) and retry.get("contract") == 1:
+        snapshot["research_retry"] = retry
+    return snapshot
+
+
 async def cancel_run(run_id: uuid.UUID, reason: str = "user_cancelled") -> bool:
     """Signal cancellation to a running or queued run."""
     # Update DB status
@@ -193,7 +202,9 @@ async def execute_run_instance(
             cancelled = run.status == "cancelled"
             run.status = "cancelled" if cancelled else adapter_res.status
             run.raw_output = adapter_res.raw_output or {}
-            run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+            run.environment_snapshot = _run_environment_snapshot(
+                owner, adapter_res.environment_snapshot, run.environment_snapshot,
+            )
             if memory_guard is not None:
                 run.environment_snapshot = {**run.environment_snapshot,
                     "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
@@ -361,7 +372,9 @@ async def execute_run_instance(
             _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+                run.environment_snapshot = _run_environment_snapshot(
+                    owner, adapter_res.environment_snapshot, run.environment_snapshot,
+                )
             if memory_guard is not None:
                 run.environment_snapshot = {**run.environment_snapshot,
                     "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
@@ -386,7 +399,9 @@ async def execute_run_instance(
             _fence_owner(run, owner)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
-                run.environment_snapshot = owner.snapshot(adapter_res.environment_snapshot, previous=run.environment_snapshot)
+                run.environment_snapshot = _run_environment_snapshot(
+                    owner, adapter_res.environment_snapshot, run.environment_snapshot,
+                )
             if memory_guard is not None:
                 run.environment_snapshot = {**run.environment_snapshot,
                     "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
@@ -586,7 +601,9 @@ async def start_experiment_runs(
     adapter_registry: Any = None,
 ) -> list[Run]:
     """Create run records for configurations and dispatch execution."""
-    exp = await db.get(Experiment, experiment_id)
+    exp = await _lock_experiment_admission(
+        db, experiment_id, missing_error=ValueError(f"Experiment {experiment_id} not found"),
+    )
     if not exp:
         raise ValueError(f"Experiment {experiment_id} not found")
 
@@ -598,28 +615,7 @@ async def start_experiment_runs(
             "external_report_experiments_are_not_locally_executable: 외부 결과는 /external-report API로 등록하세요.",
         )
 
-    # Persisted definitions and direct /run requests must pass the same local
-    # execution checks as the planner preview before any Run rows are created.
-    from ttakkari.research.planner import validate_experiment_plan
-
-    study = await db.get(Study, exp.study_id)
-    plan = await validate_experiment_plan(
-        db,
-        study_id=exp.study_id,
-        method_id=exp.method_id,
-        compared_method_ids=[uuid.UUID(str(value)) for value in (exp.compared_method_ids or [])],
-        adapter_id=exp.adapter_id,
-        strategy=exp.strategy,
-        search_space=exp.search_space or {},
-        fixed_inputs=exp.fixed_inputs or {},
-        budget=exp.budget or {},
-        scope=study.scope if study else "personal",
-    )
-    if not plan.valid:
-        raise HTTPException(
-            422,
-            "experiment_plan_not_executable: " + "; ".join(plan.errors),
-        )
+    await _validate_experiment_plan_for_execution(db, exp)
 
     q = select(Configuration).where(Configuration.experiment_id == experiment_id)
     if configuration_ids:
@@ -698,6 +694,132 @@ async def start_experiment_runs(
         )
 
     return created_runs
+
+
+async def retry_run(db, run_id: uuid.UUID, *, actor: str = "user", background: bool = True,
+                    adapter_registry: Any = None) -> Run:
+    """Create a new Run from a terminal Run while preserving its exact trial identity."""
+    original = await db.get(Run, run_id, with_for_update=True)
+    if original is None:
+        raise HTTPException(404, "research_run_not_found")
+    if original.status not in ("succeeded", "failed", "cancelled"):
+        raise HTTPException(409, "research_run_not_terminal")
+    if original.execution_origin not in ("local_measured", "migrated_v1"):
+        raise HTTPException(422, "research_run_not_locally_reexecutable")
+
+    experiment = await _lock_experiment_admission(
+        db, original.experiment_id,
+        missing_error=HTTPException(422, "research_run_not_locally_reexecutable"),
+    )
+    if experiment is None or experiment.adapter_id == "external_report":
+        raise HTTPException(422, "research_run_not_locally_reexecutable")
+    await _validate_experiment_plan_for_execution(db, experiment)
+    configuration = await db.get(Configuration, original.configuration_id)
+    if configuration is None:
+        raise HTTPException(409, "research_run_configuration_missing")
+
+    retry_id = uuid.uuid4()
+    retry = Run(
+        id=retry_id,
+        experiment_id=original.experiment_id,
+        configuration_id=original.configuration_id,
+        study_id=original.study_id,
+        adapter_id=original.adapter_id,
+        execution_origin="local_measured",
+        repeat_index=original.repeat_index,
+        seed=original.seed,
+        status="queued",
+        progress=None,
+        environment_snapshot={"research_retry": {
+            "contract": 1, "retry_of_run_id": str(original.id),
+        }},
+        raw_output={},
+        created_at=utcnow(),
+    )
+    owner = ExecutionOwner.acquire()
+    retry.environment_snapshot = owner.snapshot(retry.environment_snapshot)
+    db.add(retry)
+    db.add(Event(study_id=original.study_id, kind="run_retry_created", actor=actor, payload={
+        "experiment_id": str(original.experiment_id),
+        "original_run_id": str(original.id),
+        "retry_run_id": str(retry.id),
+        "configuration_id": str(original.configuration_id),
+        "repeat_index": original.repeat_index,
+        "seed": original.seed,
+    }))
+    try:
+        await db.commit()
+    except BaseException:
+        owner.close()
+        raise
+
+    batch = run_experiment_batch(
+        experiment.id, [retry.id], adapter_registry=adapter_registry, _owner=owner,
+    )
+    if background:
+        try:
+            task = asyncio.create_task(batch)
+        except BaseException:
+            batch.close()
+            owner.close()
+            raise
+        _ACTIVE_TASKS[experiment.id] = task
+
+        def finished(done):
+            owner.close()
+            if _ACTIVE_TASKS.get(experiment.id) is done:
+                _ACTIVE_TASKS.pop(experiment.id, None)
+            if not done.cancelled() and done.exception() is not None:
+                logger.error("Research retry %s ended with an error", retry.id,
+                             exc_info=done.exception())
+
+        task.add_done_callback(finished)
+    else:
+        await batch
+    return retry
+
+
+async def _lock_experiment_admission(db, experiment_id: uuid.UUID, *, missing_error: Exception):
+    """Serialize all local Run reservations on the Experiment row until commit.
+
+    The database row lock is the cross-process admission fence. The task map is
+    only a same-process fast-path; queued/running rows are the durable check.
+    """
+    experiment = await db.get(Experiment, experiment_id, with_for_update=True)
+    if experiment is None:
+        raise missing_error
+
+    active = _ACTIVE_TASKS.get(experiment.id)
+    if active is not None and not active.done():
+        raise HTTPException(409, "research_experiment_batch_already_running")
+    queued_or_running = await db.scalar(select(Run.id).where(
+        Run.experiment_id == experiment.id,
+        Run.status.in_(("queued", "running")),
+    ).limit(1))
+    if queued_or_running is not None:
+        raise HTTPException(409, "research_experiment_batch_already_running")
+    return experiment
+
+
+async def _validate_experiment_plan_for_execution(db, experiment: Experiment) -> None:
+    """Apply the current local execution contract before reserving any Run."""
+    from ttakkari.research.planner import validate_experiment_plan
+
+    study = await db.get(Study, experiment.study_id)
+    plan = await validate_experiment_plan(
+        db,
+        study_id=experiment.study_id,
+        method_id=experiment.method_id,
+        compared_method_ids=[uuid.UUID(str(value)) for value in (experiment.compared_method_ids or [])],
+        adapter_id=experiment.adapter_id,
+        strategy=experiment.strategy,
+        search_space=experiment.search_space or {},
+        fixed_inputs=experiment.fixed_inputs or {},
+        budget=experiment.budget or {},
+        scope=study.scope if study else "personal",
+    )
+    if not plan.valid:
+        raise HTTPException(422, "experiment_plan_not_executable: " + "; ".join(plan.errors))
 
 
 async def recover_orphaned_runs() -> int:

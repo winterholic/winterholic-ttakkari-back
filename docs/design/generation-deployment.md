@@ -127,6 +127,20 @@ cd ~/.ttakkari/deploy/releases/<새 SHA>
 - `recovery_pending`은 자동 조정으로 안전을 확인하지 못한 상태다. 원인이 해소되기 전에는 후속 예약을 활성화하지 않는다. 관측 불능을 작업 완료로 기록하지 않는다.
 - 외부 부작용의 exactly-once, 실행 중 함수 메모리 이전, Mac/DB/전원 장애에 대한 무중단은 보장 범위 밖이다. DB fencing은 오래된 쓰기를 거절하는 역할이다.
 
+### 컷오버 완료 후 drain `recovery_pending` 진단과 명시적 복구 (2026-10-30)
+
+- `runtime_report` 및 읽기 전용 CLI `python -m ttakkari.deployment diagnose [--no-db]`는 비밀·로컬 경로 노출 없이 다음 세 가지를 함께 보고한다.
+  1. `supervisor`: `supervisor.json` 핀 SHA·릴리스 유효성, `supervisor-runtime.json` 실행 SHA·PID 생존·갱신 경과(`age_s`), 핀-실행 일치 여부, `controller.lock`·`backend-restart.lock` 보유 여부, `proxy.json` 저장 슬롯.
+  2. `deploy_queue`: `RECENT_DEPLOYS`(최근 5건) 밖으로 밀려난 오래된 작업을 포함해 전체 미종료 배포에서 `draining_jobs`, `foreground_job`, `blocking_jobs`(`recovery_pending`/`rolling_back`), `blocked_jobs`(차단된 후속 `requested`/`waiting_*`)와 `cutover_blocked` 여부.
+  3. `slots`: `8791/8792/8793` 슬롯별 프록시 지정 여부, active 소유 세대, 살아 있는 세대(`lock_held`, `leases`, `process_groups`).
+- 이미 전환을 마친 배포(`activated_revision == revision`)가 구세대 `drain` 조회 중 일시적 미응답 등으로 `recovery_pending`이 되면, `pending_jobs()`의 단일 `foreground` 자리와 `serve()`의 `blocked` 가드를 동시에 점유해 후속 `requested` 배포를 멈춘다. 이때 가드를 풀거나 자동 supersede하지 않고, **따까리 Run 밖의 호스트 터미널**에서 명시적 fence를 지정해 복구한다.
+  - 구세대 슬롯이 `/api/ready`에서 동일 `previous_generation`·`previous_revision`으로 응답하면(장기 GAME Run 등 `leases > 0` 포함), 슬롯을 정지하지 않고 배포 상태만 `draining`으로 복귀시킨다(`action="resume_draining"`). 기존 Run은 그대로 보존되고 후속 배포는 남은 빈 슬롯으로 즉시 진행된다.
+  - 구세대 슬롯이 응답하지 않으면, DB `RuntimeLease == 0`, `RuntimeProcessGroup == 0`, OS `runtime/<id>.lock` 미보유, 기록된 PID 종료가 모두 증명될 때만 DB 세대 상태를 `offline`으로 정리하고 `succeeded`로 마감한다(`action="retire_verified_dead"`). 하나라도 남아 있으면 거절한다.
+- **순환 의존(부트스트랩) 해소 절차**:
+  - 아직 배포되지 않은 새 코드의 `runtime_report` 확장은 구배포 API에 즉시 반영되지 않으며, 구버전 감독(`e817fc19` 등)이 `recovery_pending`에 막혀 있으면 새 커밋도 곧바로 배포될 수 없다.
+  - 따라서 (1) 호스트에서 새 코드 경로의 Python으로 읽기 전용 `python -m ttakkari.deployment diagnose`를 실행해 핀/런타임 SHA와 현재 `epoch`·세대·슬롯 fence를 확인하고, (2) 같은 경로에서 `python -m ttakkari.deployment recover-drain --job-id <id> --expected-revision <sha> --expected-previous-generation <uuid> --expected-previous-revision <sha> --expected-previous-slot <slot> --expected-candidate-generation <uuid> --expected-active-generation <uuid> --expected-active-revision <sha> --expected-epoch <epoch> [--apply]`를 실행한다(dry-run 선행 후 `--apply`).
+  - `abcb`가 `draining`(또는 조건 충족 시 `succeeded`)으로 전이되면 구버전 감독의 `pending_jobs()`도 즉시 해당 작업을 `drains`로 옮기고 `blocked` 가드를 해제하므로, 대기 중이던 후속 배포가 정상 전환된다. 새 릴리스가 `active`가 된 뒤 `upgrade-supervisor --revision <새 SHA>`로 감독 프로세스까지 갱신한다.
+
 schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 기존 테이블을 바꾸지 않는 migration만 온라인 출발점을 명시한다. 현재 `0034_knowledge_ledger`에서 `0035_qwen_token_usage`로는 독립 사용량 테이블을 추가하므로 온라인 전환을 허용한다. 새 migration의 head와 배포 계약이 어긋나면 회귀 검사에서 실패한다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
 
 계약의 `schema_aliases`는 이름이 바뀌어 저장소에 더는 없는 옛 리비전 ID를 알려진 리비전에 대응시킨다. 별칭은 "물리 스키마가 대상 리비전과 같다"는 보증이므로 실제 DB를 대조해 확인한 경우에만 추가한다(2026-10-21: 운영 DB가 커밋된 적 없는 `0059_kb_immutability_truncate`로 찍혀 있었고, 테이블·컬럼·인덱스·트리거 대조 결과 `0059_collector_intake` 상태였다). 정렬은 후보 릴리스의 `alembic/env.py`(`ttakkari.schema_aliases.realign`)가 migration 시작 전에 수행한다. 감독은 릴리스보다 오래된 코드로 돌 수 있어(2026-10-21 기준 `e817fc19` 고정) `schema_aliases`를 모른 채 `online_migration_from`만 본다. 그래서 별칭 키는 `online_migration_from`에도 함께 적고, 별칭 정렬을 감독 코드에 두지 않는다.

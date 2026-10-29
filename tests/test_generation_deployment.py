@@ -1201,3 +1201,82 @@ def test_realign_rewrites_only_a_known_alias_and_commits():
         other.commit()
         assert realign(other, aliases) is None  # 모르는 값은 건드리지 않는다
         assert other.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0099_unknown"
+
+
+async def test_recover_drain_contract_unblocks_foreground_without_stopping_live_drain(tmp_path, monkeypatch):
+    from ttakkari.deployment import Controller, queue_diagnostics
+    from ttakkari.generation_deployment import GenerationController
+
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+    slots = FakeSlots()
+    old = await slots.start(1, Path("unused"), "a" * 40)
+    old.update(state="draining", drain_ready=False, owned_runs=1)
+    latest = await slots.start(2, Path("unused"), "c" * 40)
+    latest.update(state="active", drain_ready=False, owned_runs=0)
+    slots.route = 2
+
+    store = JobStore(tmp_path)
+    cand_gen = str(uuid.uuid4())
+    stuck = store._write({
+        "id": str(uuid.uuid4()),
+        "revision": "b" * 40,
+        "skip_tests": False,
+        "status": "recovery_pending",
+        "created_at": "2026-10-28T21:52:32+00:00",
+        "error": "draining generation unreachable; work survival is unknown",
+        "error_stage": "drain",
+        "strategy": "generations",
+        "candidate_slot": 0,
+        "previous_slot": 1,
+        "previous_generation": old["generation"],
+        "previous_revision": "a" * 40,
+        "candidate_generation": cand_gen,
+        "activated_revision": "b" * 40,
+    })
+    queued = store._write({
+        "id": str(uuid.uuid4()),
+        "revision": "d" * 40,
+        "skip_tests": False,
+        "status": "requested",
+        "created_at": "2026-10-29T16:33:58+00:00",
+        "error": None,
+        "strategy": "generations",
+    })
+    assert queue_diagnostics(store)["cutover_blocked"] is True
+    control = GenerationController(store, slots=slots)
+
+    async def fake_db_state(_prev_id, _active_id, *, mark_offline=False):
+        return {
+            "active_generation": latest["generation"],
+            "active_revision": "c" * 40,
+            "active_state": "active",
+            "active_api_url": slots.origin(2),
+            "epoch": 123,
+            "previous_generation": old["generation"],
+            "previous_revision": "a" * 40,
+            "previous_state": "draining",
+            "previous_api_url": slots.origin(1),
+            "previous_leases": 2,
+            "previous_process_groups": 2,
+            "previous_lock_held": True,
+            "previous_pid_alive": True,
+        }
+
+    monkeypatch.setattr(control, "_drain_recovery_db_state", fake_db_state)
+    res = await control.recover_drain(
+        job_id=stuck["id"],
+        expected_revision="b" * 40,
+        expected_previous_generation=old["generation"],
+        expected_previous_revision="a" * 40,
+        expected_previous_slot=1,
+        expected_candidate_generation=cand_gen,
+        expected_active_generation=latest["generation"],
+        expected_active_revision="c" * 40,
+        expected_epoch=123,
+        apply=True,
+    )
+    assert res["ok"] is True and res["action"] == "resume_draining"
+    assert queue_diagnostics(store)["cutover_blocked"] is False
+    assert [j["id"] for j in Controller(tmp_path).pending_jobs()] == [stuck["id"], queued["id"]]
+    assert slots.stopped == [] and slots.route == 2

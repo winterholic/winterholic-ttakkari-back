@@ -37,6 +37,7 @@ from ttakkari.models import (
     RuntimeControl,
     RuntimeGeneration,
     RuntimeLease,
+    RuntimeProcessGroup,
     utcnow,
 )
 
@@ -1081,6 +1082,266 @@ class GenerationController:
             self.phase(job, "retiring")
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
+
+    async def _drain_recovery_db_state(
+        self,
+        previous_id: uuid.UUID,
+        active_id: uuid.UUID,
+        *,
+        mark_offline: bool = False,
+    ) -> dict:
+        from ttakkari.deployment import _lock_held
+
+        async with sessionmaker()() as db:
+            control = await db.get(RuntimeControl, 1)
+            active_row = await db.get(RuntimeGeneration, active_id)
+            prev_row = await db.get(RuntimeGeneration, previous_id)
+            leases = int(
+                await db.scalar(
+                    select(func.count()).select_from(RuntimeLease).where(RuntimeLease.generation_id == previous_id)
+                )
+                or 0
+            )
+            groups = int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(RuntimeProcessGroup)
+                    .where(RuntimeProcessGroup.generation_id == previous_id)
+                )
+                or 0
+            )
+            if mark_offline and prev_row is not None and prev_row.state != "offline":
+                prev_row.state = "offline"
+                await db.commit()
+
+        lock_held = _lock_held(get_settings().home / "runtime" / f"{previous_id}.lock")
+        pid_alive = False
+        if prev_row is not None and isinstance(prev_row.pid, int) and prev_row.pid > 0:
+            try:
+                proc = psutil.Process(prev_row.pid)
+                if proc.is_running():
+                    if prev_row.process_started_at is None:
+                        pid_alive = True
+                    else:
+                        pid_alive = abs(proc.create_time() - prev_row.process_started_at) <= 0.001
+            except (psutil.Error, OSError):
+                pid_alive = False
+
+        return {
+            "active_generation": str(control.active_generation) if control and control.active_generation else None,
+            "active_revision": active_row.revision if active_row else None,
+            "active_state": active_row.state if active_row else None,
+            "active_api_url": active_row.api_url if active_row else None,
+            "epoch": control.epoch if control else None,
+            "previous_generation": str(prev_row.id) if prev_row else None,
+            "previous_revision": prev_row.revision if prev_row else None,
+            "previous_state": prev_row.state if prev_row else None,
+            "previous_api_url": prev_row.api_url if prev_row else None,
+            "previous_leases": leases,
+            "previous_process_groups": groups,
+            "previous_lock_held": lock_held,
+            "previous_pid_alive": pid_alive,
+        }
+
+    async def recover_drain(
+        self,
+        *,
+        job_id: str,
+        expected_revision: str,
+        expected_previous_generation: str,
+        expected_previous_revision: str,
+        expected_previous_slot: int,
+        expected_candidate_generation: str,
+        expected_active_generation: str,
+        expected_active_revision: str,
+        expected_epoch: int,
+        apply: bool = False,
+    ) -> dict:
+        """컷오버 완료 후 drain 단계에서 recovery_pending이 된 배포만 명시적 fence 아래 복구한다.
+
+        구세대가 살아 있으면(예: 장기 GAME Run 소유) 정지하지 않고 draining으로 복귀시켜
+        pending_jobs() 차단을 풀고, 죽어 있으면 lease·프로세스 그룹·OS 잠금·PID가 모두 비었을 때만
+        succeeded로 마감한다.
+        """
+        from ttakkari.deploy_gate import RestartGate
+
+        if apply and os.environ.get("TTAKKARI_RUN_ID"):
+            raise RuntimeError("drain recovery belongs to an external host command, never an agent Run")
+
+        expected_revision = _sha(expected_revision)
+        expected_previous_revision = _sha(expected_previous_revision)
+        expected_active_revision = _sha(expected_active_revision)
+        prev_uuid = uuid.UUID(expected_previous_generation)
+        cand_uuid = uuid.UUID(expected_candidate_generation)
+        active_uuid = uuid.UUID(expected_active_generation)
+        if not (0 <= expected_previous_slot < len(PORTS)):
+            raise ValueError("expected_previous_slot out of range")
+
+        gate = RestartGate(self.store.root / "backend-restart.lock") if apply else None
+        lock = gate._acquire() if gate is not None else None
+        if apply and lock is None:
+            raise RuntimeError("deployment lock is held; retry recovery when supervisor pass is idle")
+
+        try:
+            job = self.store.get(job_id)
+            if job.get("strategy") != "generations" or job.get("bootstrap"):
+                raise ValueError("drain recovery applies only to non-bootstrap generation deployments")
+            if job.get("activated_revision") != expected_revision:
+                raise ValueError("drain recovery requires a post-cutover deployment with matching activated_revision")
+            if (
+                job.get("revision") != expected_revision
+                or job.get("previous_generation") != str(prev_uuid)
+                or job.get("previous_revision") != expected_previous_revision
+                or job.get("previous_slot") != expected_previous_slot
+                or job.get("candidate_generation") != str(cand_uuid)
+            ):
+                raise ValueError("job journal fence mismatch")
+
+            receipt = job.get("recovery_receipt")
+            if (
+                job["status"] in {"draining", "retiring", "succeeded"}
+                and isinstance(receipt, dict)
+                and receipt.get("expected_epoch") == expected_epoch
+                and receipt.get("previous_generation") == str(prev_uuid)
+                and receipt.get("active_generation") == str(active_uuid)
+            ):
+                return {
+                    "ok": True,
+                    "applied": False,
+                    "idempotent": True,
+                    "action": receipt.get("action"),
+                    "job_id": job["id"],
+                    "status": job["status"],
+                    "receipt": receipt,
+                }
+
+            if job["status"] != "recovery_pending" or job.get("error_stage") not in {"drain", None}:
+                raise RuntimeError(
+                    f"job is not in drain recovery_pending state (status={job['status']!r}, stage={job.get('error_stage')!r})"
+                )
+
+            db_state = await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=False)
+            if (
+                db_state["active_generation"] != str(active_uuid)
+                or db_state["active_state"] != "active"
+                or db_state["active_revision"] != expected_active_revision
+            ):
+                raise RuntimeError("active generation fence mismatch")
+            if db_state["epoch"] != expected_epoch:
+                raise RuntimeError(
+                    f"control epoch stale or mismatched: expected {expected_epoch}, observed {db_state['epoch']}"
+                )
+            if db_state["active_generation"] == str(prev_uuid):
+                raise RuntimeError("previous generation is still active; refusing drain recovery")
+
+            active_slot = next((i for i in range(len(PORTS)) if self.slots.origin(i) == db_state["active_api_url"]), None)
+            active_snap = await self.slots.snapshot(active_slot) if active_slot is not None else None
+            if (
+                active_snap is None
+                or active_snap.get("generation") != str(active_uuid)
+                or active_snap.get("revision") != expected_active_revision
+            ):
+                raise RuntimeError("active generation slot is not ready with expected identity")
+
+            if (
+                db_state["previous_generation"] != str(prev_uuid)
+                or db_state["previous_revision"] != expected_previous_revision
+                or db_state["previous_api_url"] != self.slots.origin(expected_previous_slot)
+            ):
+                raise RuntimeError("previous generation DB record mismatch")
+            if db_state["previous_state"] not in {"draining", "offline"}:
+                raise RuntimeError(f"previous generation state {db_state['previous_state']!r} is not draining/offline")
+
+            prev_snap = await self.slots.snapshot(expected_previous_slot)
+            if prev_snap is not None:
+                if (
+                    prev_snap.get("generation") != str(prev_uuid)
+                    or prev_snap.get("revision") != expected_previous_revision
+                ):
+                    raise RuntimeError("draining slot identity mismatch; refusing recovery")
+                action = "resume_draining"
+                new_receipt = {
+                    "action": action,
+                    "recovered_at": _utcnow(),
+                    "expected_epoch": expected_epoch,
+                    "active_generation": str(active_uuid),
+                    "active_revision": expected_active_revision,
+                    "previous_generation": str(prev_uuid),
+                    "previous_slot": expected_previous_slot,
+                    "previous_leases": db_state["previous_leases"],
+                    "drain_ready": bool(prev_snap.get("drain_ready")),
+                }
+                if apply:
+                    self.phase(
+                        job,
+                        "draining",
+                        error=None,
+                        error_stage=None,
+                        error_command=None,
+                        error_exit=None,
+                        error_summary=None,
+                        recovery_receipt=new_receipt,
+                    )
+                return {
+                    "ok": True,
+                    "applied": apply,
+                    "idempotent": False,
+                    "action": action,
+                    "job_id": job["id"],
+                    "status": job["status"] if apply else "recovery_pending",
+                    "receipt": new_receipt,
+                }
+
+            if db_state["previous_leases"] > 0:
+                raise RuntimeError(
+                    f"unreachable draining generation still holds {db_state['previous_leases']} live lease(s)"
+                )
+            if db_state["previous_process_groups"] > 0:
+                raise RuntimeError(
+                    f"unreachable draining generation still has {db_state['previous_process_groups']} recorded process group(s)"
+                )
+            if db_state["previous_lock_held"]:
+                raise RuntimeError("unreachable draining generation still holds its OS runtime lock")
+            if db_state["previous_pid_alive"]:
+                raise RuntimeError("unreachable draining generation OS process is still alive")
+
+            action = "retire_verified_dead"
+            new_receipt = {
+                "action": action,
+                "recovered_at": _utcnow(),
+                "expected_epoch": expected_epoch,
+                "active_generation": str(active_uuid),
+                "active_revision": expected_active_revision,
+                "previous_generation": str(prev_uuid),
+                "previous_slot": expected_previous_slot,
+                "previous_leases": 0,
+                "drain_ready": True,
+            }
+            if apply:
+                await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=True)
+                self.phase(
+                    job,
+                    "succeeded",
+                    retired_generation=str(prev_uuid),
+                    error=None,
+                    error_stage=None,
+                    error_command=None,
+                    error_exit=None,
+                    error_summary=None,
+                    recovery_receipt=new_receipt,
+                )
+            return {
+                "ok": True,
+                "applied": apply,
+                "idempotent": False,
+                "action": action,
+                "job_id": job["id"],
+                "status": job["status"] if apply else "recovery_pending",
+                "receipt": new_receipt,
+            }
+        finally:
+            if gate is not None and lock is not None:
+                gate._release(lock)
 
     async def _previous_tts_queued(self, previous: uuid.UUID) -> int:
         from ttakkari.tts_models import TtsJob

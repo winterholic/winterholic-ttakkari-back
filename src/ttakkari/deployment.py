@@ -18,6 +18,7 @@ from pathlib import Path
 
 import asyncpg
 import httpx
+import psutil
 from sqlalchemy.engine import make_url
 
 from ttakkari.config import get_settings
@@ -516,12 +517,247 @@ class Controller:
             await dispose_engine()
 
 
+def _lock_held(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        handle = path.open("a")
+    except OSError:
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return True
+    except OSError:
+        handle.close()
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    finally:
+        handle.close()
+    return False
+
+
+_DIAG_JOB_KEYS = (
+    "id",
+    "revision",
+    "status",
+    "strategy",
+    "created_at",
+    "updated_at",
+    "previous_slot",
+    "previous_generation",
+    "previous_revision",
+    "candidate_slot",
+    "candidate_generation",
+    "activated_revision",
+    "retired_generation",
+    "error_stage",
+    "error",
+)
+
+
+def _job_summary(job: dict) -> dict:
+    return {k: job.get(k) for k in _DIAG_JOB_KEYS if k in job}
+
+
+def supervisor_diagnostics(root: Path | None = None) -> dict:
+    """감독 핀(supervisor.json)과 실행 기록(supervisor-runtime.json)·잠금을 경로/비밀 노출 없이 읽는다."""
+    from ttakkari.generation_deployment import Slots
+
+    root = root or state_dir()
+    pinned_rev = None
+    pinned_rel: Path | None = None
+    pinned_exists = False
+    pinned_matches = False
+    source_configured = False
+    marker = root / "supervisor.json"
+    if marker.is_file():
+        try:
+            pinned = json.loads(marker.read_text())
+            pinned_rev = pinned.get("revision")
+            if pinned.get("release"):
+                pinned_rel = Path(pinned["release"])
+                pinned_exists = pinned_rel.is_dir()
+                rel_marker = pinned_rel / ".release.json"
+                if rel_marker.is_file():
+                    pinned_matches = json.loads(rel_marker.read_text()).get("revision") == pinned_rev
+            source_configured = bool(pinned.get("source"))
+        except (OSError, ValueError, TypeError):
+            pass
+
+    runtime_rev = None
+    runtime_rel: Path | None = None
+    pid = None
+    pid_alive = False
+    ports = None
+    updated_at = None
+    age_s = None
+    rt_path = root / "supervisor-runtime.json"
+    if rt_path.is_file():
+        try:
+            rt = json.loads(rt_path.read_text())
+            runtime_rev = rt.get("revision")
+            if rt.get("release"):
+                runtime_rel = Path(rt["release"])
+            pid = rt.get("pid")
+            pid_alive = bool(isinstance(pid, int) and pid > 0 and psutil.pid_exists(pid))
+            ports = rt.get("ports")
+            stat = rt_path.stat()
+            updated_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
+            age_s = round(max(0.0, time.time() - stat.st_mtime), 1)
+        except (OSError, ValueError, TypeError):
+            pass
+
+    matches_rev = (runtime_rev == pinned_rev) if (pinned_rev and runtime_rev) else None
+    matches_rel = None
+    if pinned_rel is not None and runtime_rel is not None:
+        try:
+            matches_rel = runtime_rel.resolve() == pinned_rel.resolve()
+        except OSError:
+            matches_rel = False
+
+    last_upgrade = None
+    upg_path = root / "supervisor-upgrade.json"
+    if upg_path.is_file():
+        try:
+            upg = json.loads(upg_path.read_text())
+            last_upgrade = {"revision": upg.get("revision"), "status": upg.get("status")}
+        except (OSError, ValueError, TypeError):
+            pass
+
+    return {
+        "pinned_revision": pinned_rev,
+        "pinned_release_exists": pinned_exists,
+        "pinned_release_matches_revision": pinned_matches,
+        "source_configured": source_configured,
+        "runtime_revision": runtime_rev,
+        "pid": pid,
+        "pid_alive": pid_alive,
+        "ports": ports,
+        "updated_at": updated_at,
+        "age_s": age_s,
+        "matches_pinned_revision": matches_rev,
+        "matches_pinned_release": matches_rel,
+        "controller_lock_held": _lock_held(root / "controller.lock"),
+        "restart_lock_held": _lock_held(root / "backend-restart.lock"),
+        "persisted_proxy_slot": Slots(root).persisted_slot(),
+        "last_upgrade": last_upgrade,
+    }
+
+
+def queue_diagnostics(store: JobStore | None = None) -> dict:
+    """pending_jobs() 선택 결과와 recovery_pending 차단 관계를 요약한다."""
+    store = store or JobStore(state_dir())
+    pending = [j for j in store.all() if j["status"] not in TERMINAL]
+    drains, foreground = [], None
+    for job in pending:
+        if job.get("strategy") == "generations" and not job.get("bootstrap") and job["status"] in {"draining", "retiring"}:
+            drains.append(job)
+        elif foreground is None:
+            foreground = job
+    blocking = [j for j in pending if j["status"] in {"recovery_pending", "rolling_back"}]
+    blocked = (
+        [j for j in pending if j["status"] not in {"draining", "retiring", "recovery_pending", "rolling_back"}]
+        if blocking
+        else []
+    )
+    return {
+        "pending_count": len(pending),
+        "cutover_blocked": bool(blocking),
+        "draining_jobs": [_job_summary(j) for j in drains],
+        "foreground_job": _job_summary(foreground) if foreground else None,
+        "blocking_jobs": [_job_summary(j) for j in blocking],
+        "blocked_jobs": [_job_summary(j) for j in blocked],
+    }
+
+
+def slot_ownership_diagnostics(
+    root: Path,
+    generations: list[dict],
+    *,
+    persisted_proxy_slot: int | None = None,
+) -> list[dict]:
+    from ttakkari.generation import PORTS
+    from ttakkari.generation_deployment import Slots
+
+    if persisted_proxy_slot is None:
+        persisted_proxy_slot = Slots(root).persisted_slot()
+    out = []
+    for slot, port in enumerate(PORTS):
+        origin = Slots.origin(slot)
+        slot_gens = [g for g in generations if g.get("slot") == slot]
+        active_owner = next((g["id"] for g in slot_gens if g.get("state") == "active"), None)
+        live = [
+            {
+                "id": g["id"],
+                "revision": g.get("revision"),
+                "state": g.get("state"),
+                "pid": g.get("pid"),
+                "pid_alive": g.get("pid_alive"),
+                "lock_held": g.get("lock_held"),
+                "leases": g.get("leases", 0),
+                "process_groups": g.get("process_groups", 0),
+            }
+            for g in slot_gens
+            if g.get("state") != "offline" or g.get("lock_held") or g.get("leases", 0) > 0
+        ]
+        out.append({
+            "slot": slot,
+            "port": port,
+            "origin": origin,
+            "persisted_proxy": persisted_proxy_slot == slot,
+            "active_owner": active_owner,
+            "live_generations": live,
+        })
+    return out
+
+
+async def diagnose_deployment(root: Path | None = None, *, include_db: bool = True) -> dict:
+    root = root or state_dir()
+    store = JobStore(root)
+    sup = supervisor_diagnostics(root)
+    queue = queue_diagnostics(store)
+    result: dict = {
+        "deploy_strategy": strategy(),
+        "supervisor": sup,
+        "deploy_queue": queue,
+    }
+    if include_db:
+        try:
+            from ttakkari.db import sessionmaker
+            from ttakkari.operations.inline import runtime_report
+
+            async with sessionmaker()() as db:
+                report = await runtime_report(db)
+            result["control"] = report.get("control")
+            result["generations"] = report.get("generations")
+            result["slots"] = report.get("slots")
+        except Exception as exc:  # noqa: BLE001
+            result["db_error"] = type(exc).__name__
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("serve")
     upgrade = sub.add_parser("upgrade-supervisor")
     upgrade.add_argument("--revision", required=True)
+    diagnose = sub.add_parser("diagnose")
+    diagnose.add_argument("--no-db", action="store_true")
+    recover = sub.add_parser("recover-drain")
+    recover.add_argument("--job-id", required=True)
+    recover.add_argument("--expected-revision", required=True)
+    recover.add_argument("--expected-previous-generation", required=True)
+    recover.add_argument("--expected-previous-revision", required=True)
+    recover.add_argument("--expected-previous-slot", type=int, required=True)
+    recover.add_argument("--expected-candidate-generation", required=True)
+    recover.add_argument("--expected-active-generation", required=True)
+    recover.add_argument("--expected-active-revision", required=True)
+    recover.add_argument("--expected-epoch", type=int, required=True)
+    recover.add_argument("--apply", action="store_true")
     request = sub.add_parser("request")
     request.add_argument("--no-pull", action="store_true")
     request.add_argument("--skip-tests", action="store_true")
@@ -537,6 +773,35 @@ def main() -> None:
     if args.command == "upgrade-supervisor":
         from ttakkari.generation_deployment import upgrade_supervisor
         print(json.dumps(asyncio.run(upgrade_supervisor(Controller(state_dir()), args.revision))))
+        return
+    if args.command == "diagnose":
+        print(
+            json.dumps(
+                asyncio.run(diagnose_deployment(state_dir(), include_db=not args.no_db)),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if args.command == "recover-drain":
+        from ttakkari.generation_deployment import GenerationController
+
+        ctrl = GenerationController(JobStore(state_dir()))
+        out = asyncio.run(
+            ctrl.recover_drain(
+                job_id=args.job_id,
+                expected_revision=args.expected_revision,
+                expected_previous_generation=args.expected_previous_generation,
+                expected_previous_revision=args.expected_previous_revision,
+                expected_previous_slot=args.expected_previous_slot,
+                expected_candidate_generation=args.expected_candidate_generation,
+                expected_active_generation=args.expected_active_generation,
+                expected_active_revision=args.expected_active_revision,
+                expected_epoch=args.expected_epoch,
+                apply=args.apply,
+            )
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
         return
     if args.command == "status":
         store = JobStore(state_dir())

@@ -115,3 +115,188 @@ async def test_report_real_queries_count_distinct_receipts_and_keep_current_run_
         assert 'stale_failure' not in json.dumps(report)
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_runtime_report_exposes_supervisor_queue_and_slot_ownership_without_secrets(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+
+    from ttakkari import deployment
+    from ttakkari.config import get_settings
+
+    assert Path(inline.__file__).resolve().is_relative_to(
+        Path("/Users/winterholic/development/ttakkari-deploy-recovery-20261030")
+    )
+    home = tmp_path / "ttakkari-home"
+    deploy_root = home / "deploy"
+    deploy_root.mkdir(parents=True)
+    monkeypatch.setattr(get_settings(), "home", home)
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    (deploy_root / "generations-enabled.json").write_text(
+        json.dumps({"protocol": 1, "strategy": "generations"})
+    )
+
+    pinned_rev = "e817fc19471bdc48054158cada4a99466f7eaa6f"
+    active_rev = "48eac0c612d7186e8c418fe607a036ea2ab4da09"
+    stuck_rev = "12347b3f24f56f2a7c029e8ca3f394495dd240c8"
+    old_rev = "c70bce7ba8ab888ea4989f2ab3ef887ff41f0809"
+    queued_rev = "133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e"
+
+    pinned_release = deploy_root / "releases" / pinned_rev
+    pinned_release.mkdir(parents=True)
+    (pinned_release / ".release.json").write_text(json.dumps({"revision": pinned_rev}))
+    (deploy_root / "supervisor.json").write_text(
+        json.dumps({
+            "revision": pinned_rev,
+            "release": str(pinned_release),
+            "source": "/Users/winterholic/secret-path/back",
+        })
+    )
+    (deploy_root / "supervisor-runtime.json").write_text(
+        json.dumps({
+            "revision": pinned_rev,
+            "release": str(pinned_release),
+            "pid": inline.os.getpid(),
+            "ports": [8791, 8792, 8793],
+        })
+    )
+    deployment.JobStore(deploy_root)
+    from ttakkari.generation_deployment import Slots
+    Slots(deploy_root).persist_proxy(2)
+
+    store = deployment.JobStore(deploy_root)
+    abcb = store._write({
+        "id": "abcb3f7d-a291-4789-9117-ec5c08220eba",
+        "revision": stuck_rev,
+        "skip_tests": False,
+        "status": "recovery_pending",
+        "created_at": "2026-10-28T21:52:32.996586+00:00",
+        "error": "draining generation unreachable; work survival is unknown",
+        "error_stage": "drain",
+        "strategy": "generations",
+        "candidate_slot": 0,
+        "previous_slot": 1,
+        "previous_generation": "01c6010d-6ecd-4bc9-a879-12b60dea1215",
+        "previous_revision": old_rev,
+        "candidate_generation": "18c94d7e-2bf0-4ba0-ae76-467154b56f5c",
+        "activated_revision": stuck_rev,
+    })
+    # 6 succeeded jobs after abcb so abcb falls outside recent_deploys[-5:]
+    for idx in range(6):
+        store._write({
+            "id": str(uuid.uuid4()),
+            "revision": f"{idx:040x}",
+            "skip_tests": False,
+            "status": "succeeded",
+            "created_at": f"2026-10-29T0{idx}:00:00+00:00",
+            "error": None,
+            "strategy": "generations",
+        })
+    f407 = store._write({
+        "id": "f407df99-51b1-4843-8fa0-a3fe4ceebefb",
+        "revision": queued_rev,
+        "skip_tests": False,
+        "status": "requested",
+        "created_at": "2026-10-29T16:33:58.602253+00:00",
+        "error": None,
+        "strategy": "generations",
+    })
+
+    gen_active = uuid.UUID("bb450175-d7a4-495e-ae0f-e3202ce0a456")
+    gen_draining = uuid.UUID("01c6010d-6ecd-4bc9-a879-12b60dea1215")
+    gen_retired = uuid.UUID("18c94d7e-2bf0-4ba0-ae76-467154b56f5c")
+
+    # Hold runtime lock for active and draining generations
+    lock_active = deployment.generation._lock(home / "runtime" / f"{gen_active}.lock") if hasattr(deployment, "generation") else None
+    from ttakkari.generation import _lock
+    if lock_active is None:
+        lock_active = _lock(home / "runtime" / f"{gen_active}.lock")
+    lock_draining = _lock(home / "runtime" / f"{gen_draining}.lock")
+    try:
+        now = datetime.now(UTC)
+        control_row = SimpleNamespace(active_generation=gen_active, executor_generation=None, epoch=123)
+        gen_rows = [
+            SimpleNamespace(
+                id=gen_active, revision=active_rev, role="api", state="active",
+                execution_mode="local", pid=inline.os.getpid(), heartbeat_at=now,
+                api_url="http://127.0.0.1:8793",
+            ),
+            SimpleNamespace(
+                id=gen_draining, revision=old_rev, role="api", state="draining",
+                execution_mode="local", pid=inline.os.getpid(), heartbeat_at=now,
+                api_url="http://127.0.0.1:8792",
+            ),
+            SimpleNamespace(
+                id=gen_retired, revision=stuck_rev, role="api", state="offline",
+                execution_mode="local", pid=999999, heartbeat_at=now,
+                api_url="http://127.0.0.1:8791",
+            ),
+        ]
+
+        def scalars_result(items):
+            m = MagicMock()
+            s = MagicMock()
+            s.first.return_value = items[0] if items else None
+            s.all.return_value = items
+            m.scalars.return_value = s
+            return m
+
+        def scalar_result(val):
+            m = MagicMock()
+            m.scalar.return_value = val
+            return m
+
+        db = MagicMock()
+        db.execute = AsyncMock(side_effect=[
+            scalars_result([control_row]),
+            scalars_result(gen_rows),
+            result([(gen_draining, 2)]),
+            result([(gen_draining, 2)]),
+            scalar_result(1),
+            result([]),
+            result([]),  # collection_report
+        ])
+
+        report = await inline.runtime_report(db)
+    finally:
+        if lock_active:
+            lock_active.close()
+        if lock_draining:
+            lock_draining.close()
+
+    # Recent deploys only keeps last 5, so abcb is not in recent_deploys
+    assert all(d["id"] != abcb["id"] for d in report["recent_deploys"])
+    # But deploy_queue surfaces abcb as blocking & foreground, and f407 as blocked!
+    queue = report["deploy_queue"]
+    assert queue["cutover_blocked"] is True
+    assert queue["foreground_job"]["id"] == abcb["id"]
+    assert [j["id"] for j in queue["blocking_jobs"]] == [abcb["id"]]
+    assert [j["id"] for j in queue["blocked_jobs"]] == [f407["id"]]
+
+    # Supervisor diagnostics expose pinned vs runtime revision & freshness without leaking secret source paths
+    sup = report["supervisor"]
+    assert sup["pinned_revision"] == pinned_rev
+    assert sup["runtime_revision"] == pinned_rev
+    assert sup["matches_pinned_revision"] is True
+    assert sup["matches_pinned_release"] is True
+    assert sup["pid_alive"] is True
+    assert isinstance(sup["age_s"], (int, float))
+    assert "secret-path" not in json.dumps(report)
+
+    # Slot and generation ownership diagnostics
+    by_gen = {g["id"]: g for g in report["generations"]}
+    assert by_gen[str(gen_active)]["slot"] == 2
+    assert by_gen[str(gen_active)]["lock_held"] is True
+    assert by_gen[str(gen_draining)]["slot"] == 1
+    assert by_gen[str(gen_draining)]["lock_held"] is True
+    assert by_gen[str(gen_draining)]["leases"] == 2
+    assert by_gen[str(gen_retired)]["slot"] == 0
+    assert by_gen[str(gen_retired)]["lock_held"] is False
+
+    slots = {s["slot"]: s for s in report["slots"]}
+    assert slots[2]["persisted_proxy"] is True
+    assert slots[2]["active_owner"] == str(gen_active)
+    assert slots[1]["live_generations"][0]["id"] == str(gen_draining)
+    assert slots[1]["live_generations"][0]["leases"] == 2
+    assert slots[0]["live_generations"] == []

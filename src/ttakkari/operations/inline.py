@@ -116,12 +116,41 @@ async def runtime_report(db: AsyncSession) -> dict:
         .outerjoin(RuntimeLease, RuntimeLease.run_id == Run.id)
         .where(ChatSession.archived_at.is_(None), Run.status.in_(("running", "queued", "interrupted")))
         .order_by((Run.status == "running").desc(), Run.created_at.desc()).limit(40))).all()
+    home = get_settings().home
+    deploy_root = deployment.state_dir()
+    origin_to_slot = {f"http://127.0.0.1:{p}": idx for idx, p in enumerate(generation.PORTS)}
+    gen_items = [
+        {
+            "id": str(g.id),
+            "revision": g.revision,
+            "role": g.role,
+            "state": g.state,
+            "execution_mode": g.execution_mode,
+            "slot": origin_to_slot.get(getattr(g, "api_url", None)),
+            "pid": g.pid,
+            "pid_alive": psutil.pid_exists(g.pid),
+            "lock_held": deployment._lock_held(home / "runtime" / f"{g.id}.lock"),
+            "heartbeat_age_s": round((now - g.heartbeat_at.replace(tzinfo=UTC)).total_seconds(), 1),
+            "leases": leases.get(g.id, 0),
+            "process_groups": groups.get(g.id, 0),
+        }
+        for g in gens
+    ]
     try:
+        store = deployment.JobStore(deploy_root)
         deploys = [{"id": j["id"], "revision": j["revision"], "status": j["status"], "created_at": j["created_at"]}
-                   for j in deployment.JobStore(deployment.state_dir()).all()[-RECENT_DEPLOYS:]]
+                   for j in store.all()[-RECENT_DEPLOYS:]]
         strategy = deployment.strategy()
+        supervisor = deployment.supervisor_diagnostics(deploy_root)
+        deploy_queue = deployment.queue_diagnostics(store)
+        slots = deployment.slot_ownership_diagnostics(
+            deploy_root,
+            gen_items,
+            persisted_proxy_slot=supervisor.get("persisted_proxy_slot"),
+        )
     except Exception as exc:  # noqa: BLE001 -- 배포 상태를 못 읽어도 소유권 보고는 계속한다
         deploys, strategy = [], f"unreadable:{type(exc).__name__}"
+        supervisor, deploy_queue, slots = {"error": type(exc).__name__}, {"error": type(exc).__name__}, []
     return {
         "this_process": {"pid": os.getpid(), "release_revision": get_settings().release_revision,
                          "generation_id": str(current.id) if current else None,
@@ -130,11 +159,8 @@ async def runtime_report(db: AsyncSession) -> dict:
         "control": {"active_generation": str(control.active_generation) if control and control.active_generation else None,
                     "executor_generation": str(control.executor_generation) if control and control.executor_generation else None,
                     "epoch": control.epoch if control else None},
-        "generations": [{"id": str(g.id), "revision": g.revision, "role": g.role, "state": g.state,
-                         "execution_mode": g.execution_mode, "pid": g.pid,
-                         "pid_alive": psutil.pid_exists(g.pid),
-                         "heartbeat_age_s": round((now - g.heartbeat_at.replace(tzinfo=UTC)).total_seconds(), 1),
-                         "leases": leases.get(g.id, 0), "process_groups": groups.get(g.id, 0)} for g in gens],
+        "generations": gen_items,
+        "slots": slots,
         "runs_running": running,
         "recovery_runs": [{"run_id": str(r.id), "session_id": str(r.session_id), "title": r.title,
                            "pool": r.pool, "status": r.status, "engine": r.engine, "model": r.model,
@@ -142,6 +168,7 @@ async def runtime_report(db: AsyncSession) -> dict:
                            "lease_owner": str(r.generation_id) if r.generation_id else None,
                            "recovery_attempts": r.recovery_attempts or 0} for r in recovery_rows],
         "deploy_strategy": strategy, "recent_deploys": deploys,
+        "supervisor": supervisor, "deploy_queue": deploy_queue,
         "collection": await collection_report(db),
     }
 

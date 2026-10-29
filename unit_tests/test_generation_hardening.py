@@ -973,3 +973,464 @@ def test_stale_release_binding_demands_repreparation(tmp_path):
     fresh.mkdir()
     (fresh / ".release.json").write_text(json.dumps({"revision": "a" * 40}))
     control.verify_test_binding(job, fresh)
+
+
+def test_supervisor_and_queue_diagnostics_detect_mismatch_and_blocked_foreground(tmp_path, monkeypatch):
+    from ttakkari import deployment
+    from ttakkari.generation import _lock
+
+    pinned_rev = "e817fc19471bdc48054158cada4a99466f7eaa6f"
+    other_rev = "48eac0c612d7186e8c418fe607a036ea2ab4da09"
+    rel_pinned = tmp_path / "releases" / pinned_rev
+    rel_other = tmp_path / "releases" / other_rev
+    rel_pinned.mkdir(parents=True)
+    rel_other.mkdir(parents=True)
+    (rel_pinned / ".release.json").write_text(json.dumps({"revision": pinned_rev}))
+    (rel_other / ".release.json").write_text(json.dumps({"revision": other_rev}))
+
+    (tmp_path / "supervisor.json").write_text(json.dumps({
+        "revision": pinned_rev,
+        "release": str(rel_pinned),
+        "source": "/Users/winterholic/private-secret-checkout",
+    }))
+    (tmp_path / "supervisor-runtime.json").write_text(json.dumps({
+        "revision": other_rev,
+        "release": str(rel_other),
+        "pid": 999999,
+        "ports": [8791, 8792, 8793],
+    }))
+    (tmp_path / "supervisor-upgrade.json").write_text(json.dumps({
+        "revision": pinned_rev,
+        "release": str(rel_pinned),
+        "status": "requested",
+    }))
+
+    ctrl_lock = _lock(tmp_path / "controller.lock")
+    try:
+        sup = deployment.supervisor_diagnostics(tmp_path)
+    finally:
+        if ctrl_lock:
+            ctrl_lock.close()
+
+    assert sup["pinned_revision"] == pinned_rev
+    assert sup["pinned_release_exists"] is True
+    assert sup["pinned_release_matches_revision"] is True
+    assert sup["runtime_revision"] == other_rev
+    assert sup["matches_pinned_revision"] is False
+    assert sup["matches_pinned_release"] is False
+    assert sup["pid_alive"] is False
+    assert sup["controller_lock_held"] is True
+    assert sup["restart_lock_held"] is False
+    assert sup["last_upgrade"]["revision"] == pinned_rev
+    assert "private-secret-checkout" not in json.dumps(sup)
+
+    store = JobStore(tmp_path)
+    draining_job = store._write({
+        "id": str(uuid.uuid4()),
+        "revision": "1" * 40,
+        "skip_tests": False,
+        "status": "draining",
+        "created_at": "2026-10-28T20:00:00+00:00",
+        "error": None,
+        "strategy": "generations",
+    })
+    blocking_job = store._write({
+        "id": "abcb3f7d-a291-4789-9117-ec5c08220eba",
+        "revision": "2" * 40,
+        "skip_tests": False,
+        "status": "recovery_pending",
+        "created_at": "2026-10-28T21:52:32+00:00",
+        "error": "draining generation unreachable; work survival is unknown",
+        "error_stage": "drain",
+        "strategy": "generations",
+        "activated_revision": "2" * 40,
+    })
+    blocked_job = store._write({
+        "id": "f407df99-51b1-4843-8fa0-a3fe4ceebefb",
+        "revision": "3" * 40,
+        "skip_tests": False,
+        "status": "requested",
+        "created_at": "2026-10-29T16:33:58+00:00",
+        "error": None,
+        "strategy": "generations",
+    })
+    q = deployment.queue_diagnostics(store)
+    assert q["cutover_blocked"] is True
+    assert [j["id"] for j in q["draining_jobs"]] == [draining_job["id"]]
+    assert q["foreground_job"]["id"] == blocking_job["id"]
+    assert [j["id"] for j in q["blocking_jobs"]] == [blocking_job["id"]]
+    assert [j["id"] for j in q["blocked_jobs"]] == [blocked_job["id"]]
+
+
+def _setup_abcb_recovery_fixture(tmp_path, monkeypatch):
+    from ttakkari import generation_deployment as gd
+
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+
+    old_rev = "c70bce7ba8ab888ea4989f2ab3ef887ff41f0809"
+    abcb_rev = "12347b3f24f56f2a7c029e8ca3f394495dd240c8"
+    active_rev = "48eac0c612d7186e8c418fe607a036ea2ab4da09"
+    next_rev = "133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e"
+
+    old_gen = "01c6010d-6ecd-4bc9-a879-12b60dea1215"
+    cand_gen = "18c94d7e-2bf0-4ba0-ae76-467154b56f5c"
+    active_gen = "bb450175-d7a4-495e-ae0f-e3202ce0a456"
+
+    slots = FakeSlots()
+    # Slot 0: free (18c94d7e and 22b7400c already retired)
+    # Slot 1: old_gen (01c6010d) alive and draining GAME Run e6346a73
+    slots.rows[1] = {
+        "generation": old_gen,
+        "revision": old_rev,
+        "protocol": 1,
+        "ready": True,
+        "state": "draining",
+        "drain_ready": False,
+        "owned_runs": 1,
+        "http_inflight": 0,
+    }
+    # Slot 2: newer active generation bb450175
+    slots.rows[2] = {
+        "generation": active_gen,
+        "revision": active_rev,
+        "protocol": 1,
+        "ready": True,
+        "state": "active",
+        "drain_ready": False,
+        "owned_runs": 0,
+        "http_inflight": 0,
+    }
+    slots.route = 2
+
+    store = JobStore(tmp_path)
+    abcb = store._write({
+        "id": "abcb3f7d-a291-4789-9117-ec5c08220eba",
+        "revision": abcb_rev,
+        "skip_tests": False,
+        "status": "recovery_pending",
+        "created_at": "2026-10-28T21:52:32.996586+00:00",
+        "error": "draining generation unreachable; work survival is unknown",
+        "error_stage": "drain",
+        "strategy": "generations",
+        "candidate_slot": 0,
+        "previous_slot": 1,
+        "previous_generation": old_gen,
+        "previous_revision": old_rev,
+        "candidate_generation": cand_gen,
+        "activated_revision": abcb_rev,
+    })
+    f407 = store._write({
+        "id": "f407df99-51b1-4843-8fa0-a3fe4ceebefb",
+        "revision": next_rev,
+        "skip_tests": False,
+        "status": "requested",
+        "created_at": "2026-10-29T16:33:58.602253+00:00",
+        "error": None,
+        "strategy": "generations",
+    })
+
+    control = gd.GenerationController(store, slots=slots)
+    db_state = {
+        "active_generation": active_gen,
+        "active_revision": active_rev,
+        "active_state": "active",
+        "active_api_url": slots.origin(2),
+        "epoch": 123,
+        "previous_generation": old_gen,
+        "previous_revision": old_rev,
+        "previous_state": "draining",
+        "previous_api_url": slots.origin(1),
+        "previous_leases": 2,
+        "previous_process_groups": 2,
+        "previous_lock_held": True,
+        "previous_pid_alive": True,
+    }
+
+    async def fake_db_state(_prev_id, _active_id, *, mark_offline=False):
+        if mark_offline:
+            db_state["previous_state"] = "offline"
+        return dict(db_state)
+
+    monkeypatch.setattr(control, "_drain_recovery_db_state", fake_db_state, raising=False)
+    fences = {
+        "job_id": abcb["id"],
+        "expected_revision": abcb_rev,
+        "expected_previous_generation": old_gen,
+        "expected_previous_revision": old_rev,
+        "expected_previous_slot": 1,
+        "expected_candidate_generation": cand_gen,
+        "expected_active_generation": active_gen,
+        "expected_active_revision": active_rev,
+        "expected_epoch": 123,
+    }
+    return control, store, slots, db_state, fences, abcb, f407
+
+
+async def test_recover_drain_resumes_live_draining_slot_and_unblocks_newer_foreground(tmp_path, monkeypatch):
+    from ttakkari.deployment import Controller
+
+    control, store, slots, _db_state, fences, abcb, f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+
+    # Before recovery: abcb blocks f407 in pending_jobs()
+    ext = Controller(tmp_path)
+    assert [j["id"] for j in ext.pending_jobs()] == [abcb["id"]]
+
+    # Dry-run preview verifies fences and reports resume_draining without mutating job status
+    preview = await control.recover_drain(**fences, apply=False)
+    assert preview["ok"] is True
+    assert preview["applied"] is False
+    assert preview["action"] == "resume_draining"
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Apply recovery: transitions abcb -> draining, preserves slot 1 (GAME) and slot 2 (newer active)
+    applied = await control.recover_drain(**fences, apply=True)
+    assert applied["ok"] is True
+    assert applied["applied"] is True
+    assert applied["action"] == "resume_draining"
+    saved = store.get(abcb["id"])
+    assert saved["status"] == "draining"
+    assert saved["error"] is None and saved["error_stage"] is None
+    assert saved["recovery_receipt"]["action"] == "resume_draining"
+    assert saved["recovery_receipt"]["expected_epoch"] == 123
+    assert slots.stopped == []
+    assert slots.route == 2
+
+    # Idempotency: calling recover_drain again with same fences returns without error or duplicate write
+    again = await control.recover_drain(**fences, apply=True)
+    assert again["ok"] is True
+    assert again["idempotent"] is True
+    assert again["applied"] is False
+
+    # Now pending_jobs() schedules abcb in drains and f407 in foreground!
+    assert [j["id"] for j in ext.pending_jobs()] == [abcb["id"], f407["id"]]
+
+    # Supervisor pass keeps slot 1 draining (GAME preserved) while f407 cuts over to free slot 0
+    active_holder = {"id": uuid.UUID(fences["expected_active_generation"])}
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=active_holder["id"]))
+
+    async def activate(gid, *, expected):
+        assert active_holder["id"] == expected
+        active_holder["id"] = gid
+
+    async def prepare(_job):
+        return Path("candidate-f407")
+
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+
+    for job in ext.pending_jobs():
+        await control.process(job)
+
+    assert store.get(abcb["id"])["status"] == "draining"
+    assert slots.rows[1]["generation"] == fences["expected_previous_generation"]
+    assert slots.stopped == []
+    assert store.get(f407["id"])["status"] == "draining"
+    assert store.get(f407["id"])["candidate_slot"] == 0
+    assert slots.route == 0
+
+
+async def test_recover_drain_retires_unreachable_slot_only_when_proven_dead_and_lease_free(tmp_path, monkeypatch):
+    control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+    # Make slot 1 unreachable
+    slots.rows.pop(1, None)
+
+    # Counterexample A: unreachable while live leases remain -> refuse
+    with pytest.raises(RuntimeError, match="lease"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Counterexample B: leases=0 but process_groups > 0 -> refuse
+    db_state["previous_leases"] = 0
+    with pytest.raises(RuntimeError, match="process group"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Counterexample C: process_groups=0 but runtime lock still held -> refuse
+    db_state["previous_process_groups"] = 0
+    with pytest.raises(RuntimeError, match="runtime lock"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Counterexample D: lock free but OS PID still alive -> refuse
+    db_state["previous_lock_held"] = False
+    with pytest.raises(RuntimeError, match="process is still alive"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Proven dead, 0 leases, 0 process groups, lock free -> retires cleanly to succeeded without rerouting newer active
+    db_state["previous_pid_alive"] = False
+    res = await control.recover_drain(**fences, apply=True)
+    assert res["ok"] is True
+    assert res["applied"] is True
+    assert res["action"] == "retire_verified_dead"
+    saved = store.get(abcb["id"])
+    assert saved["status"] == "succeeded"
+    assert saved["retired_generation"] == fences["expected_previous_generation"]
+    assert db_state["previous_state"] == "offline"
+    assert slots.route == 2
+
+
+async def test_recover_drain_refuses_identity_mismatch_epoch_stale_and_concurrent_lock(tmp_path, monkeypatch):
+    from ttakkari.deploy_gate import RestartGate
+
+    control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+
+    # 1. TTAKKARI_RUN_ID guard on apply=True
+    monkeypatch.setenv("TTAKKARI_RUN_ID", "run-123")
+    with pytest.raises(RuntimeError, match="external host command"):
+        await control.recover_drain(**fences, apply=True)
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+
+    # 2. Slot identity mismatch (different generation on slot 1)
+    slots.rows[1]["generation"] = str(uuid.uuid4())
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        await control.recover_drain(**fences, apply=True)
+    slots.rows[1]["generation"] = fences["expected_previous_generation"]
+
+    # 3. Epoch stale in DB RuntimeControl
+    db_state["epoch"] = 124
+    with pytest.raises(RuntimeError, match="epoch"):
+        await control.recover_drain(**fences, apply=True)
+    db_state["epoch"] = 123
+
+    # 4. Active generation fence mismatch
+    db_state["active_generation"] = str(uuid.uuid4())
+    with pytest.raises(RuntimeError, match="active generation"):
+        await control.recover_drain(**fences, apply=True)
+    db_state["active_generation"] = fences["expected_active_generation"]
+
+    # 5. Job journal fence mismatch (or pre-cutover job without activated_revision)
+    with pytest.raises(ValueError, match="fence mismatch"):
+        await control.recover_drain(**(fences | {"expected_candidate_generation": str(uuid.uuid4())}), apply=True)
+
+    store.update(abcb["id"], activated_revision=None)
+    with pytest.raises(ValueError, match="cutover"):
+        await control.recover_drain(**fences, apply=True)
+    store.update(abcb["id"], activated_revision=fences["expected_revision"])
+
+    # 6. Concurrent lock contention on backend-restart.lock
+    monkeypatch.setattr(RestartGate, "_acquire", lambda _self: None)
+    with pytest.raises(RuntimeError, match="lock is held"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+
+def test_deployment_cli_diagnose_and_recover_drain_subcommands(tmp_path, monkeypatch, capsys):
+    from ttakkari import deployment
+    from ttakkari import generation_deployment as gd
+
+    control, _store, _slots, _db_state, fences, abcb, f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(deployment, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(gd, "GenerationController", lambda _s: control)
+
+    # 1. diagnose CLI is read-only and works even inside TTAKKARI_RUN_ID
+    monkeypatch.setenv("TTAKKARI_RUN_ID", "run-readonly-check")
+    monkeypatch.setattr(sys, "argv", ["ttakkari.deployment", "diagnose", "--no-db"])
+    deployment.main()
+    diag = json.loads(capsys.readouterr().out)
+    assert diag["deploy_queue"]["cutover_blocked"] is True
+    assert diag["deploy_queue"]["foreground_job"]["id"] == abcb["id"]
+    assert [j["id"] for j in diag["deploy_queue"]["blocked_jobs"]] == [f407["id"]]
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+
+    # 2. recover-drain CLI dry-run and apply
+    cli_args = [
+        "ttakkari.deployment",
+        "recover-drain",
+        "--job-id", fences["job_id"],
+        "--expected-revision", fences["expected_revision"],
+        "--expected-previous-generation", fences["expected_previous_generation"],
+        "--expected-previous-revision", fences["expected_previous_revision"],
+        "--expected-previous-slot", str(fences["expected_previous_slot"]),
+        "--expected-candidate-generation", fences["expected_candidate_generation"],
+        "--expected-active-generation", fences["expected_active_generation"],
+        "--expected-active-revision", fences["expected_active_revision"],
+        "--expected-epoch", str(fences["expected_epoch"]),
+    ]
+    monkeypatch.setattr(sys, "argv", cli_args)
+    deployment.main()
+    dry = json.loads(capsys.readouterr().out)
+    assert dry["ok"] is True and dry["applied"] is False
+
+    monkeypatch.setattr(sys, "argv", [*cli_args, "--apply"])
+    deployment.main()
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["ok"] is True and applied["applied"] is True and applied["action"] == "resume_draining"
+
+
+async def test_drain_recovery_db_state_evaluates_real_orm_rows_and_os_locks(tmp_path, monkeypatch):
+    import os
+    from types import SimpleNamespace
+
+    from ttakkari import generation_deployment as gd
+    from ttakkari.generation import _lock
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(get_settings(), "home", home)
+    prev_id = uuid.uuid4()
+    active_id = uuid.uuid4()
+    control_row = SimpleNamespace(id=1, active_generation=active_id, executor_generation=None, epoch=123)
+    prev_row = SimpleNamespace(
+        id=prev_id, revision="a" * 40, state="draining",
+        api_url="http://127.0.0.1:8792", pid=os.getpid(), process_started_at=None,
+    )
+    active_row = SimpleNamespace(
+        id=active_id, revision="b" * 40, state="active",
+        api_url="http://127.0.0.1:8793", pid=os.getpid(), process_started_at=None,
+    )
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.scalar_vals = [2, 1]
+
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, model, ident):
+            if model is RuntimeControl:
+                return control_row
+            if model is RuntimeGeneration and ident == prev_id:
+                return prev_row
+            if model is RuntimeGeneration and ident == active_id:
+                return active_row
+            return None
+
+        async def scalar(self, _stmt):
+            return self.scalar_vals.pop(0)
+
+        async def commit(self):
+            self.committed = True
+
+    fake_db = FakeSession()
+    monkeypatch.setattr(gd, "sessionmaker", lambda: fake_db)
+    controller = gd.GenerationController(JobStore(tmp_path / "deploy"), slots=FakeSlots())
+
+    held = _lock(home / "runtime" / f"{prev_id}.lock")
+    try:
+        state = await controller._drain_recovery_db_state(prev_id, active_id, mark_offline=False)
+        assert state["epoch"] == 123
+        assert state["previous_leases"] == 2
+        assert state["previous_process_groups"] == 1
+        assert state["previous_lock_held"] is True
+        assert state["previous_pid_alive"] is True
+        assert prev_row.state == "draining"
+    finally:
+        if held:
+            held.close()
+
+    fake_db.scalar_vals = [0, 0]
+    prev_row.pid = 999999
+    state2 = await controller._drain_recovery_db_state(prev_id, active_id, mark_offline=True)
+    assert state2["previous_lock_held"] is False
+    assert state2["previous_pid_alive"] is False
+    assert prev_row.state == "offline"
+    assert fake_db.committed is True

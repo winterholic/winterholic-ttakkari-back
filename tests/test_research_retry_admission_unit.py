@@ -188,4 +188,3 @@ async def test_admission_reuses_plan_validation_before_owner_run_or_event(monkey
         "scope": "personal",
     }
     await db.rollback()
-

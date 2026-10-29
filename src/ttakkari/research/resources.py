@@ -106,7 +106,12 @@ def observe_execution_owners(rows, *, truncated: bool) -> tuple[list[dict], dict
     """Observe execution ownership; this is not a GPU/TTS/CPU mutex claim."""
     locks, unknown, observations = [], [], {}
     for row in rows:
-        token = owner_token(row.environment_snapshot or {})
+        snapshot = row.environment_snapshot
+        if not isinstance(snapshot, dict):
+            if row.status in ("running", "queued"):
+                unknown.append(str(row.id))
+            continue
+        token = owner_token(snapshot)
         if token is None:
             if row.status in ("running", "queued"):
                 unknown.append(str(row.id))

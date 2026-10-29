@@ -39,6 +39,42 @@ def owner_token(snapshot: dict) -> uuid.UUID | None:
         return None
 
 
+def execution_owner_receipt(row) -> dict:
+    """Return a fresh, per-Run observation of the persisted execution owner."""
+    snapshot = row.environment_snapshot
+    valid_snapshot = isinstance(snapshot, dict)
+    snapshot_for_lookup = snapshot if valid_snapshot else {}
+    owner = snapshot_for_lookup.get(OWNER_KEY)
+    scope = {
+        "study_id": str(row.study_id),
+        "experiment_id": str(row.experiment_id),
+        "run_id": str(row.id),
+        "adapter_id": row.adapter_id,
+    }
+    receipt = {"contract": 1, "scope": scope, "owner": owner,
+               "observed_at": utcnow().isoformat()}
+    if snapshot is not None and not valid_snapshot:
+        return {**receipt, "status": "unverified", "evidence": "environment_snapshot_invalid"}
+    if owner is None:
+        return {**receipt, "status": "unrecorded", "evidence": "owner_checkpoint_missing"}
+    token = owner_token(snapshot)
+    if token is None:
+        return {**receipt, "status": "unverified", "evidence": "owner_checkpoint_invalid"}
+    try:
+        handle = probe(token)
+    except OSError as exc:
+        return {**receipt, "status": "unverified", "evidence": "lock_probe_failed",
+                "error_type": type(exc).__name__}
+    if handle is None:
+        return {**receipt, "status": "owned", "evidence": "os_lock_observed"}
+    try:
+        handle.close()
+    except OSError as exc:
+        return {**receipt, "status": "unverified", "evidence": "lock_probe_close_failed",
+                "error_type": type(exc).__name__}
+    return {**receipt, "status": "released", "evidence": "os_lock_available"}
+
+
 @dataclass
 class ExecutionOwner:
     metadata: dict

@@ -1205,7 +1205,7 @@ async def list_runs(
     ).all()
 
     # Persisted status cannot prove resource ownership (including during cleanup).
-    from ttakkari.research.ownership import OWNER_KEY
+    from ttakkari.research.ownership import OWNER_KEY, execution_owner_receipt
     from ttakkari.research.resources import observe_execution_owners
 
     candidates = list(await db.scalars(select(Run).where(
@@ -1232,6 +1232,7 @@ async def list_runs(
                 "experiment_name": exp_title,
                 "configuration_label": cfg_label,
                 "study_title": study_title,
+                "execution_owner_receipt": execution_owner_receipt(r),
             }
             for r, exp_title, cfg_label, study_title in rows
         ],
@@ -1258,7 +1259,10 @@ async def get_run_details(run_id: uuid.UUID, _: User, db: Db):
         )
     ).scalars().all()
 
+    from ttakkari.research.ownership import execution_owner_receipt
+
     run_dict = svc.run_out(run)
+    run_dict["execution_owner_receipt"] = execution_owner_receipt(run)
     if isinstance(run.raw_output, dict) and "provenance" in run.raw_output:
         run_dict["provenance"] = run.raw_output["provenance"]
     run_dict["measurements"] = [svc.out(m) for m in measurements]

@@ -48,6 +48,8 @@
   - `_job_summary`에서 raw `"error"` 필드를 완전히 제거했다.
   - 원문을 한 글자도 복사하지 않는 고정 패턴 분류 코드(`error_code`), boolean `has_error`, `recovery_intent_pending`, 그리고 allowlist 검증을 거친 `error_stage`·SHA(40자 hex)·UUID·ISO 시각·상태값만 반환하도록 제한했다.
   - `supervisor_diagnostics`에서도 `pinned_revision`, `runtime_revision`, `last_upgrade.revision`은 40자리 hex SHA일 때만, `last_upgrade.status`는 고정 allowlist 상태일 때만 노출하도록 제한했다.
+- `unit_tests/test_collection_runtime_report.py`
+  - 기존 `395738b`에 하드코딩되어 있던 로컬 worktree 절대 경로 단언(`Path("/Users/winterholic/development/ttakkari-deploy-recovery-20261030")`)을 `Path(__file__).resolve().parents[1] / "src"` 기준으로 교정해 `git archive` 격리 export 및 배포 릴리스 테스트 게이트(`releases/<SHA>`)에서도 동일하게 동작하도록 수정했다.
 
 ### 2.4 Active MCP Catalog 대조, 부트스트랩 공백, 그리고 배포 활성화 이후 Fenced API 대안
 

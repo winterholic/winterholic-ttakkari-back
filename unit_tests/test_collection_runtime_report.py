@@ -126,7 +126,7 @@ async def test_runtime_report_exposes_supervisor_queue_and_slot_ownership_withou
     from ttakkari.config import get_settings
 
     assert Path(inline.__file__).resolve().is_relative_to(
-        Path("/Users/winterholic/development/ttakkari-deploy-recovery-20261030")
+        Path(__file__).resolve().parents[1] / "src"
     )
     home = tmp_path / "ttakkari-home"
     deploy_root = home / "deploy"

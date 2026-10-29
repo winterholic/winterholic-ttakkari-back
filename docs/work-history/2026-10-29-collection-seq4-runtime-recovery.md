@@ -112,3 +112,38 @@ exit 0
 ```
 
 These tests cover read-only policy matching/formatting and response filtering with fake DB objects, not live PostgreSQL or the running API. The prior verifier's PostgreSQL `initdb` failure (`shmget: Operation not permitted`) remains unverified; this work did not retry that target or use another engine. The deployed `c04c5a37` therefore still lacks this new observation view until the single integration/deploy owner (`fcb55b7d-a9ed-4160-a395-84fe291ab9ad`) accepts the separate branch and normal gates pass. Do not rerun the old `75c6` independent check or retry the mission here. After the observation delta is normally deployed, read the policy/cache/current-job status through the endpoint before the owner performs any guarded retry.
+
+## Independent review of observation delta (2026-10-30)
+
+Candidate code was checked in a detached worktree at `cc669e5884b5b29cd7266339fd28d866cd40eb67` (tree `f29dfe0fea97e779e5e5dec59f76ebfc2a13b24b`). The requested tip `9a62973eb327e38fdca45b9addeed104c05c5010` is a documentation-only commit; the code candidate is its recorded `cc669e5` parent. The three changed blobs at the candidate were:
+
+```text
+08662bc2d51d37fd6f6c866d6e545cc468896e23ce90813941df7d53e36f41fd  src/ttakkari/api/collection_missions.py
+d9261ce38d4e1c49a2375fe497b4d94cae1b66aae10cf88c9bd1c20f4893f2fa  src/ttakkari/orchestrator/mcp_server.py
+af2e70c8a9e14a28e8d292b604d41ddf94330cad9be8e71ab9545896ebd3cc79  unit_tests/test_collection_mission_diagnostics.py
+```
+
+**Scoped verdict: PARTIAL / observation gate not cleared.** Independent execution from the detached candidate, with `PYTHONPATH=src` and the existing backend venv, gave `4 passed in 0.80s` for `unit_tests/test_collection_mission_diagnostics.py`; Ruff passed for the three changed files and `git diff --check` returned 0. The cases exercise owner mission current-run filtering, queued-job activity, final error classification, path allow/deny, robots-cache expiry, and omission of URL userinfo/query/fragment, policy notes, robots body, and raw `message`. Source-policy reads in code are filtered by mission tenant, enabled status and `in_library(scope)`; `store.active_policy` also filters tenant and library scope. Robots host state is intentionally global per origin in the existing collector model, and this response returns only status and timestamps, never its body.
+
+**Independent counterexample found:** `_classified_error` allowlists the string key `cause` but accepts any string value. A synthetic secret-shaped exception value was returned unchanged alongside the bounded classification. Therefore query/userinfo stripping passed, but arbitrary exception-text exclusion is not established; the implementation test checks only the `message` key and misses this case. This is a confirmed formatter-level leak if `cause` contains free text; production occurrence is unverified. Route inventory and live API/DB authorization were not run.
+
+The combined pytest invocation also selected `tests/test_route_inventory.py`; collection failed in `tests/conftest.py` before tests ran because `/opt/homebrew/opt/postgresql@17/bin/initdb -D /tmp/ttakkari-test-60184-0654c8c9/data ...` exited 1. This was the same PostgreSQL initdb target class previously denied; it was not retried. No alternate engine or live database was used. This execution's output did not expose initdb stderr, so its specific OS error is unverified here.
+
+No collector/product source was changed; the existing runtime recovery limits remain: no policy writes, mission retry, main integration or deployment. Real PostgreSQL scoping/transaction behavior, authenticated endpoint execution, actual policy/cache rows, and acquisition/import/search remain unverified. The earlier `75c6`/`58a161` code regressions remain reusable evidence and their operational gate remains open.
+
+## Formatter correction follow-up (2026-10-30)
+
+The synthetic counterexample was corrected on the same owner branch, `fix/collection-observation-20261029`, and normally pushed as `4793a29c0473c89b02adb71c7c3ba4729c75c56`. The producer path is `collector.runner.run_one` → `HandlerResult` → `CollectorJob.last_error`; the runner records a stable `handler_error` code and an exception class name, while retry exhaustion/cancellation/orphan recovery add bounded codes and attempts. The formatter now retains only defined error-code and exception-type enums (including the prior supported `attempts_exhausted` / `invalid_envelope` / `CollectorContractError` values and producer `RuntimeError`), bounded attempts, and boolean retryability. Unrecognized strings and nested payloads are dropped.
+
+The new synthetic regression first failed as intended because free-text `code` was returned unchanged. After the formatter change:
+
+```text
+PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_mission_diagnostics.py
+5 passed in 0.42s
+ruff check src/ttakkari/api/collection_missions.py unit_tests/test_collection_mission_diagnostics.py
+All checks passed!
+git diff --check
+exit 0
+```
+
+The fake/unit suite also retains checks for valid classification compatibility, nested error/message omission, and URL userinfo/query/fragment stripping. Actual producer-occurrence in stored mission data remains unverified. No DB-backed route suite, alternate engine, live API, policy write, retry, main merge or deploy was run. Existing `75c6`/`58a161` independent PASS evidence was not rerun. A follow-up message to the existing verifier `7e68cf61-fc1e-44f4-88ac-3c0fd62d5eb4` was attempted after publication but this session's `message_worker` scope returned `404 not_found: 이 작업 세션의 하위 세션이 아닙니다.` No duplicate verifier was created. The project task-handoff now records the new SHA, scoped evidence and next-owner checks for planner/verifier pickup.

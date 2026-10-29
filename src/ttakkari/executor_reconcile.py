@@ -11,6 +11,7 @@ import psutil
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import DBAPIError
 
+from ttakkari import generation
 from ttakkari.db import sessionmaker
 from ttakkari.generation import _control
 from ttakkari.models import (
@@ -198,7 +199,17 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
                         groups: list[RuntimeProcessGroup]) -> bool:
     # Hold the same control→lease fence used by claims/releases while signaling.
     # This prevents an old snapshot from killing a group after lease replacement.
-    await _control(db)
+    control = await _control(db)
+    claim_fence = entry.get("expected_claim_owner_fence")
+    if claim_fence is not None:
+        claim_owner_id = generation.claim_owner(control) if control else None
+        if claim_owner_id != claim_fence["generation_id"] or control.epoch != claim_fence["epoch"]:
+            return False
+        claim_owner = await db.scalar(select(RuntimeGeneration).where(
+            RuntimeGeneration.id == claim_owner_id).with_for_update())
+        if (claim_owner is None or claim_owner.revision != claim_fence["revision"]
+                or claim_owner.state != "active"):
+            return False
     lease = await db.scalar(select(RuntimeLease).where(RuntimeLease.run_id == run_id).with_for_update())
     if lease is None or lease.generation_id != uuid.UUID(entry["owner_id"]) or lease.token != token:
         return False
@@ -286,7 +297,9 @@ async def cancel_orphan(run_id: uuid.UUID) -> bool:
 
 
 async def reconcile_one(run_id: uuid.UUID, *, expected_owner_generation_id: uuid.UUID,
-                        expected_owner_revision: str, expected_run_status: str) -> dict:
+                        expected_owner_revision: str, expected_run_status: str,
+                        expected_claim_owner_generation_id: uuid.UUID,
+                        expected_claim_owner_revision: str, expected_claim_owner_epoch: int) -> dict:
     """Reconcile one explicitly named orphan after matching its persisted identity fence.
 
     The response deliberately excludes PID, process-group and lease-token material.
@@ -301,6 +314,11 @@ async def reconcile_one(run_id: uuid.UUID, *, expected_owner_generation_id: uuid
             or entry["owner_revision"] != expected_owner_revision
             or entry["run_status"] != expected_run_status):
         return {"run_id": str(run_id), "reconciled": False, "action": "fence_mismatch"}
+    entry["expected_claim_owner_fence"] = {
+        "generation_id": expected_claim_owner_generation_id,
+        "revision": expected_claim_owner_revision,
+        "epoch": expected_claim_owner_epoch,
+    }
     outcome = await _apply_one(entry)
     changed = outcome is True
     if changed:

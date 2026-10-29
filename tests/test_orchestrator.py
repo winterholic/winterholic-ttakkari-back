@@ -134,6 +134,7 @@ async def test_orchestrator_dispatches_only_explicit_queued_worker_run(client, a
         "run_id": run_id, "expected_status": "queued", "expected_pool": "personal",
         "expected_claim_owner_generation_id": str(generation_id),
         "expected_claim_owner_revision": "a" * 40,
+        "expected_claim_owner_epoch": 0,
         "idempotency_key": f"dispatch:{worker_id}:{run_id}",
     }
     response = await client.post(f"/api/orchestrator/workers/{worker_id}/dispatch",
@@ -146,6 +147,7 @@ async def test_orchestrator_dispatches_only_explicit_queued_worker_run(client, a
         "expected_run_id": UUID(run_id), "expected_pool": "personal",
         "expected_claim_owner_generation_id": generation_id,
         "expected_claim_owner_revision": "a" * 40,
+        "expected_claim_owner_epoch": 0,
     })]
 
     stale_owner_id = UUID("f84f2b63-79aa-480a-bb39-c0efea420f2b")
@@ -165,6 +167,7 @@ async def test_orchestrator_dispatches_only_explicit_queued_worker_run(client, a
         "run_id": run_id, "expected_status": "running", "expected_pool": "personal",
         "expected_claim_owner_generation_id": str(generation_id),
         "expected_claim_owner_revision": "a" * 40,
+        "expected_claim_owner_epoch": 0,
         "expected_lease_owner_generation_id": str(stale_owner_id),
         "expected_lease_owner_revision": "b" * 40,
         "idempotency_key": f"reconcile:{worker_id}:{run_id}:{stale_owner_id}",
@@ -178,6 +181,9 @@ async def test_orchestrator_dispatches_only_explicit_queued_worker_run(client, a
         "expected_owner_generation_id": stale_owner_id,
         "expected_owner_revision": "b" * 40,
         "expected_run_status": "running",
+        "expected_claim_owner_generation_id": generation_id,
+        "expected_claim_owner_revision": "a" * 40,
+        "expected_claim_owner_epoch": 0,
     })]
     assert "pid" not in reconcile_response.text and "token" not in reconcile_response.text
 

@@ -601,7 +601,9 @@ async def start_experiment_runs(
     adapter_registry: Any = None,
 ) -> list[Run]:
     """Create run records for configurations and dispatch execution."""
-    exp = await db.get(Experiment, experiment_id)
+    exp = await _lock_experiment_admission(
+        db, experiment_id, missing_error=ValueError(f"Experiment {experiment_id} not found"),
+    )
     if not exp:
         raise ValueError(f"Experiment {experiment_id} not found")
 
@@ -613,28 +615,7 @@ async def start_experiment_runs(
             "external_report_experiments_are_not_locally_executable: 외부 결과는 /external-report API로 등록하세요.",
         )
 
-    # Persisted definitions and direct /run requests must pass the same local
-    # execution checks as the planner preview before any Run rows are created.
-    from ttakkari.research.planner import validate_experiment_plan
-
-    study = await db.get(Study, exp.study_id)
-    plan = await validate_experiment_plan(
-        db,
-        study_id=exp.study_id,
-        method_id=exp.method_id,
-        compared_method_ids=[uuid.UUID(str(value)) for value in (exp.compared_method_ids or [])],
-        adapter_id=exp.adapter_id,
-        strategy=exp.strategy,
-        search_space=exp.search_space or {},
-        fixed_inputs=exp.fixed_inputs or {},
-        budget=exp.budget or {},
-        scope=study.scope if study else "personal",
-    )
-    if not plan.valid:
-        raise HTTPException(
-            422,
-            "experiment_plan_not_executable: " + "; ".join(plan.errors),
-        )
+    await _validate_experiment_plan_for_execution(db, exp)
 
     q = select(Configuration).where(Configuration.experiment_id == experiment_id)
     if configuration_ids:
@@ -726,18 +707,13 @@ async def retry_run(db, run_id: uuid.UUID, *, actor: str = "user", background: b
     if original.execution_origin not in ("local_measured", "migrated_v1"):
         raise HTTPException(422, "research_run_not_locally_reexecutable")
 
-    experiment = await db.get(Experiment, original.experiment_id, with_for_update=True)
+    experiment = await _lock_experiment_admission(
+        db, original.experiment_id,
+        missing_error=HTTPException(422, "research_run_not_locally_reexecutable"),
+    )
     if experiment is None or experiment.adapter_id == "external_report":
         raise HTTPException(422, "research_run_not_locally_reexecutable")
-    active = _ACTIVE_TASKS.get(experiment.id)
-    if active is not None and not active.done():
-        raise HTTPException(409, "research_experiment_batch_already_running")
-    queued_or_running = await db.scalar(select(Run.id).where(
-        Run.experiment_id == experiment.id,
-        Run.status.in_(("queued", "running")),
-    ).limit(1))
-    if queued_or_running is not None:
-        raise HTTPException(409, "research_experiment_batch_already_running")
+    await _validate_experiment_plan_for_execution(db, experiment)
     configuration = await db.get(Configuration, original.configuration_id)
     if configuration is None:
         raise HTTPException(409, "research_run_configuration_missing")
@@ -801,6 +777,49 @@ async def retry_run(db, run_id: uuid.UUID, *, actor: str = "user", background: b
     else:
         await batch
     return retry
+
+
+async def _lock_experiment_admission(db, experiment_id: uuid.UUID, *, missing_error: Exception):
+    """Serialize all local Run reservations on the Experiment row until commit.
+
+    The database row lock is the cross-process admission fence. The task map is
+    only a same-process fast-path; queued/running rows are the durable check.
+    """
+    experiment = await db.get(Experiment, experiment_id, with_for_update=True)
+    if experiment is None:
+        raise missing_error
+
+    active = _ACTIVE_TASKS.get(experiment.id)
+    if active is not None and not active.done():
+        raise HTTPException(409, "research_experiment_batch_already_running")
+    queued_or_running = await db.scalar(select(Run.id).where(
+        Run.experiment_id == experiment.id,
+        Run.status.in_(("queued", "running")),
+    ).limit(1))
+    if queued_or_running is not None:
+        raise HTTPException(409, "research_experiment_batch_already_running")
+    return experiment
+
+
+async def _validate_experiment_plan_for_execution(db, experiment: Experiment) -> None:
+    """Apply the current local execution contract before reserving any Run."""
+    from ttakkari.research.planner import validate_experiment_plan
+
+    study = await db.get(Study, experiment.study_id)
+    plan = await validate_experiment_plan(
+        db,
+        study_id=experiment.study_id,
+        method_id=experiment.method_id,
+        compared_method_ids=[uuid.UUID(str(value)) for value in (experiment.compared_method_ids or [])],
+        adapter_id=experiment.adapter_id,
+        strategy=experiment.strategy,
+        search_space=experiment.search_space or {},
+        fixed_inputs=experiment.fixed_inputs or {},
+        budget=experiment.budget or {},
+        scope=study.scope if study else "personal",
+    )
+    if not plan.valid:
+        raise HTTPException(422, "experiment_plan_not_executable: " + "; ".join(plan.errors))
 
 
 async def recover_orphaned_runs() -> int:

@@ -91,9 +91,11 @@ async def test_api_rejects_aba_claim_epoch_before_dispatch(monkeypatch):
 
 
 @pytest.mark.parametrize("operation", ["dispatch", "reconcile"])
-@pytest.mark.parametrize("owner_state,expected_status", [("active", None), ("draining", 409)])
+@pytest.mark.parametrize("owner_state,runtime_mode,expected_status", [
+    ("active", "local", None), ("draining", "local", 409), ("active", "remote", 409),
+])
 async def test_recovery_routes_use_real_generation_runtime_contract(
-    tmp_path, monkeypatch, operation, owner_state, expected_status
+    tmp_path, monkeypatch, operation, owner_state, runtime_mode, expected_status
 ):
     from pathlib import Path
 
@@ -128,7 +130,7 @@ async def test_recovery_routes_use_real_generation_runtime_contract(
 
     runtime = GenerationRuntime(Path(tmp_path), revision=REVISION, api_url="http://127.0.0.1:18791")
     runtime.id = OWNER_ID
-    runtime.execution_mode = "local"
+    runtime.execution_mode = runtime_mode
     monkeypatch.setattr(orchestrator, "_manager", manager_session)
     monkeypatch.setattr(orchestrator, "_owned_worker", owned_worker)
     monkeypatch.setattr(orchestrator.manager, "_runtime", runtime)
@@ -255,6 +257,29 @@ async def test_compensation_passes_exact_claim_fence_to_orphan_apply(tmp_path, m
     reconcile.assert_awaited_once_with(apply=True, expected_claim_owner_fence={
         "generation_id": OWNER_ID, "revision": REVISION, "epoch": 19,
     })
+
+
+async def test_compensation_without_runtime_fails_closed(monkeypatch):
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.runs import compensation
+    from ttakkari.runs.manager import manager
+
+    class FakeDb:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    db = FakeDb()
+    reconcile = AsyncMock()
+    monkeypatch.setattr(compensation, "sessionmaker", lambda: lambda: db)
+    monkeypatch.setattr(manager, "_runtime", None)
+    monkeypatch.setattr(generation, "current", None)
+    monkeypatch.setattr(executor_reconcile, "reconcile_orphans", reconcile)
+
+    assert await compensation.compensate_runs() == {"requeued": 0, "orphans": 0}
+    reconcile.assert_not_awaited()
 
 
 async def test_api_rejects_spoofed_idempotency_key_before_owner_read(monkeypatch):

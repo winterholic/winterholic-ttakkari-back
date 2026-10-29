@@ -62,7 +62,7 @@ async def compensate_runs() -> dict:
     async def runtime_owns_active_generation(db) -> dict | None:
         runtime = manager.runtime
         if runtime is None:
-            return {}
+            return None
         if manager.remote or getattr(runtime, "draining", False):
             return None
         control = await generation._control(db)

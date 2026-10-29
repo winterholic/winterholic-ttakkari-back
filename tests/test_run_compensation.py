@@ -57,7 +57,7 @@ async def test_transient_failure_requeues_same_run_with_bounded_progress(new_ses
         assert not await manager._retry_execution_failure(db, run, "HTTP 503 Service Unavailable")
 
 
-async def test_sweep_recovers_historical_failure_but_preserves_cancel_and_newer_turn(new_session, monkeypatch):
+async def test_sweep_recovers_historical_failure_but_preserves_cancel_and_newer_turn(tmp_path, new_session, monkeypatch):
     mod = importlib.import_module("ttakkari.runs.manager")
     monkeypatch.setattr(manager, "dispatch", AsyncMock())
     ids = []
@@ -75,7 +75,13 @@ async def test_sweep_recovers_historical_failure_but_preserves_cancel_and_newer_
                            prompt="newer instruction", status=RunStatus.succeeded,
                            created_at=utcnow() + timedelta(seconds=1)))
             await db.commit()
-    summary = await mod.compensate_runs()
+    from test_generations import generations
+
+    from ttakkari.generation import activate
+    async with generations(tmp_path) as (runtime, _standby):
+        await activate(runtime.id, expected=None)
+        monkeypatch.setattr(manager, "_runtime", runtime)
+        summary = await mod.compensate_runs()
     assert summary["requeued"] == 1
     async with sessionmaker()() as db:
         assert (await db.get(Run, ids[0])).status == RunStatus.queued
@@ -107,7 +113,7 @@ async def test_active_coordinator_runs_compensation_before_queue(tmp_path, monke
     assert seen == []
 
 
-async def test_dead_unleased_run_recovers_but_live_or_unknown_pid_does_not(new_session, monkeypatch):
+async def test_dead_unleased_run_recovers_but_live_or_unknown_pid_does_not(tmp_path, new_session, monkeypatch):
     mod = importlib.import_module("ttakkari.runs.manager")
     monkeypatch.setattr(manager, "dispatch", AsyncMock())
     ids = []
@@ -120,7 +126,13 @@ async def test_dead_unleased_run_recovers_but_live_or_unknown_pid_does_not(new_s
             await db.commit()
             ids.append(run.id)
     monkeypatch.setattr(mod, "_inspect_run_process", lambda pid: "unknown")
-    assert (await mod.compensate_runs())["requeued"] == 1
+    from test_generations import generations
+
+    from ttakkari.generation import activate
+    async with generations(tmp_path) as (runtime, _standby):
+        await activate(runtime.id, expected=None)
+        monkeypatch.setattr(manager, "_runtime", runtime)
+        assert (await mod.compensate_runs())["requeued"] == 1
     async with sessionmaker()() as db:
         assert (await db.get(Run, ids[0])).status == RunStatus.queued
         assert (await db.get(Run, ids[1])).status == RunStatus.running
@@ -153,7 +165,7 @@ async def test_dead_owner_releases_lease_even_after_status_was_committed(tmp_pat
 
 
 @pytest.mark.parametrize("contract_owner", ["parent", "self"])
-async def test_completed_parent_goal_never_revives_its_old_failed_worker(new_session, contract_owner):
+async def test_completed_parent_goal_never_revives_its_old_failed_worker(tmp_path, new_session, monkeypatch, contract_owner):
     from ttakkari.models import AppSetting
     from ttakkari.orchestrator.work import key
     ws, parent = await new_session()
@@ -170,7 +182,13 @@ async def test_completed_parent_goal_never_revives_its_old_failed_worker(new_ses
         await db.commit()
         rid = run.id
     mod = importlib.import_module("ttakkari.runs.manager")
-    assert (await mod.compensate_runs())["requeued"] == 0
+    from test_generations import generations
+
+    from ttakkari.generation import activate
+    async with generations(tmp_path) as (runtime, _standby):
+        await activate(runtime.id, expected=None)
+        monkeypatch.setattr(manager, "_runtime", runtime)
+        assert (await mod.compensate_runs())["requeued"] == 0
     async with sessionmaker()() as db:
         assert (await db.get(Run, rid)).status == RunStatus.failed
 

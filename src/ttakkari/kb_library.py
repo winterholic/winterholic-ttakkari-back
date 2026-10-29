@@ -135,6 +135,134 @@ def library_filter(pool: str = "personal"):
     return and_(access_filter(pool), ~covered, ~research_context_filter())
 
 
+def _covered_document_filter():
+    return select(KbDocumentAlias.document_id).where(
+        KbDocumentAlias.document_id == KbDocument.id, KbDocumentAlias.relation == "covered"
+    ).exists()
+
+
+async def observation_inventory(
+    db: AsyncSession, *, pool: str = "personal", query: str | None = None,
+    principal: str = "session", limit: int = 5, offset: int = 0,
+    revision_limit: int = 10, passage_limit: int = 5,
+) -> dict:
+    """Bounded, body-free visibility audit for one authenticated reader's KB scope.
+
+    Counts and rows start after the existing access filter. Hidden and other-tenant records are
+    deliberately neither counted nor identified. Context is a document's selected current revision;
+    covered aliases are classified after context so reason counts are disjoint.
+    """
+    candidate_ids = select(KbDocument.id).where(access_filter(pool))
+    if query and query.strip():
+        pattern = query.strip()
+        candidate_ids = candidate_ids.where(
+            KbDocument.title.icontains(pattern, autoescape=True)
+            | KbDocument.doc_key.icontains(pattern, autoescape=True)
+        )
+    candidate_subquery = candidate_ids.subquery()
+    candidate_count = await db.scalar(select(func.count()).select_from(candidate_subquery)) or 0
+    candidate = select(KbDocument).where(KbDocument.id.in_(select(candidate_subquery.c.id)))
+    context_filter = research_context_filter()
+    covered_filter = _covered_document_filter()
+    context_count = await db.scalar(select(func.count()).select_from(KbDocument).where(
+        access_filter(pool), context_filter,
+        *([KbDocument.id.in_(select(candidate_subquery.c.id))] if query and query.strip() else []),
+    )) or 0
+    covered_count = await db.scalar(select(func.count()).select_from(KbDocument).where(
+        access_filter(pool), ~context_filter, covered_filter,
+        *([KbDocument.id.in_(select(candidate_subquery.c.id))] if query and query.strip() else []),
+    )) or 0
+    visible_count = max(candidate_count - context_count - covered_count, 0)
+    docs = list(await db.scalars(candidate.order_by(KbDocument.updated_at.desc(), KbDocument.id)
+                                  .offset(offset).limit(limit)))
+    current_ids = {}
+    for doc in docs:
+        current_revision = await _latest_revision(db, doc.id)
+        current_ids[doc.id] = current_revision.id if current_revision else None
+    rows = []
+    passage_evidence_refs = []
+    for doc in docs:
+        current_id = current_ids[doc.id]
+        is_context = bool(await db.scalar(select(KbDocument.id).where(KbDocument.id == doc.id, context_filter)))
+        alias_query = select(KbDocumentAlias).join(
+            KbDocument, KbDocument.id == KbDocumentAlias.canonical_document_id
+        ).where(KbDocumentAlias.document_id == doc.id, access_filter(pool))
+        aliases = list(await db.scalars(alias_query))
+        canonical_aliases = list(await db.scalars(select(KbDocumentAlias).join(
+            KbDocument, KbDocument.id == KbDocumentAlias.document_id
+        ).where(KbDocumentAlias.canonical_document_id == doc.id, access_filter(pool))))
+        aliases.extend(canonical_aliases)
+        revisions = list(await db.scalars(select(KbRevision).where(KbRevision.document_id == doc.id)
+                                          .order_by((KbRevision.id == current_id).desc(),
+                                                    KbRevision.rev_no.desc()).limit(revision_limit)))
+        revision_rows = []
+        for revision in revisions:
+            source = await db.get(KbSource, revision.source_id)
+            passages = list(await db.scalars(select(KbPassage).where(KbPassage.revision_id == revision.id)
+                                             .order_by(KbPassage.ord).limit(passage_limit)))
+            passage_total = await db.scalar(select(func.count()).select_from(KbPassage).where(
+                KbPassage.revision_id == revision.id
+            )) or 0
+            passage_rows = []
+            for passage in passages:
+                passage_row = {
+                    "id": str(passage.id), "ord": passage.ord, "char_start": passage.char_start,
+                    "char_end": passage.char_end, "sha256": passage.sha256, "evidence_count": 0,
+                }
+                passage_rows.append(passage_row)
+                passage_evidence_refs.append((passage_row, passage.id))
+            revision_context = bool(await db.scalar(select(KbRevision.id).where(
+                KbRevision.id == revision.id, research_context_revision_filter(KbRevision)
+            )))
+            purpose = research_source_purpose(source) if source else None
+            if purpose is not None and purpose not in {"knowledge_reference", "research_context"}:
+                purpose = "unclassified"
+            revision_rows.append({
+                "id": str(revision.id), "rev_no": revision.rev_no, "current": revision.id == current_id,
+                "excluded_reason": "context" if revision_context else None,
+                "text_sha256": revision.text_sha256, "char_count": revision.char_count,
+                "created_at": revision.created_at.isoformat(),
+                "source": {"id": str(source.id), "kind": source.kind, "sha256": source.sha256,
+                           "library_purpose": purpose} if source else None,
+                "passages": passage_rows, "passage_total": passage_total,
+                "passages_truncated": passage_total > len(passage_rows),
+            })
+        reason = "context" if is_context else "covered" if any(
+            a.relation == "covered" for a in aliases if a.document_id == doc.id
+        ) else None
+        revision_total = await db.scalar(select(func.count()).select_from(KbRevision).where(
+            KbRevision.document_id == doc.id
+        )) or 0
+        rows.append({
+            "document_id": str(doc.id), "excluded_reason": reason,
+            "alias": [{"document_id": str(a.document_id), "canonical_document_id": str(a.canonical_document_id),
+                       "relation": a.relation, "created_at": a.created_at.isoformat()} for a in aliases],
+            "revisions": revision_rows, "revision_total": revision_total,
+            "revisions_truncated": revision_total > len(revision_rows),
+        })
+    passage_ids = [passage_id for _, passage_id in passage_evidence_refs]
+    if passage_ids:
+        evidence_counts = {
+            passage_id: count for passage_id, count in await db.execute(
+                select(KbEvidence.passage_id, func.count()).where(KbEvidence.passage_id.in_(passage_ids))
+                .group_by(KbEvidence.passage_id)
+            )
+        }
+        for passage_row, passage_id in passage_evidence_refs:
+            passage_row["evidence_count"] = evidence_counts.get(passage_id, 0)
+    return {
+        "scope": {"principal": principal, "reader_pool": normalize_pool(pool),
+                  "candidate_boundary": "access_filter(reader_pool)",
+                  "hidden_and_other_tenant_counted": False},
+        "counts": {"candidates": candidate_count, "visible": visible_count,
+                   "excluded": {"context": context_count, "covered": covered_count}},
+        "items": rows, "total": candidate_count, "limit": limit, "offset": offset,
+        "has_more": offset + len(rows) < candidate_count,
+        "next_offset": offset + len(rows) if offset + len(rows) < candidate_count else None,
+        "query_applied": bool(query and query.strip()),
+    }
+
+
 async def resolve_doc_key(db, new_key: str, legacy_keys: list[str]) -> str:
     """같은 출처의 문서가 옛 scope 별 키로 이미 있으면 그 계보의 키를 쓴다(병합 전후 모두).
     여러 개면 가장 먼저 만든 문서, alias 로 합쳐졌다면 canonical 문서의 키다."""

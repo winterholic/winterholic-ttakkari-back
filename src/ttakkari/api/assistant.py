@@ -44,6 +44,8 @@ TOOLS: list[dict[str, str]] = [
     {"name": "knowledge_extraction_status", "group": "맥락", "who": "모든 실행", "desc": "추출 실행 기록·실패 사유·재처리 계보"},
     {"name": "knowledge_retry_extraction", "group": "맥락", "who": "모든 실행", "desc": "재처리 가능한 실패만 최대3회 재개"},
     {"name": "kb_search", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 문서 검색·원문 근거 후보"},
+    {"name": "kb_summary", "group": "지식 도서관", "who": "모든 실행", "desc": "세션 접근 범위의 일반 지식 문서 집계"},
+    {"name": "kb_observations", "group": "지식 도서관", "who": "모든 실행", "desc": "본문 없는 범위별 문서·리비전·패시지 관측 메타데이터"},
     {"name": "kb_documents", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 도서관 문서 목록"},
     {"name": "kb_document", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 문서와 현재 버전"},
     {"name": "kb_evidence", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 인용 위치·해시 검증"},

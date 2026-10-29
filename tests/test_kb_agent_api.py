@@ -35,10 +35,22 @@ async def test_agent_kb_search_scope_comes_from_session(client, auth, headers):
     assert work.status_code == 200, work.text
     assert work.json()["items"] == []
     assert (await client.get(f"/api/agent/kb/documents/{doc_id}", headers=headers["work"])).status_code == 404
+    work_observations = (await client.get("/api/agent/kb/observations?q=개인", headers=headers["work"])).json()
+    assert work_observations["counts"]["candidates"] == 0
+    assert work_observations["items"] == []
+    assert work_observations["scope"]["reader_pool"] == "work"
 
     # 개인 세션(personal)은 전체 도서관을 읽는다.
     personal = await client.get("/api/agent/kb/search?q=오로라", headers=headers["personal"])
     assert len(personal.json()["items"]) == 1
+    summary = await client.get("/api/agent/kb/summary", headers=headers["personal"])
+    assert summary.json()["counts"]["documents"] == 1
+    observations = (await client.get("/api/agent/kb/observations?q=개인", headers=headers["personal"])).json()
+    assert observations["counts"] == {"candidates": 1, "visible": 1, "excluded": {"context": 0, "covered": 0}}
+    assert observations["items"][0]["document_id"] == doc_id
+    assert observations["items"][0]["revisions"][0]["id"] == made["revision_id"]
+    assert observations["items"][0]["revisions"][0]["passages"][0]["id"]
+    assert "개인 전용 오로라 검색문서" not in str(observations)
     pid = personal.json()["items"][0]["passage_id"]
     assert (await client.get(f"/api/agent/kb/documents/{doc_id}", headers=headers["personal"])).status_code == 200
     assert (await client.get(f"/api/agent/kb/passages/{pid}/evidence", headers=headers["personal"])).status_code == 200
@@ -56,7 +68,30 @@ async def test_agent_kb_search_scope_comes_from_session(client, auth, headers):
 
 
 async def test_agent_kb_has_no_unauthenticated_access(client):
-    for path in ("search?q=test", "documents", f"documents/{uuid.uuid4()}", f"passages/{uuid.uuid4()}/evidence"):
+    for path in ("search?q=test", "summary", "observations", "documents", f"documents/{uuid.uuid4()}",
+                 f"passages/{uuid.uuid4()}/evidence"):
         assert (await client.get("/api/agent/kb/" + path)).status_code == 401
+
+
+async def test_agent_kb_mcp_read_options_select_historical_revision(client, auth, headers):
+    first = (await client.post("/api/assistant/kb/documents", headers=auth, json={
+        "title": "개정 옵션", "source_key": "kb-options", "text": "아주오래된표현만있는본문",
+    })).json()
+    revised = (await client.post("/api/assistant/kb/documents", headers=auth, json={
+        "title": "개정 옵션", "source_key": "kb-options", "text": "현재판에는새표현만있다",
+    })).json()
+    old_detail = await client.get(f"/api/agent/kb/documents/{first['document_id']}", headers=headers["personal"],
+                                  params={"revision_id": first["revision_id"], "passage_limit": 1,
+                                          "passage_offset": 0})
+    assert old_detail.status_code == 200
+    assert old_detail.json()["selected_revision_id"] == first["revision_id"]
+    historical = await client.get("/api/agent/kb/search", headers=headers["personal"], params={
+        "q": "아주오래된표현", "document_id": first["document_id"], "current_only": "false", "offset": 0,
+    })
+    assert [item["revision"]["id"] for item in historical.json()["items"]] == [first["revision_id"]]
+    current = await client.get("/api/agent/kb/search", headers=headers["personal"], params={
+        "q": "아주오래된표현", "document_id": revised["document_id"], "current_only": "true",
+    })
+    assert current.json()["items"] == []
 
 pytestmark = pytest.mark.security

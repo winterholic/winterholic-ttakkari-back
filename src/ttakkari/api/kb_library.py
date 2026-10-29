@@ -62,6 +62,22 @@ async def kb_summary(_: User, db: Db, scope: LegacyScope = None) -> dict:
     return {**await lib.summary(db), "retrieval": await kb_retrieval.status(db)}
 
 
+@router.get("/observations")
+async def kb_observations(
+    _: User, db: Db,
+    q: str | None = Query(None, max_length=200),
+    limit: int = Query(5, ge=1, le=10),
+    offset: int = Query(0, ge=0),
+    revision_limit: int = Query(10, ge=1, le=10),
+    passage_limit: int = Query(5, ge=1, le=10),
+) -> dict:
+    """Read bounded KB visibility/provenance metadata; never returns document or passage bodies."""
+    return await lib.observation_inventory(
+        db, pool="personal", principal="owner", query=q, limit=limit, offset=offset,
+        revision_limit=revision_limit, passage_limit=passage_limit,
+    )
+
+
 @router.get("/documents")
 async def kb_documents(
     _: User, db: Db,

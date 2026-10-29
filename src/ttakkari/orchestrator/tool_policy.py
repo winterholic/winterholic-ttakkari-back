@@ -3,7 +3,7 @@
 READ_ONLY_TOOLS = frozenset({
     "collection_mission_status",
     "github_accounts",
-    "kb_search", "kb_documents", "kb_document", "kb_evidence",
+    "kb_search", "kb_summary", "kb_observations", "kb_documents", "kb_document", "kb_evidence",
     "list_checklist", "list_checklist_templates", "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",

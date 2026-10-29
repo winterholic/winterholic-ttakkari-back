@@ -34,7 +34,7 @@ async def register(client, auth, **body):
 
 
 async def test_requires_auth(client):
-    for method, path in (("get", "/summary"), ("get", "/documents"), ("get", "/search?q=x"),
+    for method, path in (("get", "/summary"), ("get", "/observations"), ("get", "/documents"), ("get", "/search?q=x"),
                          ("get", f"/documents/{uuid.uuid4()}"), ("get", f"/passages/{uuid.uuid4()}/evidence")):
         r = await getattr(client, method)(BASE + path)
         assert r.status_code == 401, path
@@ -86,6 +86,28 @@ async def test_summary_and_document_list_paginate(client, auth):
     assert [d["title"] for d in filtered["items"]] == ["문서 1"]
     wildcard = (await client.get(BASE + "/documents", params={"q": "%"}, headers=auth)).json()
     assert wildcard["total"] == 0
+
+
+async def test_observations_are_bounded_body_free_and_include_revision_passage_metadata(client, auth):
+    made = await register(client, auth, title="관측 메타데이터", source_key="observation:metadata",
+                          text="비밀본문이아니라테스트용관측문장입니다.")
+    response = await client.get(BASE + "/observations", headers=auth,
+                                params={"q": "관측 메타데이터", "limit": 1, "revision_limit": 1,
+                                        "passage_limit": 1})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["scope"] == {"principal": "owner", "reader_pool": "personal",
+                             "candidate_boundary": "access_filter(reader_pool)",
+                             "hidden_and_other_tenant_counted": False}
+    assert body["counts"] == {"candidates": 1, "visible": 1,
+                              "excluded": {"context": 0, "covered": 0}}
+    item = body["items"][0]
+    revision = item["revisions"][0]
+    assert item["document_id"] == made["document_id"]
+    assert revision["id"] == made["revision_id"]
+    assert revision["passage_total"] == 1 and revision["passages"][0]["id"]
+    assert "비밀본문이아니라테스트용관측문장입니다." not in response.text
+    assert "body" not in revision["passages"][0]
 
 
 async def test_document_detail_lists_revisions_and_selected_passages(client, auth):

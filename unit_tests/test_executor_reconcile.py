@@ -122,6 +122,31 @@ async def test_reconcile_dry_run_does_not_call_apply_or_change_rows(monkeypatch)
     assert state == {"lease_deleted": False, "group_deleted": False, "signals": 0}
 
 
+async def test_bulk_reconcile_attaches_claim_fence_to_each_apply(monkeypatch):
+    import uuid
+
+    from ttakkari import executor_reconcile as reconcile
+
+    entry = {"run_id": str(uuid.uuid4()), "owner_id": str(uuid.uuid4()),
+             "disposition": "safe_to_release", "groups": [], "_group_rows": [],
+             "_lease_token": uuid.uuid4()}
+    fence = {"generation_id": uuid.uuid4(), "revision": "a" * 40, "epoch": 23}
+    applied = []
+
+    async def capture(entry):
+        applied.append(entry)
+        return False
+
+    monkeypatch.setattr(reconcile, "_read_orphans", lambda: _entries([entry]))
+    monkeypatch.setattr(reconcile, "_apply_one", capture)
+
+    result = await reconcile.reconcile_orphans(apply=True, expected_claim_owner_fence=fence)
+
+    assert result["reconciled"] == 0
+    assert applied == [{**entry, "expected_claim_owner_fence": fence}]
+    assert "expected_claim_owner_fence" not in entry
+
+
 async def _run_apply_with_pg_error(monkeypatch, sqlstate, message):
     import uuid
 

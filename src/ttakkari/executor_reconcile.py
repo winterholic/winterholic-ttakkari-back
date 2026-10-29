@@ -330,11 +330,14 @@ async def reconcile_one(run_id: uuid.UUID, *, expected_owner_generation_id: uuid
     return {"run_id": str(run_id), "reconciled": changed, "action": action}
 
 
-async def reconcile_orphans(*, apply: bool = False) -> dict:
+async def reconcile_orphans(*, apply: bool = False,
+                            expected_claim_owner_fence: dict | None = None) -> dict:
     entries = await _read_orphans()
     results = []
     for entry in entries:
-        outcome = await _apply_one(entry) if apply else False
+        apply_entry = {**entry, "expected_claim_owner_fence": expected_claim_owner_fence} \
+            if apply and expected_claim_owner_fence is not None else entry
+        outcome = await _apply_one(apply_entry) if apply else False
         changed = outcome is True
         retryable_timeout = outcome if outcome in _RETRYABLE_OUTCOMES else None
         results.append({"run_id": entry["run_id"], "owner_id": entry["owner_id"],

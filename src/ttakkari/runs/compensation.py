@@ -59,29 +59,33 @@ async def compensate_runs() -> dict:
     from ttakkari.models import RuntimeGeneration, RuntimeProcessGroup
     from ttakkari.runs.manager import _inspect_run_process, manager
 
-    async def runtime_owns_active_generation(db) -> bool:
+    async def runtime_owns_active_generation(db) -> dict | None:
         runtime = manager.runtime
         if runtime is None:
-            return True
+            return {}
         if manager.remote or getattr(runtime, "draining", False):
-            return False
+            return None
         control = await generation._control(db)
         owner_id = generation.claim_owner(control)
         if owner_id != runtime.id:
-            return False
+            return None
         owner = await db.get(RuntimeGeneration, owner_id)
-        return owner is not None and owner.state == "active"
+        if owner is None or owner.state != "active":
+            return None
+        return {"generation_id": owner_id, "revision": owner.revision, "epoch": control.epoch}
 
     # Standby/draining processes must never recover work on behalf of an owner.
     async with sessionmaker()() as db:
-        if not await runtime_owns_active_generation(db):
+        claim_fence = await runtime_owns_active_generation(db)
+        if claim_fence is None:
             return {"requeued": 0, "orphans": 0}
         await db.commit()
-    reconciled = await executor_reconcile.reconcile_orphans(apply=True)
+    reconciled = await executor_reconcile.reconcile_orphans(
+        apply=True, expected_claim_owner_fence=claim_fence or None)
     count = 0
     waiting = []
     async with sessionmaker()() as db:
-        if not await runtime_owns_active_generation(db):
+        if await runtime_owns_active_generation(db) is None:
             return {"requeued": 0, "orphans": reconciled["reconciled"]}
         newer = aliased(Run)
         rows = list(await db.scalars(select(Run).join(ChatSession, ChatSession.id == Run.session_id).where(

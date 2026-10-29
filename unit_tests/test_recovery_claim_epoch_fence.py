@@ -212,6 +212,51 @@ async def test_compensation_reads_persisted_drain_state_with_generation_runtime(
     reconcile.assert_not_awaited()
 
 
+async def test_compensation_passes_exact_claim_fence_to_orphan_apply(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from ttakkari import executor_reconcile, generation
+    from ttakkari.generation import GenerationRuntime
+    from ttakkari.models import RuntimeGeneration
+    from ttakkari.runs import compensation
+    from ttakkari.runs.manager import manager
+
+    runtime = GenerationRuntime(Path(tmp_path), revision=REVISION, api_url="http://127.0.0.1:18791")
+    runtime.id = OWNER_ID
+    runtime.execution_mode = "local"
+    owner = SimpleNamespace(id=OWNER_ID, revision=REVISION, state="active")
+    control = SimpleNamespace(active_generation=OWNER_ID, executor_generation=None, epoch=19)
+
+    class FakeDb:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, model, _key):
+            assert model is RuntimeGeneration
+            return owner
+
+        async def scalars(self, _statement):
+            return []
+
+        async def commit(self):
+            return None
+
+    db = FakeDb()
+    reconcile = AsyncMock(return_value={"reconciled": 0})
+    monkeypatch.setattr(compensation, "sessionmaker", lambda: lambda: db)
+    monkeypatch.setattr(generation, "_control", AsyncMock(return_value=control))
+    monkeypatch.setattr(manager, "_runtime", runtime)
+    monkeypatch.setattr(executor_reconcile, "reconcile_orphans", reconcile)
+
+    assert await compensation.compensate_runs() == {"requeued": 0, "orphans": 0}
+    reconcile.assert_awaited_once_with(apply=True, expected_claim_owner_fence={
+        "generation_id": OWNER_ID, "revision": REVISION, "epoch": 19,
+    })
+
+
 async def test_api_rejects_spoofed_idempotency_key_before_owner_read(monkeypatch):
     async def manager_session(_db, _sid):
         return SimpleNamespace(id=SESSION_ID, pool="personal")

@@ -1638,6 +1638,8 @@ def classify_mcp_tool(name: str) -> str:
         return "core.system_routing"
     if n in (
         "manage_work",
+        "dispatch_queued_worker_run",
+        "reconcile_worker_lease",
         "spawn_worker",
         "get_worker",
         "message_worker",

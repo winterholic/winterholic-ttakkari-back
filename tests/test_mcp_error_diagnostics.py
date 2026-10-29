@@ -50,7 +50,8 @@ async def test_read_session_returns_mcp_failure_identity_and_argument_keys_only(
     assert 'PRIVATE_SHELL' not in response.text
     denied = await client.get(f'/api/agent/sessions/{personal.id}',
                              headers={'Authorization': f'Bearer {issue_token(work.id)}'})
-    assert denied.status_code == 403
+    # 0f6f0a77: 소유자 세션 조회는 회사 세션에도 열려 있다(세션 인증은 유지).
+    assert denied.status_code == 200
 
 
 async def test_read_session_echoes_args_provenance_and_keeps_legacy_rows_null(client, setup_sessions):  # noqa: F811

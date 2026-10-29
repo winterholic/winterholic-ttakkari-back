@@ -59,9 +59,10 @@
 - **최초 1회 부트스트랩 공백 명시**:
   - `abcb3f7d`가 `recovery_pending` 상태로 후속 배포 전환을 차단하고 있는 동안에는 새 커밋이 스스로 먼저 배포될 수 없으며, `TTAKKARI_RUN_ID`가 설정된 에이전트 Run 내부에서는 `recover-drain --apply`가 거절된다(Run guard 유지).
   - 따라서 최초 1회 `abcb3f7d` 해소는 현재 지원 MCP에서 실행할 수 없으며, 반드시 **따까리 Run 밖의 사용자 호스트 터미널**에서 검증된 소스의 `python -m ttakkari.deployment diagnose` 및 `recover-drain ... --apply`로 수행해야 한다.
-- **배포 활성화 이후 최소 지원 Fenced API (`src/ttakkari/api/deployments.py`)**:
-  - `GET /api/agent/deploy/diagnostics` 및 `POST /api/agent/deploy/{job_id}/recover-drain` 추가(`core.generation_deploy` 분류 정합 확인).
+- **배포 활성화 이후 최소 지원 Fenced API (`src/ttakkari/api/deployments.py`) 및 API 경계 Run Guard 강제**:
+  - `GET /api/agent/deploy/diagnostics` 및 `POST /api/agent/deploy/{job_id}/recover-drain` 추가(`core.generation_deploy` 및 `tests/test_route_inventory.py` `ROUTE_SCOPE` 정합 확인).
   - 임의 shell·경로 입력을 받지 않는 `RecoverDrainIn`(`extra="forbid"`), 개인 오케스트레이터 세션 전용(`pool="personal"`, `kind="orchestrator"`), `idempotency_key` 바인딩(`recover-drain:{job_id}:{expected_previous_generation}:{expected_epoch}`), 현재 API 서버 프로세스 자신의 활성 소유권 검증(`generation.current.id == expected_active_generation`, `not draining`, `RuntimeControl.epoch == expected_epoch`), `AuditLog`(`deployment.recover_drain`) 기록을 강제한다.
+  - **독립 검증(`deploy-recovery-independent-c936-20261030.md`) 후속 교정**: API 서버 프로세스 환경에 `TTAKKARI_RUN_ID`가 없더라도, `recover_drain_endpoint`가 Bearer 인증 토큰의 `(sid, run_id)`와 `Run` 엔티티(`status == RunStatus.running`, `session_id == sid`)를 검증하고 컨트롤러 `recover_drain(..., run_id=token_run_id)`에도 전달하도록 교정했다. 불일치 Run marker는 dry-run/apply 모두 `409`로 거절하며, `apply=True` 요청에서 Run-bound 토큰(`token_run_id is not None`), `rid`가 빠진 레거시 에이전트 Bearer(`creds is not None`), 세션의 활성 `Run` 행(`RunStatus.running`), 또는 프로세스 `TTAKKARI_RUN_ID` 중 하나라도 존재하면 journal 변경 없이 즉시 `409 Conflict`로 차단한다.
   - 본 엔드포인트는 독립 재검증 완료 및 정식 배포 활성화 전까지 사용하지 않는다.
 
 ## 3. 변경 파일 목록
@@ -70,6 +71,7 @@
 - `src/ttakkari/generation_deployment.py`
 - `src/ttakkari/operations/inline.py`
 - `src/ttakkari/api/deployments.py`
+- `tests/test_route_inventory.py`
 - `unit_tests/test_generation_hardening.py`
 - `unit_tests/test_collection_runtime_report.py`
 - `docs/design/generation-deployment.md`
@@ -77,21 +79,21 @@
 
 ## 4. 실행한 격리 검증 증거
 
-1. **단위 및 격리 반례 스위트 (신규 7개 반례 + 기존 하드닝/런타임 리포트 전체)**:
+1. **단위 및 격리 반례 스위트 (API 경계 Run marker 차단 회귀 포함)**:
    - 명령:
      `PYTHONPATH=/Users/winterholic/development/ttakkari-deploy-recovery-20261030/src /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/pytest /Users/winterholic/development/ttakkari-deploy-recovery-20261030/unit_tests/test_generation_hardening.py /Users/winterholic/development/ttakkari-deploy-recovery-20261030/unit_tests/test_collection_runtime_report.py -q`
-   - 결과: `49 passed in 5.27s`
-2. **독립 검증자 원본 반례 스크립트 읽기 전용 대조**:
+   - 결과: `49 passed in 6.62s`
+2. **독립 검증자 `c936` 격리 반례 스크립트 읽기 전용 대조**:
    - 명령:
-     `PYTHONPATH=/Users/winterholic/development/ttakkari-deploy-recovery-20261030/src /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/pytest /private/tmp/deploy-recovery-395738-import.hij9iE/independent_counterexamples_395738_test.py --tb=short -q`
-   - 결과: 기존 취약점 존재를 단언하던 6개 케이스 모두 차단되어 반박됨(`_lock_held(PermissionError) -> None`, `_drain_recovery_db_state(AccessDenied) -> previous_pid_alive=None`, `queue_diagnostics` raw `error` `None`, `mark_offline` 및 `slots.snapshot` await 이후 epoch/lease drift `RuntimeError` 거절), 비-drain 거부 단언 1개 `PASSED`.
-3. **Platform V2 백엔드 인벤토리 계약 스캐너 회귀 검사**:
+     `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=/Users/winterholic/development/ttakkari-deploy-recovery-20261030/unit_tests:/Users/winterholic/development/ttakkari-deploy-recovery-20261030/src /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/pytest -p pytest_asyncio.plugin -q -s --confcutdir=/private/tmp/deploy-recovery-c936-import /private/tmp/deploy-recovery-c936-import/independent_counterexamples_c936_test.py`
+   - 결과: lock/pid/snapshot-drift/crash/diagnostics 5개 항목 모두 통과하고, 기존 `run_apply.status_code == 200` 취약점 단언이 `assert (409 == 200)`으로 반박되어 API 프로세스에 `TTAKKARI_RUN_ID`가 없을 때도 Run-bound bearer `apply=true`가 `409 Conflict`로 차단됨을 확인.
+3. **라우트 인벤토리 매니페스트 정합 검사**:
    - 명령:
-     `PYTHONPATH=/Users/winterholic/development/ttakkari-deploy-recovery-20261030:/Users/winterholic/development/ttakkari-deploy-recovery-20261030/src /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/pytest /Users/winterholic/development/ttakkari-deploy-recovery-20261030/unit_tests/test_platform_v2_inventory.py -q`
-   - 결과: `57 passed in 63.35s`
+     `PYTHONPATH=/Users/winterholic/development/ttakkari-deploy-recovery-20261030:/Users/winterholic/development/ttakkari-deploy-recovery-20261030/src /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/python -c "from tests.test_route_inventory import test_route_inventory_matches_manifest, test_route_scope_labels_valid; test_route_inventory_matches_manifest(); test_route_scope_labels_valid(); print('route_inventory OK')"`
+   - 결과: `route_inventory OK`
 4. **린트 검사 (`ruff check`)**:
    - 명령:
-     `cd /Users/winterholic/development/ttakkari-deploy-recovery-20261030 && /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/ruff check --no-cache src/ttakkari/deployment.py src/ttakkari/generation_deployment.py src/ttakkari/operations/inline.py src/ttakkari/api/deployments.py unit_tests/test_generation_hardening.py unit_tests/test_collection_runtime_report.py`
+     `cd /Users/winterholic/development/ttakkari-deploy-recovery-20261030 && /Users/winterholic/development/ttakkari-infra-integ-20261029/.venv/bin/ruff check --no-cache src/ttakkari/api/deployments.py src/ttakkari/generation_deployment.py src/ttakkari/deployment.py unit_tests/test_generation_hardening.py unit_tests/test_collection_runtime_report.py tests/test_route_inventory.py`
    - 결과: `All checks passed!`
 
 ## 5. 미실행 및 미검증 범위

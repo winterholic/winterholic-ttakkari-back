@@ -2019,14 +2019,108 @@ async def test_fenced_deploy_recovery_api_enforces_owner_session_schema_and_acti
         await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
     assert exc409.value.status_code == 409
 
-    # 5. Matching active API owner succeeds and writes AuditLog; TTAKKARI_RUN_ID guard still blocks if present
-    monkeypatch.setattr(generation, "current", SimpleNamespace(id=active_uuid, draining=False))
+    # 5. Active Run markers (env TTAKKARI_RUN_ID, Run-bound bearer when env is unset,
+    #    legacy bearer missing rid, mismatched session/Run marker, or active session Run row)
+    #    are all rejected on apply=True without mutating the journal.
+    import httpx
+
+    from ttakkari.db import get_db
+    from ttakkari.generation import GenerationRuntime
+    from ttakkari.main import create_app
+    from ttakkari.models import Run, RunStatus
+    from ttakkari.orchestrator.runtime import issue_token
+
+    current_rt = GenerationRuntime(tmp_path, revision=fences["expected_active_revision"], api_url="http://127.0.0.1:8793")
+    current_rt.id = active_uuid
+    current_rt.state = "active"
+    monkeypatch.setattr(generation, "current", current_rt)
     monkeypatch.setenv("TTAKKARI_RUN_ID", "run-inside-sandbox")
     with pytest.raises(HTTPException) as exc_run:
         await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
     assert exc_run.value.status_code == 409
     monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
 
+    run_id = uuid.uuid4()
+    mismatched_run_id = uuid.uuid4()
+    runs = {
+        run_id: SimpleNamespace(id=run_id, session_id=root_sid, status=RunStatus.running),
+        mismatched_run_id: SimpleNamespace(id=mismatched_run_id, session_id=worker_sid, status=RunStatus.running),
+    }
+    orig_get = api_db.get
+
+    async def get_with_runs(model, ident):
+        if model is Run:
+            return runs.get(ident)
+        return await orig_get(model, ident)
+
+    api_db.get = get_with_runs
+
+    # Direct controller call with run_id rejects apply=True even when TTAKKARI_RUN_ID is unset
+    with pytest.raises(RuntimeError, match="never an agent Run"):
+        await control.recover_drain(**fences, apply=True, run_id=run_id)
+    assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Direct endpoint call with (sid, run_id) tuple rejects apply=True when TTAKKARI_RUN_ID is unset
+    with pytest.raises(HTTPException) as exc_tuple_run:
+        await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, (root_sid, run_id), api_db)
+    assert exc_tuple_run.value.status_code == 409
+    assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Real HTTP ASGI boundary without TTAKKARI_RUN_ID in os.environ:
+    app = create_app()
+
+    async def db_override():
+        yield api_db
+
+    app.dependency_overrides[get_db] = db_override
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 5a. Run-bound bearer token with running Run -> rejected (409) on apply=True
+            run_token = issue_token(root_sid, run_id)
+            resp_run_apply = await client.post(
+                f"/api/agent/deploy/{abcb['id']}/recover-drain",
+                json=valid_payload,
+                headers={"Authorization": f"Bearer {run_token}"},
+            )
+            assert resp_run_apply.status_code == 409
+            assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+
+            # 5b. Legacy bearer token missing Run marker (rid=None) -> rejected (409) on apply=True
+            legacy_token = issue_token(root_sid, None)
+            resp_legacy_apply = await client.post(
+                f"/api/agent/deploy/{abcb['id']}/recover-drain",
+                json=valid_payload,
+                headers={"Authorization": f"Bearer {legacy_token}"},
+            )
+            assert resp_legacy_apply.status_code == 409
+            assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+
+            # 5c. Mismatched Run marker (Run belongs to another session) -> rejected (409) even on dry-run
+            mismatched_token = issue_token(root_sid, mismatched_run_id)
+            resp_mismatched = await client.post(
+                f"/api/agent/deploy/{abcb['id']}/recover-drain",
+                json=valid_payload | {"apply": False},
+                headers={"Authorization": f"Bearer {mismatched_token}"},
+            )
+            assert resp_mismatched.status_code == 409
+            assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+
+            # 5d. Matching Run-bound bearer on dry-run (apply=False) is allowed and does not mutate journal
+            resp_dry_run = await client.post(
+                f"/api/agent/deploy/{abcb['id']}/recover-drain",
+                json=valid_payload | {"apply": False},
+                headers={"Authorization": f"Bearer {run_token}"},
+            )
+            assert resp_dry_run.status_code == 200
+            assert resp_dry_run.json()["applied"] is False
+            assert control.store.get(abcb["id"])["status"] == "recovery_pending"
+    finally:
+        app.dependency_overrides.clear()
+
+    # 6. Matching active API owner outside agent Run succeeds and writes AuditLog
+    api_db.commits = 0
+    api_db.added.clear()
     out = await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
     assert out["ok"] is True and out["applied"] is True and out["action"] == "resume_draining"
     assert api_db.commits == 1

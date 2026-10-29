@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 
 from ttakkari import deployment, generation
 from ttakkari import generation_deployment as gd
@@ -13,9 +17,17 @@ from ttakkari.api.agent import _session
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.generation import PORTS
-from ttakkari.models import ChatSession, RuntimeControl, RuntimeGeneration, SessionKind
+from ttakkari.models import (
+    ChatSession,
+    Run,
+    RunStatus,
+    RuntimeControl,
+    RuntimeGeneration,
+    SessionKind,
+)
 from ttakkari.operations import inline
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
+from ttakkari.orchestrator.runtime import _authenticate, _bearer
 
 router = APIRouter(prefix="/api/agent/deploy", tags=["agent"])
 
@@ -93,13 +105,55 @@ async def deploy_diagnostics_endpoint(sid: AgentSession, db: Db) -> dict:
 
 @router.post("/{job_id}/recover-drain")
 async def recover_drain_endpoint(
-    job_id: uuid.UUID, body: RecoverDrainIn, sid: AgentSession, db: Db
+    job_id: uuid.UUID,
+    body: RecoverDrainIn,
+    sid: AgentSession,
+    db: Db,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> dict:
     """컷오버 이후 drain recovery_pending 배포만 고정 스키마·owner fence 아래 복구한다.
 
     임의 shell·경로 입력을 받지 않으며, 현재 요청을 처리하는 API 프로세스 자신이
     expected_active_generation·expected_epoch의 활성 소유자일 때만 실행한다.
+    실행 중인 에이전트 Run(Run-bound 토큰·세션 활성 Run·프로세스 TTAKKARI_RUN_ID)에서의
+    apply=True 호출은 거절한다.
     """
+    token_run_id: uuid.UUID | str | None = None
+    if isinstance(sid, tuple):
+        sid, token_run_id = sid
+    if creds is not None:
+        auth_sid, auth_run_id = await _authenticate(creds, db)
+        if auth_sid != sid:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "요청 세션과 토큰의 세션 식별자가 일치하지 않습니다.",
+            )
+        if token_run_id is None:
+            token_run_id = auth_run_id
+    if token_run_id is not None:
+        try:
+            run_uuid = (
+                token_run_id
+                if isinstance(token_run_id, uuid.UUID)
+                else uuid.UUID(str(token_run_id))
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "유효하지 않은 Run 식별자입니다.",
+            ) from exc
+        run_row = await db.get(Run, run_uuid)
+        if (
+            run_row is None
+            or getattr(run_row, "status", None) != RunStatus.running
+            or getattr(run_row, "session_id", sid) != sid
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "활성 Run 식별자가 현재 세션과 일치하지 않습니다.",
+            )
+        token_run_id = run_uuid
+
     await _personal_orchestrator(sid, db)
     expected_key = f"recover-drain:{job_id}:{body.expected_previous_generation}:{body.expected_epoch}"
     if body.idempotency_key != expected_key:
@@ -132,6 +186,27 @@ async def recover_drain_endpoint(
             "현재 API 세대가 요청된 active owner fence와 일치하지 않습니다.",
         )
 
+    if body.apply:
+        active_session_run = (
+            await db.scalar(
+                select(Run.id)
+                .where(Run.session_id == sid, Run.status == RunStatus.running)
+                .limit(1)
+            )
+            if callable(getattr(db, "scalar", None))
+            else None
+        )
+        if (
+            os.environ.get("TTAKKARI_RUN_ID")
+            or token_run_id is not None
+            or creds is not None
+            or active_session_run is not None
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "배포 drain 복구 apply는 실행 중인 에이전트 Run에서 호출할 수 없습니다.",
+            )
+
     store = deployment.JobStore(deployment.state_dir())
     controller = gd.GenerationController(store)
     try:
@@ -146,6 +221,7 @@ async def recover_drain_endpoint(
             expected_active_revision=body.expected_active_revision,
             expected_epoch=body.expected_epoch,
             apply=body.apply,
+            run_id=token_run_id,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "배포 예약이 없습니다.") from exc
@@ -169,6 +245,7 @@ async def recover_drain_endpoint(
             "action": result.get("action"),
             "expected_epoch": body.expected_epoch,
             "session_id": str(sid),
+            "run_id": str(token_run_id) if token_run_id is not None else None,
         },
     )
     await db.commit()

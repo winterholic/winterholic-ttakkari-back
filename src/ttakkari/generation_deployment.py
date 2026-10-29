@@ -1464,6 +1464,7 @@ class GenerationController:
         expected_active_revision: str,
         expected_epoch: int,
         apply: bool = False,
+        run_id: str | uuid.UUID | None = None,
     ) -> dict:
         """컷오버 완료 후 drain 단계에서 recovery_pending이 된 배포만 명시적 fence 아래 복구한다.
 
@@ -1473,7 +1474,8 @@ class GenerationController:
         """
         from ttakkari.deploy_gate import RestartGate
 
-        if apply and os.environ.get("TTAKKARI_RUN_ID"):
+        active_run_id = str(run_id).strip() if run_id is not None else ""
+        if apply and (active_run_id or os.environ.get("TTAKKARI_RUN_ID")):
             raise RuntimeError("drain recovery belongs to an external host command, never an agent Run")
 
         expected_revision = _sha(expected_revision)

@@ -557,6 +557,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/research/methods/{id_or_slug}"): "owner-plain",
     ("GET", "/api/research/runs"): "owner-plain",
     ("GET", "/api/research/runs/{run_id}"): "owner-plain",
+    ("POST", "/api/research/runs/{run_id}/retry"): "owner-plain",
     ("GET", "/api/research/taxonomy"): "owner-plain",
     ("GET", "/api/reverse"): "owner-scoped",
     ("GET", "/api/reverse/{job_id}"): "owner-scoped",

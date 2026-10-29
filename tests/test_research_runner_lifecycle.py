@@ -215,7 +215,12 @@ async def test_retry_run_preserves_seed_repeat_and_original_evidence(client, aut
     exp_id, ids = await seed_runs()
     original_raw = {"attempt": "original evidence"}
     async with sessionmaker()() as db:
+        experiment = await db.get(Experiment, exp_id)
+        experiment.adapter = "retrieval_eval"
+        experiment.adapter_id = "retrieval_eval"
+        experiment.fixed_inputs = {"preset_id": "ko_tech_docs_v1"}
         original = await db.get(Run, ids[0])
+        original.adapter_id = "retrieval_eval"
         original.status = "failed"
         original.repeat_index = 4
         original.seed = 991

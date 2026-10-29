@@ -727,7 +727,13 @@ TRANSIENT_RE = re.compile(
     re.IGNORECASE,
 )
 # SDK 와 설치된 CLI 의 프로토콜이 어긋난 경우. 재시도해도 그대로라 오래 쉬고 다른 엔진으로 넘어간다.
-ENGINE_BROKEN_RE = re.compile(r"schema fingerprint differs", re.IGNORECASE)
+# CLI 가 우리가 넘긴 설정(추론 강도·옵션·모델)을 거절한 경우도 같다. 같은 계정·설정으로는 계속 실패하니 쉬게 하고 다음 계정으로 넘어간다.
+# (2026-10-29 Copilot 'auto' 모델이 reasoning effort 를 거절해 Run 이 7초 만에 실패하고 복구되지 않았다.)
+ENGINE_BROKEN_RE = re.compile(
+    r"schema fingerprint differs|does not support reasoning effort|unexpected argument '?-|"
+    r"unrecognized (?:option|argument)s?|unknown (?:option|flag)\b|\bunsupported (?:model|reasoning)",
+    re.IGNORECASE,
+)
 TRANSIENT_COOLDOWN_SECONDS = 90
 ENGINE_BROKEN_COOLDOWN_SECONDS = 900
 

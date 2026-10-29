@@ -139,3 +139,38 @@ async def test_stop_wins_over_mcp_failure_handoff(client, auth, make_dir, monkey
     assert run['engine'] == 'muse'
     events = await run_events(client, auth, run['id'])
     assert not any(e['type'] in {'engine.fallback', 'account.limited'} for e in events)
+
+
+class ConfigRejectingMuse(MuseAdapter):
+    """CLI 가 넘긴 설정을 거절하고 stderr 로 끝나는 엔진(Copilot 'auto' 의 reasoning effort 거절과 같은 모양)."""
+
+    def build_command(self, spec, extra_env):
+        message = 'Error: Model "auto" does not support reasoning effort configuration (requested: "high").'
+        return [sys.executable, '-c', f'import sys; sys.stderr.write({message!r} + chr(10)); sys.exit(1)']
+
+
+async def test_engine_rejecting_our_configuration_falls_back_instead_of_failing(client, auth, make_dir, monkeypatch):
+    await _seed_muse(client, auth)
+    module = import_module('ttakkari.runs.manager')
+    monkeypatch.setitem(module.ADAPTERS, 'muse', ConfigRejectingMuse())
+    for row in (await client.get('/api/accounts', headers=auth)).json():
+        if row['engine'] in {'claude', 'codex'}:
+            profiles.cool_down(uuid.UUID(row['id']), 600)  # Muse 가 먼저 뽑히게 네이티브를 잠시 쉬게 한다
+    original_attempt = module.RunManager._attempt
+
+    async def attempt(self, db, run, adapter, spec, *args):
+        result = await original_attempt(self, db, run, adapter, spec, *args)
+        if adapter.engine == 'muse':
+            profiles.reset_cooldowns()  # 실패한 Muse 뒤에서 네이티브가 다시 열린 상황
+        return result
+
+    monkeypatch.setattr(module.RunManager, '_attempt', attempt)
+    orch = await _session(client, auth, make_dir, kind='orchestrator')
+    run = await run_to_end(client, auth, orch['id'], 'Continue the authorized work')
+    assert run['status'] == 'succeeded', run
+    assert run['engine'] in {'claude', 'codex'}, run
+    events = await run_events(client, auth, run['id'])
+    limited = [e['payload'] for e in events if e['type'] == 'account.limited']
+    assert limited and limited[0]['kind'] == 'transient', limited  # 한도가 아니라 엔진의 설정 거절로 분류했다
+    # 거절한 계정은 쉬게 하고 같은 Run 이 다른 엔진에서 이어져 끝난다. 사용자가 '다시 시도'를 누를 필요가 없다.
+    assert any(e['type'] == 'run.resumed' for e in events)

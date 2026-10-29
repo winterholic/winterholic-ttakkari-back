@@ -19,3 +19,14 @@ def test_muse_fingerprint_rests_longer():
 def test_permission_error_and_plain_failure_are_not_transient():
     assert profiles.transient_cooldown("permission denied: /etc/503.conf") is None
     assert profiles.transient_cooldown("SyntaxError: bad input", None) is None
+
+
+def test_cli_rejecting_our_configuration_rests_the_account_and_falls_back():
+    for text in ('Error: Model "auto" does not support reasoning effort configuration (requested: "high").',
+                 "error: unexpected argument '-p' found",
+                 "error: unrecognized option '--reasoning-effort'"):
+        assert profiles.transient_cooldown(text) == profiles.ENGINE_BROKEN_COOLDOWN_SECONDS, text
+
+
+def test_permission_text_with_option_words_is_not_treated_as_config_rejection():
+    assert profiles.transient_cooldown("permission denied: unknown option file /etc/x") is None

@@ -17,6 +17,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import psutil
 from sqlalchemy import func, select
@@ -111,6 +112,14 @@ REPORT_CHARS = 3000
 STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID")
 # 계정 폴더는 계정 설정으로만 정한다. 백엔드를 띄운 셸(예: Orca)의 값이 기본 계정에 새지 않게 지운다(ADR 0006).
 STRIP_ENV_KEYS = {"DATABASE_URL", "PGPASSWORD", "CLAUDE_CONFIG_DIR", "CODEX_HOME"}
+
+
+def _decode_stream_json(text: str) -> tuple[Any, bool]:
+    """Decode one JSONL record; malformed values are ignored like invalid JSON syntax."""
+    try:
+        return json.loads(text), True
+    except ValueError:
+        return None, False
 
 
 def write_roots_for_session(sess: ChatSession, *, root: Path, outbox: Path, settings,
@@ -1997,9 +2006,8 @@ class RunManager:
                 if produced:
                     await self._commit(db, run)
                 continue
-            try:
-                obj = json.loads(text)
-            except json.JSONDecodeError:
+            obj, valid_json = _decode_stream_json(text)
+            if not valid_json:
                 events.append(db, run, "log", {"stream": "stdout", "text": text[:4000]})
                 await self._commit(db, run)
                 continue

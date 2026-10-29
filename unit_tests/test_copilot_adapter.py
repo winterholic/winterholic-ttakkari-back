@@ -237,6 +237,13 @@ class CopilotAdapterTests(unittest.TestCase):
         self.assertEqual(evs[0].type, "tool.call")
         self.assertEqual(evs[0].payload["input"], {})
 
+    def test_stream_decoder_contains_json_integer_limit_value_error(self):
+        from ttakkari.runs.manager import _decode_stream_json
+
+        decoded, valid = _decode_stream_json('{"type":"result","value":' + ("9" * 5000) + "}")
+        self.assertFalse(valid)
+        self.assertIsNone(decoded)
+
     def test_guard_blocked_tool_complete(self):
         evs = self.adapter.parse_line(
             {

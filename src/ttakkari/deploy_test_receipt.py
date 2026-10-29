@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -154,9 +155,7 @@ class _DB4ReceiptPlugin:
 
 def register_receipt_plugin(config, environ=None) -> bool:
     """Enable only for deploy runs using the per-job isolated test database."""
-    from os import environ as environ_module
-
-    env = environ if environ is not None else environ_module.environ
+    env = environ if environ is not None else os.environ
     revision = env.get("TTAKKARI_RELEASE_REVISION", "")
     db_url = env.get("TTAKKARI_TEST_DB", "")
     db = database_name(db_url)

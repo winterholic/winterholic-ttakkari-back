@@ -61,6 +61,26 @@ def test_plugin_registers_only_for_full_revision_and_per_job_isolated_database()
     assert unrelated.pluginmanager.registered == []
 
 
+def test_plugin_reads_process_environment_when_no_environment_is_injected(monkeypatch):
+    class _Plugins:
+        def __init__(self):
+            self.registered = []
+
+        def register(self, plugin, name):
+            self.registered.append((plugin, name))
+
+    monkeypatch.setenv("TTAKKARI_RELEASE_REVISION", "d" * 40)
+    monkeypatch.setenv(
+        "TTAKKARI_TEST_DB",
+        "postgresql+asyncpg://user:secret@127.0.0.1:55432/ttakkari_deploy_abc",
+    )
+    config = SimpleNamespace(pluginmanager=_Plugins(), option=SimpleNamespace(markexpr=""))
+
+    assert register_receipt_plugin(config) is True
+    assert len(config.pluginmanager.registered) == 1
+    assert config.pluginmanager.registered[0][0].db == "ttakkari_deploy_abc"
+
+
 def test_receipt_names_revision_argv_marker_skip_reason_db_and_each_named_case():
     outcomes = {nodeid: ("not_run", "not selected by this invocation") for nodeid in DB4_NODEIDS}
     outcomes[DB4_NODEIDS[0]] = ("skipped", "fixture prerequisite unavailable")

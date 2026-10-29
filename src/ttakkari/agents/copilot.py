@@ -279,7 +279,7 @@ def _slim_input(name: str, params: dict[str, Any]) -> dict[str, Any]:
     if isinstance(params, str):
         try:
             parsed = json.loads(params)
-        except json.JSONDecodeError:
+        except ValueError:
             parsed = None
         params = parsed if isinstance(parsed, dict) else {}
     elif not isinstance(params, dict):

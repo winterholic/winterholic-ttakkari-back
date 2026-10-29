@@ -205,6 +205,38 @@ class CopilotAdapterTests(unittest.TestCase):
         self.assertEqual(evs[0].type, "tool.call")
         self.assertEqual(evs[0].payload["input"], {})
 
+    def test_tool_execution_start_json_integer_limit_does_not_crash_parser(self):
+        evs = self.adapter.parse_line(
+            {
+                "type": "tool.execution_start",
+                "data": {
+                    "toolCallId": "call_large_integer",
+                    "toolName": "bash",
+                    "arguments": '{"value":' + ("9" * 5000) + "}",
+                },
+            },
+            self.state,
+            self.cwd,
+        )
+        self.assertEqual(evs[0].type, "tool.call")
+        self.assertEqual(evs[0].payload["input"], {})
+
+    def test_tool_execution_start_non_object_json_arguments_are_empty(self):
+        evs = self.adapter.parse_line(
+            {
+                "type": "tool.execution_start",
+                "data": {
+                    "toolCallId": "call_array",
+                    "toolName": "bash",
+                    "arguments": '["not", "an", "object"]',
+                },
+            },
+            self.state,
+            self.cwd,
+        )
+        self.assertEqual(evs[0].type, "tool.call")
+        self.assertEqual(evs[0].payload["input"], {})
+
     def test_guard_blocked_tool_complete(self):
         evs = self.adapter.parse_line(
             {

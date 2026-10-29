@@ -1,7 +1,10 @@
 """Owner mission API. Authentication remains mandatory; source rights stay server-owned."""
 from __future__ import annotations
 
+import hashlib
 import uuid
+from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,9 +12,12 @@ from sqlalchemy import select
 
 from ttakkari.api.deps import Db
 from ttakkari.collector import missions, store
+from ttakkari.collector.control_models import CollectorSource
+from ttakkari.collector.library import LIBRARY_SCOPE, in_library
 from ttakkari.collector_models import (
     CollectionMission,
     CollectionMissionJob,
+    CollectorHostState,
     CollectorJob,
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
@@ -24,6 +30,88 @@ agent_router = APIRouter(prefix="/api/agent/collection/missions", tags=["agent"]
 class RetryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_run_seq: int = Field(ge=1)
+
+
+_ERROR_CLASSIFICATION_FIELDS = {
+    "code", "type", "cause", "cause_code", "attempts", "error_type", "error_code", "retryable",
+}
+_ERROR_CODES = frozenset({
+    "all_items_blocked", "attempt_fenced", "attempts_exhausted", "cancelled", "collector_error",
+    "current_source_retention_expired", "envelope_id_conflict", "handler_error", "idempotency_conflict",
+    "invalid_envelope", "invalid_job_state", "invalid_reprocess_request", "invalid_request", "invalid_source_retention",
+    "items_failed", "job_not_found", "mission_page_budget", "owner_lost", "quality_model_invalid",
+    "raw_blob_hash_mismatch", "raw_blob_unavailable", "raw_reprocessing_not_permitted",
+    "raw_retention_expired", "reprocess_source_changed", "reprocess_source_unavailable",
+    "reprocessed_item_failed", "scope_binding_mismatch", "search_provider_failed", "source_policy_missing",
+    "storage_cap_reached", "store_not_permitted", "unbound_mission_preparation", "unsupported_source_kind",
+    "fetch_deferred",
+})
+_ERROR_TYPES = frozenset({
+    "CollectorContractError", "FetchError", "KeyError", "OSError", "RuntimeError", "TimeoutError",
+    "TypeError", "ValueError",
+})
+
+
+def _classified_error(error):
+    """Keep bounded exception classification; never return raw exception text or nested payloads."""
+    if not isinstance(error, dict):
+        return {}
+    result = {}
+    for key in _ERROR_CLASSIFICATION_FIELDS:
+        value = error.get(key)
+        if key in {"code", "cause", "cause_code", "error_code"}:
+            if isinstance(value, str) and value in _ERROR_CODES:
+                result[key] = value
+        elif key in {"type", "error_type"}:
+            if isinstance(value, str) and value in _ERROR_TYPES:
+                result[key] = value
+        elif key == "attempts":
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000:
+                result[key] = value
+        elif key == "retryable" and isinstance(value, bool):
+            result[key] = value
+    return result
+
+
+def _safe_url(raw):
+    """Return the source origin and path while excluding credentials, query and fragment."""
+    try:
+        parts = urlsplit(str(raw))
+        host = parts.hostname
+        if parts.scheme not in {"http", "https"} or not host:
+            return None
+        host = host.lower()
+        port = parts.port
+        if ":" in host:
+            host = f"[{host}]"
+        if port is not None and not (parts.scheme == "https" and port == 443) and not (parts.scheme == "http" and port == 80):
+            host = f"{host}:{port}"
+        return f"{parts.scheme}://{host}{(parts.path or '/')[:500]}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _policy_diagnostic(spec):
+    """Expose only the source-rights fields needed to explain a policy match."""
+    if not isinstance(spec, dict):
+        return {}
+    result = {}
+    for key, cap in (("allowed_hosts", 100), ("allowed_path_prefixes", 100), ("excluded_path_prefixes", 100)):
+        values = spec.get(key)
+        if isinstance(values, (list, tuple)):
+            result[key] = [value[:300] for value in values[:cap] if isinstance(value, str)]
+    if isinstance(spec.get("license_id"), str):
+        result["license_id"] = spec["license_id"][:100]
+    if isinstance(spec.get("robots_required"), bool):
+        result["robots_required"] = spec["robots_required"]
+    permissions = spec.get("permissions")
+    if isinstance(permissions, dict):
+        result["permissions"] = {key: value for key, value in permissions.items()
+                                 if key in {"store", "knowledge", "train", "export"}
+                                 and value in {"allowed", "denied", "unknown"}}
+    if isinstance(spec.get("policy_url"), str):
+        result["policy_url"] = _safe_url(spec["policy_url"])
+    return result
 
 
 async def _owner_mission(db, mission_id, *, lock=False):
@@ -41,20 +129,94 @@ async def _diagnostic_view(db, mission):
     view = await missions.view(db, mission)
     current = [job for job in view["jobs"] if job["run_seq"] == view["run_seq"]]
     state = mission.plan.get("research") or {}
+    source_diagnostics = await _source_diagnostics(db, mission)
+    reservations = [{"job_id": job["job_id"], "stage": job["stage"], "status": job["status"],
+                     "active": job["status"] not in missions.TERMINAL} for job in current[:50]]
     return scrub_value({
         **{key: view[key] for key in ("id", "title", "status", "run_seq", "counts", "research", "knowledge_processing")},
         "stored_status": mission.status,
         "jobs": [{**{key: job[key] for key in ("job_id", "status", "stage", "run_seq")},
-                  "error": {key: str(value)[:80] for key, value in (job["error"] or {}).items()
-                            if key in {"code", "type", "cause_code", "attempts"}}} for job in current[:50]],
+                  "error": _classified_error(job["error"])} for job in current[:50]],
         "jobs_truncated": len(current) > 50,
-        "gaps": [{key: str(value)[:300] for key, value in gap.items() if key in {"reason", "url", "stop"}}
+        "gaps": [{**{key: str(value)[:300] for key, value in gap.items() if key in {"reason", "stop"}},
+                  **({"url": _safe_url(gap["url"])} if isinstance(gap.get("url"), str) else {})}
                  for gap in mission.gaps[:30]],
         "gaps_truncated": len(mission.gaps) > 30,
         "search_failures": [{key: value for key, value in failure.items() if key in {"index", "code", "retryable"}}
                             for failure in (state.get("failed") or [])[:20]],
         "source_count": len(mission.plan.get("sources") or []),
+        "sources": source_diagnostics,
+        "reservations": {"active_count": sum(row["active"] for row in reservations), "jobs": reservations},
     })
+
+
+async def _source_diagnostics(db, mission):
+    """Read only policies used by the collector, scoped to this owner mission's source paths."""
+    entries = (mission.plan.get("sources") or [])[:100]
+    candidates = list(await db.scalars(select(CollectorSource).where(
+        CollectorSource.tenant_id == mission.tenant_id,
+        in_library(CollectorSource.scope), CollectorSource.enabled.is_(True),
+    )))
+    observations = []
+    origins = set()
+    parsed_entries = []
+    for entry in entries:
+        raw_url = entry.get("url") if isinstance(entry, dict) else None
+        safe_url = _safe_url(raw_url)
+        if not safe_url:
+            continue
+        parsed = missions.input_url(raw_url)
+        parts = urlsplit(raw_url)
+        origin = f"{parts.scheme}://{parts.hostname.lower()}"
+        if parts.port is not None and not (parts.scheme == "https" and parts.port == 443) and not (parts.scheme == "http" and parts.port == 80):
+            host = f"[{parts.hostname.lower()}]" if ":" in parts.hostname else parts.hostname.lower()
+            origin = f"{parts.scheme}://{host}:{parts.port}"
+        origins.add(origin)
+        parsed_entries.append((entry, parsed, safe_url, origin))
+
+    host_states = {}
+    if origins:
+        rows = await db.scalars(select(CollectorHostState).where(CollectorHostState.origin.in_(origins)))
+        host_states = {row.origin: row for row in rows}
+
+    active_policies = []
+    for candidate in candidates:
+        active = await store.active_policy(db, mission.tenant_id, LIBRARY_SCOPE, candidate.source_key)
+        if active:
+            policy, version, spec_hash = active
+            active_policies.append((candidate, policy, version, spec_hash))
+
+    now = datetime.now(UTC)
+    for entry, parsed, safe_url, origin in parsed_entries:
+        matched = None
+        policy_candidates = []
+        seeded = [row for row in active_policies if row[0].request and
+                  entry["url"] in row[0].request.get("seeds", [])]
+        ordered = seeded + [row for row in active_policies if row not in seeded]
+        for candidate, policy, version, spec_hash in ordered:
+            reason = "store_permission_missing" if not policy.allows("store") else policy.check_url(parsed)
+            relevant = (candidate in [row[0] for row in seeded] or policy.host_allowed(parsed.host))
+            if reason is None:
+                matched = {"matched": True,
+                           "source_key_hash": hashlib.sha256(candidate.source_key.encode()).hexdigest()[:16],
+                           "version": version, "spec_hash": spec_hash, **_policy_diagnostic(policy.to_dict())}
+                break
+            if relevant and len(policy_candidates) < 10:
+                policy_candidates.append({"source_key_hash": hashlib.sha256(candidate.source_key.encode()).hexdigest()[:16],
+                                          "version": version, "spec_hash": spec_hash, "reason": reason,
+                                          **_policy_diagnostic(policy.to_dict())})
+        host_state = host_states.get(origin)
+        robots = {"status": host_state.robots_status if host_state and host_state.robots_status else "not_cached",
+                  "fresh": bool(host_state and host_state.robots_expires_at and host_state.robots_expires_at > now)}
+        if host_state:
+            robots.update({"fetched_at": host_state.robots_fetched_at.isoformat() if host_state.robots_fetched_at else None,
+                           "expires_at": host_state.robots_expires_at.isoformat() if host_state.robots_expires_at else None})
+        policy_view = matched or {"matched": False,
+                                  "reason": policy_candidates[0]["reason"] if policy_candidates else "source_policy_required",
+                                  "candidates": policy_candidates}
+        observations.append({"url": safe_url,
+                             "policy": policy_view, "robots": robots})
+    return observations
 
 
 @agent_router.get("/{mission_id}")

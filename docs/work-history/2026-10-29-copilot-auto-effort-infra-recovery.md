@@ -162,3 +162,15 @@
 - 최종 독립 static review worker `2f7dd5d8-4d41-4b25-8efb-f8d6a61bcf2a` / Run `7482ad7c-d1d5-4269-b9de-52ca54f5ac4a`는 exact SHA `133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e`를 대조해 PASS했다. 테스트·운영 dispatch/reconcile은 실행하지 않았고, live PostgreSQL cutover 경합은 미검증으로 명시했다.
 - 정상 main pre-push gate는 같은 code SHA에서 Ruff 6 Python 경로 통과, contract `84 passed, 6013 deselected in 15.45s` (DB reset 84 selective, full/fallback 0), 변경 테스트 3개 파일 `55 passed, 1 warning in 1.80s` (DB reset 17 selective, full/fallback 0)로 통과했다. 원격 `refs/heads/main`은 `git ls-remote`에서 full SHA `133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e`로 확인했다.
 - 배포 예약 `f407df99-51b1-4843-8fa0-a3fe4ceebefb`: revision `133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e`, `requested`, `skip_tests=false`, strategy `generations`. 예약 후 배포 상태는 다시 읽지 않았다. 따라서 이 실행은 배포 성공이나 active runtime 전환을 주장하지 않는다. 새 revision이 준비되고 runtime readback이 확인될 때까지 운영 dispatch/reconcile은 미수행이다.
+
+## 2026-10-30 — 최신 main 및 LOG-296 reservation 상태 구분
+
+- 사용자 제공 지원 `backend_deploy_status` receipt: `5c30caa9-740d-4cc5-8710-a90826a125ff`는 revision `3f94cdd4614e1f0b00298ed72b24165cd88d6511`, status `requested`, `skip_tests=false`였다. 이 값은 예약 접수를 뜻하며 배포 성공·runtime 활성화를 뜻하지 않는다. 반복 조회와 새 예약은 하지 않는다.
+- 저장소에서 직접 확인한 current `HEAD`/`origin/main`은 `85c410810dc0d9b79079553f4e8d85899f93e894`; ancestry 상 LOG-296 code `fb55e8e556feee0d80fcec25a6ffb626d5dff85e` 및 LOG-297 code `133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e`가 포함된다. 위 `5c30` reservation이 현재 main SHA를 활성화했다는 증거는 없다.
+- LOG-296 운영 stack/raw arguments/CLI 출력은 여전히 없으므로 실제 실패 단계와 root cause는 미확정이다. 코드 재현은 실패 Run의 입력을 입증하지 않는다.
+
+## 2026-10-30 — LOG-297 실 GenerationRuntime 검증 인계
+
+- 현 main source를 정적으로 대조했다. `GenerationRuntime` 생성자는 `draining`을 만들지 않고, dispatch/reconcile은 `getattr(runtime, "draining", False)`로 실제 optional executor 신호만 읽으며 persisted active owner·revision·epoch·runtime ID·remote fence를 유지한다. compensation 및 bulk apply는 전달받은 owner fence를 잠금 안에서 재검사한다. 테스트는 실제 `GenerationRuntime` 생성자를 쓰며 base runtime에 `draining`을 주입하지 않는다.
+- 기존 독립 review 기록의 exact code SHA `133ab4e0f20d16c092580a2bb9cd5a8bb9fce01e`용 DB-free runtime-contract probe evidence는 [independent review record](../verification/infra-recovery-endpoints-independent-review-2026-10-29.md)에 보존돼 있다. 이는 앞선 fake epoch PASS와 구별되며, PostgreSQL 동시 cutover·실 lease/process 동작·운영 dispatch/reconcile 증거는 아니다.
+- 사용자가 요청한 b995 verifier handoff를 `message_worker`로 1회 시도했으나 `404 not_found: 이 작업 세션의 하위 세션이 아닙니다`를 받았다. 다른 경로로 같은 대상을 재시도하지 않았다. 따라서 b995의 fresh 독립 판정은 **미접수/미확인**이며, 기존 2f7 review 결과를 b995 결과로 귀속하지 않는다.

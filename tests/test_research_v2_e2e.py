@@ -137,3 +137,54 @@ async def test_vertical_e2e_rag_research_flow(client, auth):
     decision_nodes = [n for n in nodes if n["kind"] == "decision"]
     assert len(decision_nodes) >= 1
     assert any("최적 결과물 채택" in d["title"] for d in decision_nodes)
+
+    # 9. 저장된 채택 결과를 바탕으로 후속 연구를 설계하고 lineage를 복원한다.
+    source_detail_before = (await client.get(f"/api/research/experiments/{exp_id}", headers=auth)).json()
+    source_config_before = next(c for c in source_detail_before["configurations"] if c["id"] == best_cfg_id)
+    followup_res = await client.post(
+        f"/api/research/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "채택 설정 기반 후속 검증",
+            "adapter_id": "retrieval_eval",
+            "strategy": "single",
+            "primary_metric": "recall_at_3",
+            "fixed_inputs": {"k": 5},
+            "source_study_id": study_id,
+            "source_experiment_id": exp_id,
+            "source_configuration_id": best_cfg_id,
+            "source_run_id": matching_run["id"],
+            "auto_start": False,
+        },
+    )
+    assert followup_res.status_code == 201, followup_res.text
+    followup = followup_res.json()
+    followup_id = followup["id"]
+    assert followup["source_study_id"] == study_id
+    assert followup["source_experiment_id"] == exp_id
+    assert followup["source_configuration_id"] == best_cfg_id
+    assert followup["source_run_id"] == matching_run["id"]
+    assert followup["configurations"][0]["parameters"]["k"] == 5
+    assert followup["configurations"][0]["parameters"]["preset_id"] == "ko_tech_docs_v1"
+
+    restored = (await client.get(f"/api/research/experiments/{followup_id}", headers=auth)).json()
+    for key, expected in {
+        "source_study_id": study_id,
+        "source_experiment_id": exp_id,
+        "source_configuration_id": best_cfg_id,
+        "source_run_id": matching_run["id"],
+    }.items():
+        assert restored[key] == expected
+        assert restored["experiment"][key] == expected
+    followup_snapshot = (await client.get(f"/api/research/studies/{study_id}/resume", headers=auth)).json()
+    planned_event = next(
+        t for t in followup_snapshot["timeline"]
+        if t["kind"] == "experiment_planned" and t["payload"].get("id") == followup_id
+    )
+    assert planned_event["payload"]["source_configuration_id"] == best_cfg_id
+    assert planned_event["payload"]["source_run_id"] == matching_run["id"]
+
+    source_detail_after = (await client.get(f"/api/research/experiments/{exp_id}", headers=auth)).json()
+    source_config_after = next(c for c in source_detail_after["configurations"] if c["id"] == best_cfg_id)
+    assert source_config_after["parameters"] == source_config_before["parameters"]
+    assert next(r for r in source_detail_after["runs"] if r["id"] == matching_run["id"])["status"] == "succeeded"

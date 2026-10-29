@@ -181,6 +181,12 @@ async def reset_database(db) -> None:
     await db.commit()
 
 
+def pytest_configure(config):
+    from ttakkari.deploy_test_receipt import register_receipt_plugin
+
+    register_receipt_plugin(config)
+
+
 def pytest_terminal_summary(terminalreporter):
     s = RESET_STATS
     if s["selective"] or s["full"] or s["fallback"]:

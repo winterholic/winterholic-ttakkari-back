@@ -7,7 +7,7 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 
 from ttakkari.db import sessionmaker
@@ -209,6 +209,67 @@ async def test_terminal_run_is_not_replayed(client, terminal_status):
     assert result.raw_output == {"original": True}
     assert adapter.calls == 0
     assert ids[0] not in runner._CANCEL_EVENTS
+
+
+async def test_retry_run_preserves_seed_repeat_and_original_evidence(client, auth, monkeypatch):
+    exp_id, ids = await seed_runs()
+    original_raw = {"attempt": "original evidence"}
+    async with sessionmaker()() as db:
+        original = await db.get(Run, ids[0])
+        original.status = "failed"
+        original.repeat_index = 4
+        original.seed = 991
+        original.raw_output = original_raw
+        await db.commit()
+
+    class ImmediateAdapter(ProbeAdapter):
+        async def execute_run(self, **kwargs):
+            self.calls += 1
+            return AdapterRunResult(status="succeeded", raw_output={"attempt": "retry"},
+                                    environment_snapshot={})
+
+    adapter = ImmediateAdapter()
+    monkeypatch.setattr(runner, "_get_registry", lambda: adapter)
+    response = await client.post(f"/api/research/runs/{ids[0]}/retry", headers=auth)
+    assert response.status_code == 202, response.text
+    [created] = response.json()["runs"]
+    assert created["id"] != str(ids[0])
+    assert created["seed"] == 991
+    assert created["repeat_index"] == 4
+    duplicate = await client.post(f"/api/research/runs/{ids[0]}/retry", headers=auth)
+    assert duplicate.status_code == 409
+
+    task = runner._ACTIVE_TASKS.get(exp_id)
+    if task:
+        await asyncio.wait_for(task, 2)
+    async with sessionmaker()() as db:
+        original = await db.get(Run, ids[0])
+        retry = await db.get(Run, uuid.UUID(created["id"]))
+        assert original.status == "failed"
+        assert original.raw_output == original_raw
+        assert retry.status == "succeeded"
+        assert retry.seed == original.seed
+        assert retry.repeat_index == original.repeat_index
+        assert retry.environment_snapshot["research_retry"] == {
+            "contract": 1, "retry_of_run_id": str(original.id),
+        }
+    assert adapter.calls == 1
+
+
+async def test_retry_run_rejects_active_original_without_creating_another_run(client, auth):
+    _, ids = await seed_runs()
+    async with sessionmaker()() as db:
+        original = await db.get(Run, ids[0])
+        original.status = "running"
+        await db.commit()
+
+    response = await client.post(f"/api/research/runs/{ids[0]}/retry", headers=auth)
+    assert response.status_code == 409
+    assert "research_run_not_terminal" in response.text
+    async with sessionmaker()() as db:
+        rows = list(await db.scalars(select(Run).where(Run.id == ids[0])))
+        assert len(rows) == 1
+        assert rows[0].status == "running"
 
 
 async def test_duplicate_dispatch_does_not_replace_live_cancellation(client):

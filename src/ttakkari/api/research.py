@@ -1174,6 +1174,18 @@ async def run_experiment(
     return {"runs": [svc.run_out(r) for r in runs]}
 
 
+@router.post("/runs/{run_id}/retry", status_code=202)
+async def retry_run(run_id: uuid.UUID, _: User, db: Db):
+    """Repeat one terminal trial with its original configuration, repetition, and seed."""
+    original = await db.get(Run, run_id)
+    if original is None:
+        raise HTTPException(404, "research_run_not_found")
+    await svc.get_study(db, original.study_id)
+    created = await runner.retry_run(db, run_id, actor=str(_), background=True)
+    await db.commit()
+    return {"runs": [svc.run_out(created)]}
+
+
 @router.get("/runs")
 async def list_runs(
     _: User,

@@ -65,6 +65,11 @@ def test_diagnostic_classification_drops_unrecognized_free_text_fields():
     assert _classified_error({"cause": {"message": raw}, "message": raw}) == {}
 
 
+def test_diagnostic_classification_keeps_stable_collector_codes():
+    for code in ("unbound_mission_preparation", "fetch_deferred"):
+        assert _classified_error({"code": code}) == {"code": code}
+
+
 def test_policy_diagnostic_is_bounded_to_rights_and_strips_query_credentials():
     assert _policy_diagnostic({
         "allowed_hosts": ["docs.test"], "allowed_path_prefixes": ["/guide"],

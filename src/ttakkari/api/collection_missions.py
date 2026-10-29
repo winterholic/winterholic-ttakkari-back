@@ -43,7 +43,8 @@ _ERROR_CODES = frozenset({
     "raw_blob_hash_mismatch", "raw_blob_unavailable", "raw_reprocessing_not_permitted",
     "raw_retention_expired", "reprocess_source_changed", "reprocess_source_unavailable",
     "reprocessed_item_failed", "scope_binding_mismatch", "search_provider_failed", "source_policy_missing",
-    "storage_cap_reached", "store_not_permitted", "unsupported_source_kind",
+    "storage_cap_reached", "store_not_permitted", "unbound_mission_preparation", "unsupported_source_kind",
+    "fetch_deferred",
 })
 _ERROR_TYPES = frozenset({
     "CollectorContractError", "FetchError", "KeyError", "OSError", "RuntimeError", "TimeoutError",

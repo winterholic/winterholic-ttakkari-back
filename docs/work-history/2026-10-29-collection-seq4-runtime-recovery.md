@@ -147,3 +147,63 @@ exit 0
 ```
 
 The fake/unit suite also retains checks for valid classification compatibility, nested error/message omission, and URL userinfo/query/fragment stripping. Actual producer-occurrence in stored mission data remains unverified. No DB-backed route suite, alternate engine, live API, policy write, retry, main merge or deploy was run. Existing `75c6`/`58a161` independent PASS evidence was not rerun. A follow-up message to the existing verifier `7e68cf61-fc1e-44f4-88ac-3c0fd62d5eb4` was attempted after publication but this session's `message_worker` scope returned `404 not_found: 이 작업 세션의 하위 세션이 아닙니다.` No duplicate verifier was created. The project task-handoff now records the new SHA, scoped evidence and next-owner checks for planner/verifier pickup.
+
+## Independent formatter correction verification (2026-10-30)
+
+**Code gate: PARTIAL / not cleared.** The free-text leak is closed in the formatter's bounded behavior, but two stable job error codes emitted by collector producers are absent from the allowlist, so the observation response silently drops valid classifications. This is diagnostic information loss; no leak was observed in these cases.
+
+Candidate provenance was fixed in a clean detached worktree:
+
+- Approved repository: `/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-continuation-20261029`
+- Independent checkout: `/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-verification-4793a29`
+- Code commit: `4793a29c0473c89b02adb71c7c3ba4729c75c56f`; tree `32739b9707536b616ad5ef2d804f9b484daa95bb`
+- Remote branch tip: `8107901ff9b638006516ef0a115bf59aa8322512`; it is a docs-only child of the code commit.
+- In the same Python probe process, `ttakkari.api.collection_missions` imported from the independent checkout. `collection_missions.py` Git blob: `7658eb6412173fa11c810e9b21c97e79ce805f1b`; SHA-256: `bb1355823407cf96d7cdba06488957ae5e782c4d0fd49d824be3d434ff508d2c`.
+
+Focused tests, using the preinstalled backend venv and candidate `src` as the only project import path:
+
+```text
+$ env -u TTAKKARI_TEST_DB -u TTAKKARI_DATABASE_URL -u DATABASE_URL PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-collection-verification-4793a29/src PYTHONDONTWRITEBYTECODE=1 /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_mission_diagnostics.py --tb=short
+.....                                                                    [100%]
+5 passed in 0.49s
+```
+
+The direct formatter probe in that same fixed checkout confirmed:
+
+- The expected producer values `search_provider_failed`, `attempts_exhausted`, `invalid_envelope`, `RuntimeError`, and `CollectorContractError` were retained.
+- Arbitrary strings in `code`, `type`, `cause`, `cause_code`, `error_type`, and `error_code`, plus nested payloads and message/detail fields, were dropped.
+- `attempts` accepted integer boundaries `0` and `1000`, rejected booleans, negative/over-limit values, floats, strings and null; `retryable` accepted only booleans.
+- Probe output for the retained producer enum set was `{'error_code': 'attempts_exhausted', 'type': 'RuntimeError', 'retryable': False, 'cause': 'invalid_envelope', 'error_type': 'CollectorContractError', 'code': 'search_provider_failed', 'attempts': 1000}`; free-text/nested checks and metadata type/range checks passed.
+
+A source-to-formatter cross-check found two reachable stable producer codes missing from `_ERROR_CODES`:
+
+1. `missions.prepare` returns `HandlerResult("quarantined", {"code": "unbound_mission_preparation"})` when the mission binding is absent or mismatched (`src/ttakkari/collector/missions.py:430`). The current formatter returns `{}` for that error.
+2. `pipeline` returns `HandlerResult("retry_wait", {"code": "fetch_deferred", ...})` when fetches have a scheduled retry (`src/ttakkari/collector/pipeline.py:891`). The current formatter drops `code` for that error.
+
+Both flow through stored job error → `missions.view` → `_diagnostic_view` → `_classified_error`; the checked-in formatter allowlist includes neither code. Static producer-code inventory also found `search_url_rejected`, `timeout`, and `provider_response_unparseable` in research classification, but those are exposed through the separate `search_failures` view rather than this job-error formatter; they were not counted as formatter omissions.
+
+The candidate delta from parent `9a62973eb327e38fdca45b9addeed104c05c5010` changes only `src/ttakkari/api/collection_missions.py` and its focused unit test. The prior independent evidence for policy/robots/tenant/library/current-run read-only boundaries at `cc669e5884b5b29cd7266339fd28d866cd40eb67` is therefore reused without rerunning the PostgreSQL-backed route inventory. The formatter-only diff does not alter those query or authorization paths.
+
+**Minimum correction:** add the two stable producer codes to the bounded allowlist and a positive formatter regression asserting they survive, while retaining the arbitrary-string negative cases.
+
+## Formatter correction (2026-10-30)
+
+The focused regression was added first and failed against the published formatter as expected: `_classified_error({"code": "unbound_mission_preparation"})` returned `{}`. The minimal implementation change adds only `unbound_mission_preparation` and `fetch_deferred` to `_ERROR_CODES`; the existing free-text/nested-payload rejection checks remain unchanged. No research `search_failures` values were added.
+
+Verification on this branch, with project `src` as the import path and database environment variables unset:
+
+```text
+$ env -u TTAKKARI_TEST_DB -u TTAKKARI_DATABASE_URL -u DATABASE_URL PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_mission_diagnostics.py::test_diagnostic_classification_keeps_stable_collector_codes --tb=short
+FAILED as expected before implementation: unbound_mission_preparation was dropped
+
+$ env -u TTAKKARI_TEST_DB -u TTAKKARI_DATABASE_URL -u DATABASE_URL PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_collection_mission_diagnostics.py --tb=short
+......                                                                   [100%]
+6 passed in 0.44s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/api/collection_missions.py unit_tests/test_collection_mission_diagnostics.py
+All checks passed!
+```
+
+This verifies the formatter unit surface only. Live producer occurrence, authenticated API/DB behavior, mission retry, policy/grant changes, integration, merge and deployment remain unverified or out of scope; the existing `75c6`/`58a161` evidence was reused without rerunning.
+
+**Not established:** live authenticated API response, real PostgreSQL scope/query behavior, production source-policy or robots rows, and actual collection/import/search. The known `initdb` denial was not repeated; no alternate engine, retry, policy write, merge or deployment was attempted. The earlier `75c6`/`58a161` evidence remains reused, not rerun.

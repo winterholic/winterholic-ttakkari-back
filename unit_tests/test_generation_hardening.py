@@ -1434,3 +1434,600 @@ async def test_drain_recovery_db_state_evaluates_real_orm_rows_and_os_locks(tmp_
     assert state2["previous_pid_alive"] is False
     assert prev_row.state == "offline"
     assert fake_db.committed is True
+
+
+async def test_lock_held_and_probe_distinguish_unknown_from_free_and_fail_closed(tmp_path, monkeypatch):
+    import errno
+    import fcntl
+
+    from ttakkari import deployment
+    from ttakkari.generation import _lock
+
+    lock_path = tmp_path / "runtime" / f"{uuid.uuid4()}.lock"
+    assert deployment._probe_lock(lock_path) == ("free", None)
+    assert deployment._lock_held(lock_path) is False
+
+    held = _lock(lock_path)
+    try:
+        lock_path.chmod(0o444)
+        assert deployment._probe_lock(lock_path) == ("held", None)
+        assert deployment._lock_held(lock_path) is True
+    finally:
+        lock_path.chmod(0o644)
+        if held:
+            held.close()
+
+    assert deployment._probe_lock(lock_path) == ("free", None)
+    assert deployment._lock_held(lock_path) is False
+
+    # PermissionError on stat/open and EIO on flock must return unknown (None), never False
+    orig_stat = Path.stat
+
+    def deny_stat(self, *args, **kwargs):
+        if self == lock_path:
+            raise PermissionError(errno.EACCES, "stat denied")
+        return orig_stat(self, *args, **kwargs)
+
+    with monkeypatch.context() as mp:
+        mp.setattr(Path, "stat", deny_stat)
+        state, reason = deployment._probe_lock(lock_path)
+        assert state == "unknown" and reason == "PermissionError"
+        assert deployment._lock_held(lock_path) is None
+
+    orig_open = Path.open
+
+    def deny_open(self, *args, **kwargs):
+        if self == lock_path:
+            raise PermissionError(errno.EACCES, "open denied")
+        return orig_open(self, *args, **kwargs)
+
+    with monkeypatch.context() as mp:
+        mp.setattr(Path, "open", deny_open)
+        state, reason = deployment._probe_lock(lock_path)
+        assert state == "unknown" and reason == "PermissionError"
+        assert deployment._lock_held(lock_path) is None
+
+    with monkeypatch.context() as mp:
+        mp.setattr(fcntl, "flock", lambda *_a, **_kw: (_ for _ in ()).throw(OSError(errno.EIO, "io error")))
+        state, reason = deployment._probe_lock(lock_path)
+        assert state == "unknown" and reason == "OSError"
+        assert deployment._lock_held(lock_path) is None
+
+    # recover_drain must refuse both resume_draining and retire_verified_dead when lock state is unknown (None)
+    control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path / "jobs", monkeypatch)
+    db_state["previous_lock_held"] = None
+    with pytest.raises(RuntimeError, match="lock.*unknown"):
+        await control.recover_drain(**fences, apply=False)
+    with pytest.raises(RuntimeError, match="lock.*unknown"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    slots.rows.pop(1, None)
+    db_state["previous_leases"] = 0
+    db_state["previous_process_groups"] = 0
+    db_state["previous_pid_alive"] = False
+    with pytest.raises(RuntimeError, match="lock.*unknown"):
+        await control.recover_drain(**fences, apply=False)
+    with pytest.raises(RuntimeError, match="lock.*unknown"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+
+async def test_pid_probe_distinguishes_unknown_from_dead_and_refuses_recovery(tmp_path, monkeypatch):
+    import os
+    from types import SimpleNamespace
+
+    import psutil
+
+    from ttakkari import generation_deployment as gd
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(get_settings(), "home", home)
+    prev_id = uuid.uuid4()
+    active_id = uuid.uuid4()
+    control_row = SimpleNamespace(id=1, active_generation=active_id, executor_generation=None, epoch=123)
+    prev_row = SimpleNamespace(
+        id=prev_id, revision="a" * 40, state="draining",
+        api_url="http://127.0.0.1:8792", pid=os.getpid(), process_started_at=100.0,
+    )
+    active_row = SimpleNamespace(
+        id=active_id, revision="b" * 40, state="active",
+        api_url="http://127.0.0.1:8793", pid=os.getpid(), process_started_at=100.0,
+    )
+
+    class SimpleDB:
+        def __init__(self):
+            self.committed = False
+
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, model, ident):
+            if model is RuntimeControl:
+                return control_row
+            if model is RuntimeGeneration and ident == prev_id:
+                return prev_row
+            if model is RuntimeGeneration and ident == active_id:
+                return active_row
+            return None
+
+        async def scalar(self, _stmt):
+            return 0
+
+        async def commit(self):
+            self.committed = True
+
+    fake_db = SimpleDB()
+    monkeypatch.setattr(gd, "sessionmaker", lambda: fake_db)
+    controller = gd.GenerationController(JobStore(tmp_path / "deploy"), slots=FakeSlots())
+
+    for exc in (psutil.AccessDenied(prev_row.pid), PermissionError("denied"), psutil.ZombieProcess(prev_row.pid)):
+        with monkeypatch.context() as mp:
+            mp.setattr(gd.psutil, "Process", lambda _pid, _e=exc: (_ for _ in ()).throw(_e))
+            st = await controller._drain_recovery_db_state(prev_id, active_id, mark_offline=False)
+            assert st["previous_pid_alive"] is None
+            with pytest.raises(RuntimeError):
+                await controller._drain_recovery_db_state(prev_id, active_id, mark_offline=True)
+            assert prev_row.state == "draining"
+            assert fake_db.committed is False
+
+    # Invalid/missing PID must also be unknown (None), never dead (False), even on __new__ instance and minimal control row
+    control_minimal = SimpleNamespace(active_generation=active_id, epoch=123)
+
+    async def minimal_get(model, ident):
+        return control_minimal if model is RuntimeControl else (prev_row if ident == prev_id else active_row)
+
+    monkeypatch.setattr(fake_db, "get", minimal_get)
+    prev_row.pid = None
+    raw_instance = gd.GenerationController.__new__(gd.GenerationController)
+    st_none = await raw_instance._drain_recovery_db_state(prev_id, active_id, mark_offline=False)
+    assert st_none["previous_pid_alive"] is None
+    with pytest.raises(RuntimeError):
+        await raw_instance._drain_recovery_db_state(prev_id, active_id, mark_offline=True)
+    assert prev_row.state == "draining"
+
+    # recover_drain refuses unknown PID on both actions
+    control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path / "jobs", monkeypatch)
+    db_state["previous_pid_alive"] = None
+    with pytest.raises(RuntimeError, match="PID.*unknown"):
+        await control.recover_drain(**fences, apply=True)
+    slots.rows.pop(1, None)
+    db_state["previous_leases"] = 0
+    db_state["previous_process_groups"] = 0
+    db_state["previous_lock_held"] = False
+    with pytest.raises(RuntimeError, match="PID.*unknown"):
+        await control.recover_drain(**fences, apply=True)
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+
+async def test_recover_drain_rechecks_fences_and_drift_after_every_await(tmp_path, monkeypatch):
+    # Part A: resume_draining must reject any drift occurring during HTTP snapshot awaits
+    mutations_resume = [
+        ("epoch", 124, "epoch"),
+        ("active_generation", str(uuid.uuid4()), "active generation"),
+        ("previous_leases", 5, "drift"),
+        ("previous_process_groups", 4, "drift"),
+        ("previous_lock_held", False, "lock"),
+        ("previous_lock_held", None, "lock.*unknown"),
+        ("previous_pid_alive", False, "PID|process"),
+        ("previous_pid_alive", None, "PID.*unknown"),
+        ("previous_state", "offline", "draining"),
+    ]
+    for idx, (field, mutated_val, pattern) in enumerate(mutations_resume):
+        sub = tmp_path / f"resume_{idx}"
+        control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(sub, monkeypatch)
+        orig_snapshot = slots.snapshot
+
+        async def mutating_snapshot(slot, _orig=orig_snapshot, _ds=db_state, _f=field, _v=mutated_val):
+            res = await _orig(slot)
+            if slot == 1:
+                _ds[_f] = _v
+            return res
+
+        monkeypatch.setattr(slots, "snapshot", mutating_snapshot)
+        with pytest.raises(RuntimeError, match=pattern):
+            await control.recover_drain(**fences, apply=True)
+        assert store.get(abcb["id"])["status"] == "recovery_pending"
+
+    # Part B: retire_verified_dead must never discard latest mark_offline observation
+    mutations_retire = [
+        ("epoch", 124, "epoch"),
+        ("previous_leases", 1, "lease"),
+        ("previous_process_groups", 1, "process group"),
+        ("previous_lock_held", True, "runtime lock"),
+        ("previous_lock_held", None, "lock.*unknown"),
+        ("previous_pid_alive", True, "process is still alive"),
+        ("previous_pid_alive", None, "PID.*unknown"),
+    ]
+    for idx, (field, mutated_val, pattern) in enumerate(mutations_retire):
+        sub = tmp_path / f"retire_{idx}"
+        control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(sub, monkeypatch)
+        slots.rows.pop(1, None)
+        db_state["previous_leases"] = 0
+        db_state["previous_process_groups"] = 0
+        db_state["previous_lock_held"] = False
+        db_state["previous_pid_alive"] = False
+
+        async def mutating_db_state(_prev, _active, *, mark_offline=False, _ds=db_state, _f=field, _v=mutated_val):
+            cur = dict(_ds)
+            if mark_offline:
+                cur[_f] = _v
+            return cur
+
+        monkeypatch.setattr(control, "_drain_recovery_db_state", mutating_db_state, raising=False)
+        with pytest.raises(RuntimeError, match=pattern):
+            await control.recover_drain(**fences, apply=True)
+        saved = store.get(abcb["id"])
+        assert saved["status"] == "recovery_pending"
+        assert "recovery_intent" not in saved
+
+
+async def test_recover_drain_acquires_canonical_for_update_lock_order_and_rolls_back_on_conflict(tmp_path, monkeypatch):
+    import os
+    from types import SimpleNamespace
+
+    from sqlalchemy.exc import DBAPIError
+
+    from ttakkari import generation_deployment as gd
+    from ttakkari.generation import _lock
+    from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(get_settings(), "home", home)
+    control, store, slots, _unused_db, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path / "jobs", monkeypatch)
+
+    prev_id = uuid.UUID(fences["expected_previous_generation"])
+    active_id = uuid.UUID(fences["expected_active_generation"])
+
+    control_row = SimpleNamespace(id=1, active_generation=active_id, executor_generation=None, epoch=123)
+    active_row = SimpleNamespace(
+        id=active_id, revision=fences["expected_active_revision"], state="active",
+        api_url=slots.origin(2), pid=os.getpid(), process_started_at=None,
+    )
+    prev_row = SimpleNamespace(
+        id=prev_id, revision=fences["expected_previous_revision"], state="draining",
+        api_url=slots.origin(1), pid=os.getpid(), process_started_at=None,
+    )
+    lease_rows = [SimpleNamespace(run_id=uuid.uuid4(), generation_id=prev_id) for _ in range(2)]
+    group_rows = [SimpleNamespace(id=uuid.uuid4(), generation_id=prev_id) for _ in range(2)]
+
+    events: list[str] = []
+
+    class FakeLockedSession:
+        def __init__(self, *, fail_lock_timeout: bool = False, inject_on_lock=None):
+            self.fail_lock_timeout = fail_lock_timeout
+            self.inject_on_lock = inject_on_lock
+            self.lock_sequence: list[str] = []
+            self.committed = 0
+            self.rolled_back = 0
+            self.in_tx = False
+
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            self.in_tx = True
+            events.append("db_enter")
+            return self
+
+        async def __aexit__(self, *args):
+            self.in_tx = False
+            events.append("db_exit")
+            return False
+
+        async def execute(self, stmt):
+            sql = str(stmt)
+            events.append(f"sql:{sql}")
+            return SimpleNamespace()
+
+        async def get(self, model, ident):
+            if model is RuntimeControl:
+                return control_row
+            if model is RuntimeGeneration and ident == active_id:
+                return active_row
+            if model is RuntimeGeneration and ident == prev_id:
+                return prev_row
+            return None
+
+        async def scalar(self, stmt):
+            for_update = getattr(stmt, "_for_update_arg", None) is not None
+            froms = [getattr(f, "name", str(f)) for f in stmt.get_final_froms()]
+            table = froms[0] if froms else "unknown"
+            if for_update:
+                if self.fail_lock_timeout:
+                    orig = Exception("lock timeout")
+                    orig.sqlstate = "55P03"
+                    raise DBAPIError("SELECT ... FOR UPDATE", {}, orig)
+                label = table
+                if table == "runtime_generations":
+                    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+                    label = f"runtime_generations:{'active' if active_id.hex in compiled or str(active_id) in compiled else 'previous'}"
+                self.lock_sequence.append(label)
+                if self.inject_on_lock and len(self.lock_sequence) == 1:
+                    self.inject_on_lock()
+                if table == "runtime_control":
+                    return control_row
+                if label == "runtime_generations:active":
+                    return active_row
+                return prev_row
+            if table == "runtime_leases":
+                return len(lease_rows)
+            if table == "runtime_process_groups":
+                return len(group_rows)
+            return 0
+
+        async def scalars(self, stmt):
+            assert getattr(stmt, "_for_update_arg", None) is not None
+            froms = [getattr(f, "name", str(f)) for f in stmt.get_final_froms()]
+            table = froms[0]
+            self.lock_sequence.append(table)
+            if table == "runtime_leases":
+                return list(lease_rows)
+            if table == "runtime_process_groups":
+                return list(group_rows)
+            return []
+
+        async def commit(self):
+            self.committed += 1
+            events.append("db_commit")
+
+        async def rollback(self):
+            self.rolled_back += 1
+            events.append("db_rollback")
+
+    # Restore real _drain_recovery_db_state on control
+    monkeypatch.setattr(
+        control,
+        "_drain_recovery_db_state",
+        gd.GenerationController._drain_recovery_db_state.__get__(control, gd.GenerationController),
+    )
+
+    orig_write = store._write
+
+    def tracked_write(job_dict):
+        events.append(f"journal_write:{job_dict.get('status')}")
+        return orig_write(job_dict)
+
+    monkeypatch.setattr(store, "_write", tracked_write)
+
+    # 1. resume_draining: acquires 5 FOR UPDATE locks in canonical order and writes journal BEFORE releasing DB row locks
+    held_prev = _lock(home / "runtime" / f"{prev_id}.lock")
+    try:
+        locked_db = FakeLockedSession()
+        monkeypatch.setattr(gd, "sessionmaker", lambda: locked_db)
+        res = await control.recover_drain(**fences, apply=True)
+        assert res["action"] == "resume_draining" and res["applied"] is True
+        assert locked_db.lock_sequence == [
+            "runtime_control",
+            "runtime_generations:active",
+            "runtime_leases",
+            "runtime_generations:previous",
+            "runtime_process_groups",
+        ]
+        # Journal write to draining must occur before the locked DB session exits
+        last_enter = max(i for i, e in enumerate(events) if e == "db_enter")
+        j_idx = next(i for i, e in enumerate(events) if e == "journal_write:draining" and i > last_enter)
+        exit_idx = next(i for i, e in enumerate(events) if e == "db_exit" and i > last_enter)
+        assert last_enter < j_idx < exit_idx
+    finally:
+        if held_prev:
+            held_prev.close()
+
+    # Reset job to recovery_pending and test retire_verified_dead conflict, lock timeout, and clean commit
+    store._write(abcb | {"status": "recovery_pending"})
+    slots.rows.pop(1, None)
+    lease_rows.clear()
+    group_rows.clear()
+    prev_row.pid = 999999
+
+    # 2. Lock timeout (55P03) explicitly rolls back and leaves job in recovery_pending without intent leak
+    timeout_db = FakeLockedSession(fail_lock_timeout=True)
+    monkeypatch.setattr(gd, "sessionmaker", lambda: timeout_db)
+    with pytest.raises(RuntimeError, match="lock"):
+        await control.recover_drain(**fences, apply=True)
+    assert timeout_db.rolled_back >= 1
+    assert timeout_db.committed == 0
+    assert prev_row.state == "draining"
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+    assert "recovery_intent" not in store.get(abcb["id"])
+
+    # 3. Concurrent lease inserted right before lock acquisition -> refuses, rolls back, no offline commit
+    def inject_lease():
+        lease_rows.append(SimpleNamespace(run_id=uuid.uuid4(), generation_id=prev_id))
+
+    race_db = FakeLockedSession(inject_on_lock=inject_lease)
+    monkeypatch.setattr(gd, "sessionmaker", lambda: race_db)
+    with pytest.raises(RuntimeError, match="lease"):
+        await control.recover_drain(**fences, apply=True)
+    assert race_db.committed == 0
+    assert race_db.rolled_back >= 1
+    assert prev_row.state == "draining"
+    assert store.get(abcb["id"])["status"] == "recovery_pending"
+    assert "recovery_intent" not in store.get(abcb["id"])
+
+    # 4. Clean dead retire acquires canonical lock order, commits offline, then writes succeeded
+    lease_rows.clear()
+    clean_db = FakeLockedSession()
+    monkeypatch.setattr(gd, "sessionmaker", lambda: clean_db)
+    res2 = await control.recover_drain(**fences, apply=True)
+    assert res2["action"] == "retire_verified_dead" and res2["applied"] is True
+    assert clean_db.lock_sequence == [
+        "runtime_control",
+        "runtime_generations:active",
+        "runtime_leases",
+        "runtime_generations:previous",
+        "runtime_process_groups",
+    ]
+    assert clean_db.committed == 1
+    assert prev_row.state == "offline"
+    assert store.get(abcb["id"])["status"] == "succeeded"
+    assert "recovery_intent" not in store.get(abcb["id"])
+
+
+async def test_recover_drain_crash_consistency_between_db_offline_and_journal_succeeded(tmp_path, monkeypatch):
+    from ttakkari import deployment
+
+    control, store, slots, db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+    slots.rows.pop(1, None)
+    db_state["previous_leases"] = 0
+    db_state["previous_process_groups"] = 0
+    db_state["previous_lock_held"] = False
+    db_state["previous_pid_alive"] = False
+
+    orig_write = store._write
+    fail_succeeded_once = {"armed": True}
+
+    def flaky_write(job_dict):
+        if fail_succeeded_once["armed"] and job_dict.get("status") == "succeeded":
+            fail_succeeded_once["armed"] = False
+            raise OSError("simulated crash after DB offline commit before journal succeeded")
+        return orig_write(job_dict)
+
+    monkeypatch.setattr(store, "_write", flaky_write)
+
+    # 1. Crash right after DB marked offline -> raises OSError, keeps recovery_pending + recovery_intent, blocks cutover
+    with pytest.raises(OSError, match="simulated crash"):
+        await control.recover_drain(**fences, apply=True)
+    assert db_state["previous_state"] == "offline"
+    mid = store.get(abcb["id"])
+    assert mid["status"] == "recovery_pending"
+    assert mid["recovery_intent"]["action"] == "retire_verified_dead"
+    q_mid = deployment.queue_diagnostics(store)
+    assert q_mid["cutover_blocked"] is True
+    assert q_mid["foreground_job"]["recovery_intent_pending"] is True
+
+    # 2. While DB is already offline with retire intent, a spurious HTTP slot response cannot flip job to draining
+    slots.rows[1] = {
+        "generation": fences["expected_previous_generation"],
+        "revision": fences["expected_previous_revision"],
+        "drain_ready": False,
+    }
+    with pytest.raises(RuntimeError):
+        await control.recover_drain(**fences, apply=True)
+    slots.rows.pop(1, None)
+
+    # 3. Re-entry after filesystem recovery converges cleanly to succeeded and clears recovery_intent
+    converged = await control.recover_drain(**fences, apply=True)
+    assert converged["ok"] is True and converged["applied"] is True and converged["action"] == "retire_verified_dead"
+    final_job = store.get(abcb["id"])
+    assert final_job["status"] == "succeeded"
+    assert "recovery_intent" not in final_job
+    assert deployment.queue_diagnostics(store)["cutover_blocked"] is False
+
+    # 4. Subsequent re-entry with matching fences is idempotent; mismatched epoch or active_revision is rejected
+    idem = await control.recover_drain(**fences, apply=True)
+    assert idem["idempotent"] is True and idem["applied"] is False
+    with pytest.raises(RuntimeError):
+        await control.recover_drain(**(fences | {"expected_epoch": 999}), apply=True)
+    with pytest.raises(RuntimeError):
+        await control.recover_drain(**(fences | {"expected_active_revision": "f" * 40}), apply=True)
+
+
+async def test_fenced_deploy_recovery_api_enforces_owner_session_schema_and_active_generation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+
+    from ttakkari import deployment, generation
+    from ttakkari import generation_deployment as gd
+    from ttakkari.api import deployments as deploy_api
+    from ttakkari.models import (
+        ChatSession,
+        RuntimeControl,
+        RuntimeGeneration,
+        SessionKind,
+    )
+
+    control, _store, _slots, _db_state, fences, abcb, _f407 = _setup_abcb_recovery_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(deployment, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(gd, "GenerationController", lambda _s: control)
+
+    # 1. Arbitrary shell/path fields are rejected by strict Pydantic schema
+    valid_payload = {
+        "expected_revision": fences["expected_revision"],
+        "expected_previous_generation": fences["expected_previous_generation"],
+        "expected_previous_revision": fences["expected_previous_revision"],
+        "expected_previous_slot": fences["expected_previous_slot"],
+        "expected_candidate_generation": fences["expected_candidate_generation"],
+        "expected_active_generation": fences["expected_active_generation"],
+        "expected_active_revision": fences["expected_active_revision"],
+        "expected_epoch": fences["expected_epoch"],
+        "idempotency_key": f"recover-drain:{abcb['id']}:{fences['expected_previous_generation']}:{fences['expected_epoch']}",
+        "apply": True,
+    }
+    with pytest.raises(ValidationError):
+        deploy_api.RecoverDrainIn(**(valid_payload | {"command": "sh -c id"}))
+    with pytest.raises(ValidationError):
+        deploy_api.RecoverDrainIn(**(valid_payload | {"release_path": "/tmp/evil"}))
+
+    root_sid = uuid.uuid4()
+    worker_sid = uuid.uuid4()
+    active_uuid = uuid.UUID(fences["expected_active_generation"])
+
+    sessions = {
+        root_sid: SimpleNamespace(id=root_sid, kind=SessionKind.orchestrator, pool="personal", archived_at=None),
+        worker_sid: SimpleNamespace(id=worker_sid, kind=SessionKind.worker, pool="personal", archived_at=None),
+    }
+    ctrl_row = SimpleNamespace(id=1, active_generation=active_uuid, executor_generation=None, epoch=123)
+    active_row = SimpleNamespace(id=active_uuid, revision=fences["expected_active_revision"], state="active")
+
+    class ApiFakeDB:
+        def __init__(self):
+            self.added = []
+            self.commits = 0
+
+        async def get(self, model, ident):
+            if model is ChatSession:
+                return sessions.get(ident)
+            if model is RuntimeControl:
+                return ctrl_row
+            if model is RuntimeGeneration and ident == active_uuid:
+                return active_row
+            return None
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        async def commit(self):
+            self.commits += 1
+
+    api_db = ApiFakeDB()
+    body = deploy_api.RecoverDrainIn(**valid_payload)
+
+    # 2. Worker session is forbidden (403)
+    with pytest.raises(HTTPException) as exc403:
+        await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, worker_sid, api_db)
+    assert exc403.value.status_code == 403
+
+    # 3. Mismatched idempotency_key is rejected (422)
+    bad_key_body = deploy_api.RecoverDrainIn(**(valid_payload | {"idempotency_key": "wrong-key"}))
+    with pytest.raises(HTTPException) as exc422:
+        await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), bad_key_body, root_sid, api_db)
+    assert exc422.value.status_code == 422
+
+    # 4. Non-active or draining API process refuses recovery (409)
+    monkeypatch.setattr(generation, "current", SimpleNamespace(id=uuid.uuid4(), draining=False))
+    with pytest.raises(HTTPException) as exc409:
+        await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
+    assert exc409.value.status_code == 409
+
+    # 5. Matching active API owner succeeds and writes AuditLog; TTAKKARI_RUN_ID guard still blocks if present
+    monkeypatch.setattr(generation, "current", SimpleNamespace(id=active_uuid, draining=False))
+    monkeypatch.setenv("TTAKKARI_RUN_ID", "run-inside-sandbox")
+    with pytest.raises(HTTPException) as exc_run:
+        await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
+    assert exc_run.value.status_code == 409
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+
+    out = await deploy_api.recover_drain_endpoint(uuid.UUID(abcb["id"]), body, root_sid, api_db)
+    assert out["ok"] is True and out["applied"] is True and out["action"] == "resume_draining"
+    assert api_db.commits == 1
+    assert any(getattr(x, "action", None) == "deployment.recover_drain" for x in api_db.added)

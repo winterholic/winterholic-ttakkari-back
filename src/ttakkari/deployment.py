@@ -8,6 +8,7 @@ import fcntl
 import json
 import logging
 import os
+import stat as stat_mod
 import subprocess
 import sys
 import time
@@ -15,10 +16,10 @@ import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import asyncpg
 import httpx
-import psutil
 from sqlalchemy.engine import make_url
 
 from ttakkari.config import get_settings
@@ -517,54 +518,187 @@ class Controller:
             await dispose_engine()
 
 
-def _lock_held(path: Path) -> bool:
-    if not path.exists():
-        return False
+LockProbeState = Literal["held", "free", "unknown"]
+
+
+def _probe_lock(path: Path) -> tuple[LockProbeState, str | None]:
+    """잠금 상태를 held / free / unknown 으로 분리한다. 권한 거부 등 관측 실패는 절대 free로 취급하지 않는다."""
     try:
-        handle = path.open("a")
-    except OSError:
-        return False
+        st = path.stat()
+    except FileNotFoundError:
+        return ("free", None)
+    except OSError as exc:
+        return ("unknown", type(exc).__name__)
+    if not stat_mod.S_ISREG(st.st_mode):
+        return ("unknown", "NotRegularFile")
+    try:
+        handle = path.open("rb")
+    except FileNotFoundError:
+        return ("free", None)
+    except OSError as exc:
+        return ("unknown", type(exc).__name__)
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        handle.close()
-        return True
-    except OSError:
-        handle.close()
-        return False
-    try:
-        fcntl.flock(handle, fcntl.LOCK_UN)
+        return ("held", None)
+    except OSError as exc:
+        return ("unknown", type(exc).__name__)
+    else:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        return ("free", None)
     finally:
-        handle.close()
-    return False
+        try:
+            handle.close()
+        except OSError:
+            pass
 
 
-_DIAG_JOB_KEYS = (
-    "id",
-    "revision",
-    "status",
-    "strategy",
-    "created_at",
-    "updated_at",
-    "previous_slot",
-    "previous_generation",
-    "previous_revision",
-    "candidate_slot",
-    "candidate_generation",
-    "activated_revision",
-    "retired_generation",
-    "error_stage",
-    "error",
-)
+def _lock_held(path: Path) -> bool | None:
+    state, _reason = _probe_lock(path)
+    if state == "held":
+        return True
+    if state == "free":
+        return False
+    return None
+
+
+_default_lock_held = _lock_held
+
+
+_ALLOWED_DIAG_STATUSES = frozenset({
+    "requested",
+    "preparing",
+    "building",
+    "security_gate",
+    "testing",
+    "waiting",
+    "waiting_slot",
+    "waiting_idle",
+    "activating",
+    "draining",
+    "retiring",
+    "recovery_pending",
+    "rolling_back",
+    "succeeded",
+    "failed",
+    "superseded",
+    "cancelled",
+})
+_ALLOWED_DIAG_STRATEGIES = frozenset({"generations", "idle"})
+_ALLOWED_DIAG_ERROR_STAGES = frozenset({
+    "prepare",
+    "build",
+    "security_gate",
+    "test",
+    "cutover",
+    "verify",
+    "drain",
+    "retire",
+    "rollback",
+    "reconcile",
+    "bootstrap",
+    "tts-drain",
+})
+_ALLOWED_UPGRADE_STATUSES = frozenset({"upgrading", "succeeded", "failed", "pending", "skipped"})
+
+
+def _is_sha40(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 40 and all(c in "0123456789abcdef" for c in value)
+
+
+def _clean_uuid(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def _clean_iso_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or len(value) > 64:
+        return None
+    try:
+        datetime.fromisoformat(value)
+        return value
+    except ValueError:
+        return None
+
+
+def _classify_job_error_code(error: object) -> str | None:
+    """원문 오류 문자열을 단 한 글자도 복사하지 않고 고정 allowlist 코드로만 분류한다."""
+    if error is None or error == "":
+        return None
+    if not isinstance(error, str):
+        return "redacted_error"
+    lowered = error.lower()
+    if "draining generation unreachable" in lowered:
+        return "draining_generation_unreachable"
+    if "draining slot identity changed" in lowered or "identity mismatch" in lowered:
+        return "draining_slot_identity_changed"
+    if "previous generation is active" in lowered:
+        return "previous_generation_active"
+    if "previous generation unavailable" in lowered:
+        return "previous_generation_unavailable"
+    if "newer generation became active" in lowered:
+        return "newer_generation_active"
+    if "automatic reconciliation failed" in lowered:
+        return "automatic_reconciliation_failed"
+    if "supervisor upgrade required" in lowered or "pinned release" in lowered:
+        return "supervisor_upgrade_required"
+    if "waiting for" in lowered and "idle" in lowered:
+        return "waiting_idle"
+    if "security_gate" in lowered or "security gate" in lowered:
+        return "security_gate_failed"
+    if "시간 초과" in error or "timeout" in lowered:
+        return "command_timeout"
+    if "명령 실패" in error:
+        return "command_failed"
+    return "redacted_error"
 
 
 def _job_summary(job: dict) -> dict:
-    return {k: job.get(k) for k in _DIAG_JOB_KEYS if k in job}
+    summary: dict[str, object] = {
+        "id": _clean_uuid(job.get("id")),
+        "revision": job.get("revision") if _is_sha40(job.get("revision")) else None,
+        "status": job.get("status") if job.get("status") in _ALLOWED_DIAG_STATUSES else "unknown",
+        "strategy": job.get("strategy") if job.get("strategy") in _ALLOWED_DIAG_STRATEGIES else None,
+        "created_at": _clean_iso_timestamp(job.get("created_at")),
+    }
+    if "updated_at" in job:
+        summary["updated_at"] = _clean_iso_timestamp(job.get("updated_at"))
+    for slot_key in ("previous_slot", "candidate_slot"):
+        if slot_key in job:
+            val = job.get(slot_key)
+            summary[slot_key] = val if isinstance(val, int) and not isinstance(val, bool) else None
+    for uuid_key in ("previous_generation", "candidate_generation", "retired_generation"):
+        if uuid_key in job:
+            summary[uuid_key] = _clean_uuid(job.get(uuid_key))
+    for sha_key in ("previous_revision", "activated_revision"):
+        if sha_key in job:
+            val = job.get(sha_key)
+            summary[sha_key] = val if _is_sha40(val) else None
+    if "error_stage" in job:
+        raw_stage = job.get("error_stage")
+        if raw_stage is None:
+            summary["error_stage"] = None
+        elif isinstance(raw_stage, str) and raw_stage in _ALLOWED_DIAG_ERROR_STAGES:
+            summary["error_stage"] = raw_stage
+        else:
+            summary["error_stage"] = "unknown"
+    raw_err = job.get("error")
+    summary["has_error"] = bool(raw_err)
+    summary["error_code"] = _classify_job_error_code(raw_err)
+    summary["recovery_intent_pending"] = isinstance(job.get("recovery_intent"), dict)
+    return summary
 
 
 def supervisor_diagnostics(root: Path | None = None) -> dict:
     """감독 핀(supervisor.json)과 실행 기록(supervisor-runtime.json)·잠금을 경로/비밀 노출 없이 읽는다."""
-    from ttakkari.generation_deployment import Slots
+    from ttakkari.generation_deployment import Slots, _pid_alive
 
     root = root or state_dir()
     pinned_rev = None
@@ -576,12 +710,13 @@ def supervisor_diagnostics(root: Path | None = None) -> dict:
     if marker.is_file():
         try:
             pinned = json.loads(marker.read_text())
-            pinned_rev = pinned.get("revision")
+            raw_pinned_rev = pinned.get("revision")
+            pinned_rev = raw_pinned_rev if _is_sha40(raw_pinned_rev) else None
             if pinned.get("release"):
                 pinned_rel = Path(pinned["release"])
                 pinned_exists = pinned_rel.is_dir()
                 rel_marker = pinned_rel / ".release.json"
-                if rel_marker.is_file():
+                if rel_marker.is_file() and pinned_rev is not None:
                     pinned_matches = json.loads(rel_marker.read_text()).get("revision") == pinned_rev
             source_configured = bool(pinned.get("source"))
         except (OSError, ValueError, TypeError):
@@ -589,8 +724,8 @@ def supervisor_diagnostics(root: Path | None = None) -> dict:
 
     runtime_rev = None
     runtime_rel: Path | None = None
-    pid = None
-    pid_alive = False
+    pid: int | None = None
+    pid_alive: bool | None = False
     ports = None
     updated_at = None
     age_s = None
@@ -598,12 +733,19 @@ def supervisor_diagnostics(root: Path | None = None) -> dict:
     if rt_path.is_file():
         try:
             rt = json.loads(rt_path.read_text())
-            runtime_rev = rt.get("revision")
+            raw_rt_rev = rt.get("revision")
+            runtime_rev = raw_rt_rev if _is_sha40(raw_rt_rev) else None
             if rt.get("release"):
                 runtime_rel = Path(rt["release"])
-            pid = rt.get("pid")
-            pid_alive = bool(isinstance(pid, int) and pid > 0 and psutil.pid_exists(pid))
-            ports = rt.get("ports")
+            raw_pid = rt.get("pid")
+            if isinstance(raw_pid, int) and not isinstance(raw_pid, bool) and raw_pid > 0:
+                pid = raw_pid
+                pid_alive = _pid_alive(pid)
+            else:
+                pid_alive = None if raw_pid is not None else False
+            raw_ports = rt.get("ports")
+            if isinstance(raw_ports, list) and all(isinstance(p, int) and not isinstance(p, bool) for p in raw_ports):
+                ports = raw_ports
             stat = rt_path.stat()
             updated_at = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
             age_s = round(max(0.0, time.time() - stat.st_mtime), 1)
@@ -623,10 +765,17 @@ def supervisor_diagnostics(root: Path | None = None) -> dict:
     if upg_path.is_file():
         try:
             upg = json.loads(upg_path.read_text())
-            last_upgrade = {"revision": upg.get("revision"), "status": upg.get("status")}
+            raw_upg_rev = upg.get("revision")
+            raw_upg_status = upg.get("status")
+            last_upgrade = {
+                "revision": raw_upg_rev if _is_sha40(raw_upg_rev) else None,
+                "status": raw_upg_status if raw_upg_status in _ALLOWED_UPGRADE_STATUSES else "unknown",
+            }
         except (OSError, ValueError, TypeError):
             pass
 
+    ctrl_lock_state, _ = _probe_lock(root / "controller.lock")
+    restart_lock_state, _ = _probe_lock(root / "backend-restart.lock")
     return {
         "pinned_revision": pinned_rev,
         "pinned_release_exists": pinned_exists,
@@ -640,8 +789,10 @@ def supervisor_diagnostics(root: Path | None = None) -> dict:
         "age_s": age_s,
         "matches_pinned_revision": matches_rev,
         "matches_pinned_release": matches_rel,
-        "controller_lock_held": _lock_held(root / "controller.lock"),
-        "restart_lock_held": _lock_held(root / "backend-restart.lock"),
+        "controller_lock_held": True if ctrl_lock_state == "held" else (False if ctrl_lock_state == "free" else None),
+        "controller_lock_state": ctrl_lock_state,
+        "restart_lock_held": True if restart_lock_state == "held" else (False if restart_lock_state == "free" else None),
+        "restart_lock_state": restart_lock_state,
         "persisted_proxy_slot": Slots(root).persisted_slot(),
         "last_upgrade": last_upgrade,
     }
@@ -701,7 +852,13 @@ def slot_ownership_diagnostics(
                 "process_groups": g.get("process_groups", 0),
             }
             for g in slot_gens
-            if g.get("state") != "offline" or g.get("lock_held") or g.get("leases", 0) > 0
+            if (
+                g.get("state") != "offline"
+                or g.get("lock_held") is not False
+                or g.get("pid_alive") is True
+                or (g.get("pid_alive") is None and g.get("pid") is not None)
+                or g.get("leases", 0) > 0
+            )
         ]
         out.append({
             "slot": slot,

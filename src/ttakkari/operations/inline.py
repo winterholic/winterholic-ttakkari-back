@@ -116,6 +116,8 @@ async def runtime_report(db: AsyncSession) -> dict:
         .outerjoin(RuntimeLease, RuntimeLease.run_id == Run.id)
         .where(ChatSession.archived_at.is_(None), Run.status.in_(("running", "queued", "interrupted")))
         .order_by((Run.status == "running").desc(), Run.created_at.desc()).limit(40))).all()
+    from ttakkari.generation_deployment import _pid_alive
+
     home = get_settings().home
     deploy_root = deployment.state_dir()
     origin_to_slot = {f"http://127.0.0.1:{p}": idx for idx, p in enumerate(generation.PORTS)}
@@ -128,7 +130,7 @@ async def runtime_report(db: AsyncSession) -> dict:
             "execution_mode": g.execution_mode,
             "slot": origin_to_slot.get(getattr(g, "api_url", None)),
             "pid": g.pid,
-            "pid_alive": psutil.pid_exists(g.pid),
+            "pid_alive": _pid_alive(g.pid, getattr(g, "process_started_at", None)),
             "lock_held": deployment._lock_held(home / "runtime" / f"{g.id}.lock"),
             "heartbeat_age_s": round((now - g.heartbeat_at.replace(tzinfo=UTC)).total_seconds(), 1),
             "leases": leases.get(g.id, 0),

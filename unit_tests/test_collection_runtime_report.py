@@ -300,3 +300,104 @@ async def test_runtime_report_exposes_supervisor_queue_and_slot_ownership_withou
     assert slots[1]["live_generations"][0]["id"] == str(gen_draining)
     assert slots[1]["live_generations"][0]["leases"] == 2
     assert slots[0]["live_generations"] == []
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_redact_raw_errors_and_block_synthetic_secret_path_canaries(tmp_path, monkeypatch):
+    import json
+
+    from ttakkari import deployment
+
+    home = tmp_path / "home"
+    deploy_root = home / "deploy"
+    deploy_root.mkdir(parents=True)
+    monkeypatch.setattr(inline.get_settings(), "home", home)
+    monkeypatch.setattr(deployment, "state_dir", lambda: deploy_root)
+    monkeypatch.setattr(deployment, "strategy", lambda: "generations")
+
+    canaries = [
+        "SYNTHETIC_SECRET_PATH_CANARY_98c1",
+        "/Users/winterholic/.ttakkari/config.env",
+        "postgresql://ttakkari:SUPER_SECRET_PW_771@127.0.0.1:5432/ttakkari",
+        "sk-ant-api03-CANARYTOKEN999",
+    ]
+    raw_secret_error = (
+        "draining generation unreachable; env=/Users/winterholic/.ttakkari/config.env "
+        "db=postgresql://ttakkari:SUPER_SECRET_PW_771@127.0.0.1:5432/ttakkari "
+        "token=sk-ant-api03-CANARYTOKEN999 canary=SYNTHETIC_SECRET_PATH_CANARY_98c1"
+    )
+    (deploy_root / "supervisor-upgrade.json").write_text(json.dumps({
+        "revision": "/Users/winterholic/.ttakkari/config.env/SYNTHETIC_SECRET_PATH_CANARY_98c1",
+        "status": "failed:SYNTHETIC_SECRET_PATH_CANARY_98c1",
+        "error": raw_secret_error,
+    }))
+
+    store = deployment.JobStore(deploy_root)
+    job = store._write({
+        "id": "abcb3f7d-a291-4789-9117-ec5c08220eba",
+        "revision": "1" * 40,
+        "skip_tests": False,
+        "status": "recovery_pending",
+        "created_at": "2026-10-28T21:52:32.996586+00:00",
+        "error": raw_secret_error,
+        "error_stage": "drain:/Users/winterholic/.ttakkari/config.env:SYNTHETIC_SECRET_PATH_CANARY_98c1",
+        "strategy": "generations",
+        "candidate_slot": 0,
+        "previous_slot": 1,
+        "previous_generation": "01c6010d-6ecd-4bc9-a879-12b60dea1215",
+        "previous_revision": "2" * 40,
+        "candidate_generation": "18c94d7e-2bf0-4ba0-ae76-467154b56f5c",
+        "activated_revision": "1" * 40,
+    })
+
+    q_diag = deployment.queue_diagnostics(store)
+    s_diag = deployment.supervisor_diagnostics(deploy_root)
+    d_diag = await deployment.diagnose_deployment(deploy_root, include_db=False)
+
+    now = datetime.now(UTC)
+    gen_id = uuid.UUID("bb450175-d7a4-495e-ae0f-e3202ce0a456")
+    control_row = SimpleNamespace(active_generation=gen_id, executor_generation=None, epoch=123)
+    gen_row = SimpleNamespace(
+        id=gen_id, revision="3" * 40, role="api", state="active",
+        execution_mode="local", pid=inline.os.getpid(), heartbeat_at=now,
+        api_url="http://127.0.0.1:8793",
+    )
+
+    def scalars_result(items):
+        m = MagicMock()
+        s = MagicMock()
+        s.first.return_value = items[0] if items else None
+        s.all.return_value = items
+        m.scalars.return_value = s
+        return m
+
+    def scalar_result(val):
+        m = MagicMock()
+        m.scalar.return_value = val
+        return m
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        scalars_result([control_row]),
+        scalars_result([gen_row]),
+        result([]),
+        result([]),
+        scalar_result(0),
+        result([]),
+        result([]),
+    ])
+    rt_report = await inline.runtime_report(db)
+
+    for payload in (q_diag, s_diag, d_diag, rt_report):
+        serialized = json.dumps(payload)
+        for canary in canaries:
+            assert canary not in serialized
+        assert "config.env" not in serialized
+        assert "SUPER_SECRET_PW_771" not in serialized
+
+    fg = q_diag["foreground_job"]
+    assert fg["id"] == job["id"]
+    assert "error" not in fg
+    assert fg["error_code"] == "draining_generation_unreachable"
+    assert fg["error_stage"] == "unknown"
+    assert fg["has_error"] is True

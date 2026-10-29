@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -21,13 +22,17 @@ import tarfile
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import asyncpg
 import httpx
 import psutil
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
@@ -55,6 +60,52 @@ _PREPARE_TASKS: dict[str, asyncio.Task] = {}
 def _utcnow() -> str:
     from datetime import UTC, datetime
     return datetime.now(UTC).isoformat()
+
+
+PidProbeState = Literal["alive", "dead", "unknown"]
+
+
+def _probe_pid(pid: object, started_at: float | None = None) -> tuple[PidProbeState, str | None]:
+    """PID 생존 상태를 alive / dead / unknown 으로 분리한다. 권한 거부·좀비·미기록은 절대 dead로 간주하지 않는다."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return ("unknown", "InvalidPid")
+    try:
+        proc = psutil.Process(pid)
+        status = proc.status()
+        if status == psutil.STATUS_ZOMBIE:
+            return ("unknown", "ZombieProcess")
+        created = proc.create_time()
+        if started_at is not None and abs(created - started_at) > 0.001:
+            return ("dead", "PidReused")
+        return ("alive", None)
+    except psutil.ZombieProcess:
+        return ("unknown", "ZombieProcess")
+    except psutil.NoSuchProcess:
+        return ("dead", None)
+    except (psutil.AccessDenied, PermissionError) as exc:
+        return ("unknown", type(exc).__name__)
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return ("dead", None)
+        return ("unknown", type(exc).__name__)
+    except psutil.Error as exc:
+        return ("unknown", type(exc).__name__)
+
+
+def _pid_alive(pid: object, started_at: float | None = None) -> bool | None:
+    state, _reason = _probe_pid(pid, started_at)
+    if state == "alive":
+        return True
+    if state == "dead":
+        return False
+    return None
+
+
+@dataclass
+class _RecoveryCommitContext:
+    on_locked: Callable[[dict], None]
+    invoked: bool = False
+    db_committed: bool = False
 
 
 def _group_alive(pgid: int) -> bool:
@@ -615,6 +666,7 @@ class GenerationController:
         from ttakkari.deployment import BACK
         self.releases = Releases(get_settings().deploy_source_root or BACK, store.root)
         self.activate = activate
+        self._recovery_commit_context: _RecoveryCommitContext | None = None
 
     def phase(self, job, status, **fields):
         job.update(self.store.update(job["id"], status=status, **fields))
@@ -1083,6 +1135,208 @@ class GenerationController:
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
 
+    @contextlib.contextmanager
+    def _using_recovery_commit_context(self, ctx: _RecoveryCommitContext):
+        prev_ctx = getattr(self, "_recovery_commit_context", None)
+        self._recovery_commit_context = ctx
+        try:
+            yield ctx
+        finally:
+            self._recovery_commit_context = prev_ctx
+
+    @staticmethod
+    def _build_recovery_state_snapshot(
+        control,
+        active_row,
+        prev_row,
+        previous_id: uuid.UUID,
+        *,
+        leases: int,
+        groups: int,
+    ) -> dict:
+        from ttakkari import deployment
+
+        lock_path = get_settings().home / "runtime" / f"{previous_id}.lock"
+        if getattr(deployment, "_lock_held", None) is getattr(deployment, "_default_lock_held", None):
+            lock_state, lock_reason = deployment._probe_lock(lock_path)
+            lock_held = True if lock_state == "held" else (False if lock_state == "free" else None)
+        else:
+            lock_held = deployment._lock_held(lock_path)
+            lock_state = "held" if lock_held is True else ("free" if lock_held is False else "unknown")
+            lock_reason = None if lock_held is not None else "LockProbeUnknown"
+
+        if prev_row is not None:
+            pid_state, pid_reason = _probe_pid(
+                getattr(prev_row, "pid", None),
+                getattr(prev_row, "process_started_at", None),
+            )
+            pid_alive = True if pid_state == "alive" else (False if pid_state == "dead" else None)
+        else:
+            pid_state, pid_reason = ("unknown", "MissingGenerationRow")
+            pid_alive = None
+
+        owner_uuid = (
+            getattr(control, "executor_generation", None) or getattr(control, "active_generation", None)
+            if control is not None
+            else None
+        )
+        return {
+            "active_generation": (
+                str(getattr(control, "active_generation", None))
+                if control and getattr(control, "active_generation", None)
+                else None
+            ),
+            "claim_owner": str(owner_uuid) if owner_uuid else None,
+            "active_revision": getattr(active_row, "revision", None) if active_row else None,
+            "active_state": getattr(active_row, "state", None) if active_row else None,
+            "active_api_url": getattr(active_row, "api_url", None) if active_row else None,
+            "epoch": getattr(control, "epoch", None) if control else None,
+            "previous_generation": str(prev_row.id) if prev_row and getattr(prev_row, "id", None) else None,
+            "previous_revision": getattr(prev_row, "revision", None) if prev_row else None,
+            "previous_state": getattr(prev_row, "state", None) if prev_row else None,
+            "previous_api_url": getattr(prev_row, "api_url", None) if prev_row else None,
+            "previous_leases": leases,
+            "previous_process_groups": groups,
+            "previous_lock_held": lock_held,
+            "previous_lock_state": lock_state,
+            "previous_lock_reason": lock_reason,
+            "previous_pid_alive": pid_alive,
+            "previous_pid_state": pid_state,
+            "previous_pid_reason": pid_reason,
+        }
+
+    @staticmethod
+    def _assert_dead_retirement_safe(state: dict, *, prev_uuid: uuid.UUID) -> None:
+        if state.get("active_generation") == str(prev_uuid) or state.get("claim_owner") == str(prev_uuid):
+            raise RuntimeError("previous generation is still active or claim owner; refusing drain recovery")
+        if state.get("previous_state") not in {"draining", "offline"}:
+            raise RuntimeError(f"previous generation state {state.get('previous_state')!r} is not draining/offline")
+        if state.get("previous_lock_held") is None:
+            raise RuntimeError("previous generation OS runtime lock state is unknown; refusing fail-open recovery")
+        if state.get("previous_pid_alive") is None:
+            raise RuntimeError("previous generation OS PID state is unknown; refusing fail-open recovery")
+        if state["previous_leases"] > 0:
+            raise RuntimeError(
+                f"unreachable draining generation still holds {state['previous_leases']} live lease(s)"
+            )
+        if state["previous_process_groups"] > 0:
+            raise RuntimeError(
+                f"unreachable draining generation still has {state['previous_process_groups']} recorded process group(s)"
+            )
+        if state["previous_lock_held"] is True:
+            raise RuntimeError("unreachable draining generation still holds its OS runtime lock")
+        if state["previous_pid_alive"] is True:
+            raise RuntimeError("unreachable draining generation OS process is still alive")
+
+    @staticmethod
+    def _assert_live_resume_safe(state: dict, *, current_job: dict) -> None:
+        if current_job.get("recovery_intent") is not None:
+            raise RuntimeError("pending retirement intent exists; refusing to flip offline retirement back to draining")
+        if state.get("previous_lock_held") is None:
+            raise RuntimeError("previous generation OS runtime lock state is unknown; refusing fail-open recovery")
+        if state.get("previous_pid_alive") is None:
+            raise RuntimeError("previous generation OS PID state is unknown; refusing fail-open recovery")
+        if state.get("previous_state") != "draining":
+            raise RuntimeError(
+                f"previous generation state {state.get('previous_state')!r} is not draining; refusing resume_draining"
+            )
+        if state.get("previous_lock_held") is not True:
+            raise RuntimeError("draining generation does not hold its OS runtime lock; refusing resume_draining")
+        if state.get("previous_pid_alive") is not True:
+            raise RuntimeError("draining generation OS PID is not verified alive; refusing resume_draining")
+
+    def _verify_journal_fences(
+        self,
+        job: dict,
+        *,
+        expected_revision: str,
+        prev_uuid: uuid.UUID,
+        expected_previous_revision: str,
+        expected_previous_slot: int,
+        cand_uuid: uuid.UUID,
+    ) -> None:
+        if job.get("strategy") != "generations" or job.get("bootstrap"):
+            raise ValueError("drain recovery applies only to non-bootstrap generation deployments")
+        if job.get("activated_revision") != expected_revision:
+            raise ValueError("drain recovery requires a post-cutover deployment with matching activated_revision")
+        if (
+            job.get("revision") != expected_revision
+            or job.get("previous_generation") != str(prev_uuid)
+            or job.get("previous_revision") != expected_previous_revision
+            or job.get("previous_slot") != expected_previous_slot
+            or job.get("candidate_generation") != str(cand_uuid)
+        ):
+            raise ValueError("job journal fence mismatch")
+
+    def _verify_common_db_fences(
+        self,
+        db_state: dict,
+        *,
+        prev_uuid: uuid.UUID,
+        expected_previous_revision: str,
+        expected_previous_slot: int,
+        active_uuid: uuid.UUID,
+        expected_active_revision: str,
+        expected_epoch: int,
+    ) -> None:
+        if (
+            db_state.get("active_generation") != str(active_uuid)
+            or db_state.get("active_state") != "active"
+            or db_state.get("active_revision") != expected_active_revision
+        ):
+            raise RuntimeError("active generation fence mismatch")
+        if db_state.get("epoch") != expected_epoch:
+            raise RuntimeError(
+                f"control epoch stale or mismatched: expected {expected_epoch}, observed {db_state.get('epoch')}"
+            )
+        if db_state.get("active_generation") == str(prev_uuid) or db_state.get("claim_owner") == str(prev_uuid):
+            raise RuntimeError("previous generation is still active; refusing drain recovery")
+        if (
+            db_state.get("previous_generation") != str(prev_uuid)
+            or db_state.get("previous_revision") != expected_previous_revision
+            or db_state.get("previous_api_url") != self.slots.origin(expected_previous_slot)
+        ):
+            raise RuntimeError("previous generation DB record mismatch")
+        if db_state.get("previous_state") not in {"draining", "offline"}:
+            raise RuntimeError(f"previous generation state {db_state.get('previous_state')!r} is not draining/offline")
+        if db_state.get("previous_lock_held") is None:
+            raise RuntimeError("previous generation OS runtime lock state is unknown; refusing fail-open recovery")
+        if db_state.get("previous_pid_alive") is None:
+            raise RuntimeError("previous generation OS PID state is unknown; refusing fail-open recovery")
+
+    @staticmethod
+    def _assert_no_recovery_drift(initial_state: dict, final_state: dict, *, action: str) -> None:
+        invariant_keys = (
+            "active_generation",
+            "active_revision",
+            "active_state",
+            "active_api_url",
+            "epoch",
+            "previous_generation",
+            "previous_revision",
+            "previous_api_url",
+            "previous_leases",
+            "previous_process_groups",
+            "previous_lock_held",
+            "previous_pid_alive",
+        )
+        for key in invariant_keys:
+            if final_state.get(key) != initial_state.get(key):
+                raise RuntimeError(
+                    f"recovery state drifted after await on {key} "
+                    f"({initial_state.get(key)!r} -> {final_state.get(key)!r}); retry diagnose and recover-drain"
+                )
+        if (
+            "claim_owner" in initial_state
+            and "claim_owner" in final_state
+            and final_state["claim_owner"] != initial_state["claim_owner"]
+        ):
+            raise RuntimeError("recovery state drifted after await on claim_owner; retry diagnose and recover-drain")
+        if action == "resume_draining" and final_state.get("previous_state") != "draining":
+            raise RuntimeError("previous generation state drifted away from draining before commit")
+        if action == "retire_verified_dead" and final_state.get("previous_state") not in {"draining", "offline"}:
+            raise RuntimeError("previous generation state drifted away from draining/offline before commit")
+
     async def _drain_recovery_db_state(
         self,
         previous_id: uuid.UUID,
@@ -1090,7 +1344,76 @@ class GenerationController:
         *,
         mark_offline: bool = False,
     ) -> dict:
-        from ttakkari.deployment import _lock_held
+        ctx = getattr(self, "_recovery_commit_context", None)
+        if ctx is not None:
+            # Canonical lock order aligned with GenerationRuntime.claim/release,
+            # PostgreSQL executor_lease/executor_api triggers, and executor_reconcile._apply_locked:
+            # 1) RuntimeControl(id=1) FOR UPDATE (serializes all lease claims, epoch advances, activations)
+            # 2) RuntimeGeneration(active_id) FOR UPDATE
+            # 3) RuntimeLease(generation_id == previous_id) FOR UPDATE
+            # 4) RuntimeGeneration(previous_id) FOR UPDATE
+            # 5) RuntimeProcessGroup(generation_id == previous_id) FOR UPDATE
+            async with sessionmaker()() as db:
+                try:
+                    await db.execute(text("SET LOCAL lock_timeout = '2000ms'"))
+                    await db.execute(text("SET LOCAL statement_timeout = '15000ms'"))
+                    control = await db.scalar(
+                        select(RuntimeControl).where(RuntimeControl.id == 1).with_for_update()
+                    )
+                    active_row = await db.scalar(
+                        select(RuntimeGeneration).where(RuntimeGeneration.id == active_id).with_for_update()
+                    )
+                    lease_rows = list(
+                        await db.scalars(
+                            select(RuntimeLease)
+                            .where(RuntimeLease.generation_id == previous_id)
+                            .order_by(RuntimeLease.run_id)
+                            .with_for_update()
+                        )
+                    )
+                    prev_row = await db.scalar(
+                        select(RuntimeGeneration).where(RuntimeGeneration.id == previous_id).with_for_update()
+                    )
+                    group_rows = list(
+                        await db.scalars(
+                            select(RuntimeProcessGroup)
+                            .where(RuntimeProcessGroup.generation_id == previous_id)
+                            .order_by(RuntimeProcessGroup.id)
+                            .with_for_update()
+                        )
+                    )
+                    state = self._build_recovery_state_snapshot(
+                        control,
+                        active_row,
+                        prev_row,
+                        previous_id,
+                        leases=len(lease_rows),
+                        groups=len(group_rows),
+                    )
+                    ctx.on_locked(state)
+                    ctx.invoked = True
+                    if mark_offline:
+                        if prev_row is None:
+                            raise RuntimeError("previous generation DB record missing under row lock")
+                        if prev_row.state != "offline":
+                            prev_row.state = "offline"
+                            await db.commit()
+                        state["previous_state"] = "offline"
+                        ctx.db_committed = True
+                    return state
+                except DBAPIError as exc:
+                    await db.rollback()
+                    sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None) or getattr(
+                        getattr(exc, "orig", None), "pgcode", None
+                    )
+                    if sqlstate in {"55P03", "57014"}:
+                        raise RuntimeError(
+                            f"recovery DB row lock timed out ({sqlstate}); retry when idle"
+                        ) from exc
+                    raise
+                except Exception:
+                    await db.rollback()
+                    raise
 
         async with sessionmaker()() as db:
             control = await db.get(RuntimeControl, 1)
@@ -1110,38 +1433,23 @@ class GenerationController:
                 )
                 or 0
             )
-            if mark_offline and prev_row is not None and prev_row.state != "offline":
-                prev_row.state = "offline"
-                await db.commit()
-
-        lock_held = _lock_held(get_settings().home / "runtime" / f"{previous_id}.lock")
-        pid_alive = False
-        if prev_row is not None and isinstance(prev_row.pid, int) and prev_row.pid > 0:
-            try:
-                proc = psutil.Process(prev_row.pid)
-                if proc.is_running():
-                    if prev_row.process_started_at is None:
-                        pid_alive = True
-                    else:
-                        pid_alive = abs(proc.create_time() - prev_row.process_started_at) <= 0.001
-            except (psutil.Error, OSError):
-                pid_alive = False
-
-        return {
-            "active_generation": str(control.active_generation) if control and control.active_generation else None,
-            "active_revision": active_row.revision if active_row else None,
-            "active_state": active_row.state if active_row else None,
-            "active_api_url": active_row.api_url if active_row else None,
-            "epoch": control.epoch if control else None,
-            "previous_generation": str(prev_row.id) if prev_row else None,
-            "previous_revision": prev_row.revision if prev_row else None,
-            "previous_state": prev_row.state if prev_row else None,
-            "previous_api_url": prev_row.api_url if prev_row else None,
-            "previous_leases": leases,
-            "previous_process_groups": groups,
-            "previous_lock_held": lock_held,
-            "previous_pid_alive": pid_alive,
-        }
+            state = self._build_recovery_state_snapshot(
+                control,
+                active_row,
+                prev_row,
+                previous_id,
+                leases=leases,
+                groups=groups,
+            )
+            if mark_offline:
+                self._assert_dead_retirement_safe(state, prev_uuid=previous_id)
+                if prev_row is None:
+                    raise RuntimeError("previous generation DB record missing")
+                if prev_row.state != "offline":
+                    prev_row.state = "offline"
+                    await db.commit()
+                state["previous_state"] = "offline"
+            return state
 
     async def recover_drain(
         self,
@@ -1161,7 +1469,7 @@ class GenerationController:
 
         구세대가 살아 있으면(예: 장기 GAME Run 소유) 정지하지 않고 draining으로 복귀시켜
         pending_jobs() 차단을 풀고, 죽어 있으면 lease·프로세스 그룹·OS 잠금·PID가 모두 비었을 때만
-        succeeded로 마감한다.
+        2단계 recovery_intent + DB row-lock fence 아래 offline 커밋 및 succeeded 마감을 수렴시킨다.
         """
         from ttakkari.deploy_gate import RestartGate
 
@@ -1184,18 +1492,14 @@ class GenerationController:
 
         try:
             job = self.store.get(job_id)
-            if job.get("strategy") != "generations" or job.get("bootstrap"):
-                raise ValueError("drain recovery applies only to non-bootstrap generation deployments")
-            if job.get("activated_revision") != expected_revision:
-                raise ValueError("drain recovery requires a post-cutover deployment with matching activated_revision")
-            if (
-                job.get("revision") != expected_revision
-                or job.get("previous_generation") != str(prev_uuid)
-                or job.get("previous_revision") != expected_previous_revision
-                or job.get("previous_slot") != expected_previous_slot
-                or job.get("candidate_generation") != str(cand_uuid)
-            ):
-                raise ValueError("job journal fence mismatch")
+            journal_fence_kwargs = {
+                "expected_revision": expected_revision,
+                "prev_uuid": prev_uuid,
+                "expected_previous_revision": expected_previous_revision,
+                "expected_previous_slot": expected_previous_slot,
+                "cand_uuid": cand_uuid,
+            }
+            self._verify_journal_fences(job, **journal_fence_kwargs)
 
             receipt = job.get("recovery_receipt")
             if (
@@ -1203,7 +1507,9 @@ class GenerationController:
                 and isinstance(receipt, dict)
                 and receipt.get("expected_epoch") == expected_epoch
                 and receipt.get("previous_generation") == str(prev_uuid)
+                and receipt.get("previous_slot") == expected_previous_slot
                 and receipt.get("active_generation") == str(active_uuid)
+                and receipt.get("active_revision") == expected_active_revision
             ):
                 return {
                     "ok": True,
@@ -1220,19 +1526,16 @@ class GenerationController:
                     f"job is not in drain recovery_pending state (status={job['status']!r}, stage={job.get('error_stage')!r})"
                 )
 
+            db_fence_kwargs = {
+                "prev_uuid": prev_uuid,
+                "expected_previous_revision": expected_previous_revision,
+                "expected_previous_slot": expected_previous_slot,
+                "active_uuid": active_uuid,
+                "expected_active_revision": expected_active_revision,
+                "expected_epoch": expected_epoch,
+            }
             db_state = await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=False)
-            if (
-                db_state["active_generation"] != str(active_uuid)
-                or db_state["active_state"] != "active"
-                or db_state["active_revision"] != expected_active_revision
-            ):
-                raise RuntimeError("active generation fence mismatch")
-            if db_state["epoch"] != expected_epoch:
-                raise RuntimeError(
-                    f"control epoch stale or mismatched: expected {expected_epoch}, observed {db_state['epoch']}"
-                )
-            if db_state["active_generation"] == str(prev_uuid):
-                raise RuntimeError("previous generation is still active; refusing drain recovery")
+            self._verify_common_db_fences(db_state, **db_fence_kwargs)
 
             active_slot = next((i for i in range(len(PORTS)) if self.slots.origin(i) == db_state["active_api_url"]), None)
             active_snap = await self.slots.snapshot(active_slot) if active_slot is not None else None
@@ -1243,15 +1546,6 @@ class GenerationController:
             ):
                 raise RuntimeError("active generation slot is not ready with expected identity")
 
-            if (
-                db_state["previous_generation"] != str(prev_uuid)
-                or db_state["previous_revision"] != expected_previous_revision
-                or db_state["previous_api_url"] != self.slots.origin(expected_previous_slot)
-            ):
-                raise RuntimeError("previous generation DB record mismatch")
-            if db_state["previous_state"] not in {"draining", "offline"}:
-                raise RuntimeError(f"previous generation state {db_state['previous_state']!r} is not draining/offline")
-
             prev_snap = await self.slots.snapshot(expected_previous_slot)
             if prev_snap is not None:
                 if (
@@ -1259,6 +1553,7 @@ class GenerationController:
                     or prev_snap.get("revision") != expected_previous_revision
                 ):
                     raise RuntimeError("draining slot identity mismatch; refusing recovery")
+                self._assert_live_resume_safe(db_state, current_job=job)
                 action = "resume_draining"
                 new_receipt = {
                     "action": action,
@@ -1272,16 +1567,37 @@ class GenerationController:
                     "drain_ready": bool(prev_snap.get("drain_ready")),
                 }
                 if apply:
-                    self.phase(
-                        job,
-                        "draining",
-                        error=None,
-                        error_stage=None,
-                        error_command=None,
-                        error_exit=None,
-                        error_summary=None,
-                        recovery_receipt=new_receipt,
-                    )
+                    def _commit_resume_under_lock(locked_state: dict) -> None:
+                        self._verify_common_db_fences(locked_state, **db_fence_kwargs)
+                        with self.store.locked():
+                            latest = self.store.get(job["id"])
+                            self._verify_journal_fences(latest, **journal_fence_kwargs)
+                            if latest["status"] != "recovery_pending" or latest.get("error_stage") not in {"drain", None}:
+                                raise RuntimeError("job journal changed concurrently before draining commit")
+                            self._assert_live_resume_safe(locked_state, current_job=latest)
+                            self._assert_no_recovery_drift(db_state, locked_state, action=action)
+                            new_receipt["previous_leases"] = locked_state["previous_leases"]
+                            updated = dict(latest)
+                            updated.pop("recovery_intent", None)
+                            updated.update({
+                                "status": "draining",
+                                "error": None,
+                                "error_stage": None,
+                                "error_command": None,
+                                "error_exit": None,
+                                "error_summary": None,
+                                "recovery_receipt": new_receipt,
+                            })
+                            saved = self.store._write(updated)
+                            job.clear()
+                            job.update(saved)
+
+                    ctx = _RecoveryCommitContext(on_locked=_commit_resume_under_lock)
+                    with self._using_recovery_commit_context(ctx):
+                        final_state = await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=False)
+                    if not ctx.invoked:
+                        _commit_resume_under_lock(final_state)
+
                 return {
                     "ok": True,
                     "applied": apply,
@@ -1292,19 +1608,7 @@ class GenerationController:
                     "receipt": new_receipt,
                 }
 
-            if db_state["previous_leases"] > 0:
-                raise RuntimeError(
-                    f"unreachable draining generation still holds {db_state['previous_leases']} live lease(s)"
-                )
-            if db_state["previous_process_groups"] > 0:
-                raise RuntimeError(
-                    f"unreachable draining generation still has {db_state['previous_process_groups']} recorded process group(s)"
-                )
-            if db_state["previous_lock_held"]:
-                raise RuntimeError("unreachable draining generation still holds its OS runtime lock")
-            if db_state["previous_pid_alive"]:
-                raise RuntimeError("unreachable draining generation OS process is still alive")
-
+            self._assert_dead_retirement_safe(db_state, prev_uuid=prev_uuid)
             action = "retire_verified_dead"
             new_receipt = {
                 "action": action,
@@ -1318,18 +1622,95 @@ class GenerationController:
                 "drain_ready": True,
             }
             if apply:
-                await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=True)
-                self.phase(
-                    job,
-                    "succeeded",
-                    retired_generation=str(prev_uuid),
-                    error=None,
-                    error_stage=None,
-                    error_command=None,
-                    error_exit=None,
-                    error_summary=None,
-                    recovery_receipt=new_receipt,
-                )
+                intent_token = str(uuid.uuid4())
+                intent_payload = {
+                    "token": intent_token,
+                    "action": action,
+                    "stage": "marking_db_offline",
+                    "started_at": _utcnow(),
+                    "expected_epoch": expected_epoch,
+                    "previous_generation": str(prev_uuid),
+                    "active_generation": str(active_uuid),
+                }
+                with self.store.locked():
+                    latest = self.store.get(job["id"])
+                    self._verify_journal_fences(latest, **journal_fence_kwargs)
+                    if latest["status"] != "recovery_pending" or latest.get("error_stage") not in {"drain", None}:
+                        raise RuntimeError("job journal is no longer in drain recovery_pending")
+                    saved_intent = self.store._write(latest | {"recovery_intent": intent_payload})
+                    job.clear()
+                    job.update(saved_intent)
+
+                def _clear_aborted_intent() -> None:
+                    with self.store.locked():
+                        cur = self.store.get(job["id"])
+                        cur_intent = cur.get("recovery_intent")
+                        if (
+                            cur["status"] == "recovery_pending"
+                            and isinstance(cur_intent, dict)
+                            and cur_intent.get("token") == intent_token
+                        ):
+                            cleaned = dict(cur)
+                            cleaned.pop("recovery_intent", None)
+                            saved_clean = self.store._write(cleaned)
+                            job.clear()
+                            job.update(saved_clean)
+
+                def _verify_retire_under_lock(locked_state: dict) -> None:
+                    self._verify_common_db_fences(locked_state, **db_fence_kwargs)
+                    self._assert_dead_retirement_safe(locked_state, prev_uuid=prev_uuid)
+                    self._assert_no_recovery_drift(db_state, locked_state, action=action)
+                    cur = self.store.get(job["id"])
+                    self._verify_journal_fences(cur, **journal_fence_kwargs)
+                    cur_intent = cur.get("recovery_intent")
+                    if (
+                        cur["status"] != "recovery_pending"
+                        or not isinstance(cur_intent, dict)
+                        or cur_intent.get("token") != intent_token
+                    ):
+                        raise RuntimeError("job journal recovery_intent changed concurrently during DB commit")
+
+                ctx = _RecoveryCommitContext(on_locked=_verify_retire_under_lock)
+                try:
+                    with self._using_recovery_commit_context(ctx):
+                        final_state = await self._drain_recovery_db_state(prev_uuid, active_uuid, mark_offline=True)
+                    if not ctx.invoked:
+                        _verify_retire_under_lock(final_state)
+                        ctx.db_committed = True
+                except Exception:
+                    if not ctx.db_committed:
+                        _clear_aborted_intent()
+                    raise
+
+                # DB offline commit succeeded. Finalize journal to succeeded under CAS.
+                # If filesystem write fails here, recovery_intent remains on recovery_pending
+                # so cutover stays safely blocked and a subsequent recover_drain call converges.
+                with self.store.locked():
+                    latest = self.store.get(job["id"])
+                    self._verify_journal_fences(latest, **journal_fence_kwargs)
+                    cur_intent = latest.get("recovery_intent")
+                    if (
+                        latest["status"] != "recovery_pending"
+                        or not isinstance(cur_intent, dict)
+                        or cur_intent.get("token") != intent_token
+                    ):
+                        raise RuntimeError("job journal changed concurrently after DB offline commit")
+                    updated = dict(latest)
+                    updated.pop("recovery_intent", None)
+                    updated.update({
+                        "status": "succeeded",
+                        "retired_generation": str(prev_uuid),
+                        "error": None,
+                        "error_stage": None,
+                        "error_command": None,
+                        "error_exit": None,
+                        "error_summary": None,
+                        "recovery_receipt": new_receipt,
+                    })
+                    saved_done = self.store._write(updated)
+                    job.clear()
+                    job.update(saved_done)
+
             return {
                 "ok": True,
                 "applied": apply,

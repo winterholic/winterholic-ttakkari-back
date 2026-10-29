@@ -171,6 +171,40 @@ class CopilotAdapterTests(unittest.TestCase):
         self.assertEqual(evs_end[0].payload["output"], "test\n")
         self.assertNotIn("call_123", self.state.pending_tool_calls)
 
+    def test_assistant_tool_request_accepts_json_encoded_arguments(self):
+        evs = self.adapter.parse_line(
+            {
+                "type": "assistant.message",
+                "data": {
+                    "toolRequests": [{
+                        "toolCallId": "call_json",
+                        "name": "bash",
+                        "arguments": '{"command":"echo test"}',
+                    }],
+                },
+            },
+            self.state,
+            self.cwd,
+        )
+        self.assertEqual(evs[0].type, "tool.call")
+        self.assertEqual(evs[0].payload["input"], {"command": "echo test"})
+
+    def test_tool_execution_start_malformed_arguments_does_not_crash_parser(self):
+        evs = self.adapter.parse_line(
+            {
+                "type": "tool.execution_start",
+                "data": {
+                    "toolCallId": "call_bad_json",
+                    "toolName": "bash",
+                    "arguments": "not-json",
+                },
+            },
+            self.state,
+            self.cwd,
+        )
+        self.assertEqual(evs[0].type, "tool.call")
+        self.assertEqual(evs[0].payload["input"], {})
+
     def test_guard_blocked_tool_complete(self):
         evs = self.adapter.parse_line(
             {

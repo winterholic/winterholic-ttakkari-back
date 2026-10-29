@@ -276,6 +276,15 @@ class CopilotAdapter:
 
 
 def _slim_input(name: str, params: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(params, str):
+        try:
+            parsed = json.loads(params)
+        except json.JSONDecodeError:
+            parsed = None
+        params = parsed if isinstance(parsed, dict) else {}
+    elif not isinstance(params, dict):
+        params = {}
+
     if name in FILE_WRITE_TOOLS:
         path = params.get("path") or params.get("filePath") or params.get("file")
         content = params.get("content") or params.get("text")

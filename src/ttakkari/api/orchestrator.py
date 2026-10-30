@@ -503,7 +503,7 @@ async def _game_worker_context(db: Db, spawner: ChatSession, body: WorkerIn, tas
 
     def tag(run: Run) -> None:
         run.usage = {**(run.usage or {}), game_worker.USAGE_KEY: game_worker.run_tag(ctx, kind)}
-    return ctx.workspace.id, game_worker.compose_prompt(ctx, kind, body.prompt), tag
+    return ctx.workspace.id, game_worker.compose_prompt(ctx, kind, body.prompt, studio=await game_worker.prepare_studio(ctx)), tag
 
 
 def _require_readable_prompt(prompt: str) -> None:

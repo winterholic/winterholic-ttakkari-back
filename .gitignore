@@ -16,3 +16,5 @@ build/
 .music-runtime/
 .music-models/
 .creative-test-home/
+tests/studio_kit/.tmp/
+.studio-tmp/

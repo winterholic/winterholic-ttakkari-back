@@ -1,0 +1,8 @@
+{
+  "include": ["src/**", "docs/**"],
+  "forbidden": [
+    { "id": "EXAMPLE_FORBIDDEN_SETTING", "pattern": "여기에 사용자가 금지한 설정을 정규식으로", "why": "예시 규칙이다. 사용자 정전의 금지 사항으로 바꾸거나 지운다(사용자 원문을 why 에 인용)" }
+  ],
+  "required": [],
+  "_help": "forbidden: 소스·문서 텍스트에 나오면 위반. required: min 번 이상 나와야 하는 핵심 요소. files 로 특정 파일만, allowIfLineMatches 로 예외 줄을 허용한다."
+}

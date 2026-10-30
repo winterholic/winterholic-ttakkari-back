@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from ttakkari.games.feedback import (
     describe_picked,
     stage_feedback,
 )
+from ttakkari.games.studio import KitInstall, install_kit, studio_section
 from ttakkari.models import (
     ChatSession,
     GameBuild,
@@ -141,7 +143,8 @@ def _feedback_section(fb: StagedFeedback) -> str:
     return "\n".join(lines)
 
 
-def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str, feedback: StagedFeedback | None = None) -> str:
+def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str, feedback: StagedFeedback | None = None,
+                   studio: KitInstall | None = None) -> str:
     g, ws = ctx.game, ctx.workspace
     build = ("아직 성공한 빌드가 없다." if ctx.build is None else
              f"대상 빌드 v{ctx.build.seq} (id={ctx.build.id}, 상태={ctx.build.status}, source_commit={ctx.build.source_commit or '없음'}, "
@@ -175,7 +178,15 @@ def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str,
     sections = [*common, "[작업 지침]\n" + task + "\n" + "\n".join(f"- {r}" for r in rules)]
     if feedback is not None:
         sections.append(_feedback_section(feedback))
+    # 제작 계약은 사용자 요청 바로 앞에 둔다: 요청을 읽은 직후 작업 절차로 이어지게 하고 versions.REQUEST_MARKER 위치는 유지한다.
+    if studio_text := studio_section(studio, kind):
+        sections.append(studio_text)
     return "\n\n".join([*sections, "[사용자 요청]\n" + instruction.strip()]) + "\n"
+
+
+async def prepare_studio(ctx: GameRequestContext) -> KitInstall:
+    """worker 가 쓸 스튜디오 키트를 게임 저장소에 설치한다(멱등). 실패는 예외가 아니라 결과로 돌려 prompt 에 사유를 싣는다."""
+    return await asyncio.to_thread(install_kit, resolve_project_path(Path(ctx.workspace.root_path)))
 
 
 def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback | None = None, auto_build: bool = False,
@@ -215,7 +226,7 @@ async def start_request(db: AsyncSession, game: GameProject, *, kind: RequestKin
                        kind=SessionKind.worker, pool="personal", worker_task_type=TASK_TYPE[kind])
     db.add(sess)
     await db.flush()
-    prompt = compose_prompt(ctx, kind, instruction, staged)
+    prompt = compose_prompt(ctx, kind, instruction, staged, await prepare_studio(ctx))
 
     def tag(run: Run) -> None:
         run.usage = {**(run.usage or {}), USAGE_KEY: run_tag(ctx, kind, staged, auto_build, repair_attempt, review_before_apply)}

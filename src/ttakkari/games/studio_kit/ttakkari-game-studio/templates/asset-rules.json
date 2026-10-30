@@ -1,0 +1,4 @@
+{
+  "rules": [],
+  "_help": "예: { \"glob\": \"public/assets/**/icon_*.png\", \"width\": 256, \"height\": 256, \"maxBytes\": 200000 }. 규격은 에셋을 만들기 전에 정한다."
+}

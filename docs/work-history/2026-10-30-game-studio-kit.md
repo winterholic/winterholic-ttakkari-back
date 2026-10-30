@@ -96,3 +96,12 @@ python .../check-skill.py --self-test && python .../check-skill.py src/ttakkari/
 2. root: 로컬 공유 설치·skill-list 등록(위 명령), fresh 검증자 연결.
 3. 배포 뒤 실제 게임 worker 새 Run 한 번으로 SKILL.md 열기·`studio` 호출·`gate` 보고를 확인.
 4. 후속(미구현): 게임별 `window.__studio.level()` 명세 추출기(ceopark 의 Mansion 용 어댑터), `.agents/.claude` 를 격리 빌드 복사에서 제외할지 결정(현재는 복사됨, 무해하나 미검증).
+
+## 반복 옵션 파서 최소 후속 수정
+
+- 재개 당시 HEAD `376d2ae75e241493f8091ffef90cdc2dbd7133cf`, 부모 `481292cb622d58cba0549878c984cbc1839a5716`, 작업 트리 clean 확인. 사용자 지시로 fetch·push는 하지 않았다.
+- root cause의 `parseArgs` 중복 덮어쓰기를 재현하는 회귀를 먼저 작성했다. RED: `node --test --test-name-pattern='^(assets: 반복 manifest|ledger: 반복 input)' tests/studio_kit/studio_kit.test.mjs` → 2 fail. assets는 첫 manifest 누락을 놓쳤고 ledger receipt에는 마지막 `c.txt`만 기록됐다.
+- `parseArgs`에 호출부가 선언한 repeatable 키만 배열 누적하는 선택 인자를 추가하고 CLI에서 `input`, `manifest`만 지정했다. 공백형·등호형의 입력 순서를 보존한다. 그 외 singleton은 기존 문자열 타입과 중복 시 마지막 값 우선 계약을 유지한다.
+- 실제 합성 CLI 회귀: `ledger test`에 `a.txt`, `b.txt`, `c.txt`를 공백형·등호형·혼합으로 전달해 세 파일 receipt 순서를 확인했고, `a.txt`만 변경한 뒤 gate가 stale 입력으로 FAIL함을 확인했다. `assets`와 `gate`의 반복 manifest에서 첫 파일 누락은 FAIL, 파일 복구 후 assets는 정상·gate는 빈 원장에 대한 기존 NEEDS_HUMAN을 반환했다.
+- GREEN: `node --test --test-name-pattern='^(png:|ledger:|gate:|evidence:|paths:|reach:|canon:|assets:|lint:|serve:)' tests/studio_kit/` → 16 pass, 0 fail, 0 skipped. `node --test --test-name-pattern='^args: 지정하지 않은 singleton' tests/studio_kit/studio_kit.test.mjs` → 1 pass. `git diff --check` 통과.
+- 독립 검증자는 이번 후속 revision에 대해 실행하지 않았다. play/browser, Python wrapper, DB/API/worker/운영 검증, push·배포는 미실행. 기존 인증되지 않은 사용자 quote/reach의 실플레이 승격 제한을 수정하지 않았다.

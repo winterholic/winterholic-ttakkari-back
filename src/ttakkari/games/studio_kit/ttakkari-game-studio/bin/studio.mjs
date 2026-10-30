@@ -35,7 +35,7 @@ const HELP = `studio — 따까리 게임 스튜디오 도구 (게임 저장소 
 종료 코드: 0 통과 · 1 실패 · 2 사용법 오류 · 3 실행 환경 미지원(통과로 취급하지 않는다)
 키트: ${KIT}`;
 
-const { pos, opt } = parseArgs(process.argv.slice(2));
+const { pos, opt } = parseArgs(process.argv.slice(2), { repeatable: ['input', 'manifest'] });
 const root = path.resolve(opt.root && opt.root !== true ? opt.root : process.cwd());
 const asJson = !!opt.json;
 const out = (o, text) => process.stdout.write(asJson ? JSON.stringify(o, null, 2) + '\n' : text + '\n');

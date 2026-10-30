@@ -3,16 +3,25 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function parseArgs(argv) {
+export function parseArgs(argv, { repeatable = [] } = {}) {
   const pos = [];
   const opt = {};
+  const repeatableKeys = new Set(repeatable);
+  const setOption = (key, value) => {
+    if (!repeatableKeys.has(key)) {
+      opt[key] = value;
+      return;
+    }
+    if (!Object.hasOwn(opt, key)) opt[key] = [];
+    opt[key].push(value);
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
-      if (eq > 0) opt[a.slice(2, eq)] = a.slice(eq + 1);
-      else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) opt[a.slice(2)] = argv[++i];
-      else opt[a.slice(2)] = true;
+      if (eq > 0) setOption(a.slice(2, eq), a.slice(eq + 1));
+      else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) setOption(a.slice(2), argv[++i]);
+      else setOption(a.slice(2), true);
     } else pos.push(a);
   }
   return { pos, opt };

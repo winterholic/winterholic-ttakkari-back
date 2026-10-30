@@ -13,6 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const KIT = path.resolve(here, '../../src/ttakkari/games/studio_kit/ttakkari-game-studio');
 const BIN = path.join(KIT, 'bin/studio.mjs');
 const BACK = path.resolve(here, '../..');
+const { parseArgs } = await import(path.join(KIT, 'lib/util.mjs'));
 
 function tmpRoot() {
   // 일부 샌드박스는 os.tmpdir()·/tmp 쓰기를 막는다(EPERM). 그때는 저장소 안 .tmp(git 제외)로 물러난다.
@@ -41,6 +42,12 @@ const studioJson = (root, ...args) => {
   const r = studio(root, ...args, '--json');
   return { ...r, json: r.out.trim().startsWith('{') || r.out.trim().startsWith('[') ? JSON.parse(r.out) : null };
 };
+
+test('args: 지정하지 않은 singleton option은 문자열과 마지막 값 우선 계약을 유지한다', () => {
+  const parsed = parseArgs(['--root', 'first', '--root=last', '--program', 'node'], { repeatable: ['input', 'manifest'] });
+  assert.deepEqual(parsed.opt, { root: 'last', program: 'node' });
+  assert.equal(typeof parsed.opt.root, 'string');
+});
 
 // --- 테스트용 최소 PNG 인코더(필터 0, RGBA) ---
 function crc32(buf) {
@@ -246,6 +253,27 @@ test('assets: 빈 이미지·규격 위반·중복·manifest 누락을 잡고 co
   assert.match(fs.readFileSync(path.join(root, r.json.contactSheet), 'utf8'), /class="error"/);
 });
 
+test('assets: 반복 manifest 의 공백형·등호형·혼합 인자를 모두 검사한다', () => {
+  const root = tmpRoot();
+  fs.mkdirSync(path.join(root, 'public/assets'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'public/assets/present.png'), png(32, 32, noisy));
+  w(root, 'manifest-first.json', JSON.stringify({ missing: '/assets/missing.png' }));
+  w(root, 'manifest-second.json', JSON.stringify({}));
+
+  const missing = studioJson(root, 'assets', '--manifest', 'manifest-first.json', '--manifest=manifest-second.json');
+  assert.equal(missing.code, 1);
+  assert.ok(missing.json.issues.some((issue) => issue.code === 'MANIFEST_MISSING_FILE' && issue.file.endsWith('/manifest-first.json')), JSON.stringify(missing.json.issues));
+  const gateMissing = studioJson(root, 'gate', '--manifest', 'manifest-first.json', '--manifest=manifest-second.json');
+  assert.equal(gateMissing.json.verdict, 'FAIL');
+  assert.match(gateMissing.json.blockers.join('\n'), /MANIFEST_MISSING_FILE.*manifest-first\.json/);
+
+  w(root, 'manifest-first.json', JSON.stringify({ present: '/assets/present.png' }));
+  const valid = studioJson(root, 'assets', '--manifest=manifest-first.json', '--manifest', 'manifest-second.json');
+  assert.equal(valid.code, 0, JSON.stringify(valid.json.issues));
+  assert.equal(valid.json.summary.errors, 0);
+  assert.equal(studioJson(root, 'gate', '--manifest=manifest-first.json', '--manifest', 'manifest-second.json').json.verdict, 'NEEDS_HUMAN');
+});
+
 test('lint: 피드백에서 나온 실패 유형을 잡는다', () => {
   const root = tmpRoot();
   w(root, 'src/game/s.ts', "this.anims.create({ key: 'walk', frameRate: 40 });\nif (e.key === 'z') {}\nthis.input.keyboard.enabled = false;\nwindow.addEventListener('keydown', f);\n");
@@ -317,6 +345,26 @@ test('gate: CLI 직접 실행한 테스트만 logic 증거가 되고, 수기 로
   const failed = studio(root, 'ledger', 'test', 'F001', '--program', 'node', '--input', 'calc.js', '--args-json', '["-e","process.exit(2)"]');
   assert.equal(failed.code, 1);
   assert.equal(studioJson(root, 'gate').json.verdict, 'FAIL');
+});
+
+test('ledger: 반복 input 을 순서대로 receipt 에 넣고 첫 입력 변경도 stale 로 검출한다', () => {
+  const root = tmpRoot();
+  w(root, 'a.txt', 'a');
+  w(root, 'b.txt', 'b');
+  w(root, 'c.txt', 'c');
+  studio(root, 'ledger', 'add', '--quote', '다중 입력 계산', '--category', 'logic');
+  const args = '["-e","const fs=require(\\"fs\\");if(fs.readFileSync(\\"a.txt\\",\\"utf8\\")!==\\"a\\"||fs.readFileSync(\\"b.txt\\",\\"utf8\\")!==\\"b\\"||fs.readFileSync(\\"c.txt\\",\\"utf8\\")!==\\"c\\")process.exit(2)"]';
+  const run = studio(root, 'ledger', 'test', 'F001', '--program', 'node', '--input', 'a.txt', '--input=b.txt', '--input', 'c.txt', '--args-json', args);
+  assert.equal(run.code, 0, run.err);
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, 'docs/studio/ledger.json'), 'utf8')).items[0].evidence[0].execution;
+  assert.deepEqual(receipt.inputs.map((input) => input.ref), ['a.txt', 'b.txt', 'c.txt']);
+  studio(root, 'ledger', 'status', 'F001', 'fixed');
+  assert.equal(studioJson(root, 'gate').json.verdict, 'COMPLETE');
+
+  w(root, 'a.txt', 'changed');
+  const gate = studioJson(root, 'gate');
+  assert.equal(gate.json.verdict, 'FAIL');
+  assert.match(gate.json.blockers.join('\n'), /입력 내용이 바뀌었다/);
 });
 
 test('play: 브라우저가 없으면 통과를 꾸미지 않고 unsupported(3)를 낸다', () => {

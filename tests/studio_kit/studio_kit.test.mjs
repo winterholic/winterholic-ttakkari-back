@@ -49,6 +49,18 @@ test('args: 지정하지 않은 singleton option은 문자열과 마지막 값 �
   assert.equal(typeof parsed.opt.root, 'string');
 });
 
+test('args: 값 필요한 반복 manifest의 bare·빈·혼합값은 assets와 gate에서 사용법 오류다', () => {
+  const root = tmpRoot();
+  w(root, 'manifest.json', '{}');
+  for (const command of ['assets', 'gate']) {
+    for (const args of [['--manifest'], ['--manifest='], ['--manifest', 'manifest.json', '--manifest=']]) {
+      const result = studio(root, command, ...args);
+      assert.equal(result.code, 2, `${command} ${args.join(' ')}: ${result.err}`);
+      assert.match(result.err, /--manifest.*사용법/);
+    }
+  }
+});
+
 // --- 테스트용 최소 PNG 인코더(필터 0, RGBA) ---
 function crc32(buf) {
   let c;
@@ -365,6 +377,33 @@ test('ledger: 반복 input 을 순서대로 receipt 에 넣고 첫 입력 변경
   const gate = studioJson(root, 'gate');
   assert.equal(gate.json.verdict, 'FAIL');
   assert.match(gate.json.blockers.join('\n'), /입력 내용이 바뀌었다/);
+});
+
+test('ledger: 값 필요한 반복 input의 bare·빈·혼합값은 child 실행과 증거 기록 전에 거부한다', () => {
+  const root = tmpRoot();
+  w(root, 'input.txt', 'input');
+  studio(root, 'ledger', 'add', '--quote', '단일 입력 사용법 경계', '--category', 'logic');
+  const childArgs = JSON.stringify(['-e', "require('fs').writeFileSync('child-ran.txt', 'ran')"]);
+  const malformed = [
+    ['--input', '--args-json', childArgs],
+    ['--args-json', childArgs, '--input'],
+    ['--input=', '--args-json', childArgs],
+    ['--input', 'input.txt', '--input=', '--args-json', childArgs],
+  ];
+
+  for (const args of malformed) {
+    const result = studio(root, 'ledger', 'test', 'F001', '--program', 'node', ...args);
+    assert.equal(result.code, 2, `${args.join(' ')}: ${result.err}`);
+    assert.match(result.err, /--input.*사용법/);
+    assert.equal(fs.existsSync(path.join(root, 'child-ran.txt')), false, '잘못된 옵션은 child를 실행하지 않는다');
+    const ledger = JSON.parse(fs.readFileSync(path.join(root, 'docs/studio/ledger.json'), 'utf8'));
+    assert.equal(ledger.items[0].evidence.length, 0, '잘못된 옵션은 evidence를 쓰지 않는다');
+  }
+
+  const valid = studio(root, 'ledger', 'test', 'F001', '--program', 'node', '--input', 'input.txt', '--args-json', childArgs);
+  assert.equal(valid.code, 0, valid.err);
+  assert.equal(fs.readFileSync(path.join(root, 'child-ran.txt'), 'utf8'), 'ran');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'docs/studio/ledger.json'), 'utf8')).items[0].evidence.length, 1);
 });
 
 test('play: 브라우저가 없으면 통과를 꾸미지 않고 unsupported(3)를 낸다', () => {

@@ -42,6 +42,16 @@ const out = (o, text) => process.stdout.write(asJson ? JSON.stringify(o, null, 2
 const arr = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
 
 async function main() {
+  for (const [name, usage] of [
+    ['input', 'ledger test <ID> --program <실행파일> --input <파일> [--input <파일> ...]'],
+    ['manifest', 'assets|gate [--manifest <파일> ...]'],
+  ]) {
+    if (Object.hasOwn(opt, name) && arr(opt[name]).some((value) => typeof value !== 'string' || value.trim() === '')) {
+      console.error(`잘못된 옵션 --${name}: 비어 있지 않은 경로 값이 필요하다. 사용법: ${usage}`);
+      return 2;
+    }
+  }
+
   const cmd = pos[0];
   if (!cmd || cmd === 'help' || opt.help) return out({ help: HELP }, HELP), 0;
 

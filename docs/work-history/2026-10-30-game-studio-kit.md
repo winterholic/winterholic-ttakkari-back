@@ -105,3 +105,11 @@ python .../check-skill.py --self-test && python .../check-skill.py src/ttakkari/
 - 실제 합성 CLI 회귀: `ledger test`에 `a.txt`, `b.txt`, `c.txt`를 공백형·등호형·혼합으로 전달해 세 파일 receipt 순서를 확인했고, `a.txt`만 변경한 뒤 gate가 stale 입력으로 FAIL함을 확인했다. `assets`와 `gate`의 반복 manifest에서 첫 파일 누락은 FAIL, 파일 복구 후 assets는 정상·gate는 빈 원장에 대한 기존 NEEDS_HUMAN을 반환했다.
 - GREEN: `node --test --test-name-pattern='^(png:|ledger:|gate:|evidence:|paths:|reach:|canon:|assets:|lint:|serve:)' tests/studio_kit/` → 16 pass, 0 fail, 0 skipped. `node --test --test-name-pattern='^args: 지정하지 않은 singleton' tests/studio_kit/studio_kit.test.mjs` → 1 pass. `git diff --check` 통과.
 - 독립 검증자는 이번 후속 revision에 대해 실행하지 않았다. play/browser, Python wrapper, DB/API/worker/운영 검증, push·배포는 미실행. 기존 인증되지 않은 사용자 quote/reach의 실플레이 승격 제한을 수정하지 않았다.
+
+## 반복 옵션 값 누락 사용법 교정
+
+- 시작점은 `5049727699b0bb825b7c027b61c38cfb457515f4` (부모 `376d2ae75e241493f8091ffef90cdc2dbd7133cf`), clean 확인. 저장소·상위 경로 `AGENTS.md` 없음. README의 backend 일반 테스트 지침은 이번 로컬 게임 키트 범위에 적용하지 않았다.
+- 새 positive-selector 테스트 RED: `node --test --test-name-pattern='^(args: 값 필요한 반복 manifest|ledger: 값 필요한 반복 input)' tests/studio_kit/studio_kit.test.mjs` → 2 fail. 실제 CLI에서 bare `--input`/`--manifest`가 경로 `TypeError`로 exit 1 함을 관측했다.
+- CLI 시작부에 `input`, `manifest` 두 반복 옵션 값만 검사해 bare(`true`), 빈 값, 반복 중 하나라도 비어 있거나 문자열이 아닌 경우 사용법과 함께 exit 2를 반환하게 했다. 명령별 파일 처리·child 실행·evidence 작성보다 앞에서 검사한다. 다른 옵션 파싱 정책은 바꾸지 않았다.
+- GREEN: 같은 positive-selector 명령 → 2 pass, 0 fail. 회귀에서 bare input(다음 옵션 뒤·끝), `--input=`, 정상+빈 반복 input을 확인하고 모두 exit 2, child marker 없음, evidence 변화 없음을 검사했다. 정상 단일 input control은 child 실행 및 evidence 1건을 확인했다. assets/gate 각각 bare·빈 manifest 및 정상+빈 반복값은 모두 exit 2.
+- 이번 범위는 위 새 selector 테스트만 실행. 기존 반복값/receipt/stale 및 성숙 경계 테스트는 재실행하지 않고 앞선 검증을 재사용한다. 전체 suite, play/browser, Python wrapper, DB/API/운영/network/auth, 독립 검증, push/fetch/deploy 및 공용 skill 등록 미실행.

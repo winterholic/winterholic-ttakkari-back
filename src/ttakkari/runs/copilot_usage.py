@@ -11,6 +11,8 @@ import contextlib
 import json
 import math
 import os
+import signal
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -64,6 +66,33 @@ def parse_quota(body: dict, *, now: float | None = None) -> Usage:
     return u
 
 
+def _orphan_copilot_pids(ps_output: str) -> list[int]:
+    """ppid==1 인 SDK 헤드리스 copilot 만 고른다. 부모(서버)가 probe 도중 죽으면 stdin 이 끊겨도 자식이 종료하지 않는다."""
+    pids = []
+    for line in ps_output.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 3 or parts[1] != "1" or not parts[0].isdigit():
+            continue
+        argv = parts[2].split()
+        if (argv and os.path.basename(argv[0]) == "copilot" and "--headless" in argv and "--stdio" in argv):
+            pids.append(int(parts[0]))
+    return pids
+
+
+def reap_orphan_copilots() -> int:
+    """서버 재시작·강제 종료로 부모를 잃은 quota probe 자식을 정리한다. 살아 있는 부모를 가진 프로세스는 건드리지 않는다."""
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    killed = 0
+    for pid in _orphan_copilot_pids(out):
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGKILL)
+            killed += 1
+    return killed
+
+
 def _new_client(**kwargs):
     from copilot import CopilotClient, RuntimeConnection
     return CopilotClient(connection=RuntimeConnection.for_stdio(path=get_settings().copilot_bin),
@@ -103,6 +132,7 @@ def _opencode_token(account_id: UUID, config_dir: str | None) -> str:
 
 
 async def fetch_usage(account_id: UUID, engine: str, config_dir: str | None) -> Usage:
+    await asyncio.to_thread(reap_orphan_copilots)
     try:
         with tempfile.TemporaryDirectory(prefix="ttk-copilot-quota-") as scratch:
             env = {k: v for k, v in os.environ.items() if k not in {

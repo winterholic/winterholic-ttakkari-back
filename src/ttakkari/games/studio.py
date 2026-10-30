@@ -162,9 +162,9 @@ def studio_section(kit: KitInstall | None, kind: str) -> str:
     else:
         body = [
             f"요청에 사용자 피드백이 있으면 원문 그대로 `{studio} ledger add --quote \"<원문>\"` 로 원장에 넣고 범주를 확인한다. 정전·금지 사항이 있으면 docs/studio/canon.json 에 옮긴다(`init`).",
-            "버그는 고치기 전에 재현(`play --phase before`)하고, 고친 뒤 같은 재현과 `reach`·스크린샷으로 증거를 붙인다. 증거 종류는 SKILL.md 와 references/production-contract.md 를 따른다.",
+            "버그는 고치기 전에 재현(`play --phase before`)하고, 고친 뒤 같은 재현과 `reach --spec <명세> --attach ID`·스크린샷으로 증거를 붙인다. reach 단독 통과는 실플레이가 아니다. 기계 테스트는 로그 수기 등록 대신 `ledger test ID --program ... --args-json ...` 로 직접 실행한다. 증거 종류는 SKILL.md 와 references/production-contract.md 를 따른다.",
             f"끝내기 전 `{studio} gate` 를 실행한다. 판정이 COMPLETE 가 아니면 '완료·해결'이라고 쓰지 않고, 최종 답변에 판정과 [막는 문제]·[검증되지 않은 것]을 그대로 옮긴다.",
-            "'테스트·빌드 통과'는 완료 증거가 아니다. 브라우저·재생이 불가능하면(play 가 unsupported) not-run 으로 기록하고 사용자 플레이 확인 대기로 보고한다. user-confirmed 증거는 사용자 발화가 있을 때만 쓰고 작업자가 만들지 않는다.",
+            "'테스트·빌드 통과'는 완료 증거가 아니다. 브라우저·재생이 불가능하면(play 가 unsupported) not-run 으로 기록하고 사용자 플레이 확인 대기로 보고한다. 로컬 CLI는 사용자 발화 출처를 인증하지 못하므로 quote/source 문자열은 gate에서 미검증이다. 사용자 확인을 지어내지 않는다.",
             "키트 폴더(.agents/.claude 아래 ttakkari-game-studio)는 플랫폼이 관리하므로 수정하지 않는다. docs/studio/ 의 원장·정전·증거는 이 저장소의 산출물이니 커밋한다.",
         ]
     return head + "\n" + "\n".join(f"- {b}" for b in body)

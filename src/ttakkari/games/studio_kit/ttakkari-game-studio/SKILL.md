@@ -22,7 +22,7 @@ $STUDIO help
 2. **정전과 아트 기준을 먼저 고정한다.** `init` 으로 `docs/studio/` 를 만들고 사용자가 못 박은 세계관·금지 사항을 `canon.json`, 화풍·규격을 `art-bible.md`·`asset-rules.json` 에 옮긴다. 사용자 원문을 `why` 에 인용한다. 정전이 없으면 없다고 보고하고 지어내지 않는다.
 3. **버그는 먼저 재현한다(red).** 재현 입력을 `play` 스크립트로 쓰고 고치기 전에 `play --attach ID --phase before` 로 실패를 기록한다. 실패하지 않으면 스크립트가 틀렸다. 스크립트 형식 → `references/play-and-level-spec.md`
 4. **고친다.** 변경은 피드백 범위로 한정한다. 새 장면은 한 장면을 끝까지 만들어 사용자에게 보인 뒤 확장한다(`docs/studio/vertical-slice.md`).
-5. **같은 재현을 다시 돌린다(green).** `play --attach ID --phase after`, 이동·문·상호작용은 `reach --spec` 도 돌린다. 화면 변경은 실제 렌더 화면을 캡처해 `ledger evidence --type screenshot`. 에셋은 `assets --sheet` 로 contact sheet 를 만들고 브라우저로 열어 눈으로 본다.
+5. **같은 재현을 다시 돌린다(green).** `play --attach ID --phase after`, 이동·문·상호작용은 `reach --spec level.json --attach ID` 도 돌린다. `reach` 단독 통과는 실플레이 증거가 아니므로 gate 의 실제 재생 확인을 따른다. 화면 변경은 실제 렌더 화면을 캡처해 `ledger evidence --type screenshot`. 기계 테스트는 수기 로그를 등록하지 말고 `ledger test ID --program node --input tests/foo.mjs --args-json '["--test","tests/foo.mjs"]'` 처럼 선언한 입력을 묶어 직접 실행한다. 에셋은 `assets --sheet` 로 contact sheet 를 만들고 브라우저로 열어 눈으로 본다.
 6. **`ledger status ID fixed` → `gate`.** 판정이 `COMPLETE` 가 아니면 완료·해결이라고 쓰지 않는다. `NEEDS_HUMAN` 이면 "기계 검증 통과, 재미·시각·서사는 사용자 확인 대기"라고 쓰고 캡처 경로를 준다.
 
 ## 하지 않는 것
@@ -35,6 +35,8 @@ $STUDIO help
 | 단색·체커 이미지를 완성 아트로 납품 | `assets` 가 BLANK 로 막는다. 필요한 에셋만 실제 생성한다 |
 | 게임 UI 를 웹 컴포넌트로 | 게임 안 UI 는 엔진 안에서 그린다(`feedback: React 잔해`) |
 | CeoPark 같은 개별 게임 내용을 스튜디오 능력이라 부름 | `reach` 의 명세·`canon` 규칙은 게임마다 새로 쓴다 |
+
+로컬 CLI 는 사용자 발화 출처를 인증할 수 없다. `user-confirmed` quote/source 문자열은 보존해도 gate 에서 미검증으로 남기며 주관 범주의 `COMPLETE` 근거가 아니다. 인증된 앱 연결 전에는 사용자 확인 대기라고 보고한다.
 
 ## 거부·불가 시
 

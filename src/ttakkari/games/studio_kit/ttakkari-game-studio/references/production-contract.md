@@ -6,7 +6,7 @@
 
 | 범주 | 기계 증거(any-of) | 사용자 확인 | 왜 |
 |---|---|---|---|
-| bug | `play-replay` 또는 `reach-check` | 불필요 | 진행불가·입력·충돌은 실제로 실행해야 안다. 단위 테스트 통과는 플레이 가능을 뜻하지 않는다 |
+| bug | `play-replay` 또는 `reach-check` | 불필요 | 진행불가·입력·충돌은 실행 증거가 필요하다. `reach-check`만 있으면 명세가 게임과 같은지 몰라 `NEEDS_HUMAN`에 남는다 |
 | logic | `machine-test` | 불필요 | 데이터·저장·계산 |
 | balance | `machine-test` 또는 `play-replay` | 필요 | 봇이 깨도 재미는 보증 못 한다 |
 | art | `screenshot` | 필요 | 렌더 화면을 보고, 취향은 사용자가 |
@@ -18,8 +18,8 @@
 ## 판정
 
 - `FAIL`: 열린 항목, 요건 증거 부족, 증거 파일 변조·소실(sha256 불일치), 정전 위반, 에셋 오류, 린트 오류.
-- `NEEDS_HUMAN`: 기계가 확인할 것은 끝났고 주관 항목의 사용자 확인 또는 `not-run` 이 남았다. 원장이 비어 있어도 여기까지만.
-- `COMPLETE`: 모든 항목 검증 + 주관 항목에 `user-confirmed`(원문 quote + source).
+- `NEEDS_HUMAN`: 기계가 확인할 것은 끝났지만 인증된 사용자 확인이나 실제 플레이 같은 추가 검증이 남았다. 원장이 비어 있어도 여기까지만.
+- `COMPLETE`: 항목별 유효한 증거가 모두 있다. CLI의 `user-confirmed` quote/source 문자열은 인증 출처가 아니므로 gate가 인정하지 않는다. 인증된 사용자 확인 연결이 생기기 전에는 주관 범주가 `NEEDS_HUMAN`에 남는다.
 
 `play-replay` 만 있고 `repro-before` 가 없으면 "재현이 버그를 실제로 잡는지 증명되지 않음"이 미검증으로 남는다.
 
@@ -27,17 +27,18 @@
 
 | type | 붙이는 법 | 도구가 막는 것 |
 |---|---|---|
-| play-replay | `play --attach ID` (통과) | ok=false 결과 |
-| repro-before | `play --attach ID --phase before` (실패) | ok=true 결과(재현이 버그를 못 잡음) |
-| reach-check | `reach --spec s.json --out f.json` 후 `ledger evidence --type reach-check --ref f.json` | ok=false 결과, 도구가 안 낸 JSON |
-| canon-check | `canon --json > f.json` 저장 후 attach | 위반 있는 결과 |
-| screenshot | 실제 렌더 캡처 파일 | 이미지가 아닌 파일, 단색·투명 PNG |
-| machine-test | 로그 파일 + `--note "exit 0"` | (logic·balance 에서만 요건으로 인정) |
-| user-confirmed | `--quote 사용자 원문 --source 세션·메시지 위치` | quote·source 없음 |
+| play-replay | `play --attach ID` (통과) | 결과 파일 수기 등록·입력 스크립트 변경 |
+| repro-before | `play --attach ID --phase before` (실제 재생 실패) | 임의 JSON·실행 오류를 실패로 둔갑 |
+| reach-check | `reach --spec s.json --attach ID` | 임의 JSON·실패 결과·입력 변경. 단독 통과는 실플레이 증거가 아님 |
+| canon-check | `canon --attach ID` (구성된 정전 검사 통과) | 임의 JSON·위반 결과 |
+| screenshot | `ledger evidence --type screenshot --ref 캡처파일` | root 밖·symlink·이미지가 아닌 파일·단색/투명 PNG |
+| machine-test | `ledger test ID --program node --input tests/foo.mjs --args-json '["--test","tests/foo.mjs"]'` | 수기 로그·입력 변경·0이 아닌 종료 코드 |
+| user-confirmed | 기존 CLI 옵션으로 주장 문자열을 보존할 수 있음 | 인증된 앱 출처가 없어 gate 증거로 인정되지 않음 |
 | not-run | `--reason` | 사유 없음. 요건을 채우지 못하고 미검증으로 보고된다 |
 
 ## 한계 (도구가 증명하지 못하는 것)
 
 - 재미, 화풍 일관성, 서사 품질, 소리, 모바일 실기기 터치. 이것들은 사람이 본다.
 - `reach` 명세가 실제 게임 충돌체와 같은지. 명세 추출기는 게임마다 쓰고 실플레이로 교차 확인한다.
+- 로컬 ledger·JSON 자체의 위조를 서명으로 막지 않는다. 도구가 직접 실행하지 않은 결과 파일은 실행 증거로 받지 않으며, 인증 사용자 출처는 플랫폼 연결 전까지 미검증이다.
 - 린트는 정규식 단서다.

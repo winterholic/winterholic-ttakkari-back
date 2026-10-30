@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { analyzePng, imageKind, imageSize } from './png.mjs';
-import { globToRegex, readJson, sha256Buf, walk } from './util.mjs';
+import { globToRegex, readJson, resolveInRoot, sha256Buf, walk } from './util.mjs';
 
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 export const RULES_PATH = 'docs/studio/asset-rules.json';
@@ -16,9 +16,9 @@ function collectManifestPaths(value, out = new Set()) {
 }
 
 export function auditAssets(root, { dir = 'public/assets', manifests = [], publicDir = 'public' } = {}) {
-  const base = path.join(root, dir);
+  const base = resolveInRoot(root, dir, { mustExist: false });
   if (!fs.existsSync(base)) return { tool: 'studio-assets', ok: true, status: 'no-assets-dir', dir, files: [], issues: [], summary: {} };
-  const rulesFile = path.join(root, RULES_PATH);
+  const rulesFile = resolveInRoot(root, RULES_PATH, { mustExist: false });
   const rules = fs.existsSync(rulesFile) ? readJson(rulesFile).rules ?? [] : [];
   const files = [];
   const issues = [];
@@ -48,7 +48,7 @@ export function auditAssets(root, { dir = 'public/assets', manifests = [], publi
   for (const group of byHash.values()) if (group.length > 1) issues.push({ level: 'warn', code: 'DUPLICATE', file: group[0], msg: `내용이 같은 파일 ${group.length}개: ${group.join(', ')}` });
   const referenced = new Set();
   for (const m of manifests) {
-    const mf = path.join(root, m);
+    const mf = resolveInRoot(root, m, { file: true });
     if (!fs.existsSync(mf)) {
       issues.push({ level: 'error', code: 'MANIFEST_NOT_FOUND', file: m, msg: 'manifest 파일이 없다' });
       continue;
@@ -56,7 +56,11 @@ export function auditAssets(root, { dir = 'public/assets', manifests = [], publi
     for (const p of collectManifestPaths(readJson(mf))) {
       const rel = p.startsWith('assets/') ? `${publicDir}/${p}` : p;
       referenced.add(rel);
-      if (!fs.existsSync(path.join(root, rel))) issues.push({ level: 'error', code: 'MANIFEST_MISSING_FILE', file: m, msg: `manifest 가 가리키는 파일이 없다: ${rel}` });
+      try { resolveInRoot(root, rel, { file: true }); }
+      catch (e) {
+        const missing = /경로가 없다/.test(e.message);
+        issues.push({ level: 'error', code: missing ? 'MANIFEST_MISSING_FILE' : 'MANIFEST_PATH_INVALID', file: m, msg: missing ? `manifest 가 가리키는 파일이 없다: ${rel}` : `manifest 경로가 root 밖이거나 파일이 아니다: ${rel}` });
+      }
     }
   }
   if (manifests.length) for (const f of files) if (!referenced.has(f.file) && !f.file.endsWith('index.json')) issues.push({ level: 'info', code: 'ORPHAN', file: f.file, msg: 'manifest 에서 참조되지 않는다(코드가 직접 불러오면 정상)' });

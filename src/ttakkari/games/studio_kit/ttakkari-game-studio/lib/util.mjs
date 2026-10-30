@@ -22,6 +22,33 @@ export const now = () => new Date().toISOString();
 export const sha256Buf = (b) => crypto.createHash('sha256').update(b).digest('hex');
 export const sha256File = (f) => sha256Buf(fs.readFileSync(f));
 
+/** Resolve an existing path inside a project root, rejecting lexical and symlink escapes. */
+export function resolveInRoot(root, ref, { file = false, mustExist = true } = {}) {
+  const base = fs.realpathSync(root);
+  const candidate = path.resolve(base, ref);
+  const inside = (p) => p === base || p.startsWith(base + path.sep);
+  if (!inside(candidate)) throw new Error(`경로가 프로젝트 root 밖이다: ${ref}`);
+  let current = base;
+  for (const part of path.relative(base, candidate).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    let st;
+    try { st = fs.lstatSync(current); } catch (e) {
+      if (e.code === 'ENOENT' && !mustExist) {
+        let ancestor = path.dirname(current);
+        while (!fs.existsSync(ancestor) && ancestor !== path.dirname(ancestor)) ancestor = path.dirname(ancestor);
+        if (!inside(fs.realpathSync(ancestor))) throw new Error(`경로가 프로젝트 root 밖이다: ${ref}`);
+        return candidate;
+      }
+      if (e.code === 'ENOENT') throw new Error(`경로가 없다: ${ref}`);
+      throw e;
+    }
+    if (st.isSymbolicLink()) throw new Error(`symlink 경로는 증거로 쓸 수 없다: ${ref}`);
+    if (!inside(fs.realpathSync(current))) throw new Error(`경로가 프로젝트 root 밖이다: ${ref}`);
+  }
+  if (file && !fs.statSync(candidate).isFile()) throw new Error(`파일이 아니다: ${ref}`);
+  return candidate;
+}
+
 export function readJson(file, fallback = undefined) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));

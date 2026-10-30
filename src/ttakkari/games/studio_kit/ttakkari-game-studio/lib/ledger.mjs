@@ -3,7 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { analyzePng, imageKind } from './png.mjs';
-import { now, readJson, sha256File, writeJson } from './util.mjs';
+import { checkCanon } from './canon.mjs';
+import { now, readJson, resolveInRoot, sha256File, writeJson } from './util.mjs';
 
 export const LEDGER_PATH = 'docs/studio/ledger.json';
 export const CATEGORIES = ['bug', 'logic', 'balance', 'art', 'ux', 'narrative', 'feel', 'audio'];
@@ -37,13 +38,14 @@ export function guessCategory(text) {
 }
 
 export function loadLedger(root) {
-  const file = path.join(root, LEDGER_PATH);
+  const file = resolveInRoot(root, LEDGER_PATH, { mustExist: false });
   const data = readJson(file, { version: 1, items: [] });
   if (!Array.isArray(data.items)) throw new Error('원장 형식 오류: items 배열이 없다');
-  return { file, data };
+  return { root: fs.realpathSync(root), file, data };
 }
 
 export function saveLedger(l) {
+  resolveInRoot(l.root, LEDGER_PATH, { mustExist: false });
   writeJson(l.file, l.data);
 }
 
@@ -129,9 +131,11 @@ export function addEvidence(root, id, { type, ref, note = '', source = '', quote
     ev.reason = reason;
   } else {
     if (!ref) throw new Error('--ref(증거 파일 경로)가 필요하다');
-    const file = path.resolve(root, ref);
-    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`증거 파일이 없다: ${ref}`);
-    ev.ref = path.relative(root, file).split(path.sep).join('/');
+    if (['play-replay', 'repro-before', 'reach-check', 'canon-check', 'machine-test'].includes(type)) {
+      throw new Error(`${type} 는 파일 JSON/로그를 실행 증거로 받지 않는다. 해당 studio 명령을 --attach 로 직접 실행한다`);
+    }
+    const file = resolveInRoot(root, ref, { file: true });
+    ev.ref = path.relative(fs.realpathSync(root), file).split(path.sep).join('/');
     ev.sha256 = sha256File(file);
     if (type === 'screenshot') {
       const buf = fs.readFileSync(file);
@@ -139,18 +143,41 @@ export function addEvidence(root, id, { type, ref, note = '', source = '', quote
       const st = analyzePng(buf);
       if (st?.blank) throw new Error('screenshot 이 빈 화면(단색·투명)이다. 실제로 그려진 화면을 캡처한다');
       ev.pixels = st;
-    } else if (['play-replay', 'repro-before', 'reach-check', 'canon-check'].includes(type)) {
-      const r = readJson(file);
-      if (typeof r.ok !== 'boolean' || !r.tool) throw new Error(`${type} 증거는 studio 도구가 낸 결과 JSON(tool·ok 필드)이어야 한다`);
-      if (type === 'repro-before' ? r.ok : !r.ok) throw new Error(type === 'repro-before' ? 'repro-before 는 고치기 전에 실패해야 한다(ok=false). 재현이 실패를 못 잡으면 재현 스크립트가 틀렸다' : `${type} 결과가 ok=false 다. 통과한 결과만 증거로 붙인다`);
-      ev.tool = r.tool;
-    } else if (type === 'machine-test') {
-      ev.exit = note.match(/exit[= ]?(\d+)/)?.[1] ?? null;
     }
   }
   item.evidence.push(ev);
   saveLedger(l);
   return ev;
+}
+
+/** Attach an in-process producer result; result files are deliberately not accepted as proof. */
+export function addRunEvidence(root, id, { type, run, inputRef, note = '' }) {
+  const expected = { 'play-replay': ['studio-play', 'passed'], 'repro-before': ['studio-play', 'failed'], 'reach-check': ['studio-reach', true], 'canon-check': ['studio-canon', 'checked'] }[type];
+  if (!expected) throw new Error(`직접 실행 증거를 지원하지 않는 type: ${type}`);
+  const playValid = type === 'play-replay'
+    ? run?.status === 'passed' && run.ok === true && Array.isArray(run.steps) && run.steps.length > 0 && run.steps.every((s) => s.ok === true) && !run.error
+    : type === 'repro-before'
+      ? run?.status === 'failed' && run.ok === false && Array.isArray(run.steps) && run.steps.some((s) => s.ok === false) && !run.error
+      : true;
+  if (!run || run.tool !== expected[0] || !playValid || (type === 'reach-check' ? run.ok !== true || !Array.isArray(run.rooms) || !Array.isArray(run.problems) : type === 'canon-check' ? run.status !== expected[1] || run.ok !== true : !['play-replay', 'repro-before'].includes(type) && (run.status !== expected[1] || (type === 'play-replay' ? run.ok !== true : run.ok !== false)))) {
+    throw new Error(`${type} 결과가 실제 실행 요건을 충족하지 않는다`);
+  }
+  if (type === 'canon-check' && !/^[a-f0-9]{64}$/.test(run.inputFingerprint ?? '')) throw new Error('canon-check 에 검사 입력 지문이 없다');
+  const input = resolveInRoot(root, inputRef, { file: true });
+  const l = loadLedger(root);
+  const item = getItem(l, id);
+  const ev = { type, note, at: now(), input: { ref: path.relative(l.root, input).split(path.sep).join('/'), sha256: sha256File(input) }, run };
+  item.evidence.push(ev);
+  saveLedger(l);
+  return ev;
+}
+
+export function addProcessEvidence(root, id, execution) {
+  if (!execution?.program || !/^[a-f0-9]{64}$/.test(execution.argsSha256 ?? '') || !Number.isInteger(execution.exitCode) || !Array.isArray(execution.inputs) || !execution.inputs.length) throw new Error('machine-test 는 studio 직접 실행 결과와 --input 파일이 필요하다');
+  const l = loadLedger(root);
+  const item = getItem(l, id);
+  item.evidence.push({ type: 'machine-test', at: now(), note: 'studio ledger test 직접 실행', execution });
+  saveLedger(l);
 }
 
 export function setStatus(root, id, status, reason = '') {
@@ -172,19 +199,58 @@ export function evaluateItem(root, item) {
   const live = [];
   for (const ev of item.evidence) {
     if (ev.ref) {
-      const f = path.resolve(root, ev.ref);
-      if (!fs.existsSync(f)) {
-        problems.push(`증거 파일이 사라졌다: ${ev.ref}`);
-        continue;
-      }
+      let f;
+      try { f = resolveInRoot(root, ev.ref, { file: true }); }
+      catch (e) { problems.push(`증거 경로가 유효하지 않다: ${ev.ref} (${e.message})`); continue; }
       if (sha256File(f) !== ev.sha256) {
         problems.push(`증거 파일이 기록 뒤에 바뀌었다(해시 불일치): ${ev.ref}. 다시 실행해 새 증거를 붙인다`);
         continue;
       }
     }
+    if (ev.input) {
+      try {
+        const input = resolveInRoot(root, ev.input.ref, { file: true });
+        if (sha256File(input) !== ev.input.sha256) throw new Error('입력 내용이 실행 뒤 바뀌었다');
+      } catch (e) {
+        problems.push(`실행 입력이 미검증이다: ${ev.input.ref} (${e.message})`);
+        continue;
+      }
+      const expected = { 'play-replay': ['studio-play', 'passed'], 'repro-before': ['studio-play', 'failed'], 'reach-check': ['studio-reach'], 'canon-check': ['studio-canon', 'checked'] }[ev.type];
+      const run = ev.run;
+      const validPlay = ev.type === 'play-replay'
+        ? run?.status === 'passed' && run.ok === true && Array.isArray(run.steps) && run.steps.length > 0 && run.steps.every((s) => s.ok === true) && !run.error
+        : ev.type === 'repro-before'
+          ? run?.status === 'failed' && run.ok === false && Array.isArray(run.steps) && run.steps.some((s) => s.ok === false) && !run.error
+          : true;
+      if (!expected || run?.tool !== expected[0] || !validPlay || (ev.type === 'reach-check' ? run?.ok !== true || !Array.isArray(run.rooms) || !Array.isArray(run.problems) : ev.type === 'canon-check' ? run?.status !== expected[1] || run?.ok !== true : !['play-replay', 'repro-before'].includes(ev.type) && (run?.status !== expected[1] || (ev.type === 'play-replay' && run?.ok !== true) || (ev.type === 'repro-before' && run?.ok !== false)))) {
+        problems.push(`실행 결과 스키마가 유효하지 않다: ${ev.type}`);
+        continue;
+      }
+      if (ev.type === 'canon-check') {
+        const current = checkCanon(root, path.resolve(root, ev.input.ref));
+        if (!/^[a-f0-9]{64}$/.test(run?.inputFingerprint ?? '') || current.status !== 'checked' || !current.ok || current.inputFingerprint !== run.inputFingerprint) {
+          problems.push('canon-check 실행 뒤 정전 또는 검사 대상 입력이 바뀌었거나 현재 검사가 실패한다');
+          continue;
+        }
+      }
+    }
+    if (ev.type === 'machine-test' && (!ev.execution?.program || !/^[a-f0-9]{64}$/.test(ev.execution.argsSha256 ?? '') || ev.execution.exitCode !== 0 || !Array.isArray(ev.execution.inputs) || !ev.execution.inputs.length)) {
+      problems.push('machine-test 실행 결과가 없거나 종료 코드가 0이 아니다');
+      continue;
+    }
+    if (ev.type === 'machine-test') {
+      let valid = true;
+      for (const input of ev.execution.inputs) {
+        try {
+          const file = resolveInRoot(root, input.ref, { file: true });
+          if (sha256File(file) !== input.sha256) throw new Error('입력 내용이 바뀌었다');
+        } catch (e) { problems.push(`machine-test 입력이 미검증이다: ${input.ref} (${e.message})`); valid = false; }
+      }
+      if (!valid) continue;
+    }
     live.push(ev);
   }
-  const types = new Set(live.map((e) => e.type));
+  const types = new Set(live.filter((e) => e.type !== 'user-confirmed' && (!['play-replay', 'repro-before', 'reach-check', 'canon-check'].includes(e.type) || e.input) && (e.type !== 'machine-test' || (e.execution?.exitCode === 0 && /^[a-f0-9]{64}$/.test(e.execution.argsSha256 ?? '') && Array.isArray(e.execution.inputs) && e.execution.inputs.length > 0))).map((e) => e.type));
   const unverified = [];
   if (item.status === 'wontfix') return { id: item.id, state: 'wontfix', problems, unverified };
   if (item.status !== 'fixed') {
@@ -198,7 +264,9 @@ export function evaluateItem(root, item) {
     else problems.push(`${item.category} 범주는 증거 ${pol.machine.join(' 또는 ')} 가 필요하다. ${pol.why}`);
   }
   if (types.has('play-replay') && !types.has('repro-before')) unverified.push('고치기 전 재현 실패(repro-before)가 없어 재현 스크립트가 버그를 실제로 잡는지는 증명되지 않았다');
+  if (item.category === 'bug' && types.has('reach-check') && !types.has('play-replay')) unverified.push('reach 명세 검사는 실제 게임 충돌체와 일치하는지 증명하지 않는다. 실제 플레이 재생(play-replay)이 남았다');
   if (item.category === 'narrative' && !types.has('canon-check')) problems.push('narrative 는 canon-check 증거도 필요하다');
+  if (item.evidence.some((e) => e.type === 'user-confirmed')) unverified.push('사용자 확인 출처를 인증할 수 없어 주장이 미검증으로 남는다. 문자열 quote/source 는 COMPLETE 근거가 아니다');
   if (pol.subjective && !types.has('user-confirmed')) unverified.push('사용자 확인 없음: ' + pol.why);
   let state = 'verified';
   if (problems.length) state = 'fail';

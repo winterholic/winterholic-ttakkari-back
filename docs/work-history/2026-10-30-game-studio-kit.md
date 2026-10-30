@@ -63,6 +63,33 @@ check-skill.py --self-test / 대상    → PASS / FAIL 0 (description 420자)
 
 관찰 항목: SKILL.md 를 열었는지, `ledger add --quote` 로 원문을 넣었는지, 고치기 전 재현(`play --phase before`)을 시도했는지, `gate` 판정을 최종 보고에 그대로 옮겼는지, 판정이 NEEDS_HUMAN 일 때 '완성'이라 쓰지 않았는지.
 
+## 증거 gate 최소 교정 (Codex, 2026-10-30)
+
+입력 근거: 후속 독립 리뷰(df1/e2c, Codex Luna, 44% FAIL)가 ①`tool`·`ok` 두 필드만 있는 수기 JSON ②`../` 외부 참조 ③임의 quote/source `user-confirmed` ④reach 명세 결과를 bug COMPLETE로 승격하는 경계를 지적했다. 이 단계에서는 위 네 경계를 로컬 CLI와 원장·gate에서 교정했다.
+
+- `resolveInRoot` 를 공용 경계 검사로 두고 CLI 입력·출력, 원장·증거 참조, canon·asset manifest·lint 경로에서 root 밖과 symlink 경로를 거부한다. gate 는 원장 파일 경로를 다시 확인하고 증거 참조를 realpath 기준으로 다시 검사한다.
+- `play-replay`·`repro-before`·`reach-check`·`canon-check` 는 임의 `--ref` JSON을 실행 결과로 받지 않는다. 해당 CLI가 직접 만든 결과를 ledger에 붙이고, 선언 입력 파일 해시를 gate 에서 재검사한다. `machine-test` 는 새 `ledger test ID --program ... --input ...` 경로에서 직접 명령을 실행하고, 명시한 입력이 바뀌면 기존 결과도 stale 로 처리한다. JSON/로그 수기 등록은 실행 증거가 아니다.
+- 버그 항목의 `reach-check` 단독 통과는 실제 게임 충돌체·플레이를 검증하지 않으므로 `NEEDS_HUMAN` 과 play 재생 대기로 남긴다. 이미지 파일 통과는 실플레이 증거가 아니다.
+- 로컬 CLI에는 인증된 앱 사용자 출처 검증이 없다. quote/source 문자열은 기록될 수 있지만 gate는 이를 user-confirmed 로 인정하지 않는다. 따라서 주관 범주의 COMPLETE 는 인증 연결 전까지 도달하지 않고 미검증 사용자 확인 대기로 남는다. 별도 DB·승인 흐름·서명 키는 만들지 않았다.
+- 스킬 지침, production-contract, `studio_section` worker prompt 를 새 CLI 계약과 맞췄다. 기존 범주·명령은 두고 machine-test 와 producer 결과 등록은 직접 실행 경로를 사용한다.
+
+검증(현재 Run에서 실행):
+
+```
+node --test --test-name-pattern='^(png:|ledger:|gate:|evidence:|paths:|reach:|canon:|assets:|lint:|serve:)' tests/studio_kit/
+→ tests 14, pass 14, fail 0, skipped 0. positive name selector라 `play:` 테스트는 선택하지 않았다.
+
+PYTHONPATH=src pytest --noconftest -q tests/test_game_studio_kit.py -k 'not test_node_studio_tools_pass'
+→ 8 passed, 1 deselected
+
+python .../check-skill.py --self-test && python .../check-skill.py src/ttakkari/games/studio_kit/ttakkari-game-studio
+→ self-test PASS; 키트 검사 FAIL 0
+```
+
+합성 tmp CLI negative/positive: outside·symlink ref 등록 거부, 등록된 screenshot 경로를 outside symlink 로 바꾼 뒤 gate FAIL, 가짜 `tool/ok` 와 세션 문자열은 COMPLETE 불가, 실제 `reach --attach` 입력 변경 뒤 gate FAIL, 직접 실행 `ledger test` 선언 입력은 pass 후 입력 변경 시 stale FAIL. `reach` 의 before FAIL → after PASS 는 gate 에서 NEEDS_HUMAN 으로 유지된다. 이는 tool/ledger 상태의 로컬 합성 검증이며 게임 worker·실게임 품질 독립 검증이 아니다.
+
+미실행·미완료: 첫 시도에서 사용한 negative name selector는 Chromium 케이스를 제외하지 못해 launch 시도가 발생했다. 현재 로컬 nested worker sandbox에서 관측된 실패는 `Executable doesn't exist at ... chromium_headless_shell ... | Target page, context or browser has been closed`; 알려진 이전 IPC 사전점검 denied 이후 브라우저 재시도는 하지 않았다. 이후에는 positive selector로 브라우저 테스트를 제외해 14개를 실행했다. 첫 실패는 해당 test command 경로에 한정된 관측이며 host 전체 상태가 아니다. Postgres loopback API flow, 실제 게임/API·DB/worker 호출, CeoPark 재수정, UI 렌더 검증, 독립 검증자 실행은 하지 않았다. 기계 gate에 사용자 인증 출처 연결도 없다. 로컬 공유 스킬 등록·게시, branch push·배포 예약, fcbsole integration/publish owner 작업은 이 stage에서 하지 않았다. 기존 OpenCodec 68 완료분 및 CeoPark 원본은 변경하지 않았다.
+
 ## 다음 owner
 
 1. root/INFRA(fcb55b7d): 토픽 브랜치를 push 하고 누적 배포에 연결(직접 main push·중복 예약 없음). 배포 뒤 DB 있는 환경에서 `tests/test_game_studio_kit_flow.py` 와 기존 `tests/test_game_*` 를 실행.

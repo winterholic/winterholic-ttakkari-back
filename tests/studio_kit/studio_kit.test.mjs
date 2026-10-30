@@ -111,9 +111,89 @@ test('gate: 테스트 통과(machine-test)만으로는 bug 항목이 닫히지 �
   assert.equal(g.code, 1);
   assert.match(g.json.blockers.join('\n'), /F001.*play-replay 또는 reach-check/);
   const ev = studio(root, 'ledger', 'evidence', 'F001', '--type', 'machine-test', '--ref', 'test.log');
-  assert.equal(ev.code, 0, ev.err);
+  assert.notEqual(ev.code, 0, '수기 로그는 machine-test 실행 증거가 아니다');
   g = studioJson(root, 'gate');
   assert.equal(g.json.verdict, 'FAIL', 'machine-test 는 bug 요건이 아니다');
+});
+
+test('evidence: 등록과 gate 재평가 모두 root 밖 경로 및 symlink 교체를 거부한다', () => {
+  const root = tmpRoot();
+  const outside = path.join(path.dirname(root), `studio-outside-${path.basename(root)}.json`);
+  w(root, 'inside.json', JSON.stringify({ tool: 'studio-reach', ok: true }));
+  fs.writeFileSync(outside, JSON.stringify({ tool: 'studio-reach', ok: true }));
+  studio(root, 'ledger', 'add', '--quote', '이동 막힘', '--category', 'bug');
+  studio(root, 'ledger', 'status', 'F001', 'fixed');
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'reach-check', '--ref', '../' + path.basename(outside)).code, 0);
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'reach-check', '--ref', outside).code, 0);
+
+  fs.symlinkSync('inside.json', path.join(root, 'link.json'));
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'reach-check', '--ref', 'link.json').code, 0);
+  fs.unlinkSync(path.join(root, 'link.json'));
+  fs.writeFileSync(path.join(root, 'shot.png'), png(32, 32, noisy));
+  assert.equal(studio(root, 'ledger', 'evidence', 'F001', '--type', 'screenshot', '--ref', 'shot.png').code, 0);
+  fs.unlinkSync(path.join(root, 'shot.png'));
+  fs.symlinkSync(outside, path.join(root, 'shot.png'));
+  const gate = studioJson(root, 'gate');
+  assert.equal(gate.json.verdict, 'FAIL');
+  assert.match(gate.json.blockers.join('\n'), /root 밖|경계|symlink/i);
+});
+
+test('evidence: tool·ok 두 필드 수기 JSON과 문자열 기반 사용자 확인은 COMPLETE 근거가 아니다', () => {
+  const root = tmpRoot();
+  studio(root, 'ledger', 'add', '--quote', '그림이 어색해', '--category', 'ux');
+  studio(root, 'ledger', 'status', 'F001', 'fixed');
+  w(root, 'claimed.json', JSON.stringify({ tool: 'studio-play', ok: true }));
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'play-replay', '--ref', 'claimed.json').code, 0);
+  const result = studio(root, 'ledger', 'evidence', 'F001', '--type', 'user-confirmed', '--quote', '괜찮아', '--source', 'session://invented');
+  assert.equal(result.code, 0, result.err);
+  const gate = studioJson(root, 'gate');
+  assert.notEqual(gate.json.verdict, 'COMPLETE');
+  assert.match(gate.json.pending.join('\n'), /확인되지 않은 사용자 주장|사용자 확인 없음/);
+});
+
+test('evidence: 실제 reach CLI 결과는 gate 와 일치하고 입력 변경 뒤에는 FAIL이다', () => {
+  const root = tmpRoot();
+  const spec = { bounds: { w: 100, h: 100 }, spawns: [{ id: 'start', x: 50, y: 50 }], targets: [] };
+  w(root, 'level.json', JSON.stringify(spec));
+  studio(root, 'ledger', 'add', '--quote', '문까지 이동이 안 돼', '--category', 'bug');
+  assert.equal(studio(root, 'reach', '--spec', 'level.json').code, 0);
+  studio(root, 'ledger', 'status', 'F001', 'fixed');
+  assert.equal(studio(root, 'reach', '--spec', 'level.json', '--attach', 'F001').code, 0);
+  const reachOnly = studioJson(root, 'gate');
+  assert.equal(reachOnly.json.verdict, 'NEEDS_HUMAN');
+  assert.match(reachOnly.json.pending.join('\n'), /실제 게임 충돌체|실제 플레이 재생/);
+  spec.bounds.w = 101;
+  w(root, 'level.json', JSON.stringify(spec));
+  const gate = studioJson(root, 'gate');
+  assert.equal(gate.json.verdict, 'FAIL');
+  assert.match(gate.json.blockers.join('\n'), /입력.*바뀌었다/);
+});
+
+test('paths: evidence input/output 및 ledger symlink 는 프로젝트 root 를 벗어나지 않는다', () => {
+  const root = tmpRoot();
+  const outside = path.join(path.dirname(root), `studio-path-${path.basename(root)}.json`);
+  fs.writeFileSync(outside, JSON.stringify({ bounds: { w: 100, h: 100 }, spawns: [{ id: 's', x: 10, y: 10 }] }));
+  assert.notEqual(studio(root, 'reach', '--spec', outside).code, 0);
+  w(root, 'level.json', JSON.stringify({ bounds: { w: 100, h: 100 }, spawns: [{ id: 's', x: 10, y: 10 }] }));
+  assert.notEqual(studio(root, 'reach', '--spec', 'level.json', '--out', '../outside.json').code, 0);
+  w(root, 'docs/studio/ledger.json', JSON.stringify({ version: 1, items: [] }));
+  fs.unlinkSync(path.join(root, 'docs/studio/ledger.json'));
+  fs.symlinkSync(outside, path.join(root, 'docs/studio/ledger.json'));
+  assert.notEqual(studio(root, 'ledger', 'add', '--quote', 'x').code, 0);
+});
+
+test('canon 증거는 검사한 정전과 소스가 바뀌면 gate 에서 stale 처리한다', () => {
+  const root = tmpRoot();
+  w(root, 'src/game.js', 'const x = 1;');
+  w(root, 'docs/studio/canon.json', JSON.stringify({ include: ['src/**'], forbidden: [{ id: 'BANNED', pattern: 'banned' }] }));
+  studio(root, 'ledger', 'add', '--quote', '세계관 확인', '--category', 'narrative');
+  studio(root, 'ledger', 'status', 'F001', 'fixed');
+  assert.equal(studio(root, 'canon', '--attach', 'F001').code, 0);
+  assert.equal(studioJson(root, 'gate').json.verdict, 'NEEDS_HUMAN', 'canon 기계 검사는 통과하되 사용자 확인이 남는다');
+  w(root, 'src/game.js', 'const banned = true;');
+  const gate = studioJson(root, 'gate');
+  assert.equal(gate.json.verdict, 'FAIL');
+  assert.match(gate.json.blockers.join('\n'), /canon-check 실행 뒤 정전|정전 위반/);
 });
 
 test('reach: 끼인 스폰과 벽 뒤 상호작용을 잡고, 열린 방은 통과시킨다', () => {
@@ -177,7 +257,7 @@ test('lint: 피드백에서 나온 실패 유형을 잡는다', () => {
   assert.equal(studio(root, 'lint').code, 0);
 });
 
-test('gate: 증거가 쌓이는 순서대로 FAIL → NEEDS_HUMAN → COMPLETE, 증거 변조는 FAIL', () => {
+test('gate: reach 와 주관 확인 claim 은 실플레이·인증 사용자 확인 전까지 NEEDS_HUMAN, 증거 변조는 FAIL', () => {
   const root = tmpRoot();
   w(root, 'src/game.ts', 'export const x = 1;\n');
   w(root, 'docs/studio/canon.json', JSON.stringify({ include: ['src/**'], forbidden: [{ id: 'X', pattern: '대기업', why: 'w' }] }));
@@ -187,16 +267,15 @@ test('gate: 증거가 쌓이는 순서대로 FAIL → NEEDS_HUMAN → COMPLETE, 
   studio(root, 'ledger', 'status', 'F001', 'fixed');
   studio(root, 'ledger', 'status', 'F002', 'fixed');
 
-  // bug: 실패 재현 → 수정 후 통과 재생(수동으로 도구 결과 JSON 모양만 흉내 내면 안 되므로 reach 도구의 실제 결과를 쓴다)
+  // bug: 실패한 reach 진단은 evidence 가 아니며 통과한 명세 검사도 실플레이를 대신하지 않는다.
   const spec = { bounds: { w: 100, h: 100 }, player: { w: 10, h: 10, ox: -5, oy: -5 }, step: 5, solids: [{ x: 40, y: 0, w: 10, h: 100 }], spawns: [{ id: 's', x: 10, y: 50 }], targets: [{ id: 't', x: 90, y: 50, reach: 10 }] };
   w(root, 'level.json', JSON.stringify(spec));
   assert.equal(studio(root, 'reach', '--spec', 'level.json', '--out', 'docs/studio/evidence/reach-bad.json').code, 1);
   assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'reach-check', '--ref', 'docs/studio/evidence/reach-bad.json').code, 0, '실패 결과는 reach-check 증거가 될 수 없다');
-  assert.equal(studio(root, 'ledger', 'evidence', 'F001', '--type', 'repro-before', '--ref', 'docs/studio/evidence/reach-bad.json').code, 0);
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'repro-before', '--ref', 'docs/studio/evidence/reach-bad.json').code, 0);
   spec.solids = [{ x: 40, y: 0, w: 10, h: 30 }];
   w(root, 'level.json', JSON.stringify(spec));
-  assert.equal(studio(root, 'reach', '--spec', 'level.json', '--out', 'docs/studio/evidence/reach-ok.json').code, 0);
-  assert.equal(studio(root, 'ledger', 'evidence', 'F001', '--type', 'reach-check', '--ref', 'docs/studio/evidence/reach-ok.json').code, 0);
+  assert.equal(studio(root, 'reach', '--spec', 'level.json', '--attach', 'F001').code, 0);
 
   // art: 단색 캡처는 거부, 실제 화면은 수락
   w(root, 'flat.png', '');
@@ -213,25 +292,31 @@ test('gate: 증거가 쌓이는 순서대로 FAIL → NEEDS_HUMAN → COMPLETE, 
   assert.notEqual(studio(root, 'ledger', 'evidence', 'F002', '--type', 'user-confirmed', '--quote', 'ok').code, 0, '출처 없는 사용자 확인은 거부');
   assert.equal(studio(root, 'ledger', 'evidence', 'F002', '--type', 'user-confirmed', '--quote', '그림 괜찮네', '--source', 'session:test#1').code, 0);
   g = studioJson(root, 'gate');
-  assert.equal(g.json.verdict, 'COMPLETE', JSON.stringify(g.json));
-  assert.equal(g.json.counts.verified, 2, JSON.stringify(g.json.items));
-  assert.equal(g.json.pending.length, 0);
+  assert.equal(g.json.verdict, 'NEEDS_HUMAN', JSON.stringify(g.json));
+  assert.equal(g.json.counts.verified, 0, JSON.stringify(g.json.items));
+  assert.equal(g.json.counts.needsHuman, 2, JSON.stringify(g.json.items));
+  assert.match(g.json.pending.join('\n'), /문자열 quote\/source/);
   fs.writeFileSync(path.join(root, 'shot.png'), png(32, 32, (x, y) => [x * 7, y * 7, 0, 255]));
   g = studioJson(root, 'gate');
   assert.equal(g.json.verdict, 'FAIL', '증거 스크린샷을 나중에 바꾸면 잡아낸다');
 });
 
-test('gate: 모든 항목이 검증되면 COMPLETE, 증거 파일을 바꾸면 FAIL', () => {
+test('gate: CLI 직접 실행한 테스트만 logic 증거가 되고, 수기 로그는 거부한다', () => {
   const root = tmpRoot();
   studio(root, 'ledger', 'add', '--quote', '점수 계산 오류', '--category', 'logic');
   w(root, 'log.txt', 'ok');
-  studio(root, 'ledger', 'evidence', 'F001', '--type', 'machine-test', '--ref', 'log.txt', '--note', 'exit 0');
+  assert.notEqual(studio(root, 'ledger', 'evidence', 'F001', '--type', 'machine-test', '--ref', 'log.txt', '--note', 'exit 0').code, 0);
+  assert.notEqual(studioJson(root, 'gate').json.verdict, 'COMPLETE');
+  w(root, 'calc.js', 'ok');
+  const args = '["-e","const fs=require(\'fs\');if(fs.readFileSync(\'calc.js\',\'utf8\')!==\'ok\')process.exit(2)"]';
+  assert.equal(studio(root, 'ledger', 'test', 'F001', '--program', 'node', '--input', 'calc.js', '--args-json', args).code, 0);
   studio(root, 'ledger', 'status', 'F001', 'fixed');
   assert.equal(studioJson(root, 'gate').json.verdict, 'COMPLETE');
-  fs.writeFileSync(path.join(root, 'log.txt'), 'changed');
-  const g = studioJson(root, 'gate');
-  assert.equal(g.json.verdict, 'FAIL');
-  assert.match(g.json.blockers.join('\n'), /해시 불일치/);
+  w(root, 'calc.js', 'changed');
+  assert.equal(studioJson(root, 'gate').json.verdict, 'FAIL', '실행 입력이 바뀌면 이전 통과 결과는 stale');
+  const failed = studio(root, 'ledger', 'test', 'F001', '--program', 'node', '--input', 'calc.js', '--args-json', '["-e","process.exit(2)"]');
+  assert.equal(failed.code, 1);
+  assert.equal(studioJson(root, 'gate').json.verdict, 'FAIL');
 });
 
 test('play: 브라우저가 없으면 통과를 꾸미지 않고 unsupported(3)를 낸다', () => {

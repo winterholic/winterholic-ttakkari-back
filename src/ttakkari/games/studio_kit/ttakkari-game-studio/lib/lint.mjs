@@ -2,7 +2,7 @@
 // 린트 경고는 결함 판정이 아니라 사람이 볼 단서다. 잡지 못하는 것(화면 밖 적, 오브젝트 겹침, 연출 품질)은 도달성 검사·플레이 재생·사용자 확인으로 간다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { lineCol, walk } from './util.mjs';
+import { lineCol, resolveInRoot, walk } from './util.mjs';
 
 const RULES = [
   {
@@ -59,7 +59,7 @@ const RULES = [
 ];
 
 export function lintProject(root, { dir = 'src' } = {}) {
-  const base = path.join(root, dir);
+  const base = resolveInRoot(root, dir, { mustExist: false });
   if (!fs.existsSync(base)) return { tool: 'studio-lint', ok: true, status: 'no-src-dir', dir, findings: [], rules: RULES.map((r) => r.id) };
   const findings = [];
   const files = walk(base).filter((f) => /\.(ts|tsx|js|mjs)$/.test(f));

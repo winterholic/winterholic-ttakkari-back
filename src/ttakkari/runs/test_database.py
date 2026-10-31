@@ -296,6 +296,43 @@ def reap_stale(root: Path = ROOT) -> list[str]:
     return reaped
 
 
+def _marker_run_id(folder: Path) -> str | None:
+    try:
+        fields = dict(line.split("=", 1) for line in (folder / MARKER).read_text().splitlines() if "=" in line)
+    except OSError:
+        return None
+    return fields.get("run_id")
+
+
+def reap_leaked(live_run_ids, *, root: Path = ROOT, min_age: float = 600.0, now: float | None = None) -> list[str]:
+    """이 프로세스가 만들었지만 대응하는 실행 핸들이 없는 클러스터를 회수한다.
+
+    Run 이 비정상 종료돼 close() 경로를 타지 못하면 소유 서버가 살아 있는 동안 postmaster 가 남는다
+    (2026-10-31, 3일 넘게 8개). 기동 시 reap_stale 은 소유 PID 가 죽은 것만 본다. 방금 시작한 Run 과
+    경합하지 않도록 min_age 이전에 만든 폴더는 건드리지 않는다.
+    """
+    try:
+        pg_bin = _pg_bin()
+    except RuntimeError:
+        return []
+    live = {str(x) for x in live_run_ids}
+    cutoff = (time.time() if now is None else now) - min_age
+    reaped = []
+    for name in sorted(glob.glob(str(root / f"{PREFIX}*"))):
+        folder = Path(name)
+        owner = _valid_folder(folder, root)
+        if owner is None or owner[0] != os.getpid() or _marker_run_id(folder) in live:
+            continue
+        try:
+            if folder.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        if _stop_owned(folder, pg_bin, root):
+            reaped.append(folder.name)
+    return reaped
+
+
 class RunTestDatabase:
     """One ephemeral PostgreSQL cluster for one engine process attempt."""
 

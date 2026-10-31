@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import logging
 import os
 import signal
 import uuid
@@ -70,6 +71,13 @@ def _group_state(record: RuntimeProcessGroup) -> tuple[str, bool]:
     except (psutil.AccessDenied, OSError, PermissionError):
         return "unknown", False
     return ("present", True) if same_process and same_group else ("unknown", False)
+
+
+def _owner_gone(owner: RuntimeGeneration, entry: dict) -> bool:
+    """소유 세대가 죽었거나, 호출한 이 프로세스 자신이 소유자(핸들만 잃은 경우)면 True."""
+    if entry.get("owner_self") is True:
+        return owner.pid == os.getpid() and owner.pid == entry.get("owner_pid")
+    return _process_dead(owner.pid, owner.process_started_at) is True
 
 
 def _group_fence_key(group: RuntimeProcessGroup) -> tuple:
@@ -217,7 +225,7 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
         RuntimeGeneration.id == lease.generation_id).with_for_update())
     if (owner is None or owner.pid != entry.get("owner_pid")
             or owner.process_started_at != entry.get("owner_process_started_at")
-            or _process_dead(owner.pid, owner.process_started_at) is not True):
+            or not _owner_gone(owner, entry)):
         return False
     current_groups = list(await db.scalars(select(RuntimeProcessGroup).where(
         RuntimeProcessGroup.run_id == run_id).order_by(RuntimeProcessGroup.attempt).with_for_update()))
@@ -226,8 +234,22 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     run = await db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if run is None:
         return False
+    if entry.get("owner_self") is True:
+        # 핸들 없는 running Run 만 대상이다. 락을 잡은 뒤에 핸들·하트비트를 다시 확인해
+        # 방금 시작했거나 막 핸들을 되찾은 Run 을 건드리지 않는다.
+        if run.status != RunStatus.running or run_id in entry["handles"]:
+            return False
+        heartbeat = run.heartbeat_at or run.started_at or run.created_at
+        if (utcnow() - heartbeat).total_seconds() < entry["stale_after"]:
+            return False
     cancel_commands = []
-    if entry.get("require_cancel"):
+    if entry.get("owner_self") is True:
+        # 사용자가 이미 누른 중지 요청이 있으면 취소로 마감하고, 없으면 interrupted 로 남겨 기존 재개 규칙을 따른다.
+        cancel_commands = list(await db.scalars(select(RuntimeCommand).where(
+            RuntimeCommand.run_id == run_id, RuntimeCommand.kind == "cancel",
+            RuntimeCommand.generation_id == lease.generation_id,
+            RuntimeCommand.acknowledged_at.is_(None)).with_for_update()))
+    elif entry.get("require_cancel"):
         # Explicit cancellation may recover its dead owner; ordinary orphan
         # recovery remains an external-operator operation. Verify the durable
         # request under the same fence before signaling anything.
@@ -237,7 +259,7 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
             RuntimeCommand.acknowledged_at.is_(None)).with_for_update()))
         if not cancel_commands:
             return False
-    if _process_dead(owner.pid, owner.process_started_at) is not True:
+    if not _owner_gone(owner, entry):
         return False
     # Recheck every fenced identity under the locks immediately before any signal.
     for group in current_groups:
@@ -257,8 +279,12 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
         run.pid = None
         run.heartbeat_at = utcnow()
         run.finished_at = utcnow()
-        run.error = ("사용자 중지 요청: 종료된 소유 세대의 프로세스 정리 후 취소" if cancel_commands else
-                     "executor orphan reconciled after recorded process groups exited")
+        if entry.get("owner_self") is True:
+            run.error = ("사용자 중지 요청: 실행 핸들 분실, 프로세스 종료 확인 후 취소" if cancel_commands else
+                         "실행 핸들을 잃은 Run 정리: 기록된 프로세스 그룹이 모두 종료됨")
+        else:
+            run.error = ("사용자 중지 요청: 종료된 소유 세대의 프로세스 정리 후 취소" if cancel_commands else
+                         "executor orphan reconciled after recorded process groups exited")
         if cancel_commands:
             run.resume_after = None
             for command in cancel_commands:
@@ -280,6 +306,30 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     await db.delete(lease)
     await db.commit()
     return True
+
+
+async def reap_handleless_runs(*, generation_id: uuid.UUID, handles, stale_after: float = 120.0) -> int:
+    """이 세대가 소유한 lease 중 실행 핸들이 없는 running Run 을 정리하고 정리한 수를 돌려준다.
+
+    fd 고갈 등으로 핸들만 사라지면 소유 세대가 살아 있어 기존 정리(소유자 사망 전제)가 막고, 취소 명령도
+    핸들이 있어야 처리돼 Run 이 영원히 running 으로 남는다(2026-10-29). 기록된 프로세스 그룹이 모두 사라졌고
+    하트비트가 오래된 Run 만 대상이다. 그룹이 살아 있거나 판정 불명이면 건드리지 않으며 시그널은 보내지 않는다.
+    """
+    handled = set(handles)
+    done = 0
+    for entry in await _read_orphans():
+        if (entry["owner_id"] != str(generation_id) or entry["owner_pid"] != os.getpid()
+                or entry["run_status"] != RunStatus.running or uuid.UUID(entry["run_id"]) in handled
+                or not entry["groups"]
+                or any(g["state"] != "absent" or not g["identity_verified"] for g in entry["groups"])):
+            continue
+        entry.update(owner_self=True, handles=handled, stale_after=stale_after, disposition="safe_to_release")
+        try:
+            if await _apply_one(entry) is True:
+                done += 1
+        except Exception:  # 다음 주기에 다시 시도한다. 한 건의 실패가 코디네이터를 멈추면 안 된다.
+            logging.getLogger(__name__).exception("handleless run reap failed for %s", entry["run_id"])
+    return done
 
 
 async def cancel_orphan(run_id: uuid.UUID) -> bool:

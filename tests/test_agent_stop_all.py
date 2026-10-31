@@ -439,3 +439,122 @@ async def test_orphan_cancel_preserves_unknown_group(client, auth, make_dir, tmp
         assert await db.get(RuntimeLease, run.id) is not None
         assert await db.scalar(select(RuntimeCommand.id).where(
             RuntimeCommand.run_id == run.id, RuntimeCommand.kind == "cancel", RuntimeCommand.acknowledged_at.is_(None)))
+
+
+async def seed_self_owned(sess, *, heartbeat_age=600, group_pid=987654320):
+    """이 프로세스가 소유한 lease 와 이미 사라진 프로세스 그룹을 가진 running Run(핸들 분실 재현)."""
+    import os
+
+    from ttakkari.models import RuntimeGeneration, RuntimeLease, RuntimeProcessGroup
+
+    run = await create_run(sess, status=RunStatus.running)
+    owner_id, token = uuid.uuid4(), uuid.uuid4()
+    async with sessionmaker()() as db:
+        row = await db.get(Run, run.id)
+        row.heartbeat_at = utcnow() - timedelta(seconds=heartbeat_age)
+        db.add(RuntimeGeneration(id=owner_id, revision="a" * 40, api_url="http://127.0.0.1:18794",
+                                 pid=os.getpid(), process_started_at=1.0, state="draining"))
+        await db.flush()
+        db.add(RuntimeLease(run_id=run.id, session_id=run.session_id, generation_id=owner_id,
+                            token=token, lane="leads"))
+        db.add(RuntimeProcessGroup(run_id=run.id, generation_id=owner_id, lease_token=token,
+                                   attempt=1, pid=group_pid, pgid=group_pid, process_started_at=1.0))
+        await db.commit()
+    return run, owner_id
+
+
+async def _lease_gone(run_id) -> bool:
+    from ttakkari.models import RuntimeLease, RuntimeProcessGroup
+    async with sessionmaker()() as db:
+        return (await db.get(RuntimeLease, run_id) is None
+                and await db.scalar(select(RuntimeProcessGroup.id).where(RuntimeProcessGroup.run_id == run_id)) is None)
+
+
+async def test_handleless_run_is_reaped_to_interrupted(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
+    async with sessionmaker()() as db:
+        row = await db.get(Run, run.id)
+        assert row.status == RunStatus.interrupted and row.pid is None
+    assert await _lease_gone(run.id)
+
+
+async def test_handleless_run_with_pending_cancel_becomes_cancelled(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess)
+    async with sessionmaker()() as db:
+        db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=run.id,
+                              session_id=run.session_id, generation_id=owner_id))
+        await db.commit()
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.cancelled
+        assert await db.scalar(select(RuntimeCommand.id).where(
+            RuntimeCommand.run_id == run.id, RuntimeCommand.acknowledged_at.is_(None))) is None
+    assert await _lease_gone(run.id)
+
+
+async def test_run_with_live_handle_is_never_reaped(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=(run.id,)) == 0
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+
+
+async def test_run_with_live_or_unknown_process_group_is_never_reaped(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess)
+    for state in (("present", True), ("unknown", False), ("absent", False)):
+        monkeypatch.setattr(executor_reconcile, "_group_state", lambda _, s=state: s)
+        assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 0
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+    assert not await _lease_gone(run.id)
+
+
+async def test_fresh_heartbeat_run_is_not_reaped(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess, heartbeat_age=5)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 0
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+
+
+async def test_other_generation_and_other_process_leases_are_untouched(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    _, owner_id = await seed_self_owned(sess)
+    other_run = await seed_orphan(sess)  # 다른 pid(987654321)가 소유한 lease
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=uuid.uuid4(), handles=()) == 0
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, other_run.id)).status == RunStatus.running
+    assert not await _lease_gone(other_run.id)
+
+
+async def test_reaper_is_idempotent(client, auth, make_dir, monkeypatch):
+    from ttakkari import executor_reconcile
+
+    sess, _ = await create_session(client, auth, make_dir)
+    _, owner_id = await seed_self_owned(sess)
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 0

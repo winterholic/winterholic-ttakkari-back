@@ -219,3 +219,63 @@ def test_start_failure_message_carries_stderr(tmp_path, monkeypatch):
     monkeypatch.setattr(td.subprocess, "run", run)
     with pytest.raises(RuntimeError, match="boom reason"):
         RunTestDatabase("run-x", tmp_path / "w", pg_bin=pg_bin, root=tmp_path).start()
+
+
+def _leaked_fixture(tmp_path, monkeypatch, *, owner_pid, run_id="run-a", age=3600):
+    import os
+    import time
+
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir(exist_ok=True)
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+    folder = tmp_path / f"ttakkari-run-test-{owner_pid}-abcdef12"
+    folder.mkdir()
+    (folder / "run-test-cluster.marker").write_text(
+        f"prefix=ttakkari-run-test-\nfolder={folder.name}\nowner_pid={owner_pid}\nrun_id={run_id}\nport=54399\n",
+        encoding="utf-8",
+    )
+    old = time.time() - age
+    os.utime(folder, (old, old))
+    monkeypatch.setattr("ttakkari.runs.test_database._pg_bin", lambda: pg_bin)
+    return folder
+
+
+def test_leaked_reaper_removes_own_cluster_without_a_live_handle(tmp_path, monkeypatch):
+    import os
+
+    from ttakkari.runs.test_database import reap_leaked
+
+    folder = _leaked_fixture(tmp_path, monkeypatch, owner_pid=os.getpid())
+    assert reap_leaked((), root=tmp_path) == [folder.name]
+    assert not folder.exists()
+
+
+def test_leaked_reaper_keeps_cluster_whose_run_still_has_a_handle(tmp_path, monkeypatch):
+    import os
+
+    from ttakkari.runs.test_database import reap_leaked
+
+    folder = _leaked_fixture(tmp_path, monkeypatch, owner_pid=os.getpid(), run_id="run-live")
+    assert reap_leaked(("run-live",), root=tmp_path) == []
+    assert folder.is_dir()
+
+
+def test_leaked_reaper_keeps_recently_created_cluster(tmp_path, monkeypatch):
+    import os
+
+    from ttakkari.runs.test_database import reap_leaked
+
+    folder = _leaked_fixture(tmp_path, monkeypatch, owner_pid=os.getpid(), age=5)
+    assert reap_leaked((), root=tmp_path) == []
+    assert folder.is_dir()
+
+
+def test_leaked_reaper_never_touches_another_processs_cluster(tmp_path, monkeypatch):
+    import os
+
+    from ttakkari.runs.test_database import reap_leaked
+
+    folder = _leaked_fixture(tmp_path, monkeypatch, owner_pid=os.getpid() + 1)
+    assert reap_leaked((), root=tmp_path) == []
+    assert folder.is_dir()

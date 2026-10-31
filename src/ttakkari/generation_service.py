@@ -66,6 +66,26 @@ async def _commands(runtime, manager) -> None:
             await runtime.ack(command.id)
 
 
+async def _reap_handleless(runtime, manager) -> None:
+    """핸들을 잃은 running Run 이 draining 세대의 퇴역을 막지 않게 한다. 실패해도 코디네이터는 계속 돈다."""
+    from ttakkari.executor_reconcile import reap_handleless_runs
+    try:
+        count = await reap_handleless_runs(generation_id=runtime.id, handles=tuple(manager._handles))
+    except Exception:
+        log.exception("handleless run reaper failed; retrying next cycle")
+        return
+    if count:
+        log.warning("실행 핸들을 잃은 Run %d건을 정리했다", count)
+    from ttakkari.runs.test_database import reap_leaked
+    try:
+        leaked = await asyncio.to_thread(reap_leaked, tuple(manager._handles))
+    except Exception:
+        log.exception("leaked Run test database reaper failed; retrying next cycle")
+        return
+    if leaked:
+        log.warning("핸들 없는 Run 테스트 DB %d개를 회수했다: %s", len(leaked), ", ".join(leaked))
+
+
 async def coordinate_runs(runtime, manager, state) -> None:
     if manager.remote:
         if state == "active" and not getattr(runtime, "draining", False):
@@ -73,6 +93,7 @@ async def coordinate_runs(runtime, manager, state) -> None:
             await recover_orphaned_runs()
         return
     await _commands(runtime, manager)
+    await _reap_handleless(runtime, manager)
     if state == "active" and not getattr(runtime, "draining", False):
         from ttakkari.runs.manager import compensate_runs, resume_queued
         try:

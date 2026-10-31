@@ -51,6 +51,10 @@ def test_write_tools_stay_blocked_in_read_only_roots(world):
     "grep -rn report {old}",
     "ls -la {old}",
     "cp {old}/report.md ./copy.md",
+    "cat {old}/report.md 2>&1 | head -n 20",  # 파일 기술자 복제는 쓰기가 아니다
+    "cat {old}/report.md 2>/dev/null",
+    "cat {old}/report.md 2> /dev/null",
+    "cd {old}",
 ])
 def test_bash_read_only_commands_may_read_the_family_outbox(world, command):
     assert _ev("Bash", {"command": command.format(old=world["old"])}, world) is None
@@ -60,6 +64,8 @@ def test_bash_read_only_commands_may_read_the_family_outbox(world, command):
     "rm {old}/report.md",
     "cat x > {old}/report.md",
     "cat x >> {old}/report.md",
+    "cat {old}/report.md > ./out.md",  # 작업 폴더로 복사하는 것도 리다이렉션이면 거부(cp 를 쓴다)
+    "cat {old}/report.md 2> ./err.log",
     "cp ./a.md {old}/report.md",  # 목적지가 읽기 전용 영역
     "mv {old}/report.md ./x.md",
     "sed -i s/a/b/ {old}/report.md",
@@ -148,3 +154,21 @@ async def test_read_roots_list_covers_only_the_same_pool_family(client, auth, ma
     assert target is not None and target.parent == home / "guard-read-roots"
     listed = {Path(x).name for x in target.read_text().splitlines()}
     assert listed == {"lead-run", "sibling-run"}  # 같은 계열만. 낯선 기획·다른 pool·outbox 밖 경로는 빠진다
+
+
+def test_muse_persisted_tool_outputs_are_readable_but_not_writable(world, monkeypatch):
+    out = world["home"] / "accounts" / "acct" / "data" / "muse" / "sessions" / "2026" / "10" / "27" / "sid" / "tool-outputs" / "u1" / "call_1.txt"
+    out.parent.mkdir(parents=True)
+    out.write_text("big")
+    other = world["home"] / "accounts" / "acct" / "data" / "muse" / "config.json"
+    other.write_text("{}")
+    monkeypatch.setenv("TTAKKARI_GUARD_PROTECTED", str(world["home"]))
+    monkeypatch.setenv("TTAKKARI_GUARD_WRITE_ROOTS", str(world["ws"]))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    cfg = GuardConfig.from_env()
+    ws = str(world["ws"])
+    assert evaluate("Read", {"file_path": str(out)}, ws, cfg) is None
+    assert evaluate("Bash", {"command": f'cat "{out}"'}, ws, cfg) is None
+    assert evaluate("Write", {"file_path": str(out)}, ws, cfg) is not None
+    assert evaluate("Bash", {"command": f'rm "{out}"'}, ws, cfg) is not None
+    assert evaluate("Read", {"file_path": str(other)}, ws, cfg) is not None  # 같은 계정의 다른 파일은 그대로 막는다

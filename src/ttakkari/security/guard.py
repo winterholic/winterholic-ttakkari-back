@@ -390,8 +390,11 @@ READ_VERBS = {"cat", "less", "more", "head", "tail", "bat", "strings", "base64",
 # 보호 영역 안에서도 읽기만 허용하는 예외. 쓰기·삭제·인터프리터 실행에는 적용하지 않는다.
 # 명령 인자 중 안전하다고 알려진 읽기 전용 명령만 쓴다(find/sed/awk 는 -exec·-i·system() 으로 쓰기가 가능해 제외).
 READ_ONLY_VERBS = frozenset({"cat", "head", "tail", "less", "more", "nl", "wc", "grep", "rg", "ls", "file", "stat",
-                             "shasum", "sha256sum", "sha1sum", "md5", "jq", "diff", "cmp"})
-_REDIRECT_RE = re.compile(r"^\d*>>?")
+                             "shasum", "sha256sum", "sha1sum", "md5", "jq", "diff", "cmp", "cd"})
+_REDIRECT_RE = re.compile(r"^\d*>>?(.*)$")
+# 파일 기술자 복제(2>&1)와 /dev/null 은 파일에 쓰지 않는다.
+_HARMLESS_REDIRECT_TARGETS = frozenset({"&1", "&2", "/dev/null"})
+_FD_DUP_RE = re.compile(r"(\d*)>&([12])(?!\d)")
 
 
 @dataclass
@@ -417,7 +420,11 @@ class GuardConfig:
         read_globs = [g for g in os.environ.get("TTAKKARI_GUARD_READ_GLOBS", "").split(os.pathsep) if g]
         if config_dir := os.environ.get("CLAUDE_CONFIG_DIR"):
             read_globs.append(f"{Path(config_dir).resolve()}/projects/*/*/tool-results/*")
-        return cls(write_roots=paths("TTAKKARI_GUARD_WRITE_ROOTS"), protected=paths("TTAKKARI_GUARD_PROTECTED"),
+        protected = paths("TTAKKARI_GUARD_PROTECTED")
+        for root in protected:
+            # Muse 도 큰 도구 출력을 이 경로에 저장하고 "이 파일을 읽으라"고 안내한다(2026-10-14..31 차단 201건).
+            read_globs.append(f"{root}/accounts/*/data/muse/sessions/*/tool-outputs/*")
+        return cls(write_roots=paths("TTAKKARI_GUARD_WRITE_ROOTS"), protected=protected,
                    read_roots=read_roots, read_globs=read_globs)
 
 
@@ -562,8 +569,13 @@ def _check_rm(argv: list[str], cwd: Path, cfg: GuardConfig) -> str | None:
 
 def _is_read_only_arg(verb: str, argv: list[str], tok: str) -> bool:
     """이 토큰이 읽기 전용 명령의 입력으로만 쓰이는지. 리다이렉션이 하나라도 있으면 쓰기 가능성이 있어 거부한다."""
-    if any(_REDIRECT_RE.match(t) for t in argv):
-        return False
+    for i, t in enumerate(argv):
+        m = _REDIRECT_RE.match(t)
+        if not m:
+            continue
+        target = m.group(1) or (argv[i + 1] if i + 1 < len(argv) else "")
+        if target not in _HARMLESS_REDIRECT_TARGETS:
+            return False
     if verb in READ_ONLY_VERBS:
         return True
     # cp 는 마지막 인자(목적지)가 아닌 원본으로만 읽기 예외를 둔다.
@@ -583,7 +595,8 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> st
                 return reason
         elif verb and (reason := _check_code_payload(body, cwd)):
             return reason
-    split = _split_commands(stripped)
+    # `2>&1` 의 & 를 명령 구분자로 쪼개지 않게, 파일에 쓰지 않는 fd 복제를 /dev/null 리다이렉션으로 바꿔 분석한다.
+    split = _split_commands(_FD_DUP_RE.sub(r"\1>/dev/null", stripped))
     if reason := _check_nosql_destructive(command, _command_verbs(split)):
         return reason
     if reason := _check_client_stdin(command):

@@ -745,3 +745,26 @@ async def test_usage_releases_database_connection_before_provider_lookup(client,
     finally:
         app.dependency_overrides.pop(get_db, None)
         await engine.dispose()
+
+
+async def test_management_summary_and_individual_status_contract(client, auth, monkeypatch):
+    from ttakkari.api import accounts as api
+
+    def forbidden(*args):
+        raise AssertionError("summary must not probe identity")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(api.profiles, "identity", forbidden)
+        patch.setattr(api.profiles, "execution_ready", forbidden)
+        patch.setattr(api.usage_mod, "usage_for", forbidden)
+        response = await client.get("/api/accounts?details=false", headers=auth)
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert len(rows) == 2
+    assert all(a["status_pending"] and a["login_command"] is None and not a["execution_enabled"] for a in rows)
+    status = await client.get(f"/api/accounts/{rows[0]['id']}/status", headers=auth)
+    assert status.status_code == 200, status.text
+    assert status.json()["login"] in {"ok", "missing", "unknown"}
+    assert "name" not in status.json() and "priority" not in status.json()
+    assert (await client.get(f"/api/accounts/{uuid.uuid4()}/status", headers=auth)).status_code == 404
+    assert (await client.get(f"/api/accounts/{rows[0]['id']}/status")).status_code == 401

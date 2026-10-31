@@ -213,6 +213,8 @@ payload 는 `{title, body, url, tag}`:
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/accounts` | 전체 계정 목록, 개인 우선순위 순. `{id, name, engine, pool, config_dir, enabled, priority, max_used_percent, work_enabled, work_priority, login(ok/unknown/missing), login_label, cooldown_seconds}`. `pool`: `work` = 회사 모드에도 들어옴, `personal` = 개인 모드만. `enabled`·`priority` 는 개인 모드 값, `work_enabled`·`work_priority` 는 회사 모드 값(`pool=work` 인 계정에만 의미, 회사 목록은 `pool=work` 를 `work_priority` 순으로 본다) |
+| GET | `/api/accounts?details=false` | 관리 화면용 DB 목록. 공급자·인증 확인 없이 즉시 반환. 각 행 `status_pending=true`, `login=unknown`, `execution_enabled=false`는 미관측값이며 실제 실행 정책을 바꾸지 않는다. |
+| GET | `/api/accounts/{id}/status` | 계정 하나의 `login, login_label, login_command, auth_state, auth_error, isolation_mode, execution_enabled`. DB 연결을 반환한 뒤 개별 확인한다. Muse는 수집기 TTL 캐시·진행 중 조회를 공유하며 25초 초과 시 504. 소유자 인증 필요, 없는 계정 404. |
 | POST | `/api/accounts` | `{name, engine, pool?, config_dir?, enabled?, max_used_percent?}` → 201(개인 목록 맨 뒤 순위, `pool=work` 면 회사 순서 맨 뒤에도 `enabled` 값으로 켠 채로). 상한 생략 시 기본 100, `내 클로드`·`Daddy codex` 이름의 보호 계정은 95. 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
 | PATCH | `/api/accounts/{id}` | `{name?, pool?, config_dir?, enabled?, work_enabled?, max_used_percent?}`. 상한은 1~100. `enabled`=개인 모드 켜기, `work_enabled`=회사 모드 켜기(회사에 들어오지 않은 계정이면 400). `pool=work` 로 회사 모드에 넣으면 회사 순서 맨 뒤에 `work_enabled=true` 로 들어가고, `pool=personal` 로 빼도 개인 모드 순서·켜기는 그대로다. 다시 켜면(두 모드 어느 쪽이든) 한도 대기도 풀린다 |
 | DELETE | `/api/accounts/{id}` | 204. 개인·회사 모드 모두에서 사라진다 |
@@ -519,7 +521,7 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 
 실행 중 account-wide `usage/changed`와 종료 후 `muse/quota`도 Run의 토큰 합계와 분리해 같은 저장소에 기록한다. 관측값은 source=muse_cli이며 원래 관측 시각·플랜을 유지한다. 이후 인증된 조회가 비면 마지막 관측값과 오류를 함께 반환하고 수집 성공이나 새 측정으로 취급하지 않는다. 로그아웃·프로필 경로 변경은 캐시를 폐기한다. 등록 모델 목록과 실제 구독 모델 호출 권한은 별개다.
 
-`GET /api/accounts`도 Muse의 공식 로그인 관측값을 사용한다. 첫 수집 전에는 동일한 읽기 전용 조회로 상태를 확인하며 이후에는 수집기 TTL 캐시를 재사용한다. 사용량 창이 비어 있어도 `accountLogin`이면 `login=ok`, `login_command=null`이다. Muse의 `config_dir` 변경 시 이전 프로필의 관측 캐시는 폐기한다. 로그인 여부와 사용량 수치 제공 여부를 혼동하지 않는다.
+`GET /api/accounts`는 Muse의 마지막 공식 로그인 관측값만 사용하며 새 사용량 수집을 시작하지 않는다. 관리 화면은 `?details=false`로 목록을 먼저 표시하고 `GET /api/accounts/{id}/status`에서 계정마다 독립 확인한다. 첫 수집 전 Muse 상태는 같은 읽기 전용 조회로 확인하고 이후 수집기 TTL 캐시를 재사용한다. 사용량 창이 비어 있어도 `accountLogin`이면 `login=ok`, `login_command=null`이다. Muse의 `config_dir` 변경 시 이전 프로필의 관측 캐시는 폐기한다. 로그인 여부와 사용량 수치 제공 여부를 혼동하지 않는다.
 
 
 ### 하네스 조회 (ADR 0069)

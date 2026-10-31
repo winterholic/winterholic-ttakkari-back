@@ -91,6 +91,7 @@ class ReorderIn(BaseModel):
 
 
 class AccountOut(BaseModel):
+    status_pending: bool = False
     id: uuid.UUID
     name: str
     engine: str
@@ -206,15 +207,26 @@ async def _commit(db: Db) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "같은 이름의 계정이 있습니다.") from e
 
 
+def _summary(a: EngineAccount) -> AccountOut:
+    """Only DB metadata: identity and execution readiness are deliberately unobserved."""
+    return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir,
+                      enabled=a.enabled, priority=a.priority, max_used_percent=a.max_used_percent,
+                      work_enabled=a.work_enabled, work_priority=a.work_priority,
+                      login="unknown", login_label=None, cooldown_seconds=profiles.cooldown_remaining(a.id),
+                      execution_enabled=False, status_pending=True)
+
+
 @router.get("", response_model=list[AccountOut])
-async def list_accounts(_: User, db: Db) -> list[AccountOut]:
+async def list_accounts(_: User, db: Db, details: bool = True) -> list[AccountOut]:
     rows = await profiles.accounts(db)
     await db.commit()
-    # Reuse the usage collector's official account/read observation and TTL.
-    # This also covers opening Settings before the first collector pass.
-    await asyncio.gather(*(usage_mod.usage_for(a.id, a.engine, a.config_dir)
-                           for a in rows if a.engine == "muse"))
-    return [_out(a) for a in rows]
+    # The management page needs names/order/toggles immediately. No provider calls,
+    # credential checks or subprocesses belong on this path, even on a cold cache.
+    if not details:
+        return [_summary(a) for a in rows]
+    # Legacy clients keep the full shape, using the collector's last observation.
+    # Filesystem/keychain checks must not block the server event loop.
+    return list(await asyncio.gather(*(asyncio.to_thread(_out, a) for a in rows)))
 
 
 @router.get("/qwen-flash-usage")
@@ -513,6 +525,29 @@ async def usage_cached(_: User, db: Db) -> list[AccountUsageOut]:
     ordered, work_rank = await _ordered_usage_accounts(db)
     return [_usage_out(i, a, work_rank, usage_mod.cached(a.id) or usage_mod.Usage(), refreshing=usage_mod.fetching(a.id))
             for i, a in ordered]
+
+
+class AccountStatusOut(BaseModel):
+    login: str
+    login_label: str | None
+    login_command: str | None = None
+    auth_state: str | None = None
+    auth_error: str | None = None
+    isolation_mode: str | None = None
+    execution_enabled: bool
+
+
+@router.get("/{account_id}/status", response_model=AccountStatusOut)
+async def account_status(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
+    """Observe one account independently; release the DB connection before provider I/O."""
+    a = await _get(db, account_id)
+    await db.commit()
+    if a.engine == "muse":
+        try:
+            await asyncio.wait_for(usage_mod.usage_for(a.id, a.engine, a.config_dir), USAGE_REQUEST_TIMEOUT)
+        except TimeoutError as exc:
+            raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "로그인 상태 확인 시간이 초과됐어요. 다시 확인해 주세요.") from exc
+    return await asyncio.to_thread(_out, a)
 
 
 @router.get("/{account_id}/usage", response_model=AccountUsageOut)

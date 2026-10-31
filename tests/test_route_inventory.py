@@ -333,6 +333,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/accounts/usage"): "owner-plain",
     ("GET", "/api/accounts/usage/cached"): "owner-plain",
     ("GET", "/api/accounts/{account_id}/usage"): "owner-plain",
+    ("GET", "/api/accounts/{account_id}/status"): "owner-plain",
     ("GET", "/api/agent/artifacts"): "agent-plain",
     ("GET", "/api/agent/checklists"): "agent-scoped",
     ("GET", "/api/agent/checklists/templates"): "agent-scoped",

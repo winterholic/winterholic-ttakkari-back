@@ -93,6 +93,30 @@ def reap_orphan_copilots() -> int:
     return killed
 
 
+def _descendant_pids(ps_output: str, root: int) -> list[int]:
+    kids: dict[int, list[int]] = {}
+    for line in ps_output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            kids.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, stack = [], [root]
+    while stack:
+        for child in kids.get(stack.pop(), []):
+            found.append(child)
+            stack.append(child)
+    return found
+
+
+def _snapshot_descendants(root: int | None) -> list[int]:
+    if not root:
+        return []
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return _descendant_pids(out, root)
+
+
 def _new_client(**kwargs):
     from copilot import CopilotClient, RuntimeConnection
     return CopilotClient(connection=RuntimeConnection.for_stdio(path=get_settings().copilot_bin),
@@ -109,9 +133,16 @@ async def _quota_rpc(*, env: dict[str, str], token: str | None, use_logged_in_us
             result = await client.rpc.account.get_quota(AccountGetQuotaRequest(git_hub_token=token))
             return result.to_dict()
     finally:
+        # force_stop 은 래퍼(node) 프로세스만 SIGKILL 해서 실제 copilot 바이너리가 고아(ppid=1)로 남는다.
+        # 래퍼가 죽기 전에 손자까지 잡아 두었다가 함께 정리한다.
+        cli = getattr(client, "_cli_process", None)
+        descendants = _snapshot_descendants(getattr(cli, "pid", None))
         # No sessions were created. Tear down our child even on startup failure or cancellation.
         with contextlib.suppress(Exception):
             await asyncio.wait_for(client.force_stop(), 5.0)
+        for pid in descendants:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGKILL)
 
 
 def _opencode_token(account_id: UUID, config_dir: str | None) -> str:

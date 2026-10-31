@@ -193,3 +193,9 @@ def test_orphan_copilot_pid_selection_only_parentless_headless():
         "104 1 /usr/bin/python server.py --headless --stdio",
     ])
     assert _orphan_copilot_pids(out) == [101]
+
+
+def test_descendant_pids_walks_whole_tree():
+    from ttakkari.runs.copilot_usage import _descendant_pids
+    out = "10 1\n11 10\n12 11\n13 10\n14 99\n"
+    assert sorted(_descendant_pids(out, 10)) == [11, 12, 13]

@@ -521,3 +521,47 @@ async def test_real_template_with_type_error_fails_check_not_vite(runner, work, 
     bad = await runner.build_project(project, work, uid("tpl-bad1"))
     assert not bad.success and [s.stage for s in bad.stages] == ["install", "check"]
     assert bad.error.startswith(isolation.TYPECHECK_FAILED) and "src/main.ts" in bad.error and "TS2322" in bad.error
+
+
+MOUNT_ERROR = ("docker: Error response from daemon: error while creating mount source path '/tmp/x/src': "
+               "mkdir /tmp/x: no such file or directory")
+
+
+def _runner_with_exec(results, monkeypatch):
+    runner = IsolatedBuildRunner(runtime="docker", image="img")
+    calls: list[str] = []
+
+    async def fake_exec(argv, name, timeout):
+        calls.append(name)
+        return results[len(calls) - 1]
+
+    async def no_sleep(_):
+        return None
+
+    monkeypatch.setattr(runner, "_exec", fake_exec)
+    monkeypatch.setattr(isolation.asyncio, "sleep", no_sleep)
+    return runner, calls
+
+
+async def test_mount_source_race_is_retried_until_the_container_starts(monkeypatch):
+    runner, calls = _runner_with_exec([(127, False, MOUNT_ERROR), (127, False, MOUNT_ERROR), (0, False, "ok")], monkeypatch)
+    assert await runner._exec_retrying(["docker", "run"], "n", 30) == (0, False, "ok")
+    assert len(calls) == 3
+
+
+async def test_mount_source_race_gives_up_after_bounded_retries(monkeypatch):
+    runner, calls = _runner_with_exec([(127, False, MOUNT_ERROR)] * (isolation.MOUNT_RETRIES + 1), monkeypatch)
+    code, _, log = await runner._exec_retrying(["docker", "run"], "n", 30)
+    assert code == 127 and "error while creating mount source path" in log
+    assert len(calls) == isolation.MOUNT_RETRIES + 1
+
+
+@pytest.mark.parametrize("result", [
+    (1, False, "npm ERR! build failed"),  # 컨테이너 안에서 난 실제 실패는 재시도하지 않는다
+    (None, True, "timeout"),
+    (0, False, "fine"),
+])
+async def test_other_outcomes_are_never_retried(monkeypatch, result):
+    runner, calls = _runner_with_exec([result], monkeypatch)
+    assert await runner._exec_retrying(["docker", "run"], "n", 30) == result
+    assert len(calls) == 1

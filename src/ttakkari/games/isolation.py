@@ -52,6 +52,11 @@ _TYPECHECK_SCRIPT = ("if [ -x node_modules/.bin/tsc ]; then node_modules/.bin/ts
 TYPECHECK_COMMAND = ["sh", "-c", _TYPECHECK_SCRIPT]
 
 
+MOUNT_RACE_MARKER = "error while creating mount source path"
+MOUNT_RETRIES = 3
+MOUNT_RETRY_DELAY_S = 1.0
+
+
 def tsc_diagnostics(log: str) -> list[str]:
     """tsc --pretty false 출력에서 오류 줄만 뽑는다(src/a.ts(3,5): error TS2322: ...). 이어지는 들여쓴 설명 줄은 버린다."""
     return [ln.strip() for ln in log.splitlines() if _TSC_DIAGNOSTIC_RE.search(ln)]
@@ -321,6 +326,20 @@ class IsolatedBuildRunner:
             argv += ["-e", f"{k}={v}"]
         return [*argv, self.image, *command]
 
+    async def _exec_retrying(self, argv: list[str], name: str, timeout: float) -> tuple[int | None, bool, str]:
+        """방금 만든 호스트 폴더를 docker 데몬(VM)이 아직 못 보는 일시 경합이면 짧게 기다렸다 다시 띄운다.
+
+        `docker: Error response from daemon: error while creating mount source path ... mkdir ...: no such file or directory`
+        는 컨테이너가 시작되기 전에 나는 오류라 재시도해도 부작용이 없다. 2026-10-31 배포 게이트에서 3번 중 2번 이 오류로
+        게임 빌드 테스트가 실패했고, 같은 경로를 타는 서비스 빌드도 같은 위험이 있었다.
+        """
+        for attempt in range(MOUNT_RETRIES + 1):
+            code, timed_out, log = await self._exec(argv, name, timeout)
+            if timed_out or MOUNT_RACE_MARKER not in log or attempt == MOUNT_RETRIES:
+                return code, timed_out, log
+            await asyncio.sleep(MOUNT_RETRY_DELAY_S * (attempt + 1))
+        raise AssertionError("unreachable")
+
     async def _exec(self, argv: list[str], name: str, timeout: float) -> tuple[int | None, bool, str]:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=_cli_env(),
@@ -412,10 +431,10 @@ class IsolatedBuildRunner:
             async with self._egress(build_id) as eg:
                 net = eg.pop("network")
                 argv = self._run_argv(name=name, build_id=build_id, network=net, workdir=workdir, command=command, env={**base_env, **eg})
-                code, timed_out, log = await self._exec(argv, name, timeout)
+                code, timed_out, log = await self._exec_retrying(argv, name, timeout)
         else:
             argv = self._run_argv(name=name, build_id=build_id, network="none", workdir=workdir, command=command, env=base_env)
-            code, timed_out, log = await self._exec(argv, name, timeout)
+            code, timed_out, log = await self._exec_retrying(argv, name, timeout)
         return StageResult(stage, code, timed_out, time.monotonic() - started, log)
 
     async def build_project(self, source_dir: Path, work_dir: Path, build_id: str, *, build_script: str = "build",

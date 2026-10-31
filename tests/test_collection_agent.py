@@ -29,7 +29,7 @@ async def seeded(make_dir):
         for job in linked:
             job.status = "failed"
             job.attempts = 3
-            job.last_error = {"code": "attempts_exhausted", "type": "InvalidRequestError", "message": "password=secret-value"}
+            job.last_error = {"code": "attempts_exhausted", "type": "FetchError", "message": "password=secret-value"}
         mission.status = "partial"
         await db.commit()
         return env, str(mission.id)
@@ -45,7 +45,7 @@ async def test_status_returns_failure_type_without_payload_or_credentials(client
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["id"] == mid
-    assert body["jobs"][0]["error"]["type"] == "InvalidRequestError"
+    assert body["jobs"][0]["error"]["type"] == "FetchError"
     assert body["jobs"][0]["error"]["code"] == "attempts_exhausted"
     assert "secret-value" not in response.text
     assert "plan" not in body and "goal" not in body

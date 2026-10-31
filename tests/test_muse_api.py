@@ -12,6 +12,8 @@ async def test_muse_account_list_checks_login_without_usage_windows(client, auth
     created = await client.post('/api/accounts', headers=auth,
         json={'name': 'Logged in Muse', 'engine': 'muse'})
     account_id = created.json()['id']
+    # 목록은 DB 메타데이터만 즉시 돌려주고, 로그인 관측은 계정별 /status 가 맡는다(dce7ab12).
+    assert (await client.get(f'/api/accounts/{account_id}/status', headers=auth)).json()['login'] == 'ok'
     rows = (await client.get('/api/accounts', headers=auth)).json()
     row = next(row for row in rows if row['id'] == account_id)
     assert row['login'] == 'ok'
@@ -33,6 +35,7 @@ async def test_muse_account_list_preserves_logged_out_state(client, auth, monkey
     monkeypatch.setattr(usage, '_fetch_muse', logged_out)
     created = await client.post('/api/accounts', headers=auth,
         json={'name': 'Logged out Muse', 'engine': 'muse'})
+    await client.get(f"/api/accounts/{created.json()['id']}/status", headers=auth)
     rows = (await client.get('/api/accounts', headers=auth)).json()
     row = next(row for row in rows if row['id'] == created.json()['id'])
     assert row['login'] == 'missing'
@@ -50,10 +53,11 @@ async def test_muse_profile_change_discards_previous_login(client, auth, monkeyp
     created = await client.post('/api/accounts', headers=auth,
         json={'name': 'Changed Muse', 'engine': 'muse'})
     account_id = created.json()['id']
-    await client.get('/api/accounts', headers=auth)
+    await client.get(f'/api/accounts/{account_id}/status', headers=auth)
     changed = await client.patch(f'/api/accounts/{account_id}', headers=auth,
         json={'config_dir': str(make_dir())})
     assert changed.json()['login'] != 'ok'
+    await client.get(f'/api/accounts/{account_id}/status', headers=auth)
     rows = (await client.get('/api/accounts', headers=auth)).json()
     row = next(row for row in rows if row['id'] == account_id)
     assert row['login'] == 'missing'

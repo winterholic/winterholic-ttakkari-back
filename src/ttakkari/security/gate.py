@@ -38,6 +38,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     "tests/test_host_operations.py",
     # 실행 가드 및 샌드박스 정책 (SEC2-EXEC)
     "tests/test_guard.py",
+    "tests/test_guard_read_exceptions.py",
     "unit_tests/test_muse_guard.py",
     "tests/test_claude_hook_fail_closed.py",
     "tests/test_seatbelt.py",

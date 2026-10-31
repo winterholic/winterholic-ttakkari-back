@@ -56,3 +56,34 @@ async def test_targeted_reconcile_applies_only_exact_fenced_run(monkeypatch):
 
 async def _resolved(value):
     return value
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reaper_passes_live_handles_and_survives_failures(monkeypatch):
+    from types import SimpleNamespace
+
+    from ttakkari import executor_reconcile, generation_service
+    from ttakkari.runs import test_database
+
+    run_id, gen_id = uuid.uuid4(), uuid.uuid4()
+    seen = {}
+
+    async def reaper(*, generation_id, handles, stale_after=120.0):
+        seen["reaper"] = (generation_id, set(handles))
+        return 1
+
+    def leaked(handles, **_):
+        seen["leaked"] = set(handles)
+        return ["ttakkari-run-test-1-aaaa"]
+
+    monkeypatch.setattr(executor_reconcile, "reap_handleless_runs", reaper)
+    monkeypatch.setattr(test_database, "reap_leaked", leaked)
+    runtime, manager = SimpleNamespace(id=gen_id), SimpleNamespace(_handles={run_id: object()})
+    await generation_service._reap_handleless(runtime, manager)
+    assert seen == {"reaper": (gen_id, {run_id}), "leaked": {run_id}}
+
+    async def boom(**_):
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr(executor_reconcile, "reap_handleless_runs", boom)
+    await generation_service._reap_handleless(runtime, manager)  # 예외를 삼키고 다음 주기를 기다린다

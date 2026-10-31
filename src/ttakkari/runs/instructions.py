@@ -55,6 +55,15 @@ lead_id를 고른다. 하네스가 이 요청이 없으면 lead_id를 무시하�
 DEFAULTS: dict[Role, str] = {"desk": DESK_DEFAULT}
 
 
+# 명령 샌드박스 안에서도 쓸 수 있는 GitHub 계정 지정 방식. `gh auth switch` 는 키체인에 쓰므로 샌드박스에서 항상 실패(exit 161)하고,
+# 토큰 읽기는 네트워크를 허용한 샌드박스에서 된다(2026-10-31 codex sandbox 로 확인). 전환 대신 명령마다 계정을 지정하면
+# 공유 활성 계정을 바꾸지 않아 동시 세션끼리 경합하지 않는다.
+GH_AS_GH = 'GH_TOKEN="$(gh auth token --hostname github.com --user LOGIN)" gh ARGS'
+GH_AS_GIT_HELPER = "!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f"
+GH_AS_GIT = ('GH_AS_USER=LOGIN GH_AS_TOKEN="$(gh auth token --hostname github.com --user LOGIN)" '
+             f"git -c credential.helper= -c 'credential.helper={GH_AS_GIT_HELPER}' pull|fetch|push ARGS")
+
+
 def access_note(outbox: Path) -> str:
     """Expose path metadata, never protected contents or additional permissions."""
     s = get_settings()
@@ -70,6 +79,12 @@ def access_note(outbox: Path) -> str:
 - Standing/role instructions are already injected below. Change the repository's harness source when authorized;
   do not read or edit protected harness/config.env/account files to rediscover instructions or settings.
   A deployed release's read-only runtime exception does not allow installation, cache writes or service restarts there.
+- GitHub accounts: never run `gh auth switch` in a shell. It writes the macOS Keychain, which the command sandbox
+  forbids, so it always fails with exit 161 and retrying will not help. Reading a token works, so act as a specific
+  account per command without switching (replace LOGIN with a login from `github_accounts`):
+  `{GH_AS_GH}`
+  `{GH_AS_GIT}`
+  Use `github_switch_account` only when the shared active account must change for later work; other sessions may switch it.
 - After a permission denial, do not retry the same target via another command, interpreter, symlink or engine.
   Use the supported tool or authorized source instead. If none exists, report the exact blocked step once,
   continue independent work, and leave that check unverified; do not infer host-wide failure."""

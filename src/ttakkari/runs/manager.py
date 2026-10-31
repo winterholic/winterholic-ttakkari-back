@@ -1466,10 +1466,12 @@ class RunManager:
                 setting_sources=s.game_worker_claude_setting_sources if is_game else None,
             )
             adapter = await _qwen_adapter(db) if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
+            read_roots_file = None if (is_game or prof.engine == "qwen-local") else await _write_guard_read_roots(db, run, sess, s.home)
             env = adapter.child_env() if prof.engine == "qwen-local" else (
                 await asyncio.to_thread(prof.env, _child_env(
                     run.id, write_roots, s.home, s.guard_log,
-                    extra_protected=[Path(p).expanduser() for p in s.game_worker_protected_paths] if is_game else ()))
+                    extra_protected=[Path(p).expanduser() for p in s.game_worker_protected_paths] if is_game else (),
+                    read_roots_file=read_roots_file))
             )
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
@@ -2518,14 +2520,57 @@ def _tmp_dirs() -> list[Path]:
 
 
 def _child_env(run_id: uuid.UUID, write_roots: list[Path], home: Path, guard_log: Path,
-               extra_protected: Iterable[Path] = ()) -> dict[str, str]:
+               extra_protected: Iterable[Path] = (), read_roots_file: Path | None = None) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(STRIP_ENV_PREFIXES) and k not in STRIP_ENV_KEYS}
     env["TTAKKARI_RUN_ID"] = str(run_id)
     env["TTAKKARI_GUARD_WRITE_ROOTS"] = os.pathsep.join(str(p) for p in write_roots)
     env["TTAKKARI_GUARD_PROTECTED"] = os.pathsep.join(str(p) for p in (home, *extra_protected))
     env["TTAKKARI_GUARD_LOG"] = str(guard_log)
+    if read_roots_file is not None:
+        env["TTAKKARI_GUARD_READ_ROOTS_FILE"] = str(read_roots_file)
     return env
+
+
+GUARD_READ_ROOTS_KEEP_SECONDS = 7 * 24 * 3600
+GUARD_READ_ROOTS_MAX = 400
+
+
+async def _write_guard_read_roots(db: AsyncSession, run: Run, sess: ChatSession, home: Path) -> Path | None:
+    """같은 작업 계열(같은 세션·부모·형제·자식, 같은 pool)의 이전 Run 산출물 폴더를 가드의 읽기 전용 예외 목록으로 쓴다.
+
+    기획이 만든 보고서를 작업자가, 이전 Run 의 결과를 다음 Run 이 읽으려다 보호 영역 차단으로 검증을 못 하던 문제
+    (2026-10-17..31, 약 260건). 목록 파일은 에이전트가 쓸 수 없는 보호 영역(home) 안에 둔다. 읽기만 허용하며 쓰기 예외는 없다.
+    """
+    family = {sess.id}
+    if sess.parent_id:
+        family.add(sess.parent_id)
+        family.update(await db.scalars(select(ChatSession.id).where(ChatSession.parent_id == sess.parent_id,
+                                                                    ChatSession.pool == sess.pool)))
+    family.update(await db.scalars(select(ChatSession.id).where(ChatSession.parent_id == sess.id,
+                                                                ChatSession.pool == sess.pool)))
+    paths = list(await db.scalars(
+        select(Run.outbox_path).where(Run.session_id.in_(family), Run.outbox_path.is_not(None), Run.id != run.id)
+        .order_by(Run.created_at.desc()).limit(GUARD_READ_ROOTS_MAX)))
+    if not paths:
+        return None
+    root = home / "guard-read-roots"
+    outbox_root = (home / "data" / "outbox").resolve()
+
+    def write() -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        cutoff = time.time() - GUARD_READ_ROOTS_KEEP_SECONDS
+        for old in root.glob("*.txt"):
+            with contextlib.suppress(OSError):
+                if old.stat().st_mtime < cutoff:
+                    old.unlink()
+        target = root / f"{run.id}.txt"
+        # outbox 폴더만 허용한다. 그 밖의 경로가 DB 에 있어도 읽기 예외로 넓히지 않는다.
+        safe = [p for p in paths if Path(p).resolve().parent == outbox_root]
+        target.write_text("\n".join(safe) + "\n", encoding="utf-8")
+        return target
+
+    return await asyncio.to_thread(write)
 
 
 async def _drain_stderr(proc: asyncio.subprocess.Process, h: _Handle | None) -> None:

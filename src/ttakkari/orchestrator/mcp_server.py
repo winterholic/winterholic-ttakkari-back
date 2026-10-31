@@ -979,7 +979,9 @@ async def github_switch_account(account: str) -> str:
     """Switch the Mac's active gh GitHub account to a registered login, for subsequent shell Git/gh work.
     Personal/work grouping does not restrict GitHub login choice. This changes shared active state;
     use it when account selection is needed and verify the returned active account. Other sessions may
-    switch later. The backend performs the Keychain write and never returns credentials."""
+    switch later. The backend performs the Keychain write and never returns credentials.
+    A shell `gh auth switch` always fails inside the command sandbox (Keychain write, exit 161); to act as one
+    account for a single command without switching, use `GH_TOKEN="$(gh auth token --user LOGIN)" gh ...`."""
     return await _call("POST", "/github/switch-account", {"account": account}, prefix="/api/agent")
 
 

@@ -7,6 +7,7 @@ git 체크포인트, File Broker 반출 정책이다(docs/adr/0003 참고).
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import shlex
@@ -386,17 +387,38 @@ READ_VERBS = {"cat", "less", "more", "head", "tail", "bat", "strings", "base64",
               "rsync", "curl", "wget", "nc", "tar", "zip", "open", "grep", "rg", "awk", "sed", "source", "."}
 
 
+# 보호 영역 안에서도 읽기만 허용하는 예외. 쓰기·삭제·인터프리터 실행에는 적용하지 않는다.
+# 명령 인자 중 안전하다고 알려진 읽기 전용 명령만 쓴다(find/sed/awk 는 -exec·-i·system() 으로 쓰기가 가능해 제외).
+READ_ONLY_VERBS = frozenset({"cat", "head", "tail", "less", "more", "nl", "wc", "grep", "rg", "ls", "file", "stat",
+                             "shasum", "sha256sum", "sha1sum", "md5", "jq", "diff", "cmp"})
+_REDIRECT_RE = re.compile(r"^\d*>>?")
+
+
 @dataclass
 class GuardConfig:
     write_roots: list[Path] = field(default_factory=list)
     protected: list[Path] = field(default_factory=list)
+    # 같은 작업 계열의 이전 Run 산출물 폴더. 파일에서 읽는다(에이전트가 쓸 수 없는 보호 영역에 둔다).
+    read_roots: list[Path] = field(default_factory=list)
+    # 엔진 하네스가 저장해 주고 "이 파일을 읽으라"고 안내하는 도구 출력(예: <CLAUDE_CONFIG_DIR>/projects/*/*/tool-results/*)
+    read_globs: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> GuardConfig:
         def paths(var: str) -> list[Path]:
             return [Path(p).resolve() for p in os.environ.get(var, "").split(os.pathsep) if p]
 
-        return cls(write_roots=paths("TTAKKARI_GUARD_WRITE_ROOTS"), protected=paths("TTAKKARI_GUARD_PROTECTED"))
+        read_roots: list[Path] = []
+        if listing := os.environ.get("TTAKKARI_GUARD_READ_ROOTS_FILE"):
+            try:
+                read_roots = [Path(x).resolve() for x in Path(listing).read_text(encoding="utf-8").splitlines() if x.strip()]
+            except OSError:
+                read_roots = []  # 목록을 못 읽으면 예외 없이 기존대로 막는다(fail-closed)
+        read_globs = [g for g in os.environ.get("TTAKKARI_GUARD_READ_GLOBS", "").split(os.pathsep) if g]
+        if config_dir := os.environ.get("CLAUDE_CONFIG_DIR"):
+            read_globs.append(f"{Path(config_dir).resolve()}/projects/*/*/tool-results/*")
+        return cls(write_roots=paths("TTAKKARI_GUARD_WRITE_ROOTS"), protected=paths("TTAKKARI_GUARD_PROTECTED"),
+                   read_roots=read_roots, read_globs=read_globs)
 
 
 def _resolve(raw: str, cwd: Path) -> Path:
@@ -410,8 +432,17 @@ def _in_write_roots(p: Path, cfg: GuardConfig) -> bool:
     return any(is_within(p, r) for r in cfg.write_roots)
 
 
-def _protected(p: Path, cfg: GuardConfig) -> bool:
-    return any(is_within(p, r) for r in cfg.protected) and not _in_write_roots(p, cfg)
+def _readable_exception(p: Path, cfg: GuardConfig) -> bool:
+    if any(is_within(p, r) for r in cfg.read_roots):
+        return True
+    return any(fnmatch.fnmatchcase(str(p), g) for g in cfg.read_globs)
+
+
+def _protected(p: Path, cfg: GuardConfig, *, read: bool = False) -> bool:
+    """read=True 는 읽기 전용 접근이다. 읽기 예외 경로면 보호 영역이어도 막지 않는다."""
+    if not any(is_within(p, r) for r in cfg.protected) or _in_write_roots(p, cfg):
+        return False
+    return not (read and _readable_exception(p, cfg))
 
 
 def _protected_reason(raw: str) -> str:
@@ -425,7 +456,7 @@ def check_path_tool(tool: str, tool_input: dict, cwd: Path, cfg: GuardConfig) ->
     if not raw or not isinstance(raw, str):
         return None
     p = _resolve(raw, cwd)
-    if _protected(p, cfg):
+    if _protected(p, cfg, read=tool not in WRITE_TOOLS):
         return _protected_reason(raw)
     if is_sensitive(p):
         return f"민감 파일 접근 차단: {raw}"
@@ -529,6 +560,16 @@ def _check_rm(argv: list[str], cwd: Path, cfg: GuardConfig) -> str | None:
     return None
 
 
+def _is_read_only_arg(verb: str, argv: list[str], tok: str) -> bool:
+    """이 토큰이 읽기 전용 명령의 입력으로만 쓰이는지. 리다이렉션이 하나라도 있으면 쓰기 가능성이 있어 거부한다."""
+    if any(_REDIRECT_RE.match(t) for t in argv):
+        return False
+    if verb in READ_ONLY_VERBS:
+        return True
+    # cp 는 마지막 인자(목적지)가 아닌 원본으로만 읽기 예외를 둔다.
+    return verb == "cp" and tok is not argv[-1]
+
+
 def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> str | None:
     for rx, why in _CATASTROPHIC_RE:
         if rx.search(command):
@@ -572,7 +613,7 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> st
             if tok.startswith("-") or "/" not in tok and "." not in tok:
                 continue
             p = _resolve(tok.split("=", 1)[-1], cwd)
-            if _protected(p, cfg):
+            if _protected(p, cfg, read=_is_read_only_arg(verb, argv, tok)):
                 return _protected_reason(tok)
             if (verb in READ_VERBS or verb in _INTERPRETER_VERBS) and is_sensitive(p):
                 return f"민감 파일 읽기·반출 차단: {tok}"

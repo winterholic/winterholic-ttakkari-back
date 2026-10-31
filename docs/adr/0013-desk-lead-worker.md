@@ -28,6 +28,7 @@
   - Codex: `--disable hooks`(전역 Stop hook 이 기록을 강요해 추가 턴 3번, 입력 84.5k→20.4k, 20.9초→4.3~4.9초 실측), `--ephemeral`, `-s read-only`, 사용자 config.toml 의 MCP 서버 끄기, 빈 작업 폴더(`~/.ttakkari/desk`), `developer_instructions`=접수 지침.
   - Claude: `--settings {"disableAllHooks":true}`, `--setting-sources local`(전역 CLAUDE.md·스킬 제외), `--tools ""`, `--strict-mcp-config`, `--no-session-persistence`, `--system-prompt`=접수 지침. `disableAllHooks` 는 따까리 보험 hook 까지 끄므로 도구 없는 접수에만 쓴다.
 - 넘길 때: 작업판의 `lead_id` 가 이 접수의 보관 안 된 기획 세션이면 그 세션 대기열에 넣고, 아니면 새 기획 세션을 만든다. 기획에는 `[접수에서 넘긴 사용자 요청]` + 원문 + 최근 대화 4턴, 첨부(`context_artifact_ids`)를 넘긴다(Run `origin=desk`).
+- 2026-10-31 정정: 기존 기획에 붙이는 것은 사용자가 "그 세션에 이어서"·"OO 세션에 넣어줘"처럼 직접 요청했을 때만 한다(`desk._explicit_lead`). 그 외에는 모델이 `lead_id` 를 골라도 무시하고 새 기획을 만든다. 장황한 첫 메시지가 우산 기획이 되어 무관한 요청이 계속 붙던 문제(2026-10-24..30, 워커 30~75개짜리 기획에 반복 연결)를 끊기 위해서다. 대상은 말한 제목, 기획 ID, 모델이 고른 후보 순으로 찾는다. "왜 또 … 세션에 넣었냐" 같은 정정과 "새 세션" 명시는 붙이기로 보지 않는다. 새 기획에도 최근 대화 4턴이 함께 넘어가므로 맥락이 비지 않는다. 요청이 없으면 qwen 의 lead 선택 호출도 건너뛴다.
 - 중복 기획 방지: 넘기기 전에 접수 세션 행을 `FOR UPDATE` 로 잠그고 기획 목록을 다시 읽는다. `lead_dedup_seconds`(120초) 안에 이 접수에서 만든 기획 중 제목이 같으면(NFKC·대소문자 무시, 글자·숫자만 비교) 새로 만들지 않고 거기에 이어 넣는다. `desk.delegated` 이벤트에 `dedup: true`·`requested_title` 을 남긴다.
 
 ### 기획(lead)

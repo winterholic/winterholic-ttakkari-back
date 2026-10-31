@@ -285,7 +285,8 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
     started = time.monotonic()
     try:
         with desk_qwen.measure_operational_run(run.id, base_url):
-            q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
+            candidates = [str(lead.id) for lead in leads] if _wants_existing_session(run.prompt) else []
+            q = await desk_qwen.decide(board, history, run.prompt, candidates)
     except desk_qwen.QwenUnavailable as exc:
         events.append(db, run, "desk.retry" if exc.cooldown else "desk.skip", {"account": "qwen-local", "engine": "qwen",
                                                "ms": int((time.monotonic() - started) * 1000), "warm": False,
@@ -325,6 +326,41 @@ def _wants_new_session(prompt: str) -> bool:
     return _NEW_SESSION_RE.search(prompt) is not None
 
 
+# 기존 기획에 붙이는 것은 사용자가 그렇게 요청했을 때만 한다. 모델의 "같은 일 같다"는 추측으로는 붙이지 않는다.
+# 장황한 첫 메시지가 우산 제목이 되고 거기에 무관한 요청이 계속 들어가던 문제(2026-10-24..30)를 끊는다.
+_ATTACH_VERB = r"(이어|넣어|붙여|추가|합쳐|포함해|옮겨)"
+_ATTACH_RE = re.compile(rf"(세션|기획)\s*(에|으로|에다가?)\s*(다\s*)?{_ATTACH_VERB}")
+_TITLE_ATTACH_RE = re.compile(rf"(에|으로|에다가?)\s*(다\s*)?{_ATTACH_VERB}")
+# "왜 또 AIP 세션에 넣었냐" 같은 정정·항의는 붙이라는 요청이 아니다.
+_COMPLAINT_RE = re.compile(r"왜|어째서|뭣하러|하지\s*마|하지마|말고|넣지|붙이지|(넣었|붙였|넘겼|넣은|붙은)")
+
+
+def _wants_existing_session(prompt: str) -> bool:
+    """사용자가 기존 세션에 붙이라고 요청한 말투인지. 대상 확정은 _explicit_lead 가 한다."""
+    if _COMPLAINT_RE.search(prompt) or _wants_new_session(prompt):
+        return False
+    return _ATTACH_RE.search(prompt) is not None or _TITLE_ATTACH_RE.search(prompt) is not None
+
+
+async def _explicit_lead(db: AsyncSession, sess: ChatSession, prompt: str, model_lead_id: str | None) -> ChatSession | None:
+    """명시 요청으로 붙일 기획을 고른다. 요청이 없거나 대상을 못 찾으면 None(= 새 기획)."""
+    if not _wants_existing_session(prompt):
+        return None
+    leads = list(await db.scalars(
+        select(ChatSession).where(ChatSession.parent_id == sess.id, ChatSession.kind == SessionKind.orchestrator,
+                                  ChatSession.archived_at.is_(None)).order_by(ChatSession.updated_at.desc()).limit(50)))
+    key, lowered = _title_key(prompt), prompt.lower()
+    named = [x for x in leads if len(tk := _title_key(x.title)) >= 4 and tk in key]
+    if named:  # 제목을 말했다면 가장 긴(구체적인) 제목이다
+        return max(named, key=lambda x: len(_title_key(x.title)))
+    by_id = [x for x in leads if str(x.id) in lowered or str(x.id)[:8] in lowered]
+    if by_id:
+        return by_id[0]
+    if _ATTACH_RE.search(prompt):  # "그 세션에 이어서"처럼 지시어면 모델이 고른 후보만 인정한다
+        return await _open_lead(db, sess, model_lead_id)
+    return None
+
+
 async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Decision) -> tuple[ChatSession, bool]:
     """넘길 기획 세션과, 같은 일로 보고 방금 만든 기획에 이어 넣었는지(dedup)를 돌려준다."""
     from ttakkari.api.sessions import queue_run
@@ -333,7 +369,7 @@ async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Dec
     # 기획을 못 본다. 자동 보관(runs/lead_archive)도 같은 행을 잠가 순서가 맞는다. 잠금은 queue_run 의 commit 에서 풀린다.
     await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
     force_new = decision.new_session or _wants_new_session(run.prompt)
-    lead = None if force_new else await _open_lead(db, sess, decision.lead_id)
+    lead = None if force_new else await _explicit_lead(db, sess, run.prompt, decision.lead_id)
     dedup = False
     if lead is None:
         title = _new_title(run, decision)

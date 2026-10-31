@@ -94,14 +94,61 @@ async def test_desk_continues_existing_lead_from_board(client, auth, make_dir):
     await wait_run(client, auth, (await start_run(client, auth, desk["id"], "첫 일 DESK_DELEGATE"))["id"])
     lead = (await _leads(client, auth, desk["id"]))[0]
     await _wait(lambda: _all_done(client, auth, lead["id"]), what="첫 기획 턴")
-    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "그거 이어서 DESK_CONTINUE"))["id"])
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "그 세션에 이어서 DESK_CONTINUE"))["id"])
     leads = await _leads(client, auth, desk["id"])
     assert [x["id"] for x in leads] == [lead["id"]]
     runs = (await client.get(f"/api/sessions/{lead['id']}/runs", headers=auth)).json()
-    assert len(runs) == 2 and "그거 이어서" in runs[1]["prompt"]
+    assert len(runs) == 2 and "그 세션에 이어서" in runs[1]["prompt"]
     # 접수는 작업판에서 기획 세션 상태를 본다
     prompt = _desk_calls()[-1]["argv"][-1]
     assert f"lead_id={lead['id']}" in prompt and "「desk title」" in prompt
+
+
+@pytest.mark.parametrize("message", [
+    "그거 이어서 DESK_CONTINUE",  # 모델이 같은 일로 보더라도 사용자가 붙이라고 하지 않았다
+    "Aip작업 남은거 이어서해주셈 DESK_CONTINUE",
+    "왜 또 그 세션에 넣었냐 DESK_CONTINUE",  # 정정은 붙이라는 요청이 아니다
+    "새 세션에 넣어줘 DESK_CONTINUE",  # 새 세션 명시가 우선한다
+])
+async def test_desk_does_not_attach_to_existing_lead_without_explicit_request(client, auth, make_dir, message):
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "첫 일 DESK_DELEGATE"))["id"])
+    first = (await _leads(client, auth, desk["id"]))[0]
+    await _wait(lambda: _all_done(client, auth, first["id"]), what="첫 기획 턴")
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], message))["id"])
+    leads = await _leads(client, auth, desk["id"])
+    assert len(leads) == 2 and first["id"] in {x["id"] for x in leads}
+    old_runs = (await client.get(f"/api/sessions/{first['id']}/runs", headers=auth)).json()
+    assert len(old_runs) == 1
+
+
+async def test_desk_attaches_when_the_user_names_the_lead_title(client, auth, make_dir):
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "첫 일 DESK_DELEGATE"))["id"])
+    lead = (await _leads(client, auth, desk["id"]))[0]
+    await _wait(lambda: _all_done(client, auth, lead["id"]), what="첫 기획 턴")
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "desk title 에 이어서 해줘 DESK_DELEGATE"))["id"])
+    assert [x["id"] for x in await _leads(client, auth, desk["id"])] == [lead["id"]]
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("아니 자꾸 따까리에서 배포문제 세션에 다 들어가가지고 내가지금 테스크 관리가 명확히 구분이 안되네", False),
+    ("따까리에 배포, 테스트 병목문제가 있잖아 물론 이게 지금 많이 좋아지긴했어 근데", False),
+    ("아니 이걸 왜 또 AIP에 넘기냐고 ㅡㅡ", False),
+    ("아니 왜 ai research lab세션에 aip를 넣었냐 새세션에 분류해라;;", False),
+    ("뭐 어디까지한거냐", False),
+    ("따까리가 gh auth switch를 막지않게하고 편하게 작업할 수 있게 문제있는 부분 찾아서 수정해줘", False),
+    ("Aip작업 남은거 이어서해주셈", False),
+    ("그거 이어서 해줘", False),
+    ("새 세션에 넣어줘", False),
+    ("그 세션에 이어서 해줘", True),
+    ("레그나 연구 세션에 넣어줘", True),
+    ("이거 기존 기획에 추가해줘", True),
+    ("그 기획으로 옮겨줘", True),
+])
+def test_attach_intent_is_only_an_explicit_request(message, expected):
+    """실제로 잘못 붙었던 메시지(2026-10-24..30)는 새 기획이고, 붙이라고 직접 말한 경우만 붙는다."""
+    assert desk_module._wants_existing_session(message) is expected
 
 
 async def _all_done(client, auth, sid: str) -> bool:

@@ -106,7 +106,7 @@ async def test_archived_lead_is_never_reopened(client, auth, make_dir):
         row.archived_at = utcnow()
         await db.commit()
     assert await _leads(client, auth, desk["id"]) == []
-    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "그거 이어서 DESK_CONTINUE"))["id"])
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "그 세션에 이어서 DESK_CONTINUE"))["id"])
     leads = await _leads(client, auth, desk["id"])
     assert len(leads) == 1 and leads[0]["id"] != lead["id"]
     assert await _archived(lead["id"])

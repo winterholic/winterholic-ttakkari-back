@@ -186,12 +186,12 @@ async def test_copilot_harness_shows_real_delivery_mcp_and_guard(client, auth, e
 
 def test_orphan_copilot_pid_selection_only_parentless_headless():
     from ttakkari.runs.copilot_usage import _orphan_copilot_pids
-    out = "\n".join([
-        "101 1 /x/copilot-darwin-arm64/copilot --headless --no-auto-update --stdio",
-        "102 555 /x/copilot-darwin-arm64/copilot --headless --stdio",
-        "103 1 /x/copilot --stdio",
-        "104 1 /usr/bin/python server.py --headless --stdio",
-    ])
+    out = (
+        "101 1 /x/copilot-darwin-arm64/copilot --headless --no-auto-update --stdio\n"
+        "102 555 /x/copilot-darwin-arm64/copilot --headless --stdio\n"
+        "103 1 /x/copilot --stdio\n"
+        "104 1 /usr/bin/python server.py --headless --stdio\n"
+    )
     assert _orphan_copilot_pids(out) == [101]
 
 

@@ -82,7 +82,7 @@ def _orphan_copilot_pids(ps_output: str) -> list[int]:
 def reap_orphan_copilots() -> int:
     """서버 재시작·강제 종료로 부모를 잃은 quota probe 자식을 정리한다. 살아 있는 부모를 가진 프로세스는 건드리지 않는다."""
     try:
-        out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return 0
     killed = 0
@@ -111,7 +111,7 @@ def _snapshot_descendants(root: int | None) -> list[int]:
     if not root:
         return []
     try:
-        out = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     return _descendant_pids(out, root)

@@ -723,7 +723,9 @@ async def load_cooldowns(db: AsyncSession) -> int:
 TRANSIENT_RE = re.compile(
     r"over capacity|capacity (limit|constraints?)|high demand|server (is )?busy|service unavailable|"
     r"temporarily unavailable|\b50[0234]\b|bad gateway|gateway time-?out|stream disconnected|"
-    r"connection (reset|closed)|econnreset|etimedout|internal server error|server_error",
+    r"connection (reset|closed)|econnreset|etimedout|internal server error|server_error|"
+    # Muse: "connection reached EOF". 2026-10-30 하루에 10건이 영구 실패로 끝나 목표 3건이 막혔다.
+    r"connection reached eof|unexpected eof|broken pipe|socket hang up",
     re.IGNORECASE,
 )
 # SDK 와 설치된 CLI 의 프로토콜이 어긋난 경우. 재시도해도 그대로라 오래 쉬고 다른 엔진으로 넘어간다.

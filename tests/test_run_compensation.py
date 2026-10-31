@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, Run, RunEvent, RunStatus, utcnow
-from ttakkari.runs import events
+from ttakkari.runs import events, profiles
 from ttakkari.runs.manager import manager
 
 pytestmark = [pytest.mark.security]
@@ -19,6 +19,8 @@ pytestmark = [pytest.mark.security]
     ("내부 오류: TimeoutError('QueuePool limit of size 5 overflow 3 reached')", True),
     ("ConnectionResetError: connection reset by peer", True),
     ("HTTP 503 Service Unavailable", True),
+    ("connection reached EOF", True),  # Muse 일시 연결 끊김(2026-10-30 하루 10건)
+    ("write tcp: broken pipe", True),
     ("Permission denied (quota 429)", False),
     ("403 Forbidden", False),
     ("unknown tool: bad_name", False),
@@ -204,3 +206,15 @@ async def test_one_compensation_failure_does_not_block_normal_queue(monkeypatch)
     monkeypatch.setattr(generation_service, "_commands", AsyncMock())
     await generation_service.coordinate_runs(SimpleNamespace(draining=False), SimpleNamespace(remote=False), "active")
     resume.assert_awaited_once()
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("connection reached EOF", profiles.TRANSIENT_COOLDOWN_SECONDS),
+    ("unexpected EOF while reading", profiles.TRANSIENT_COOLDOWN_SECONDS),
+    ("stream disconnected before completion", profiles.TRANSIENT_COOLDOWN_SECONDS),
+    ("Permission denied: connection reached EOF", None),  # 권한 오류 줄은 다른 공급자로 재생하지 않는다
+    ("Error: Model \"auto\" does not support reasoning effort configuration", profiles.ENGINE_BROKEN_COOLDOWN_SECONDS),
+    ("exit code 1", None),
+])
+def test_transient_engine_errors_cool_the_account_instead_of_failing_for_good(text, expected):
+    assert profiles.transient_cooldown(text) == expected

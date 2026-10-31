@@ -25,6 +25,7 @@ RESTART_ERRORS = {"서버 종료로 중단", "executor orphan reconciled after r
 RETRYABLE_MARKERS = ("queuepool", "connectionreseterror", "connection reset by peer", "connection refused",
                      "connection terminated", "server disconnected", "remoteprotocolerror", "readtimeout",
                      "connecttimeout", "temporarily unavailable", "overloaded", "시간 초과(",
+                     "connection reached eof", "unexpected eof", "broken pipe",
                      "exit code -9", "exit code 137")
 
 

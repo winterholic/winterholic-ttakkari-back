@@ -1,0 +1,1 @@
+GH_TOKEN="$(gh auth token --hostname github.com --user winterholic)" gh repo view winterholic/winterholic-ttakkari-back --json viewerPermission,nameWithOwner

@@ -1,0 +1,8 @@
+## integ/regna-cpu-integration-20261102...origin/main [ahead 12]
+?? review/regna-cpu-integration-20261102/evidence/05-command.txt
+?? review/regna-cpu-integration-20261102/evidence/05-exit.txt
+?? review/regna-cpu-integration-20261102/evidence/05-stderr.txt
+?? review/regna-cpu-integration-20261102/evidence/05-stdout.txt
+?? review/regna-cpu-integration-20261102/evidence/06-command.txt
+?? review/regna-cpu-integration-20261102/evidence/06-stdout.txt
+f169a1f7b5f7f54627fca400cd256cbf15cf6d64

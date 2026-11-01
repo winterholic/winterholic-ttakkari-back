@@ -37,3 +37,12 @@ Frozen Regna 원자료·manifest·scorer·oracle 및 개인 전용 `host_gpu` �
 - permission denial 뒤 같은 원격 대상 push를 다른 login/도구로 재시도하지 않았다. 정상 push 및 원격 SHA 확인은 미완료다.
 - push 성공이 예약 선행조건이므로 `request_backend_deploy`는 호출하지 않았다. reservation ID/state는 **없음**이며 실제 배포 성공도 확인하지 않았다.
 - 이 기록을 포함한 최종 통합 SHA는 로컬 integration branch에만 존재한다. 권한 수정 후 다시 이어서 push/deploy할 수 있도록 branch와 clean commit을 보존했다.
+
+## Follow-up: per-command 저장소 권한 조회 (2026-11-02)
+
+- 시작 identity: integration source commit `f169a1f7b5f7f54627fca400cd256cbf15cf6d64`; branch `integ/regna-cpu-integration-20261102`. 이 단계에서는 코드, frozen N3 입력, backend pins를 수정하지 않았다.
+- `github_accounts` read-only 결과: `daeseon-dev` active/state success, `winterholic` inactive/state success. 전역 계정은 바꾸지 않았다.
+- 실행한 지원 조회: `GH_TOKEN="$(gh auth token --hostname github.com --user winterholic)" gh repo view winterholic/winterholic-ttakkari-back --json viewerPermission,nameWithOwner` — **exit 0**, stdout `{"nameWithOwner":"winterholic/winterholic-ttakkari-back","viewerPermission":"ADMIN"}`, stderr empty. 토큰 값은 출력하지 않았다.
+- 따라서 기존 push 403은 `daeseon-dev` login 사용으로 설명된다. 적절한 per-command login은 저장소 `ADMIN` 권한으로 조회됐다. 이번 회차에는 사용자가 정한 N3 복원 완료 선행조건 때문에 push/focused test를 실행하지 않았다.
+- N3 helper 분리는 외부 E에게 이미 요청된 상태다. 복원 완료 보고 전에는 동일 focused test나 push를 재실행하지 않는다. 확인 뒤 **한 번** focused Q25 회귀를 실행하고 green이면 이미 통과한 API 85/Ruff 결과를 재사용한 다음, `winterholic` per-command 인증으로 normal `HEAD:refs/heads/main` push, 원격 full SHA readback, 그 full SHA의 `request_backend_deploy` 순으로 이어간다. 현재까지 reservation ID/state는 없다.
+- 정확한 repo-view 명령/stdout/stderr/exit 및 clean branch identity는 `evidence/05-*`, `evidence/06-*`에 보존했다.

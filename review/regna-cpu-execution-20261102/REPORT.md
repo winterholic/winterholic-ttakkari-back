@@ -4,15 +4,15 @@ Date: 2026-11-02 (Asia/Seoul)
 
 ## Result
 
-Implemented the fixed `regna_q25_first6_cpu` backend operation in an isolated worktree based on the active deployed backend revision `83302612c8edaaa40844a423e7223d2ee346e382`. The implementation commit is `fb692505680c7244500ca34c0a478c85515f22dc` (`feat: add fixed Regna Qwen2.5 CPU operation`); the Luna-review hardening commit is `500dcdae1775e39ba3e8430fbb21f29a2f25a4ba` (`fix: close Regna Qwen2.5 supervision failure paths`); the manifest TOCTOU fix is `c32c1763` (`fix: pin manifest bytes during Regna validation`); the F-01 redaction source/test commit is `9572da6f7ef5840531794496484a1641383f1c70` (`fix: redact foreign Q25 operation conflicts`). The original backend worktree was dirty before work began and was left untouched.
+Implemented the fixed `regna_q25_first6_cpu` backend operation in an isolated worktree based on the active deployed backend revision `83302612c8edaaa40844a423e7223d2ee346e382`. The implementation commit is `fb692505680c7244500ca34c0a478c85515f22dc` (`feat: add fixed Regna Qwen2.5 CPU operation`); the Luna-review hardening commit is `500dcdae1775e39ba3e8430fbb21f29a2f25a4ba` (`fix: close Regna Qwen2.5 supervision failure paths`); the manifest TOCTOU fix is `c32c1763` (`fix: pin manifest bytes during Regna validation`); the initial F-01 redaction commit is `9572da6f7ef5840531794496484a1641383f1c70`; the symmetric F-01 completion is `f7509bf6dc0b06366ed8d24a7784044db16ec51a` (`fix: redact conflicts involving active Q25 jobs`). The original backend worktree was dirty before work began and was left untouched.
 
 This is source-only work. It has not been pushed, merged, deployed, or used to dispatch a model. No model was run or downloaded. No Regna source, plan, oracle, scorer, or historical run was changed.
 
 ## F-01 independent-review follow-up
 
-The independent review reproduced one information disclosure on the newly enabled Q25 work-session start path: when another work session owned an active `backup_db` job, a Q25 start correctly returned 409 but exposed that job's kind and ID in the message. This is the conflict response contract inherited from the base `83302612` implementation, not a new general operations defect. The fix is scoped to Q25 conflict handling: `jobs.Conflict` now carries the active job as internal structured context; the API preserves the detailed message only when that job is owned by the requesting session and returns `다른 운영 작업이 진행 중입니다.` when the owner is different or unavailable. Other operation kinds keep their prior conflict behavior. MCP's host-operation tool forwards the API error body, so it receives the same sanitized message. A non-owner or unknown-owner Q25 conflict response contains no active job ID, kind, or owner detail.
+The independent review reproduced one information disclosure on the newly enabled Q25 work-session path: either a Q25 start can conflict with another session's active job, or a non-Q25 heavy start can conflict with another session's active Q25 job. Both returned 409 but exposed the other job's kind and ID. This is the conflict response contract inherited from the base `83302612` implementation, newly reachable from the fixed Q25 operation, not a redesign finding for all operations. The narrow correction covers a conflict when the requested kind or the active kind is Q25: `jobs.Conflict` carries the active job as internal structured context; the API preserves detailed text only when the active job is owned by the requesting session and otherwise returns `다른 운영 작업이 진행 중입니다.` (including when owner context is absent). Conflicts unrelated to Q25 keep their prior behavior. MCP's host-operation tool forwards the API error body, so non-owner callers receive the same sanitized message.
 
-Regression coverage verifies both sides: a different work-session owner gets the fixed 409 message without the active job kind/ID; the same owner retains the prior detailed conflict. The F-01 source/test delta is `9572da6f7ef5840531794496484a1641383f1c70`. The test-only active job is synthetic and no host process or model was started.
+Regression coverage verifies both directions and owners: a different work-session owner gets the fixed 409 message without the active job kind/ID; the same owner retains the prior detailed conflict. Tests create active job records, then invoke the real API route and real `jobs.prepare_heavy` path; they do not inject or mock `jobs.Conflict`. `_runner_state` is stubbed only to keep the synthetic active record from reconciliation. The source delta is `f7509bf6dc0b06366ed8d24a7784044db16ec51a`; no host process or model was started.
 
 ## Capability boundary
 
@@ -45,7 +45,7 @@ Focused capability and dispatch tests, exit 0:
 
 ```text
 UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_q25_execution.py tests/test_research_q25_dispatch.py
-37 passed in 2.98s
+37 passed in 3.38s
 ```
 
 Before the fix, the new manifest replacement tests failed as expected: a shrunken manifest was accepted (`DID NOT RAISE ProfileError`), and a manifest replaced between the hash read and verifier read was parsed from the second path read (`frozen source manifest has no file pins`). After the fix, both targeted cases pass within the 37-test focused run.
@@ -86,14 +86,20 @@ The new tests cover frozen plan/source/runner/asset pins; manifest shrinking and
 F-01 regression output:
 
 ```text
-RED: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py::test_regna_conflict_hides_other_work_session_job_details
-exit 1 — expected the fixed message; actual 409 included `backup_db` and the active job UUID.
+RED (request=Q25, active=foreign backup_db): UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py::test_regna_conflict_hides_other_work_session_job_details
+exit 1 — actual 409 included `backup_db` and the active job UUID.
 
-GREEN: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py::test_regna_conflict_hides_other_work_session_job_details tests/test_host_operations.py::test_regna_conflict_preserves_details_for_same_work_session
-2 passed in 0.66s
+RED (request=backup_db, active=foreign Q25): UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py::test_non_owner_conflict_hides_active_regna_job_details
+exit 1 — actual 409 included `regna_q25_first6_cpu` and the active job UUID.
+
+GREEN exact nodes: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py::test_regna_conflict_hides_other_work_session_job_details tests/test_host_operations.py::test_regna_conflict_preserves_details_for_same_work_session tests/test_host_operations.py::test_non_owner_conflict_hides_active_regna_job_details tests/test_host_operations.py::test_same_owner_conflict_preserves_active_regna_job_details
+4 passed in 0.78s
 
 GREEN filter: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py -k 'regna or conflict or owner'
-4 passed, 71 deselected in 0.78s
+6 passed, 71 deselected in 0.89s
+
+Focused Q25: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_q25_execution.py tests/test_research_q25_dispatch.py
+37 passed in 3.38s
 
 Ruff: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run ruff check src/ttakkari/operations/jobs.py src/ttakkari/api/operations.py tests/test_host_operations.py
 All checks passed!
@@ -103,7 +109,7 @@ Luna high (`gpt-6-luna`, high effort) independently reviewed the backend changes
 
 ## Follow-up verification
 
-The independent F-01 source delta is based on `ea51f28ec1f56d40816f50d19da99c32b3b56b87`. Its API conflict message is passed through by the existing MCP `_call` wrapper; sanitized API error data therefore remains sanitized for `host_operation_start` callers. The focused operation and manifest checks cited above are retained; this follow-up ran only the F-01 host-operation tests and Ruff, not the full suite. The independent high-effort Luna read-only review of the F-01 delta is still in progress; no final review result is claimed here.
+The independent F-01 source delta is based on `ea51f28ec1f56d40816f50d19da99c32b3b56b87`. Its API conflict message is passed through by the existing MCP `_call` wrapper; sanitized API error data therefore remains sanitized for `host_operation_start` callers. The prior API-79 and manifest-2 evidence is retained; this follow-up ran only the Q25 focused suite, F-01 host-operation tests, and Ruff, not the full suite. The high-effort Luna read-only reviewer identified the reverse-direction leak; the symmetric fix is committed as `f7509bf6dc0b06366ed8d24a7784044db16ec51a`. Its final acceptance review confirmed both conflict directions are redacted for other/unknown owners, same-owner details remain, and found no residual API/MCP leak. The reviewer did not run tests or host/model dispatch.
 
 An independent reviewer can repeat the source checks from this worktree with:
 

@@ -22,10 +22,11 @@ from ttakkari.config import get_settings
 BACK = Path(__file__).resolve().parents[3]
 SCRIPTS = BACK / "scripts"
 
-HEAVY = ("backup_db", "data_snapshot", "restore_rehearsal", "snapshot_verify")
+HEAVY = ("backup_db", "data_snapshot", "restore_rehearsal", "snapshot_verify", "regna_q25_first6_cpu")
 INLINE = ("runtime_report", "performance_baseline", "backup_status", "collection_scope_preview", "collection_scope_apply")
 KINDS = (*HEAVY, *INLINE)
-TIMEOUT_SECONDS = {"backup_db": 900, "data_snapshot": 1800, "restore_rehearsal": 1800, "snapshot_verify": 1800}
+TIMEOUT_SECONDS = {"backup_db": 900, "data_snapshot": 1800, "restore_rehearsal": 1800,
+                   "snapshot_verify": 1800, "regna_q25_first6_cpu": 930}
 BACKUP_RETENTION_DAYS = 30
 RESTORE_DB_PREFIX = "ttakkari_restore_rehearsal_"
 VERIFY_DIR = ".verify"
@@ -252,6 +253,16 @@ def _manifest_encrypted(path: Path) -> bool:
 
 
 def make_plan(kind: str, job_id: str) -> Plan:
+    if kind == "regna_q25_first6_cpu":
+        from ttakkari.research import regna_q25_first6
+
+        profile = regna_q25_first6.load_profile()
+        env = {"PATH": os.defpath, "PYTHONPATH": str(BACK / "src"), "TTAKKARI_HOME": str(get_settings().home),
+               "TTAKKARI_DATA_DIR": str(get_settings().data_dir)}
+        return Plan(kind, [sys.executable, "-m", "ttakkari.research.regna_q25_first6", "run", job_id], env,
+                    TIMEOUT_SECONDS[kind], {"profile": regna_q25_first6.PROFILE_ID,
+                                              "plan_sha256": profile.plan_sha256,
+                                              "cells": len(profile.cells), "cpu_only": True})
     if kind not in HEAVY:
         raise Refused(f"허용되지 않은 작업 종류입니다: {kind}", 422)
     short = job_id.replace("-", "")[:12]

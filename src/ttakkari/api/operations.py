@@ -28,17 +28,26 @@ DESCRIPTIONS = {
     "snapshot_verify": "최근 데이터 스냅샷을 격리 임시 위치에 풀어 파일 해시를 대조하고 지움",
     "collection_scope_preview": "스키마·활성 세대·이전 세대 종료를 확인하고 단일 도서관 통합을 실행한 뒤 롤백",
     "collection_scope_apply": "이전 세대 종료 후 기존 이력·접근 pool을 보존해 단일 도서관 통합 적용",
+    "regna_q25_first6_cpu": "Regna frozen Qwen2.5 first-six CPU research operation (work sessions only; fixed plan and assets)",
 }
 
 
 class StartIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db", "data_snapshot",
-                  "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply"]
+                  "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply",
+                  "regna_q25_first6_cpu"]
 
 
-async def caller(sid: uuid.UUID, db: Db) -> None:
-    await _session(db, sid)
+async def caller(sid: uuid.UUID, db: Db):
+    return await _session(db, sid)
+
+
+def _authorize_q25_job(job: dict, session, sid: uuid.UUID) -> None:
+    if job.get("kind") == "regna_q25_first6_cpu" and (
+        session.pool != "work" or job.get("requested_by_session") != str(sid)
+    ):
+        raise HTTPException(404, "운영 작업이 없습니다.")
 
 
 def _job_id(job_id: str) -> str:
@@ -50,18 +59,28 @@ def _job_id(job_id: str) -> str:
 
 @router.get("")
 async def list_operations(sid: AgentSession, db: Db) -> dict:
-    await caller(sid, db)
-    recent = await asyncio.to_thread(jobs.recent, 10)
+    session = await caller(sid, db)
+    candidates = await asyncio.to_thread(jobs.all_jobs)
+    recent = candidates[-10:]
+    recent = [j for j in recent if j.get("kind") != "regna_q25_first6_cpu" or (
+        session.pool == "work" and j.get("requested_by_session") == str(sid)
+    )]
+    recent = await asyncio.gather(*(asyncio.to_thread(jobs.reconciled, j["id"]) for j in recent))
     for job in recent:
         if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
             await jobs.audit_finish(job["id"])
     recent = await asyncio.gather(*(asyncio.to_thread(jobs.get, j["id"]) for j in recent))
-    return {"kinds": DESCRIPTIONS, "jobs": [jobs.view(j) for j in recent]}
+    kinds = dict(DESCRIPTIONS)
+    if session.pool != "work":
+        kinds.pop("regna_q25_first6_cpu", None)
+    return {"kinds": kinds, "jobs": [jobs.view(j) for j in recent]}
 
 
 @router.post("", status_code=202)
 async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
-    await caller(sid, db)
+    session = await caller(sid, db)
+    if body.kind == "regna_q25_first6_cpu" and session.pool != "work":
+        raise HTTPException(403, "Regna Qwen2.5 CPU research requires a work session.")
     if body.kind in plans.INLINE:
         job = await asyncio.to_thread(jobs.create, body.kind, str(sid), inline=True)
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
@@ -92,12 +111,16 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
         raise HTTPException(500, f"작업 준비 실패: {type(exc).__name__}") from exc
 
     if reused:
+        if body.kind == "regna_q25_first6_cpu" and job.get("requested_by_session") != str(sid):
+            raise HTTPException(409, "Regna Qwen2.5 CPU operation is already owned by another work session.")
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
                detail={"kind": body.kind, "session_id": str(sid), "deduplicated": True})
         await db.commit()
         return jobs.view(job | {"deduplicated": True})
 
     try:
+        if body.kind == "regna_q25_first6_cpu":
+            job = await asyncio.to_thread(jobs.update, job["id"], q25_scope=session.pool)
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
                detail={"kind": body.kind, "session_id": str(sid), "deduplicated": False})
         await db.commit()
@@ -117,9 +140,13 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
 
 @router.get("/{job_id}")
 async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
-    await caller(sid, db)
+    session = await caller(sid, db)
     try:
-        job = await asyncio.to_thread(jobs.reconciled, _job_id(job_id))
+        ident = _job_id(job_id)
+        current = await asyncio.to_thread(jobs.get, ident)
+        _authorize_q25_job(current, session, sid)
+        job = await asyncio.to_thread(jobs.reconciled, ident)
+        _authorize_q25_job(job, session, sid)
         if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
             job = await jobs.audit_finish(job["id"])
         return jobs.view(job)
@@ -129,8 +156,10 @@ async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
 
 @router.post("/{job_id}/cancel")
 async def cancel_operation(job_id: str, sid: AgentSession, db: Db) -> dict:
-    await caller(sid, db)
+    session = await caller(sid, db)
     try:
+        current = await asyncio.to_thread(jobs.get, _job_id(job_id))
+        _authorize_q25_job(current, session, sid)
         job = await asyncio.to_thread(jobs.cancel, _job_id(job_id))
     except FileNotFoundError as exc:
         raise HTTPException(404, "운영 작업이 없습니다.") from exc

@@ -77,3 +77,10 @@
 ### 보완 2 검증
 - `unit_tests/test_host_resource_recovery_hardening.py`(25개): setuid 규칙과 열거, 실제 프로세스 표로 7시간 lease 해제, 소비자별 거부·허용, 고아 lease 열거, 시계 역행 3/120/250초.
 - `scripts/repro/g1_rereview_repro_v2.py`: 독립 재검수자의 재현 스크립트 원본(49 checks). 새 HEAD에서 49/49, 0704b82 소스에서는 4건 실패.
+
+## 제한된 Regna N3 Qwen2.5 CPU 연구 operation (2026-11-02)
+
+- 이 capability는 personal-only `host_gpu_start/status/bench/stop`의 pool 차단이나 설정을 바꾸지 않는다. 새 `regna_q25_first6_cpu` durable operation 하나를 work session에만 노출한다. 시작 요청은 kind만 받고, 시작한 동일 work session만 상태를 읽고 취소할 수 있다.
+- 서버가 frozen Qwen2.5 first-six plan SHA, source manifest, 모델·runtime·template 경로/크기/SHA와 정확히 여섯 cell을 고정 검증한다. 임의 경로·argv·모델·prompt는 받지 않는다. 기존 r4 runner가 HTTP/SSE/tokenizer/raw 및 각 모델 child의 wait4 stop 증거를 남긴다.
+- operation은 새 owner-bound `ResourceLeaseManager` lease를 `resource_family=llm`으로 획득해 기존 단일 호스트 자원 flock을 공유한다. lease 만료나 supervisor 종료만으로 해제하지 않는다. 정상 종료는 셀별 wait4/stop receipt와 RSS 감시 종료를 확인한 뒤 해제한다. 감독자가 죽은 경우에는 바깥 runner가 소유 프로세스 그룹 부재를 확인해야만 lease를 회수하며, raw 증거가 불완전하면 작업은 실패로 남는다. 종료가 불확정이면 lease를 보존한다.
+- CPU only, 단일 child 순차 실행, cell 120초·전체 900초·cleanup reserve 30초, server RSS 6 GiB ceiling을 적용한다. 이 예외는 임의 명령 통로, 전역 work 허용, GPU 실행 capability가 아니다. Production 배포나 실제 모델 호출을 증명하지 않는다.

@@ -938,7 +938,8 @@ async def collection_mission_retry(mission_id: str, expected_run_seq: int) -> st
 @server.tool()
 async def host_operation_start(kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db",
                                             "data_snapshot", "restore_rehearsal", "snapshot_verify",
-                                            "collection_scope_preview", "collection_scope_apply"]) -> str:
+                                            "collection_scope_preview", "collection_scope_apply",
+                                            "regna_q25_first6_cpu"]) -> str:
     """Run one approved host operation through the backend (no shell, paths or DB URLs; only `kind`).
     Read-only and instant: runtime_report (execution ownership, generations, leases), performance_baseline
     (short synthetic DB/event-loop/host probe), backup_status. Background: backup_db (read-only pg_dump, new
@@ -948,7 +949,10 @@ async def host_operation_start(kind: Literal["runtime_report", "performance_base
     temp dir, compare hashes, delete). One heavy job runs at a time; repeating the same kind returns the running
     job. collection_scope_preview and collection_scope_apply run the existing library merge with schema and
     generation/drain guards; preview rolls back and apply preserves history and access pools. These have a 60s cap.
-    Poll host_operation_status; results hold counts/hashes/times only, never dumps or keys. Personal and work sessions."""
+    The fixed `regna_q25_first6_cpu` kind is available only from a work session. It accepts no paths, command,
+    model or prompt and runs only the server-pinned Regna N3 Qwen2.5 first-six profile on CPU. It does not
+    change the personal-only host_gpu tools. Poll host_operation_status; results hold bounded evidence metadata,
+    never dumps or keys. The Regna operation status/cancel endpoints are bound to its starting work session."""
     return await _agent("POST", "/operations", {"kind": kind})
 
 

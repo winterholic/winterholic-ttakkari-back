@@ -255,11 +255,12 @@ async def _run(job_id: str) -> int:
                                 "runner_started": jobs.process_identity(os.getpid())})
 
     # 시작 시 이전 비정상 종료 잔여물(격리 DB 및 평문 임시 파일) 정리
-    try:
-        await drop_all_leftover_dbs()
-    except Exception:  # noqa: BLE001, S110
-        pass
-    plans.clean_residuals()
+    if job["kind"] != "regna_q25_first6_cpu":
+        try:
+            await drop_all_leftover_dbs()
+        except Exception:  # noqa: BLE001, S110
+            pass
+        plans.clean_residuals()
 
     started = time.monotonic()
     plan: plans.Plan | None = None
@@ -275,7 +276,18 @@ async def _run(job_id: str) -> int:
             out.seek(0, os.SEEK_END)
             out.seek(max(0, out.tell() - 200_000))
             output = out.read().decode("utf-8", "replace")
-        status, summary, error = _summarize(plan, status, output, before)
+        if plan.kind == "regna_q25_first6_cpu":
+            from ttakkari.research import regna_q25_first6
+
+            summary = regna_q25_first6.operation_summary(job_id, get_settings().data_dir)
+            if not summary.get("cleanup_verified"):
+                status = GROUP_UNCONFIRMED
+                error = "cleanup_pending: Regna owned-child stop proof is unavailable; host lease retained"
+            elif code != 0 or summary.get("raw_evidence", {}).get("verified") is not True:
+                status = "failed"
+                error = "Regna first-six operation lacked complete pinned raw evidence or exited unsuccessfully"
+        else:
+            status, summary, error = _summarize(plan, status, output, before)
         if plan.kind == "restore_rehearsal":
             try:
                 if await _drop_leftover(plan.identity["target_db"]):

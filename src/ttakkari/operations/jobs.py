@@ -392,7 +392,9 @@ def _prune() -> None:
 
 
 class Conflict(Exception):
-    pass
+    def __init__(self, message: str, *, active_job: dict | None = None):
+        super().__init__(message)
+        self.active_job = active_job
 
 
 def create(kind: str, session_id: str, *, inline: bool = False, identity: dict | None = None) -> dict:
@@ -419,7 +421,8 @@ def prepare_heavy(kind: str, session_id: str) -> tuple[dict, bool]:
             same = next((j for j in active if j["kind"] == kind), None)
             if same:
                 return same, True
-            raise Conflict(f"다른 운영 작업이 진행 중입니다: {active[0]['kind']} ({active[0]['id']})")
+            raise Conflict(f"다른 운영 작업이 진행 중입니다: {active[0]['kind']} ({active[0]['id']})",
+                           active_job=active[0])
         job = create(kind, session_id)
         try:
             plan = plans.make_plan(kind, job["id"])

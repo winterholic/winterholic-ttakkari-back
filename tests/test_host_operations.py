@@ -182,6 +182,29 @@ async def test_duplicate_and_conflicting_starts(client, env, monkeypatch):
     assert (await _start(client, hdr, "backup_status")).status_code == 202
 
 
+async def test_regna_conflict_hides_other_work_session_job_details(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    other = _active_job("backup_db", requested_by_session="another-work-session")
+
+    response = await _start(client, _hdr(env.work_session_id), "regna_q25_first6_cpu")
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "다른 운영 작업이 진행 중입니다."
+    assert other["id"] not in response.text
+    assert "backup_db" not in response.text
+
+
+async def test_regna_conflict_preserves_details_for_same_work_session(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    own = _active_job("backup_db", requested_by_session=str(env.work_session_id))
+
+    response = await _start(client, _hdr(env.work_session_id), "regna_q25_first6_cpu")
+
+    assert response.status_code == 409
+    assert own["id"] in response.text
+    assert "backup_db" in response.text
+
+
 def test_start_heavy_unexpected_exception_cleans_queue(monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("simulated unexpected runner spawn failure")

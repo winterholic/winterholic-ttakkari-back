@@ -46,6 +46,14 @@ Final captured commands (all stdout/stderr/exit files are in `evidence/`):
 
 The existing connector evidence for the N3 focused 37 tests, host/API owner 9 tests, MCP allowlist 1 test, N3 31 pins and N4 15 pins was reused because those files and identities were not invalidated. The source/pin identity receipt confirms the prior N3 and N4 before/after pin maps match; the N4 plan and source-pin bytes remain `4b088845…6a19` and `765c36b5…3c82d` respectively.
 
+## Follow-up boundary check
+
+On the same correction HEAD, the focused positive/negative corrections and existing N4 execution suite were rerun sequentially: 8 and 11 passed, respectively; outputs are in `evidence/06-follow-up-corrections.*` and `evidence/07-follow-up-n4-execution.*`.
+
+The independent `test_runner_exit_recovery_keeps_lease_when_dispatch_failure_has_no_batch_receipt` confirms that when a dispatch failure leaves `child_possible=True` but no batch receipt exists, recovery refuses reconciliation and retains the lease. This is conservative cleanup behavior with an availability cost at the crash boundary. It does not establish unsafe release and is not a fourth correction or deployment gate. That reviewer test and untracked review evidence were read only; no recovery code was changed.
+
+These follow-up tests still use source-level fake seams and tmp-path files. No model/server/assets were loaded, no real lease was acquired, and no Regna research result was produced.
+
 ## Exact changes
 
 - `src/ttakkari/research/regna_n4_combo_first6.py` — F1 historical eligibility and preserved attempt reasons; F2 stable discovery inventory; F3 symlink/containment checks.

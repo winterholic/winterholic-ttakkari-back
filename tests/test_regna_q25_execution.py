@@ -176,6 +176,72 @@ def test_preflight_fails_closed_when_process_enumeration_is_incomplete():
         q25.preflight(IncompletePsutil)
 
 
+def test_rss_monitor_thread_start_failure_stops_only_owned_child_in_outer_group(tmp_path, profile, monkeypatch):
+    import threading
+
+    import psutil
+    from tools.practical_research.execution import driver
+
+    q25._load_r4_runner(profile)
+    captured, violations = {}, []
+
+    class FakeProcess:
+        pid = 845321
+        terminated = False
+
+        def terminate(self):
+            self.terminated = True
+
+        def poll(self):
+            return None
+
+    process = FakeProcess()
+
+    class FakePsutilProcess:
+        def create_time(self):
+            return 1.0
+
+    class FakeServer:
+        def __init__(self, *_args):
+            self.proc = None
+            self.stopped = False
+
+        def start(self):
+            self.proc = driver.subprocess.Popen([q25.EXPECTED_ASSETS["binary"][0]], start_new_session=True)
+            return object()
+
+        def stop(self):
+            self.stopped = True
+            return {"state": "stopped"}
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["start_new_session"] = kwargs["start_new_session"]
+        return process
+
+    def thread_start(_thread):
+        raise RuntimeError("synthetic thread start failure")
+
+    monkeypatch.setattr(driver, "MeasuredOwnedServer", FakeServer)
+    monkeypatch.setattr(driver.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(psutil, "Process", lambda _pid: FakePsutilProcess())
+    monkeypatch.setattr(threading.Thread, "start", thread_start)
+    factory, monitored = q25._bounded_server_factory(profile, tmp_path, violations)
+    args = SimpleNamespace(runtime_binary=Path(q25.EXPECTED_ASSETS["binary"][0]), model=Path("/model"),
+                           template=Path("/template"), context_size=32768, startup_timeout=120,
+                           request_timeout=120, threads=6)
+    child = factory(args, tmp_path / "server")
+
+    with pytest.raises(q25.PreflightError, match="RSS supervision failed"):
+        child.start()
+
+    assert captured["start_new_session"] is False
+    assert process.terminated is True
+    assert child.stopped is True
+    assert monitored == {}
+    assert violations == ["owned model RSS monitor failed to start: RuntimeError"]
+
+
 def test_raw_evidence_missing_or_incomplete_never_reports_success(tmp_path):
     (tmp_path / "receipt.json").write_text(json.dumps({"execution_status": "complete", "cells": []}))
 
@@ -221,11 +287,15 @@ def test_complete_synthetic_raw_receipt_requires_and_verifies_all_six_cells(tmp_
                      "cleanup_verified": True, "usage_state": "observed_exact_integer"})
         ids.append(cell_id)
     (output / "cells.json").write_text(json.dumps({"cells": rows}))
-    (output / "receipt.json").write_text(json.dumps({"execution_status": "complete", "cells_attempted": ids,
-                                                      "cleanup_verified": {"verified": True},
-                                                      "raw_records_durable": True}))
+    valid_receipt = {"execution_status": "complete", "cells_attempted": ids, "cells": rows,
+                     "cleanup_verified": {"verified": True}, "raw_records_durable": True}
+    receipt_path = output / "receipt.json"
+    receipt_path.write_text(json.dumps(valid_receipt))
 
     assert q25.verify_raw_evidence(output)["verified"] is True
+    receipt_path.write_text(json.dumps(valid_receipt | {"cells": []}))
+    assert q25.verify_raw_evidence(output)["verified"] is False
+    receipt_path.write_text(json.dumps(valid_receipt))
     second_case, _, second_seed = q25.EXPECTED_CELLS[1]
     second_path = output / "cells" / f"{second_case}-s{second_seed}.json"
     second = json.loads(second_path.read_text())
@@ -250,6 +320,17 @@ def test_cleanup_unknown_preserves_active_lease(tmp_path):
 
     assert released is False
     assert manager.current()["lease_id"] == lease.lease_id
+
+
+def test_lease_is_released_when_dispatch_never_created_a_child(tmp_path):
+    manager = q25.lease_manager(tmp_path)
+    lease = manager.acquire(owner_task="job-no-child", owner_attempt="session-1",
+                            runtime_instance="job-no-child", resource_family="llm",
+                            claim={"profile": q25.PROFILE_ID}, ttl_seconds=60)
+
+    q25.release_without_child(lease)
+
+    assert manager.current() is None
 
 
 def test_cleanup_boolean_without_wait4_receipt_is_not_a_release_proof(tmp_path):

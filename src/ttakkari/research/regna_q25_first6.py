@@ -309,11 +309,13 @@ def verify_raw_evidence(output_root: Path) -> dict[str, Any]:
     if not isinstance(receipt, dict) or not isinstance(cell_log, dict):
         return {"verified": False, "reason": "raw receipt or cell log is not an object"}
     rows = cell_log.get("cells")
+    receipt_cells = receipt.get("cells")
     cleanup = receipt.get("cleanup_verified")
     if (receipt.get("execution_status") != "complete" or receipt.get("cells_attempted") != expected
             or not isinstance(cleanup, dict) or cleanup.get("verified") is not True
             or receipt.get("raw_records_durable") is not True or not isinstance(rows, list)
             or any(not isinstance(row, dict) for row in rows)
+            or not isinstance(receipt_cells, list) or receipt_cells != rows
             or [row.get("cell_id") for row in rows] != expected):
         return {"verified": False, "reason": "receipt does not prove all pinned cells, raw records and cleanup"}
     seen_raw_paths: set[str] = set()
@@ -463,6 +465,14 @@ def release_after_cleanup(manager: ResourceLeaseManager, lease: ResourceLeaseHan
     return True
 
 
+def release_without_child(lease: ResourceLeaseHandle) -> None:
+    """Release a just-created lease when the frozen dispatcher never requested a model child."""
+    lease.release(proof={"runtime_status": "stopped", "evidence": {
+        "runtime_instance": lease.runtime_instance, "no_child_created": True,
+        "operation": OPERATION_KIND,
+    }})
+
+
 def operation_roots(data_dir: Path, job_id: str) -> tuple[Path, Path, Path]:
     base = Path(data_dir).resolve() / "research" / OPERATION_KIND
     return base / "runs" / job_id, base / "claims", base / "grants" / f"{job_id}.json"
@@ -506,8 +516,7 @@ def _bounded_server_factory(profile: FrozenProfile, run_root: Path, violations: 
             expected_created = None
             violations.append(f"owned model child identity observation failed: {type(exc).__name__}")
             with contextlib.suppress(OSError):
-                if process.poll() is None:
-                    process.terminate()
+                process.terminate()
 
         def monitor() -> None:
             try:
@@ -534,12 +543,17 @@ def _bounded_server_factory(profile: FrozenProfile, run_root: Path, violations: 
             except (psutil.Error, OSError, ValueError) as exc:
                 violations.append(f"owned model process RSS monitor failed: {type(exc).__name__}")
                 with contextlib.suppress(OSError):
-                    if process.poll() is None:
-                        process.terminate()
+                    process.terminate()
 
-        thread = threading.Thread(target=monitor, name=f"regna-rss-{process.pid}", daemon=True)
+        try:
+            thread = threading.Thread(target=monitor, name=f"regna-rss-{process.pid}", daemon=True)
+            thread.start()
+        except (OSError, RuntimeError) as exc:
+            violations.append(f"owned model RSS monitor failed to start: {type(exc).__name__}")
+            with contextlib.suppress(OSError):
+                process.terminate()
+            return process
         monitored[process.pid] = (thread, stop)
-        thread.start()
         return process
 
     def make_server(args, run_dir: Path):
@@ -556,7 +570,17 @@ def _bounded_server_factory(profile: FrozenProfile, run_root: Path, violations: 
                 item[0].join(timeout=1)
             return original_stop()
 
+        original_start = child.start
+
+        def start():
+            adapter = original_start()
+            if violations:
+                child.stop()
+                raise PreflightError("owned model RSS supervision failed before request execution")
+            return adapter
+
         child.stop = stop
+        child.start = start
         return child
 
     driver.subprocess.Popen = bounded_popen
@@ -650,10 +674,7 @@ def run_operation(job_id: str) -> int:
                 raise EvidenceError("owned-child wait/exit cleanup proof changed before lease release")
             durable_lease = True
         elif not child_possible:
-            lease.release(proof={"runtime_status": "stopped", "evidence": {
-                "runtime_instance": lease.runtime_instance, "no_child_created": True,
-                "operation": OPERATION_KIND,
-            }})
+            release_without_child(lease)
             durable_lease = True
         else:
             manager.request_cancel(lease.lease_id, lease.generation_token)
@@ -669,8 +690,7 @@ def run_operation(job_id: str) -> int:
     except BaseException:
         if not child_possible and not durable_lease:
             with contextlib.suppress(Exception):
-                release_after_cleanup(manager, lease, {"verified": True, "child_wait_exit": True,
-                                                       "stopped_by_this_run": True, "no_child_created": True})
+                release_without_child(lease)
         elif not durable_lease:
             with contextlib.suppress(Exception):
                 manager.request_cancel(lease.lease_id, lease.generation_token)
@@ -681,6 +701,7 @@ def _load_r4_runner(profile: FrozenProfile):
     import sys
     import types
 
+    _verify_manifest_files(profile.root, profile.manifest_path)
     if str(profile.root) not in sys.path:
         sys.path.insert(0, str(profile.root))
     source = profile.runner_path.read_bytes()

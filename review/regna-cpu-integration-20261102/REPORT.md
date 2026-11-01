@@ -28,3 +28,12 @@ Frozen Regna 원자료·manifest·scorer·oracle 및 개인 전용 `host_gpu` �
 ## Push 및 배포 예약
 
 정상 `git push origin HEAD:refs/heads/main`은 pre-push hook을 통해 contract suite와 변경 테스트 파일을 실행한다. 위에서 변경 테스트 중 Q25 고정 자료 검증이 실패했으므로 gate를 우회하지 않고 일반 push 결과를 확인한다. Push가 성공한 경우에만 원격 full SHA를 확인하고 같은 SHA로 `request_backend_deploy`를 호출한다. 예약 접수 상태는 운영 배포 성공으로 표현하지 않는다. 실제 원격 SHA와 예약 ID/state는 완료 시 이 기록의 별도 `reservation.txt` evidence로 추가한다.
+
+## Push 차단 및 배포 예약
+
+- 최종 fetch에서 `origin/main`은 계속 `83302612c8edaaa40844a423e7223d2ee346e382`였다. 로컬 integration commit은 정상 push로 `refs/heads/main`에 게시하려고 했다.
+- 실제 시도: `git push origin HEAD:refs/heads/main` (계정 전환 없음, per-command `daeseon-dev` credential, pre-push hook 우회 없음).
+- 결과: **exit 128**, 원격 stderr `remote: Permission to winterholic/winterholic-ttakkari-back.git denied to daeseon-dev.` / `fatal: unable to access 'https://github.com/winterholic/winterholic-ttakkari-back.git/': The requested URL returned error: 403`. 정확한 stdout/stderr/exit은 `evidence/04-*`에 저장했다. 응답에서 pre-push gate 출력이 관찰되지 않아 gate 결과는 미검증이다.
+- permission denial 뒤 같은 원격 대상 push를 다른 login/도구로 재시도하지 않았다. 정상 push 및 원격 SHA 확인은 미완료다.
+- push 성공이 예약 선행조건이므로 `request_backend_deploy`는 호출하지 않았다. reservation ID/state는 **없음**이며 실제 배포 성공도 확인하지 않았다.
+- 이 기록을 포함한 최종 통합 SHA는 로컬 integration branch에만 존재한다. 권한 수정 후 다시 이어서 push/deploy할 수 있도록 branch와 clean commit을 보존했다.

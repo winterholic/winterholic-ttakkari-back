@@ -1,0 +1,1 @@
+GH_AS_USER=winterholic GH_AS_TOKEN=<gh-auth-token> git -c credential.helper= -c 'credential.helper=!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f' fetch origin main

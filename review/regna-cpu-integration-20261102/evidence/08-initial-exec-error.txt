@@ -1,0 +1,4 @@
+Attempt: invoke winterholic per-command `git fetch origin main` in an incorrectly specified workdir (`/Users/winterholic/development/projects/winterholic-ttakkari-back-regna-cpu-integration-20261102`).
+Environment: Codex exec_command process creation, before shell/git start.
+Observed tool error: `Failed to create unified exec process: No such file or directory (os error 2)`.
+Process exit code: none; no shell or git command ran. Repository state was not changed.

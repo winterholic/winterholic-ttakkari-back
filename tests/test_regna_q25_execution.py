@@ -78,6 +78,36 @@ def test_pinned_r4_runner_loads_and_accepts_only_backend_built_argv(profile, tmp
     assert str(parsed.plan) == str(profile.plan_path)
 
 
+def test_runner_loader_rejects_a_replaced_or_shrunk_manifest(profile, tmp_path):
+    from dataclasses import replace
+
+    manifest = json.loads(profile.manifest_path.read_text(encoding="utf-8"))
+    manifest["files"] = {
+        q25.RUNNER_RELATIVE.as_posix(): manifest["files"][q25.RUNNER_RELATIVE.as_posix()]
+    }
+    replacement = tmp_path / "shrunk-manifest.json"
+    replacement.write_text(json.dumps(manifest), encoding="utf-8")
+    changed_profile = replace(profile, manifest_path=replacement)
+
+    with pytest.raises(q25.ProfileError, match="manifest hash"):
+        q25._load_r4_runner(changed_profile)
+
+
+def test_runner_loader_parses_the_same_manifest_bytes_that_it_hashes(profile, monkeypatch):
+    original_read_text = Path.read_text
+
+    def changed_after_hash(path, *args, **kwargs):
+        if path == profile.manifest_path:
+            return json.dumps({"files": {}})
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", changed_after_hash)
+
+    module = q25._load_r4_runner(profile)
+
+    assert module.__name__ == "regna_n3_runtime_r4_frozen"
+
+
 def test_frozen_dispatch_gets_zero_argument_factory_with_unique_owned_paths(tmp_path):
     args = object()
     calls = []

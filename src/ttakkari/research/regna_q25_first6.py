@@ -104,8 +104,7 @@ def load_profile(root: Path | str = REGNA_ROOT) -> FrozenProfile:
     runner_path = root / RUNNER_RELATIVE
     if _sha256(plan_path) != PLAN_SHA256:
         raise ProfileError("frozen first-six plan hash mismatch")
-    if _sha256(manifest_path) != SOURCE_MANIFEST_SHA256:
-        raise ProfileError("frozen source manifest hash mismatch")
+    manifest = _read_frozen_manifest(manifest_path)
     if not runner_path.is_file() or _sha256(runner_path) != RUNNER_SHA256:
         raise ProfileError("frozen r4 runner hash mismatch")
     try:
@@ -116,9 +115,9 @@ def load_profile(root: Path | str = REGNA_ROOT) -> FrozenProfile:
     cells = plan.get("cells")
     if cells != expected or plan.get("max_authorized_cells") != 6 or plan.get("cpu_only") is not True:
         raise ProfileError("frozen plan is not the exact first-six CPU profile")
-    if plan.get("source_manifest_sha256") != _canonical_manifest_sha(manifest_path):
+    if plan.get("source_manifest_sha256") != _canonical_manifest_sha(manifest):
         raise ProfileError("plan does not bind the pinned source manifest")
-    _verify_manifest_files(root, manifest_path)
+    _verify_manifest_files(root, manifest)
     assets: dict[str, dict[str, Any]] = {}
     for name, (raw_path, expected_sha, expected_bytes) in EXPECTED_ASSETS.items():
         path = Path(raw_path)
@@ -133,19 +132,30 @@ def load_profile(root: Path | str = REGNA_ROOT) -> FrozenProfile:
                          SOURCE_MANIFEST_SHA256, tuple(cells), assets, True, MAX_RSS_BYTES)
 
 
-def _canonical_manifest_sha(path: Path) -> str:
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+def _canonical_manifest_sha(manifest: dict[str, Any]) -> str:
     canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(canonical).hexdigest()
 
 
-def _verify_manifest_files(root: Path, manifest_path: Path) -> None:
-    """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+def _read_frozen_manifest(path: Path) -> dict[str, Any]:
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        raw = path.read_bytes()
+    except OSError as exc:
         raise ProfileError("frozen source manifest cannot be read") from exc
-    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if hashlib.sha256(raw).hexdigest() != SOURCE_MANIFEST_SHA256:
+        raise ProfileError("frozen source manifest hash mismatch")
+    try:
+        manifest = json.loads(raw)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ProfileError("frozen source manifest cannot be parsed") from exc
+    if not isinstance(manifest, dict):
+        raise ProfileError("frozen source manifest has an invalid root")
+    return manifest
+
+
+def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+    """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+    files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ProfileError("frozen source manifest has no file pins")
     root = root.resolve(strict=True)
@@ -701,7 +711,10 @@ def _load_r4_runner(profile: FrozenProfile):
     import sys
     import types
 
-    _verify_manifest_files(profile.root, profile.manifest_path)
+    if profile.manifest_sha256 != SOURCE_MANIFEST_SHA256:
+        raise ProfileError("frozen source manifest profile hash mismatch")
+    manifest = _read_frozen_manifest(profile.manifest_path)
+    _verify_manifest_files(profile.root, manifest)
     if str(profile.root) not in sys.path:
         sys.path.insert(0, str(profile.root))
     source = profile.runner_path.read_bytes()

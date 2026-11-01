@@ -1,0 +1,20 @@
+{
+  "base_head": "a07ca4cff1136eb5825e740c1576e52543addb1c",
+  "connector_source": {
+    "path": "src/ttakkari/research/regna_n4_combo_first6.py",
+    "before_sha256": "6bb8f46a84aa73e707b250435c7fa6c75d7290db7f33b20fb9f935109179734e",
+    "after_sha256": "a67579049167432a21df72be26b815f33f1add77c89339abf8aad3b637b1b4bf",
+    "changed": true
+  },
+  "frozen_pins": {
+    "n4_before_after_identical": true,
+    "n4_count": 15,
+    "n4_plan_sha256": "4b0888456b1aa079b0cb23764fa9a8cd14ad3c7c7e90381e0ed5415a36dc6a19",
+    "n4_source_pins_bytes_sha256": "765c36b5e0323bdf9bd4f06f009c96e231b4bf54224e135aa433a8907ce3c82d",
+    "n3_before_after_identical": true,
+    "n3_count": 31,
+    "n3_manifest_sha256": "370ab02657803d134e2ca147f6ce78404c3c70d52b636ec4baaf8bed04cffe0c",
+    "recorded_after_identity": true
+  },
+  "other_repository": "read-only; no files written"
+}

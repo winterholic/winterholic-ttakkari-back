@@ -1,0 +1,24 @@
+{
+  "worker_session_id": "c471e595-2b30-4c5a-a130-4d984fc48cfa",
+  "run_id": "89e6853f-1a5b-41b0-a688-cd1c260a5f46",
+  "requested": {
+    "engine": "auto",
+    "model": "claude-sonnet-5-5-high",
+    "task_type": "general",
+    "strict_engine": false,
+    "pool": "work"
+  },
+  "observed_actual_run": {
+    "origin": "orchestrator",
+    "engine": "codex",
+    "model": "gpt-6-luna",
+    "effort": null
+  },
+  "receipt_source": {
+    "tool": "mcp__ttakkari__read_session",
+    "session_id": "c471e595-2b30-4c5a-a130-4d984fc48cfa",
+    "observed_at": "2026-11-01T23:48:47.633922+00:00",
+    "actual_turn_id": "89e6853f-1a5b-41b0-a688-cd1c260a5f46"
+  },
+  "effort_note": "The accessible session receipt does not expose selected effort. get_worker was not available across this worker boundary (404 not a child session); effort is unverified."
+}

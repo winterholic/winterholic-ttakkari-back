@@ -101,15 +101,52 @@ def test_exact_reusable_baseline_from_actual_attempt_ledger_is_preserved_and_ref
     tmp_path, profile
 ):
     ledger = tmp_path / "attempt-ledger.jsonl"
+    raw_body = json.dumps({"model": "fixed", "messages": []}, separators=(",", ":"))
+    mode = profile.profile["generation_mode"]
+    assets = profile.profile["asset_sha256"]
     ledger.write_text(
         json.dumps(
             {
-                "status": "completed",
-                "cell_id": "cell-0",
-                "request_body": json.dumps(
-                    {"model": "fixed", "messages": []}, separators=(",", ":")
-                ),
-                "raw_receipt": {"path": "existing/raw.json"},
+                "execution_status": "complete",
+                "generation_mode_by_family": {"Qwen3": mode},
+                "runtime_assets": {
+                    "binary": {"sha256": assets["runtime"]},
+                    "model": {"sha256": assets["model"]},
+                    "template": {"sha256": assets["template"]},
+                },
+                "cells": [
+                    {
+                        "cell_id": "cell-0",
+                        "status": "response_captured",
+                        "model_outcome": "success",
+                        "raw_integrity_state": "verified",
+                        "raw_records_durable": True,
+                        "raw_response": "usable answer",
+                        "usage_state": "observed_exact_integer",
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                        "generation_mode": mode,
+                        "generations": [
+                            {
+                                "generation_mode": mode,
+                                "raw_integrity_state": "verified",
+                                "raw_ref": {
+                                    "readback_verified": True,
+                                    "request_sha256_verified": True,
+                                    "sse_bytes_verified": True,
+                                },
+                                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                                "request_receipts": [
+                                    {
+                                        "path": "/v1/chat/completions",
+                                        "request_body": raw_body,
+                                        "error": None,
+                                        "status": "http_200",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
             }
         )
         + "\n"
@@ -127,9 +164,7 @@ def test_exact_reusable_baseline_from_actual_attempt_ledger_is_preserved_and_ref
         )
 
     assert exc.value.matches[0]["cell_id"] == "cell-0"
-    assert exc.value.matches[0]["request_sha256"] == n4.sha256_bytes(
-        json.dumps({"model": "fixed", "messages": []}, separators=(",", ":")).encode()
-    )
+    assert exc.value.matches[0]["request_sha256"] == n4.sha256_bytes(raw_body.encode())
     assert ledger.read_text().endswith("\n")
 
 

@@ -221,13 +221,40 @@ def _ledger_files() -> list[Path]:
 
 def _ledger_digest(files: list[Path]) -> tuple[str, list[dict[str, Any]]]:
     rows = [
-        {"path": str(path), "bytes": path.stat().st_size, "sha256": sha256_file(path)}
+        {
+            "path": str(path),
+            "bytes": path.stat().st_size,
+            "device": path.stat().st_dev,
+            "inode": path.stat().st_ino,
+            "sha256": sha256_file(path),
+        }
         for path in files
     ]
     return canonical_digest(rows), rows
 
 
+def _ledger_inventory(files: list[Path]) -> list[dict[str, Any]]:
+    rows = []
+    for path in files:
+        metadata = path.stat()
+        rows.append(
+            {
+                "path": str(path.resolve()),
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "bytes": metadata.st_size,
+                "mtime_ns": metadata.st_mtime_ns,
+                "ctime_ns": metadata.st_ctime_ns,
+            }
+        )
+    return rows
+
+
 def _walk_request_records(value: Any, source: Path):
+    yield from _walk_request_records_with_context(value, source, ())
+
+
+def _walk_request_records_with_context(value: Any, source: Path, ancestors):
     if isinstance(value, dict):
         raw = value.get("request_body")
         if isinstance(raw, str):
@@ -238,17 +265,130 @@ def _walk_request_records(value: Any, source: Path):
                     f"prior-attempt request body is invalid JSON: {source}"
                 ) from exc
             if isinstance(body, dict):
-                yield sha256_bytes(raw.encode("utf-8")), source, value
+                yield (
+                    sha256_bytes(raw.encode("utf-8")),
+                    source,
+                    {
+                        "request_receipt": value,
+                        "context": ancestors,
+                    },
+                )
         elif isinstance(raw, dict):
             serialized = json.dumps(
                 raw, ensure_ascii=False, separators=(",", ":")
             ).encode("utf-8")
-            yield sha256_bytes(serialized), source, value
+            yield (
+                sha256_bytes(serialized),
+                source,
+                {
+                    "request_receipt": value,
+                    "context": ancestors,
+                },
+            )
         for item in value.values():
-            yield from _walk_request_records(item, source)
+            yield from _walk_request_records_with_context(
+                item, source, (*ancestors, value)
+            )
     elif isinstance(value, list):
         for item in value:
-            yield from _walk_request_records(item, source)
+            yield from _walk_request_records_with_context(item, source, ancestors)
+
+
+def _historical_reuse_ineligibility(
+    record: dict[str, Any], *, cell_id: str, profile: FrozenProfile
+) -> str | None:
+    request_receipt = record["request_receipt"]
+    context = record["context"]
+    receipt = next(
+        (
+            item
+            for item in context
+            if "execution_status" in item and "runtime_assets" in item
+        ),
+        None,
+    )
+    cell = next((item for item in reversed(context) if "cell_id" in item), None)
+    generation = next(
+        (item for item in reversed(context) if "request_receipts" in item), None
+    )
+    if receipt is None or cell is None or generation is None:
+        if cell is None:
+            return "cell identity missing"
+        return "historical receipt/generation identity missing"
+    if cell.get("cell_id") != cell_id:
+        return "cell identity mismatch"
+    if receipt.get("execution_status") != "complete":
+        return "historical operation is not complete"
+    if (
+        cell.get("status") != "response_captured"
+        or cell.get("model_outcome") != "success"
+    ):
+        return "cell has no successful captured output"
+    if (
+        cell.get("raw_integrity_state") != "verified"
+        or cell.get("raw_records_durable") is not True
+    ):
+        return "cell raw output integrity/durability is not verified"
+    if (
+        not isinstance(cell.get("raw_response"), str)
+        or not cell["raw_response"].strip()
+    ):
+        return "cell output is missing"
+    if cell.get("usage_state") != "observed_exact_integer" or not _valid_usage(
+        cell.get("usage")
+    ):
+        return "cell usage is incomplete or not exact integer"
+    expected_mode = profile.profile["generation_mode"]
+    if (
+        cell.get("generation_mode") != expected_mode
+        or generation.get("generation_mode") != expected_mode
+    ):
+        return "generation profile identity mismatch"
+    expected_assets = profile.profile["asset_sha256"]
+    runtime_assets = receipt["runtime_assets"]
+    for name, expected_key in (
+        ("binary", "runtime"),
+        ("model", "model"),
+        ("template", "template"),
+    ):
+        asset = runtime_assets.get(name)
+        actual_hash = asset.get("sha256") if isinstance(asset, dict) else None
+        if actual_hash != expected_assets[expected_key]:
+            return "runtime asset identity mismatch"
+    # In the supported historical schema, tokenizer identity is bound by the model artifact SHA.
+    if expected_assets.get("tokenizer") != expected_assets.get("model"):
+        return "tokenizer identity is not bound to the model artifact"
+    if request_receipt.get("path") != "/v1/chat/completions":
+        return "request receipt is not the generation endpoint"
+    if (
+        request_receipt.get("error") is not None
+        or request_receipt.get("status") != "http_200"
+    ):
+        return "request did not complete successfully"
+    if generation.get("raw_integrity_state") != "verified":
+        return "generation raw integrity is not verified"
+    raw_ref = generation.get("raw_ref")
+    if not isinstance(raw_ref, dict) or any(
+        raw_ref.get(key) is not True
+        for key in (
+            "readback_verified",
+            "request_sha256_verified",
+            "sse_bytes_verified",
+        )
+    ):
+        return "generation raw receipt integrity is incomplete"
+    if not _valid_usage(generation.get("usage")):
+        return "generation usage is incomplete or not exact integer"
+    return None
+
+
+def _valid_usage(value: Any) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(value.get(key), int)
+        and not isinstance(value.get(key), bool)
+        and value[key] >= 0
+        for key in ("prompt_tokens", "completion_tokens")
+    )
 
 
 def _read_attempt_values(path: Path, content_digest):
@@ -298,13 +438,16 @@ def review_prior_attempts(
     profile: FrozenProfile, *, ledger_files: list[Path] | None = None
 ) -> dict[str, Any]:
     """Compare exact serialized baseline HTTP requests against actual historical attempts."""
-    files = _ledger_files() if ledger_files is None else sorted(ledger_files, key=str)
+    production_discovery = ledger_files is None
+    files = _ledger_files() if production_discovery else sorted(ledger_files, key=str)
     if not files:
         raise ProfileError(
             "actual prior-attempt ledger is unavailable; refusing to authorize a new batch"
         )
+    inventory_before = _ledger_inventory(files)
     expected = _expected_baseline_request_hashes(profile)
     matches: list[dict[str, Any]] = []
+    prior_attempts: list[dict[str, Any]] = []
     scanned = 0
     ledger_file_rows = []
     for path in files:
@@ -315,16 +458,33 @@ def review_prior_attempts(
             for digest, source, record in _walk_request_records(value, path):
                 for cell_id, expected_digest in expected.items():
                     if digest == expected_digest:
-                        matches.append(
-                            {
-                                "cell_id": cell_id,
-                                "request_sha256": digest,
-                                "source_path": str(source),
-                                "record_status": record.get("status"),
-                                "evidence_record_sha256": canonical_digest(record),
-                            }
+                        reason = _historical_reuse_ineligibility(
+                            record, cell_id=cell_id, profile=profile
                         )
-        after = path.stat()
+                        attempt = {
+                            "cell_id": cell_id,
+                            "request_sha256": digest,
+                            "source_path": str(source),
+                            "record_status": record["request_receipt"].get("status"),
+                            "evidence_record_sha256": canonical_digest(record),
+                            "reuse_eligibility": "eligible"
+                            if reason is None
+                            else "ineligible",
+                            "reason": reason,
+                        }
+                        prior_attempts.append(attempt)
+                        if reason is None:
+                            matches.append(attempt)
+        try:
+            after = path.stat()
+        except OSError as exc:
+            if production_discovery:
+                raise ProfileError(
+                    "prior-attempt ledger inventory changed during review"
+                ) from exc
+            raise ProfileError(
+                f"prior-attempt ledger changed while being reviewed: {path}"
+            ) from exc
         before_identity = (
             before.st_ino,
             before.st_size,
@@ -338,6 +498,10 @@ def review_prior_attempts(
             after.st_ctime_ns,
         )
         if before_identity != after_identity:
+            if production_discovery:
+                raise ProfileError(
+                    "prior-attempt ledger inventory changed during review"
+                )
             raise ProfileError(
                 f"prior-attempt ledger changed while being reviewed: {path}"
             )
@@ -345,9 +509,21 @@ def review_prior_attempts(
             {
                 "path": str(path),
                 "bytes": after.st_size,
+                "device": after.st_dev,
+                "inode": after.st_ino,
                 "sha256": content_digest.hexdigest(),
             }
         )
+    if production_discovery:
+        files_after = _ledger_files()
+        try:
+            inventory_after = _ledger_inventory(files_after)
+        except OSError as exc:
+            raise ProfileError(
+                "prior-attempt ledger inventory changed during review"
+            ) from exc
+        if inventory_after != inventory_before:
+            raise ProfileError("prior-attempt ledger inventory changed during review")
     if _ledger_digest(files)[1] != ledger_file_rows:
         raise ProfileError(
             "prior-attempt ledger changed between request review and grant"
@@ -361,6 +537,7 @@ def review_prior_attempts(
         if matches
         else "no_exact_baseline_reuse",
         "exact_baseline_matches": matches,
+        "prior_attempts": prior_attempts,
         "records_scanned": scanned,
         "input_identity_sha256_by_cell": dict(profile.input_identity_sha256_by_cell),
     }
@@ -558,9 +735,16 @@ def validate_grant(
         raise ProfileError("grant id is invalid")
 
 
-def claim_grant(grant: dict[str, Any], claim_root: Path) -> Path:
-    claim_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    claim_root.chmod(0o700)
+def claim_grant(
+    grant: dict[str, Any], claim_root: Path, *, data_dir: Path | None = None
+) -> Path:
+    if data_dir is not None:
+        _prepare_private_directory(claim_root, data_dir)
+    else:
+        claim_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if claim_root.is_symlink():
+            raise ProfileError("grant claim directory must not be a symlink")
+        claim_root.chmod(0o700)
     batch_identity = canonical_digest(
         {
             "plan_sha256": grant["plan_sha256"],
@@ -645,6 +829,35 @@ def _failure_receipt(
 def operation_roots(data_dir: Path, job_id: str) -> tuple[Path, Path]:
     base = Path(data_dir).resolve() / "research" / OPERATION_KIND
     return base / "runs" / job_id, base / "claims"
+
+
+def _validate_private_path(path: Path, boundary: Path) -> None:
+    boundary = Path(boundary).resolve()
+    path = Path(path)
+    try:
+        relative = path.relative_to(boundary)
+    except ValueError as exc:
+        raise ProfileError(
+            "private evidence path escapes configured data directory"
+        ) from exc
+    if boundary.is_symlink() or not boundary.resolve().is_relative_to(boundary):
+        raise ProfileError("configured data directory is not a safe private path")
+    current = boundary
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ProfileError(f"private evidence path contains a symlink: {current}")
+        if not current.resolve(strict=False).is_relative_to(boundary):
+            raise ProfileError(
+                "private evidence path escapes configured data directory"
+            )
+
+
+def _prepare_private_directory(path: Path, boundary: Path) -> None:
+    _validate_private_path(path, boundary)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _validate_private_path(path, boundary)
+    path.chmod(0o700)
 
 
 def lease_manager(data_dir: Path) -> ResourceLeaseManager:
@@ -932,11 +1145,13 @@ def run_operation(job_id: str) -> int:
     owner = job["requested_by_session"]
     data_dir = get_settings().data_dir
     output_root, claim_root = operation_roots(data_dir, job_id)
-    output_root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    output_root.parent.chmod(0o700)
+    _prepare_private_directory(output_root.parent, data_dir)
+    _validate_private_path(output_root, data_dir)
+    _validate_private_path(claim_root, data_dir)
     if output_root.exists():
         raise ProfileError("server-owned N4 evidence directory already exists")
     output_root.mkdir(parents=True, exist_ok=False, mode=0o700)
+    _validate_private_path(output_root, data_dir)
     output_root.chmod(0o700)
     jobs.update(job_id, n4_evidence_root=str(output_root))
     try:
@@ -1019,7 +1234,7 @@ def run_operation(job_id: str) -> int:
             generation_token=lease.generation_token,
             output_root=batch_output_root,
         )
-        claim_grant(grant, claim_root)
+        claim_grant(grant, claim_root, data_dir=data_dir)
         _private_json(output_root / "grant.json", grant)
         _private_json(output_root / "prior-attempt-review.json", _review_file(grant))
         _private_json(

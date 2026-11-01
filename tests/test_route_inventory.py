@@ -226,6 +226,18 @@ async def test_mcp_inventory_matches_manifest():
     assert agent, "agent 역할 도구가 비어 있다"
 
 
+async def test_mcp_host_operation_start_exposes_fixed_n4_kind_only():
+    from ttakkari.orchestrator import mcp_server as ms
+
+    tools = await ms.server.list_tools()
+    if isinstance(tools, tuple):
+        tools = tools[0]
+    host_start = next(tool for tool in tools if tool.name == "host_operation_start")
+    schema = host_start.input_schema
+    assert schema["properties"]["kind"]["enum"][-1] == "regna_n4_combo_first6_cpu"
+    assert set(schema["properties"]) == {"kind"}
+
+
 def test_mcp_scope_values_valid():
     bad = {k: v for k, v in MCP_SCOPE.items() if v not in MCP_SCOPES}
     assert not bad, f"허용되지 않은 도구 범위 분류: {bad}"

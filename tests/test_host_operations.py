@@ -194,6 +194,52 @@ async def test_regna_conflict_hides_other_work_session_job_details(client, env, 
     assert "backup_db" not in response.text
 
 
+async def test_n4_conflict_hides_foreign_work_job_and_personal_session_cannot_start(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    other = _active_job("regna_n4_combo_first6_cpu", requested_by_session="another-work-session")
+
+    foreign = await _start(client, _hdr(env.work_session_id), "backup_db")
+    personal = await _start(client, _hdr(env.personal_session_id), "regna_n4_combo_first6_cpu")
+
+    assert foreign.status_code == 409
+    assert foreign.json()["message"] == "다른 운영 작업이 진행 중입니다."
+    assert other["id"] not in foreign.text
+    assert "regna_n4_combo_first6_cpu" not in foreign.text
+    assert personal.status_code == 403
+
+
+async def test_n4_conflict_hides_unknown_owner_job(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    unknown = _active_job("regna_n4_combo_first6_cpu", requested_by_session=None)
+
+    response = await _start(client, _hdr(env.work_session_id), "backup_db")
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "다른 운영 작업이 진행 중입니다."
+    assert unknown["id"] not in response.text
+    assert "regna_n4_combo_first6_cpu" not in response.text
+
+
+async def test_n4_start_is_fixed_kind_only_and_owner_status_is_hidden(client, env):
+    personal = _hdr(env.personal_session_id)
+    payload = await client.post("/api/agent/operations", json={"kind": "regna_n4_combo_first6_cpu", "path": "/tmp"},
+                                headers=_hdr(env.work_session_id))
+    assert payload.status_code == 422
+    assert (await _start(client, personal, "regna_n4_combo_first6_cpu")).status_code == 403
+
+    foreign = _active_job("regna_n4_combo_first6_cpu", requested_by_session="another-work-session")
+    unknown = _active_job("regna_n4_combo_first6_cpu", requested_by_session=None)
+    status = await client.get(f"/api/agent/operations/{foreign['id']}", headers=_hdr(env.work_session_id))
+    cancel = await client.post(f"/api/agent/operations/{foreign['id']}/cancel", headers=_hdr(env.work_session_id))
+    unknown_status = await client.get(f"/api/agent/operations/{unknown['id']}", headers=_hdr(env.work_session_id))
+    unknown_cancel = await client.post(f"/api/agent/operations/{unknown['id']}/cancel",
+                                       headers=_hdr(env.work_session_id))
+    assert status.status_code == cancel.status_code == 404
+    assert foreign["id"] not in status.text + cancel.text
+    assert unknown_status.status_code == unknown_cancel.status_code == 404
+    assert unknown["id"] not in unknown_status.text + unknown_cancel.text
+
+
 async def test_regna_conflict_preserves_details_for_same_work_session(client, env, monkeypatch):
     monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
     own = _active_job("backup_db", requested_by_session=str(env.work_session_id))

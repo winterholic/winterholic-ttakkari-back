@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run mypy src/ttakkari/research/regna_n4_combo_first6.py

@@ -29,6 +29,7 @@ DESCRIPTIONS = {
     "collection_scope_preview": "스키마·활성 세대·이전 세대 종료를 확인하고 단일 도서관 통합을 실행한 뒤 롤백",
     "collection_scope_apply": "이전 세대 종료 후 기존 이력·접근 pool을 보존해 단일 도서관 통합 적용",
     "regna_q25_first6_cpu": "Regna frozen Qwen2.5 first-six CPU research operation (work sessions only; fixed plan and assets)",
+    "regna_n4_combo_first6_cpu": "Regna frozen N4 r2 Qwen3 baseline/INT-003 first-six CPU comparison (work sessions only; fixed plan and assets)",
 }
 
 
@@ -36,15 +37,15 @@ class StartIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db", "data_snapshot",
                   "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply",
-                  "regna_q25_first6_cpu"]
+                  "regna_q25_first6_cpu", "regna_n4_combo_first6_cpu"]
 
 
 async def caller(sid: uuid.UUID, db: Db):
     return await _session(db, sid)
 
 
-def _authorize_q25_job(job: dict, session, sid: uuid.UUID) -> None:
-    if job.get("kind") == "regna_q25_first6_cpu" and (
+def _authorize_research_job(job: dict, session, sid: uuid.UUID) -> None:
+    if job.get("kind") in plans.OWNER_BOUND_RESEARCH_KINDS and (
         session.pool != "work" or job.get("requested_by_session") != str(sid)
     ):
         raise HTTPException(404, "운영 작업이 없습니다.")
@@ -62,7 +63,7 @@ async def list_operations(sid: AgentSession, db: Db) -> dict:
     session = await caller(sid, db)
     candidates = await asyncio.to_thread(jobs.all_jobs)
     recent = candidates[-10:]
-    recent = [j for j in recent if j.get("kind") != "regna_q25_first6_cpu" or (
+    recent = [j for j in recent if j.get("kind") not in plans.OWNER_BOUND_RESEARCH_KINDS or (
         session.pool == "work" and j.get("requested_by_session") == str(sid)
     )]
     recent = await asyncio.gather(*(asyncio.to_thread(jobs.reconciled, j["id"]) for j in recent))
@@ -72,15 +73,16 @@ async def list_operations(sid: AgentSession, db: Db) -> dict:
     recent = await asyncio.gather(*(asyncio.to_thread(jobs.get, j["id"]) for j in recent))
     kinds = dict(DESCRIPTIONS)
     if session.pool != "work":
-        kinds.pop("regna_q25_first6_cpu", None)
+        for kind in plans.OWNER_BOUND_RESEARCH_KINDS:
+            kinds.pop(kind, None)
     return {"kinds": kinds, "jobs": [jobs.view(j) for j in recent]}
 
 
 @router.post("", status_code=202)
 async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
     session = await caller(sid, db)
-    if body.kind == "regna_q25_first6_cpu" and session.pool != "work":
-        raise HTTPException(403, "Regna Qwen2.5 CPU research requires a work session.")
+    if body.kind in plans.OWNER_BOUND_RESEARCH_KINDS and session.pool != "work":
+        raise HTTPException(403, "Regna CPU research requires a work session.")
     if body.kind in plans.INLINE:
         job = await asyncio.to_thread(jobs.create, body.kind, str(sid), inline=True)
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
@@ -103,8 +105,8 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
         await db.commit()
         detail = str(exc)
         active_job = getattr(exc, "active_job", None)
-        if ((body.kind == "regna_q25_first6_cpu"
-             or isinstance(active_job, dict) and active_job.get("kind") == "regna_q25_first6_cpu")
+        if ((body.kind in plans.OWNER_BOUND_RESEARCH_KINDS
+             or isinstance(active_job, dict) and active_job.get("kind") in plans.OWNER_BOUND_RESEARCH_KINDS)
                 and (not isinstance(active_job, dict)
                      or active_job.get("requested_by_session") != str(sid))):
             detail = "다른 운영 작업이 진행 중입니다."
@@ -118,8 +120,8 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
         raise HTTPException(500, f"작업 준비 실패: {type(exc).__name__}") from exc
 
     if reused:
-        if body.kind == "regna_q25_first6_cpu" and job.get("requested_by_session") != str(sid):
-            raise HTTPException(409, "Regna Qwen2.5 CPU operation is already owned by another work session.")
+        if body.kind in plans.OWNER_BOUND_RESEARCH_KINDS and job.get("requested_by_session") != str(sid):
+            raise HTTPException(409, "Regna CPU operation is already owned by another work session.")
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
                detail={"kind": body.kind, "session_id": str(sid), "deduplicated": True})
         await db.commit()
@@ -128,6 +130,8 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
     try:
         if body.kind == "regna_q25_first6_cpu":
             job = await asyncio.to_thread(jobs.update, job["id"], q25_scope=session.pool)
+        elif body.kind == "regna_n4_combo_first6_cpu":
+            job = await asyncio.to_thread(jobs.update, job["id"], n4_scope=session.pool)
         record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
                detail={"kind": body.kind, "session_id": str(sid), "deduplicated": False})
         await db.commit()
@@ -151,9 +155,9 @@ async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
     try:
         ident = _job_id(job_id)
         current = await asyncio.to_thread(jobs.get, ident)
-        _authorize_q25_job(current, session, sid)
+        _authorize_research_job(current, session, sid)
         job = await asyncio.to_thread(jobs.reconciled, ident)
-        _authorize_q25_job(job, session, sid)
+        _authorize_research_job(job, session, sid)
         if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
             job = await jobs.audit_finish(job["id"])
         return jobs.view(job)
@@ -166,7 +170,7 @@ async def cancel_operation(job_id: str, sid: AgentSession, db: Db) -> dict:
     session = await caller(sid, db)
     try:
         current = await asyncio.to_thread(jobs.get, _job_id(job_id))
-        _authorize_q25_job(current, session, sid)
+        _authorize_research_job(current, session, sid)
         job = await asyncio.to_thread(jobs.cancel, _job_id(job_id))
     except FileNotFoundError as exc:
         raise HTTPException(404, "운영 작업이 없습니다.") from exc

@@ -1,0 +1,345 @@
+{
+  "captured_at_utc": "2026-11-01T23:31:39.813204+00:00",
+  "scope": "read-only SHA-256 identity check; no acceptance gate or runtime was run",
+  "n4": {
+    "snapshot": "/Users/winterholic/development/hyperez/regna-ios/verification/n4-r2-independent-20261102/final-isolated",
+    "plan_sha256": "4b0888456b1aa079b0cb23764fa9a8cd14ad3c7c7e90381e0ed5415a36dc6a19",
+    "source_pins_bytes_sha256": "765c36b5e0323bdf9bd4f06f009c96e231b4bf54224e135aa433a8907ce3c82d",
+    "source_manifest_sha256": "eb0815b9dc88db115fce835011b6649c94f7dfbf19587801996f5582b9e222f7",
+    "pin_count": 15,
+    "all_match": true,
+    "files": [
+      {
+        "path": "docs/research/practical-20261029/execution/runs/n3-qwen3-1p7b-q4km-batch02-r4-20261101/receipt.json",
+        "bytes": 3917535,
+        "pinned_sha256": "21cc762bc7c2afdb784b986f2f4db7d4a2fac29cf39d4c5c4528f21177652d78",
+        "actual_sha256": "21cc762bc7c2afdb784b986f2f4db7d4a2fac29cf39d4c5c4528f21177652d78",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/results-intake-r282-20261031/runtime-assets.json",
+        "bytes": 582,
+        "pinned_sha256": "1fc1afeb13a440cd4e328769132b0275ca37cbcc216107dc76e5e0d52be46afc",
+        "actual_sha256": "1fc1afeb13a440cd4e328769132b0275ca37cbcc216107dc76e5e0d52be46afc",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/driver.py",
+        "bytes": 64044,
+        "pinned_sha256": "ea393aa904ccb24ccff8908feae0304a8a60306d85ac667d3aaf07270c86ce9b",
+        "actual_sha256": "ea393aa904ccb24ccff8908feae0304a8a60306d85ac667d3aaf07270c86ce9b",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/independent_holdout_n3_runtime_r4.py",
+        "bytes": 48563,
+        "pinned_sha256": "dd15cb286eae686d2c41968016bd2234c20dc2e1d06e172886cffe39309a1ebc",
+        "actual_sha256": "dd15cb286eae686d2c41968016bd2234c20dc2e1d06e172886cffe39309a1ebc",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/n4_combo_holdout_runtime_r2.py",
+        "bytes": 52609,
+        "pinned_sha256": "4cc39e3a4a62c833eae91e74ea207bd443883d8e80381519a391c6da8e9f4aad",
+        "actual_sha256": "4cc39e3a4a62c833eae91e74ea207bd443883d8e80381519a391c6da8e9f4aad",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/n4_r2_runtime_adapter.py",
+        "bytes": 5374,
+        "pinned_sha256": "28275263a83178ee9871a10534632e87a9c59567f1daf8d6754de6d1d72256ef",
+        "actual_sha256": "28275263a83178ee9871a10534632e87a9c59567f1daf8d6754de6d1d72256ef",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/test_n4_combo_holdout_runtime_r2.py",
+        "bytes": 47993,
+        "pinned_sha256": "ff4648d16bbb5dfb3468cb867e3cc2290883b7403a8803da0418778788335b20",
+        "actual_sha256": "ff4648d16bbb5dfb3468cb867e3cc2290883b7403a8803da0418778788335b20",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/manifest.json",
+        "bytes": 11587,
+        "pinned_sha256": "aa6263359e005924e48f3ae067e8f0608b897baa795ddd9ce6da02129fde0996",
+        "actual_sha256": "aa6263359e005924e48f3ae067e8f0608b897baa795ddd9ce6da02129fde0996",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/oracles.jsonl",
+        "bytes": 24026,
+        "pinned_sha256": "001316704a7014b3132587f8034f2f9f3edced32a14e33960fa5bba19b3c808d",
+        "actual_sha256": "001316704a7014b3132587f8034f2f9f3edced32a14e33960fa5bba19b3c808d",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/tasks.jsonl",
+        "bytes": 28351,
+        "pinned_sha256": "41d0319d54fc084c1ea7a2e80875006a018a52a3bb3cc55b2532b5472c66a31f",
+        "actual_sha256": "41d0319d54fc084c1ea7a2e80875006a018a52a3bb3cc55b2532b5472c66a31f",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/n5/lifecycle.py",
+        "bytes": 10319,
+        "pinned_sha256": "0c2bdf55e8c338233edaf37f302241dd84567dc8d4dc19a2cf9f4c403d66ca48",
+        "actual_sha256": "0c2bdf55e8c338233edaf37f302241dd84567dc8d4dc19a2cf9f4c403d66ca48",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/runtime/cpu_pilot.py",
+        "bytes": 24706,
+        "pinned_sha256": "a9237bb2fcc6c408aebc434386a353b772037531394d25b7853db80d60c3a8e7",
+        "actual_sha256": "a9237bb2fcc6c408aebc434386a353b772037531394d25b7853db80d60c3a8e7",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/runtime/llama_http.py",
+        "bytes": 22027,
+        "pinned_sha256": "041b76b997428c04826521d2e401f4443ebf270046b5dbe8fc9fc7a65dc0b283",
+        "actual_sha256": "041b76b997428c04826521d2e401f4443ebf270046b5dbe8fc9fc7a65dc0b283",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/suite/independent_holdout_adapter.py",
+        "bytes": 36860,
+        "pinned_sha256": "a69d5f151beb0a3adf6e1b2ec0333ff9bfa1dbb6521a88e3760d8a2f67287db3",
+        "actual_sha256": "a69d5f151beb0a3adf6e1b2ec0333ff9bfa1dbb6521a88e3760d8a2f67287db3",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/suite/sandbox.py",
+        "bytes": 9643,
+        "pinned_sha256": "3dee0c668db8b2909fe94539a0c6ea959c8e151f45818ac264703b7aa92b0201",
+        "actual_sha256": "3dee0c668db8b2909fe94539a0c6ea959c8e151f45818ac264703b7aa92b0201",
+        "matches": true
+      }
+    ]
+  },
+  "n3": {
+    "manifest_path": "/Users/winterholic/development/hyperez/regna-ios/docs/research/practical-20261029/lead-review/resume-n3-other-families-r4-prep-20261101/n3-source-manifest-r4.json",
+    "manifest_sha256": "370ab02657803d134e2ca147f6ce78404c3c70d52b636ec4baaf8bed04cffe0c",
+    "expected_manifest_sha256": "370ab02657803d134e2ca147f6ce78404c3c70d52b636ec4baaf8bed04cffe0c",
+    "pin_count": 31,
+    "all_match": true,
+    "files": [
+      {
+        "path": "docs/research/practical-20261029/evaluation/design.json",
+        "bytes": 9604,
+        "pinned_sha256": "e224b10ac634005a758d13f60c6b3f2e5c1427a57804b71464c4bcbe9a2017c4",
+        "actual_sha256": "e224b10ac634005a758d13f60c6b3f2e5c1427a57804b71464c4bcbe9a2017c4",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/execution/runs/qwen3q4-v4.1-20261030-stage01/run-manifest.json",
+        "bytes": 107943,
+        "pinned_sha256": "5e7f4ddb3b5ec7631969f274bcf6b04ccdd75f12f44b5c12d5f57746a415c144",
+        "actual_sha256": "5e7f4ddb3b5ec7631969f274bcf6b04ccdd75f12f44b5c12d5f57746a415c144",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/independent-holdout/acceptance-audit.md",
+        "bytes": 2243,
+        "pinned_sha256": "b1525f316142b4633368342c14597d81795f0d39adb01f602d2a8cf10eed0542",
+        "actual_sha256": "b1525f316142b4633368342c14597d81795f0d39adb01f602d2a8cf10eed0542",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/independent-holdout/long_context_plan.jsonl",
+        "bytes": 1357,
+        "pinned_sha256": "2f8edb8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583",
+        "actual_sha256": "2f8edb8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/independent-holdout/positive_failure_examples.jsonl",
+        "bytes": 20800,
+        "pinned_sha256": "2f7f252637a0e853b731891119dfb1a64ecb325e9f6561076f072191ed537d0d",
+        "actual_sha256": "2f7f252637a0e853b731891119dfb1a64ecb325e9f6561076f072191ed537d0d",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/independent-holdout/semantic_rubrics.jsonl",
+        "bytes": 19960,
+        "pinned_sha256": "4a44d40683cc6991854bf3e75ce357341d51a799d36d8c10aa5a31db10c533b5",
+        "actual_sha256": "4a44d40683cc6991854bf3e75ce357341d51a799d36d8c10aa5a31db10c533b5",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n2-intake-20261031/pins.json",
+        "bytes": 8585,
+        "pinned_sha256": "6ea1fe5fb5961d639cca9e10371aaee5c4900b10a6936425b7ba7c1383b92309",
+        "actual_sha256": "6ea1fe5fb5961d639cca9e10371aaee5c4900b10a6936425b7ba7c1383b92309",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n2-intake-20261031/result.json",
+        "bytes": 2173,
+        "pinned_sha256": "78509a9058d220226401ebd08f6f2d648b53defd2dea9b78f839519c55a9f06d",
+        "actual_sha256": "78509a9058d220226401ebd08f6f2d648b53defd2dea9b78f839519c55a9f06d",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/before-PLAN.json",
+        "bytes": 5195,
+        "pinned_sha256": "f5f0338f3f0ab0af6cf82c41ae0263aafbfa5915ebca609204bd24868dc81068",
+        "actual_sha256": "f5f0338f3f0ab0af6cf82c41ae0263aafbfa5915ebca609204bd24868dc81068",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/before-result.json",
+        "bytes": 2015,
+        "pinned_sha256": "ba7c6c30c014f7a5755f3776adbe33f4c883a85b1ddf6061425803ff13ee4927",
+        "actual_sha256": "ba7c6c30c014f7a5755f3776adbe33f4c883a85b1ddf6061425803ff13ee4927",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/before-source-manifest.json",
+        "bytes": 3360,
+        "pinned_sha256": "2fb79c8d847299be42824da775b693dcaee6251c8df1362efcf408080f295103",
+        "actual_sha256": "2fb79c8d847299be42824da775b693dcaee6251c8df1362efcf408080f295103",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/independent_holdout_n3_bridge_r1.py",
+        "bytes": 19844,
+        "pinned_sha256": "bbead9952a623925c74c843a111c63ac73f90d605c8ed8ed1c17eb79909f6a59",
+        "actual_sha256": "bbead9952a623925c74c843a111c63ac73f90d605c8ed8ed1c17eb79909f6a59",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/probe_boundaries.py",
+        "bytes": 2333,
+        "pinned_sha256": "66ca1d5b30da0e114d081dbcc1d0fd5fe4f9c1c13ce9f46f224d8dec9b3f45c2",
+        "actual_sha256": "66ca1d5b30da0e114d081dbcc1d0fd5fe4f9c1c13ce9f46f224d8dec9b3f45c2",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/lead-review/resume-n3-bridge-r1-intake-20261101/tests.stdout.txt",
+        "bytes": 3307,
+        "pinned_sha256": "449f8c1087f8bec9fd01326c626b7c2e842d600d086922819d139b37c8289554",
+        "actual_sha256": "449f8c1087f8bec9fd01326c626b7c2e842d600d086922819d139b37c8289554",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/verification/n3-model-coverage-consolidation-20261101/REPORT.md",
+        "bytes": 9949,
+        "pinned_sha256": "3b3f8ca4fb006ce08dda5d244e8f195db359bc1557a368c4d1876339da06b9ff",
+        "actual_sha256": "3b3f8ca4fb006ce08dda5d244e8f195db359bc1557a368c4d1876339da06b9ff",
+        "matches": true
+      },
+      {
+        "path": "docs/research/practical-20261029/verification/n3-model-coverage-consolidation-20261101/results.json",
+        "bytes": 76224,
+        "pinned_sha256": "ac31f621d57f5f5ef1e16b492f3b72a829d8894ec91c66bc6cbd3efaaa7f3ccf",
+        "actual_sha256": "ac31f621d57f5f5ef1e16b492f3b72a829d8894ec91c66bc6cbd3efaaa7f3ccf",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/driver.py",
+        "bytes": 64044,
+        "pinned_sha256": "ea393aa904ccb24ccff8908feae0304a8a60306d85ac667d3aaf07270c86ce9b",
+        "actual_sha256": "ea393aa904ccb24ccff8908feae0304a8a60306d85ac667d3aaf07270c86ce9b",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/independent_holdout_n3_bridge_r1.py",
+        "bytes": 19844,
+        "pinned_sha256": "bbead9952a623925c74c843a111c63ac73f90d605c8ed8ed1c17eb79909f6a59",
+        "actual_sha256": "bbead9952a623925c74c843a111c63ac73f90d605c8ed8ed1c17eb79909f6a59",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/independent_holdout_n3_runtime_r2.py",
+        "bytes": 45108,
+        "pinned_sha256": "de81498d90c01f852874a144d18e64ecdad070d4e0141e026d3ce01652acd8aa",
+        "actual_sha256": "de81498d90c01f852874a144d18e64ecdad070d4e0141e026d3ce01652acd8aa",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/independent_holdout_n3_runtime_r4.py",
+        "bytes": 48563,
+        "pinned_sha256": "dd15cb286eae686d2c41968016bd2234c20dc2e1d06e172886cffe39309a1ebc",
+        "actual_sha256": "dd15cb286eae686d2c41968016bd2234c20dc2e1d06e172886cffe39309a1ebc",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/test_independent_holdout_n3_runtime_r2.py",
+        "bytes": 35922,
+        "pinned_sha256": "72152eb0fe4208c21975d20c5f4fff6037bd11219c00064e5037aff9eec9f590",
+        "actual_sha256": "72152eb0fe4208c21975d20c5f4fff6037bd11219c00064e5037aff9eec9f590",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/execution/test_independent_holdout_n3_runtime_r4.py",
+        "bytes": 44157,
+        "pinned_sha256": "da92b38e5236214dafd9e85a1f8ba191451e6e40c5877da995d5e71f13e43665",
+        "actual_sha256": "da92b38e5236214dafd9e85a1f8ba191451e6e40c5877da995d5e71f13e43665",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/manifest.json",
+        "bytes": 11587,
+        "pinned_sha256": "aa6263359e005924e48f3ae067e8f0608b897baa795ddd9ce6da02129fde0996",
+        "actual_sha256": "aa6263359e005924e48f3ae067e8f0608b897baa795ddd9ce6da02129fde0996",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/oracles.jsonl",
+        "bytes": 24026,
+        "pinned_sha256": "001316704a7014b3132587f8034f2f9f3edced32a14e33960fa5bba19b3c808d",
+        "actual_sha256": "001316704a7014b3132587f8034f2f9f3edced32a14e33960fa5bba19b3c808d",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/independent_holdout/tasks.jsonl",
+        "bytes": 28351,
+        "pinned_sha256": "41d0319d54fc084c1ea7a2e80875006a018a52a3bb3cc55b2532b5472c66a31f",
+        "actual_sha256": "41d0319d54fc084c1ea7a2e80875006a018a52a3bb3cc55b2532b5472c66a31f",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/n5/lifecycle.py",
+        "bytes": 10319,
+        "pinned_sha256": "0c2bdf55e8c338233edaf37f302241dd84567dc8d4dc19a2cf9f4c403d66ca48",
+        "actual_sha256": "0c2bdf55e8c338233edaf37f302241dd84567dc8d4dc19a2cf9f4c403d66ca48",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/runtime/cpu_pilot.py",
+        "bytes": 24706,
+        "pinned_sha256": "a9237bb2fcc6c408aebc434386a353b772037531394d25b7853db80d60c3a8e7",
+        "actual_sha256": "a9237bb2fcc6c408aebc434386a353b772037531394d25b7853db80d60c3a8e7",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/runtime/llama_http.py",
+        "bytes": 22027,
+        "pinned_sha256": "041b76b997428c04826521d2e401f4443ebf270046b5dbe8fc9fc7a65dc0b283",
+        "actual_sha256": "041b76b997428c04826521d2e401f4443ebf270046b5dbe8fc9fc7a65dc0b283",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/suite/evaluator.py",
+        "bytes": 23107,
+        "pinned_sha256": "953117642291fcfdf4202b5aa0decc3f9c3c6b943e4e1c81e9e564ec4b6b774c",
+        "actual_sha256": "953117642291fcfdf4202b5aa0decc3f9c3c6b943e4e1c81e9e564ec4b6b774c",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/suite/independent_holdout_adapter.py",
+        "bytes": 36860,
+        "pinned_sha256": "a69d5f151beb0a3adf6e1b2ec0333ff9bfa1dbb6521a88e3760d8a2f67287db3",
+        "actual_sha256": "a69d5f151beb0a3adf6e1b2ec0333ff9bfa1dbb6521a88e3760d8a2f67287db3",
+        "matches": true
+      },
+      {
+        "path": "tools/practical_research/suite/sandbox.py",
+        "bytes": 9643,
+        "pinned_sha256": "3dee0c668db8b2909fe94539a0c6ea959c8e151f45818ac264703b7aa92b0201",
+        "actual_sha256": "3dee0c668db8b2909fe94539a0c6ea959c8e151f45818ac264703b7aa92b0201",
+        "matches": true
+      }
+    ]
+  }
+}

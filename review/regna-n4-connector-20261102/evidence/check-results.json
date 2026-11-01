@@ -1,0 +1,58 @@
+[
+  {
+    "name": "01-regna-n4",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_n4_execution.py",
+    "exit": 0,
+    "stdout": "...........                                                              [100%]\ndb reset: 11 selective (avg 1.2/120 tables), 0 forced full, 0 fell back to full\n11 passed in 0.67s\n",
+    "stderr": ""
+  },
+  {
+    "name": "02-regna-n3-regression",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_q25_execution.py tests/test_research_q25_dispatch.py",
+    "exit": 0,
+    "stdout": ".....................................                                    [100%]\ndb reset: 37 selective (avg 1.8/120 tables), 0 forced full, 0 fell back to full\n37 passed in 2.97s\n",
+    "stderr": ""
+  },
+  {
+    "name": "03-host-operations-owner",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_host_operations.py -k 'regna or conflict or owner'",
+    "exit": 0,
+    "stdout": ".........                                                                [100%]\ndb reset: 9 selective (avg 8.2/120 tables), 0 forced full, 0 fell back to full\n9 passed, 71 deselected in 1.05s\n",
+    "stderr": ""
+  },
+  {
+    "name": "04-mcp-fixed-allowlist",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_route_inventory.py -k 'mcp_host_operation_start'",
+    "exit": 0,
+    "stdout": ".                                                                        [100%]\ndb reset: 1 selective (avg 3.0/120 tables), 0 forced full, 0 fell back to full\n1 passed, 7 deselected in 0.68s\n",
+    "stderr": ""
+  },
+  {
+    "name": "05-ruff-check",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run ruff check src/ttakkari/research/regna_n4_combo_first6.py src/ttakkari/operations/plans.py src/ttakkari/operations/jobs.py src/ttakkari/operations/runner.py src/ttakkari/api/operations.py src/ttakkari/orchestrator/mcp_server.py tests/test_regna_n4_execution.py tests/test_host_operations.py tests/test_route_inventory.py",
+    "exit": 0,
+    "stdout": "All checks passed!\n",
+    "stderr": ""
+  },
+  {
+    "name": "06-pitfall-scan",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run python /Users/winterholic/.claude/dev-experts-skills/dev-python/scripts/pitfall_scan.py src/ttakkari/research/regna_n4_combo_first6.py",
+    "exit": 0,
+    "stdout": "total: 0 finding(s)\n",
+    "stderr": ""
+  },
+  {
+    "name": "07-format-new-files",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run ruff format --check src/ttakkari/research/regna_n4_combo_first6.py tests/test_regna_n4_execution.py",
+    "exit": 0,
+    "stdout": "2 files already formatted\n",
+    "stderr": ""
+  },
+  {
+    "name": "08-py-compile",
+    "command": "UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run python -m py_compile src/ttakkari/research/regna_n4_combo_first6.py",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

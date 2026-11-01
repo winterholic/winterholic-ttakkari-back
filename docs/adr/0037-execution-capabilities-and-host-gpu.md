@@ -84,3 +84,11 @@
 - 서버가 frozen Qwen2.5 first-six plan SHA, source manifest, 모델·runtime·template 경로/크기/SHA와 정확히 여섯 cell을 고정 검증한다. 임의 경로·argv·모델·prompt는 받지 않는다. 기존 r4 runner가 HTTP/SSE/tokenizer/raw 및 각 모델 child의 wait4 stop 증거를 남긴다.
 - operation은 새 owner-bound `ResourceLeaseManager` lease를 `resource_family=llm`으로 획득해 기존 단일 호스트 자원 flock을 공유한다. lease 만료나 supervisor 종료만으로 해제하지 않는다. 정상 종료는 셀별 wait4/stop receipt와 RSS 감시 종료를 확인한 뒤 해제한다. 감독자가 죽은 경우에는 바깥 runner가 소유 프로세스 그룹 부재를 확인해야만 lease를 회수하며, raw 증거가 불완전하면 작업은 실패로 남는다. 종료가 불확정이면 lease를 보존한다.
 - CPU only, 단일 child 순차 실행, cell 120초·전체 900초·cleanup reserve 30초, server RSS 6 GiB ceiling을 적용한다. 이 예외는 임의 명령 통로, 전역 work 허용, GPU 실행 capability가 아니다. Production 배포나 실제 모델 호출을 증명하지 않는다.
+
+## 제한된 Regna N4 r2 Qwen3 비교 operation
+
+- 별도 고정 kind `regna_n4_combo_first6_cpu` 하나만 work session에 공개한다. 기존 N3 operation·pins는 유지하며 N3/N4 모두 기존 `/api/agent/operations`와 동일 owner-only status/cancel, foreign-owner conflict 비노출을 적용한다.
+- Backend는 N4 `final-isolated` plan bytes와 15 source pins를 같은 bytes에서 hash·parse하고 `batch-01`의 baseline/C0+INT-003 6개 cell, Qwen3-1.7B Q4_K_M profile, model/runtime/template/tokenizer hashes, generation mode, request/input identity와 6/120/900/30 budget을 고정 확인한다. caller 입력은 kind만 허용한다.
+- grant는 session/job, 공용 `ResourceLeaseManager` lease ID/generation, canonical·raw plan SHA, raw pins/source manifest, assets, mode, exact request identity map과 실제 attempt-ledger review에 묶인다. ledger의 실제 serialized request body를 expected baseline HTTP request와 비교한다. exact match가 있으면 match path/hash를 private refusal receipt로 저장하고 grant·dispatch를 거부한다. batch plan/cells hash의 O_EXCL claim은 새 grant ID로도 재실행하지 못하게 한다.
+- Dispatch는 accepted N4 r2 `dispatch_batch()`를 실제로 사용하고, 그 안에서 `MeasuredOwnedServer`와 common `LlamaHTTPAdapter.complete()`로 이어진다. child는 operation 소유 process group에 결속하고 RSS 6 GiB를 감시한다. raw request/SSE/usage/output, durable failure receipt, positive direct-child wait/reap cleanup evidence를 job별 0700/0600 server-owned evidence에 보존한다. cleanup 불확실 시 lease는 유지한다.
+- N4도 CPU only, 단일 child 순차, cell 120초·overall 900초·cleanup reserve 30초, 6 GiB RSS 한도를 지킨다. wall-time finding은 validator의 사후 집계 대조 누락으로만 다루며, backend summary는 `sum(attempt.elapsed_seconds)`와 outer monotonic duration을 같이 표시한다. 이 connector는 실제 모델 호출·asset load·연구 완료를 이번 코드 단위에서 실행하지 않는다.

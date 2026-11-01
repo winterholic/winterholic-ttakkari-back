@@ -349,7 +349,18 @@ def _reconcile(job: dict) -> dict:
         ):
             return write(job | {"status": "cleanup_pending", "finished_at": None,
                                 "error": "runner_lost_cleanup_pending: Regna owned process group absence is unconfirmed; host lease retained"})
-    if job.get("kind") != "regna_q25_first6_cpu":
+    if job.get("kind") == "regna_n4_combo_first6_cpu":
+        from ttakkari.config import get_settings
+        from ttakkari.research.regna_n4_combo_first6 import (
+            recover_lease_after_owner_exit,
+        )
+
+        if not recover_lease_after_owner_exit(
+            job, get_settings().data_dir, operation_runner_confirmed_group_absent=True
+        ):
+            return write(job | {"status": "cleanup_pending", "finished_at": None,
+                                "error": "runner_lost_cleanup_pending: N4 owned process group absence is unconfirmed; host lease retained"})
+    if job.get("kind") not in plans.OWNER_BOUND_RESEARCH_KINDS:
         plans.clean_residuals()
     updated = write(
         job
@@ -439,7 +450,7 @@ def spawn_heavy(job_id: str) -> dict:
         job = get(job_id)
         if job["status"] != "queued":
             raise Conflict("작업이 대기 상태가 아닙니다.")
-        if job.get("kind") != "regna_q25_first6_cpu":
+        if job.get("kind") not in plans.OWNER_BOUND_RESEARCH_KINDS:
             plans.clean_residuals()
         try:
             proc = subprocess.Popen(

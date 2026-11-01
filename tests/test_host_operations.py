@@ -205,6 +205,29 @@ async def test_regna_conflict_preserves_details_for_same_work_session(client, en
     assert "backup_db" in response.text
 
 
+async def test_non_owner_conflict_hides_active_regna_job_details(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    other = _active_job("regna_q25_first6_cpu", requested_by_session="another-work-session")
+
+    response = await _start(client, _hdr(env.work_session_id), "backup_db")
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "다른 운영 작업이 진행 중입니다."
+    assert other["id"] not in response.text
+    assert "regna_q25_first6_cpu" not in response.text
+
+
+async def test_same_owner_conflict_preserves_active_regna_job_details(client, env, monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _job: (True, None))
+    own = _active_job("regna_q25_first6_cpu", requested_by_session=str(env.work_session_id))
+
+    response = await _start(client, _hdr(env.work_session_id), "backup_db")
+
+    assert response.status_code == 409
+    assert own["id"] in response.text
+    assert "regna_q25_first6_cpu" in response.text
+
+
 def test_start_heavy_unexpected_exception_cleans_queue(monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("simulated unexpected runner spawn failure")

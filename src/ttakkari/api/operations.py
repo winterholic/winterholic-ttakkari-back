@@ -102,10 +102,12 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
                detail={"kind": body.kind, "session_id": str(sid), "reason": "conflict"})
         await db.commit()
         detail = str(exc)
-        if body.kind == "regna_q25_first6_cpu":
-            active_job = getattr(exc, "active_job", None)
-            if not isinstance(active_job, dict) or active_job.get("requested_by_session") != str(sid):
-                detail = "다른 운영 작업이 진행 중입니다."
+        active_job = getattr(exc, "active_job", None)
+        if ((body.kind == "regna_q25_first6_cpu"
+             or isinstance(active_job, dict) and active_job.get("kind") == "regna_q25_first6_cpu")
+                and (not isinstance(active_job, dict)
+                     or active_job.get("requested_by_session") != str(sid))):
+            detail = "다른 운영 작업이 진행 중입니다."
         raise HTTPException(409, detail) from exc
     except plans.Refused as exc:
         record(db, actor="agent", action="operation.request", outcome="error", target_type="operation",

@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run ruff check src/ttakkari/api/operations.py src/ttakkari/operations/jobs.py src/ttakkari/operations/plans.py src/ttakkari/operations/runner.py src/ttakkari/orchestrator/mcp_server.py src/ttakkari/research/regna_q25_first6.py tests/test_host_operations.py tests/test_regna_q25_execution.py tests/test_research_q25_dispatch.py

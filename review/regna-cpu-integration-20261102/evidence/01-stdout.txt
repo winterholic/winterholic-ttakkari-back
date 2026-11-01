@@ -1,0 +1,569 @@
+E..EEEE.EEEEEEEE..E...............F..                                    [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_profile_binds_exact_frozen_plan_assets_and_first_six_cells _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_operation_plan_has_only_the_fixed_server_entrypoint_and_deadline _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_pinned_r4_runner_loads_and_accepts_only_backend_built_argv _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+__ ERROR at setup of test_runner_loader_rejects_a_replaced_or_shrunk_manifest __
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_runner_loader_parses_the_same_manifest_bytes_that_it_hashes _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+___ ERROR at setup of test_fresh_grant_is_bound_to_work_owner_and_exact_plan ___
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_____ ERROR at setup of test_exact_cell_claim_is_exclusive_and_not_reused ______
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_grant_rejects_wrong_owner_scope_hash_or_path[owner_id-another-session] _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_grant_rejects_wrong_owner_scope_hash_or_path[scope_id-personal] _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_grant_rejects_wrong_owner_scope_hash_or_path[plan_sha256-0000000000000000000000000000000000000000000000000000000000000000] _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_grant_rejects_wrong_owner_scope_hash_or_path[source_manifest_sha256-1111111111111111111111111111111111111111111111111111111111111111] _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_grant_rejects_wrong_owner_scope_hash_or_path[output_root-/tmp/caller-selected] _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+____ ERROR at setup of test_grant_expiry_before_cleanup_reserve_is_rejected ____
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+_ ERROR at setup of test_rss_monitor_thread_start_failure_stops_only_owned_child_in_outer_group _
+
+    @pytest.fixture(scope="module")
+    def profile():
+>       return q25.load_profile(REGNA)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_regna_q25_execution.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/research/regna_q25_first6.py:120: in load_profile
+    _verify_manifest_files(root, manifest)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/winterholic/development/hyperez/regna-ios')
+manifest = {'files': {'docs/research/practical-20261029/evaluation/design.json': {'bytes': 9604, 'sha256': 'e224b10ac634005a758d1...8029e62f3b6b502ca4df8ae474ae20257d5d9941fff45898a161488583'}, ...}, 'schema': 'regna-n3-runtime-r4-source-manifest-v1'}
+
+    def _verify_manifest_files(root: Path, manifest: dict[str, Any]) -> None:
+        """Verify every source, oracle, scorer and runtime file before importing any frozen runner code."""
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ProfileError("frozen source manifest has no file pins")
+        root = root.resolve(strict=True)
+        runner_pin = files.get(RUNNER_RELATIVE.as_posix())
+        if (not isinstance(runner_pin, dict) or runner_pin.get("sha256") != RUNNER_SHA256):
+            raise ProfileError("frozen source manifest does not bind the r4 runner hash")
+        for relative, pin in files.items():
+            item = PurePosixPath(relative) if isinstance(relative, str) else None
+            if (item is None or item.is_absolute() or ".." in item.parts or not item.parts
+                    or not isinstance(pin, dict) or type(pin.get("bytes")) is not int
+                    or not isinstance(pin.get("sha256"), str)):
+                raise ProfileError("frozen source manifest contains an invalid file pin")
+            path = (root / Path(*item.parts)).resolve(strict=True)
+            if not path.is_relative_to(root) or path.stat().st_size != pin["bytes"] or _sha256(path) != pin["sha256"]:
+>               raise ProfileError(f"frozen source manifest file mismatch: {item.as_posix()}")
+E               ttakkari.research.regna_q25_first6.ProfileError: frozen source manifest file mismatch: tools/practical_research/runtime/llama_http.py
+
+src/ttakkari/research/regna_q25_first6.py:173: ProfileError
+=================================== FAILURES ===================================
+___________ test_work_session_starts_only_the_server_fixed_operation ___________
+
+client = <httpx.AsyncClient object at 0x112bf1bd0>
+make_dir = <function make_dir.<locals>._make at 0x112c34c20>
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6091/test_work_session_starts_only_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11252e9e0>
+
+    async def test_work_session_starts_only_the_server_fixed_operation(client, make_dir, tmp_path, monkeypatch):
+        async with sessionmaker()() as db:
+            env = await ensure_authz03(db, make_dir)
+        operations_root = tmp_path / "operations"
+        (operations_root / "jobs").mkdir(parents=True)
+        monkeypatch.setattr(jobs, "root", lambda: operations_root)
+    
+        def synthetic_start(job_id):
+            return jobs.update(job_id, status="running", runner_pid=123, runner_started=1.0)
+    
+        monkeypatch.setattr(jobs, "spawn_heavy", synthetic_start)
+        response = await client.post(
+            "/api/agent/operations",
+            json={"kind": "regna_q25_first6_cpu"},
+            headers=_hdr(env.work_session_id),
+        )
+    
+>       assert response.status_code == 202, response.text
+E       AssertionError: {"code":"error","message":"작업 준비 실패: ProfileError"}
+E       assert 500 == 202
+E        +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+tests/test_research_q25_dispatch.py:59: AssertionError
+db reset: 23 selective (avg 2.3/120 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_research_q25_dispatch.py::test_work_session_starts_only_the_server_fixed_operation
+ERROR tests/test_regna_q25_execution.py::test_profile_binds_exact_frozen_plan_assets_and_first_six_cells
+ERROR tests/test_regna_q25_execution.py::test_operation_plan_has_only_the_fixed_server_entrypoint_and_deadline
+ERROR tests/test_regna_q25_execution.py::test_pinned_r4_runner_loads_and_accepts_only_backend_built_argv
+ERROR tests/test_regna_q25_execution.py::test_runner_loader_rejects_a_replaced_or_shrunk_manifest
+ERROR tests/test_regna_q25_execution.py::test_runner_loader_parses_the_same_manifest_bytes_that_it_hashes
+ERROR tests/test_regna_q25_execution.py::test_fresh_grant_is_bound_to_work_owner_and_exact_plan
+ERROR tests/test_regna_q25_execution.py::test_exact_cell_claim_is_exclusive_and_not_reused
+ERROR tests/test_regna_q25_execution.py::test_grant_rejects_wrong_owner_scope_hash_or_path[owner_id-another-session]
+ERROR tests/test_regna_q25_execution.py::test_grant_rejects_wrong_owner_scope_hash_or_path[scope_id-personal]
+ERROR tests/test_regna_q25_execution.py::test_grant_rejects_wrong_owner_scope_hash_or_path[plan_sha256-0000000000000000000000000000000000000000000000000000000000000000]
+ERROR tests/test_regna_q25_execution.py::test_grant_rejects_wrong_owner_scope_hash_or_path[source_manifest_sha256-1111111111111111111111111111111111111111111111111111111111111111]
+ERROR tests/test_regna_q25_execution.py::test_grant_rejects_wrong_owner_scope_hash_or_path[output_root-/tmp/caller-selected]
+ERROR tests/test_regna_q25_execution.py::test_grant_expiry_before_cleanup_reserve_is_rejected
+ERROR tests/test_regna_q25_execution.py::test_rss_monitor_thread_start_failure_stops_only_owned_child_in_outer_group
+1 failed, 22 passed, 14 errors in 3.02s

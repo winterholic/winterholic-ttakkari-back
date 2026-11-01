@@ -1,0 +1,5 @@
+Using CPython 3.13.15
+Creating virtual environment at: .venv
+   Building ttakkari @ file:///Users/winterholic/development/projects/winterholic-ttakkari/back-regna-cpu-integration-20261102
+      Built ttakkari @ file:///Users/winterholic/development/projects/winterholic-ttakkari/back-regna-cpu-integration-20261102
+Installed 117 packages in 154ms

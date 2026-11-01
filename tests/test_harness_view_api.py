@@ -253,8 +253,12 @@ async def test_missing_instruction_layers_are_listed_as_not_applied(client, auth
     layers = (await client.get("/api/harness/layers", params={"session": "worker", "engine": "claude"},
                                headers=auth)).json()["layers"]
     by_id = {layer["id"]: layer for layer in layers}
-    assert by_id["common_instructions"]["applies"] is False and by_id["role_instructions"]["applies"] is False
+    # 작업자는 저장 파일이 없어도 내장 완료 계약(WORKER_DEFAULT)을 받는다.
+    assert by_id["common_instructions"]["applies"] is False and by_id["role_instructions"]["applies"] is True
     assert by_id["pinned_brief"]["applies"] is False
+    lead = (await client.get("/api/harness/layers", params={"session": "lead", "engine": "claude"},
+                             headers=auth)).json()["layers"]
+    assert {layer["id"]: layer for layer in lead}["role_instructions"]["applies"] is False
     desk = (await client.get("/api/harness/layers", params={"session": "desk", "engine": "claude"},
                              headers=auth)).json()
     assert desk["layers"][0]["id"] == "desk_system" and desk["layers"][0]["origin"] == "code"

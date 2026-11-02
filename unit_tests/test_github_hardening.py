@@ -334,10 +334,12 @@ async def test_V04_branches_route_shares_one_budget_across_repo_and_branches_cal
             return ok([{"name": "main", "commit": {"sha": "a" * 40}, "protected": False}])
         return ok(REPO)
 
-    http, *_ = build(_slow(0.4, routes), budget=0.5)
+    # 호출 둘이 예산을 나누면 1.25초에 끊기고, 나누지 않으면 2.0초가 걸린다. 배포 게이트처럼 부하가 크면 0.2초 여유로는
+    # 간헐 실패했다(2026-11-03 caa62bcf, dt=0.84). 비율은 같게 두고 규모를 키워 두 경우 사이 여유를 넓혔다.
+    http, *_ = build(_slow(1.0, routes), budget=1.25)
     r, dt = await _timed(http, "/api/github/repos/acme/widget/branches")
     assert r.status_code == 504 and r.json()["code"] == "gh_timeout", (r.status_code, dt)
-    assert dt < 0.5 + 0.2, dt  # 두 호출을 합쳐 0.8초가 되지 않는다
+    assert dt < 1.7, dt  # 두 호출을 합쳐 2.0초가 되지 않는다
 
 
 async def test_V04_readme_404_then_repo_check_shares_one_budget():

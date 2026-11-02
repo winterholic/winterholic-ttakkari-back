@@ -544,12 +544,14 @@ def _runner_with_exec(results, monkeypatch):
 
 
 async def test_mount_source_race_is_retried_until_the_container_starts(monkeypatch):
+    monkeypatch.setattr(isolation, "MOUNT_RETRY_DELAY_S", 0)
     runner, calls = _runner_with_exec([(127, False, MOUNT_ERROR), (127, False, MOUNT_ERROR), (0, False, "ok")], monkeypatch)
     assert await runner._exec_retrying(["docker", "run"], "n", 30) == (0, False, "ok")
     assert len(calls) == 3
 
 
 async def test_mount_source_race_gives_up_after_bounded_retries(monkeypatch):
+    monkeypatch.setattr(isolation, "MOUNT_RETRY_DELAY_S", 0)
     runner, calls = _runner_with_exec([(127, False, MOUNT_ERROR)] * (isolation.MOUNT_RETRIES + 1), monkeypatch)
     code, _, log = await runner._exec_retrying(["docker", "run"], "n", 30)
     assert code == 127 and "error while creating mount source path" in log

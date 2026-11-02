@@ -53,7 +53,7 @@ TYPECHECK_COMMAND = ["sh", "-c", _TYPECHECK_SCRIPT]
 
 
 MOUNT_RACE_MARKER = "error while creating mount source path"
-MOUNT_RETRIES = 3
+MOUNT_RETRIES = 6
 MOUNT_RETRY_DELAY_S = 1.0
 
 

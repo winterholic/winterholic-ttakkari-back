@@ -1,10 +1,10 @@
 """별도 게임 origin 서빙: 자격증명 없는 정적 제공, CSP/CORS/쿠키, 경로 이탈, 토큰 범위, Host 분리 (TASK-G07)."""
 
+import asyncio
 import os
 import socket
 import subprocess
 import sys
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -285,7 +285,7 @@ async def test_real_phaser_build_served_by_separate_game_origin_process(client, 
     env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "TMPDIR", "TTAKKARI_HOME", "TTAKKARI_JWT_SECRET", "TTAKKARI_NO_ENV_FILE",
                                                          "TTAKKARI_ENV", "TTAKKARI_CORS_ORIGINS", "TTAKKARI_ALLOWED_ROOTS"}}
     env["TTAKKARI_DATABASE_URL"] = "postgresql+asyncpg://localhost/does_not_exist"  # 게임 origin 은 DB 를 쓰지 않는다
-    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "ttakkari.games.origin:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "ttakkari.games.origin:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],  # noqa: ASYNC220 - 별도 프로세스를 띄워 두고 기다리는 시험이다
                             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         base = f"http://127.0.0.1:{port}"
@@ -296,7 +296,7 @@ async def test_real_phaser_build_served_by_separate_game_origin_process(client, 
                     r = await c.get(path, headers={"Cookie": "ttk_refresh=SECRET", **auth})
                     break
                 except httpx.TransportError:
-                    time.sleep(0.1)
+                    await asyncio.sleep(0.1)
             else:
                 raise AssertionError(proc.stderr.read().decode())
             assert r.status_code == 200 and "<div id=\"game\">" in r.text and "set-cookie" not in r.headers

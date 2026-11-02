@@ -1,0 +1,14 @@
+{
+  "source": "main get_worker confirmation supplied in the 2026-11-02 continuation",
+  "worker_owner_id": "c471e595-2b30-4c5a-a130-4d984fc48cfa",
+  "run_id_prefix": "89e6853f",
+  "actual_routing": {
+    "engine": "codex",
+    "model": "gpt-6-luna",
+    "pool": "work",
+    "account": "companyai2",
+    "quota_state": "known"
+  },
+  "relation_to_independent_receipt": "supplements the earlier verifier record, whose own get_worker lookup was unavailable; no re-read or re-investigation was performed",
+  "review_scope_effect": "routing provenance only; does not change F1/F2/F3 source findings or source acceptance"
+}

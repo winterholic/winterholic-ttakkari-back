@@ -1,0 +1,6 @@
+Source of this inherited observation: user's task instruction for this Run; the prior raw runner log was not present in the inspected source-side review directories.
+- Prior normal N3 push pre-push attempt: 10 failed / 104 passed, exit 1.
+- Failure classification supplied: 5 pre-exec failures, 1 sysctl permission failure, 4 unresolved.
+- Independent prior diagnosis says relevant existing runner/tests match the base; no code defect established.
+- This Run did not rerun the hook, the exact gate, a different engine, or git push. No failure from this Run is claimed here.
+- Controller-source review (active release 83302612…): reservation preparation runs the security gate and then `uv run pytest -q -x`; request acceptance is not proof that either stage passed or that cutover succeeded.

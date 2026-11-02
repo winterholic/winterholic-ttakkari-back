@@ -1,0 +1,29 @@
+{
+  "captured_at_utc": "2026-11-01T23:42:36.676246+00:00",
+  "target_head": "a07ca4cff1136eb5825e740c1576e52543addb1c",
+  "implementation_commit": "20764ae3ad38305d9ea85dcd92e883653a015df8",
+  "producer_evidence_commit": "a07ca4cff1136eb5825e740c1576e52543addb1c",
+  "source_and_test_diff_implementation_to_head_exit": 0,
+  "source_file_sha256": {
+    "src/ttakkari/research/regna_n4_combo_first6.py": "6bb8f46a84aa73e707b250435c7fa6c75d7290db7f33b20fb9f935109179734e",
+    "src/ttakkari/operations/plans.py": "efa65e6022bfa3579a2b7d034c777eb5dc4c2c898028b651ce2ac07bef8e925c",
+    "src/ttakkari/operations/jobs.py": "e4cba70e84ca0a0cde638278d44770a66db0e91202d53e79c4de665883a910b8",
+    "src/ttakkari/operations/runner.py": "169e4c28b33e3e7269f0df03152ef85e41bb3935dfcd6281461e20a2c28c746e",
+    "src/ttakkari/api/operations.py": "530dc6a8837774610c4ae3f5d462e31dbdee7635b5be615af7e71f654d413f49",
+    "src/ttakkari/orchestrator/mcp_server.py": "4e7388dfd8c718d7b0094387508a59e8a1580029bab2b55d740917cb942fc412"
+  },
+  "target_git_status": "## codex/regna-n4-connector-20261102\n?? review/regna-n4-independent-20261102/\n",
+  "external_pin_identity_reused_without_rehash": {
+    "n4_pin_count_before": 15,
+    "n4_all_match_before": true,
+    "n4_pin_count_after": 15,
+    "n4_all_match_after": true,
+    "n4_identical_to_before": true,
+    "n3_pin_count_before": 31,
+    "n3_all_match_before": true,
+    "n3_pin_count_after": 31,
+    "n3_all_match_after": true,
+    "n3_identical_to_before": true,
+    "identity_source": "producer pin-sha-before/after.json; N3 source identity preserved only, no prior tests/gates rerun"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "captured_at_utc": "2026-11-01T23:35:31.690474+00:00",
+  "requested_assignment": {
+    "engine": "auto",
+    "task_type": "general"
+  },
+  "source": "Ttakkari spawn_worker response followed by get_worker routing receipt",
+  "worker_id": "dba84860-ed19-408a-b051-ba23abe6d5fb",
+  "selected_actual_model": "gpt-6-luna",
+  "selected_engine": "codex",
+  "verification_required": false,
+  "routing_reason": "task_fit_then_known_quota_then_stage_then_headroom_per_run",
+  "account_usage_tool": "not exposed in this Run; selected model recorded from get_worker.routing.selected",
+  "initial_spawn_metadata_model": "claude-sonnet-5-5-high (excluded by routing receipt as not in account model list)",
+  "status_at_receipt": "succeeded"
+}

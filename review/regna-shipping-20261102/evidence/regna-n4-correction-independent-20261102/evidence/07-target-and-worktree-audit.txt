@@ -1,0 +1,8 @@
+target=68283b6597a5af180bfcd2616fcd554f144cd21d
+base=a07ca4cff1136eb5825e740c1576e52543addb1c
+current_HEAD=27d706d962ac41d7fdf7592296f93c2449b0a02b
+source_tests_target_comparison_exit=0
+connector_source_sha256=a67579049167432a21df72be26b815f33f1add77c89339abf8aad3b637b1b4bf
+git_status_short:
+?? review/regna-n4-correction-independent-20261102/
+?? review/regna-n4-independent-20261102/

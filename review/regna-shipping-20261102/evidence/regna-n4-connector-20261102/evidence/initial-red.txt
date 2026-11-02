@@ -1,0 +1,7 @@
+Initial RED (before connector module implementation)
+
+Command: UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_n4_execution.py
+Exit: 2
+Observed stdout: pytest collection failed because `ttakkari.research.regna_n4_combo_first6` did not yet exist; the test import raised `ImportError: cannot import name 'regna_n4_combo_first6'`.
+Observed stderr: empty.
+Purpose: expected TDD RED for the newly added connector tests.

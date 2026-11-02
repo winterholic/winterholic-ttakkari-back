@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q review/regna-n4-independent-20261102/test_readonly_counterexamples.py::test_runner_exit_recovery_keeps_lease_when_dispatch_failure_has_no_batch_receipt

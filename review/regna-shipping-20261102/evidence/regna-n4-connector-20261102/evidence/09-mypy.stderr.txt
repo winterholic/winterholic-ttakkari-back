@@ -1,0 +1,2 @@
+error: Failed to spawn: `mypy`
+  cause: No such file or directory (os error 2)

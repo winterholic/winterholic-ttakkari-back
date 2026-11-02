@@ -1,0 +1,10 @@
+HEAD=a07ca4cff1136eb5825e740c1576e52543addb1c
+SOURCE_DIFF_IMPL_TO_HEAD=0
+STATUS
+## codex/regna-n4-connector-20261102
+?? review/regna-n4-independent-20261102/
+DIFF_CHECK
+DIFF_CHECK_EXIT=0
+evidence_json_valid= 3
+report_exists= True
+counterexample_test_exists= True

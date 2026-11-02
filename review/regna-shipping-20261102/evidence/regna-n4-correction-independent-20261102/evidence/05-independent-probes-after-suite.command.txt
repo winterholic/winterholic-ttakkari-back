@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q review/regna-n4-correction-independent-20261102/test_actual_receipt_and_symlinks.py

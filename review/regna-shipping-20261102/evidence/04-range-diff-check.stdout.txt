@@ -1,0 +1,90 @@
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:10: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:11: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:14: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:47: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:48: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:51: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:84: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:85: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:88: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:121: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:122: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:125: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:158: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:159: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:162: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:195: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:196: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:199: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:232: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:233: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:236: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:269: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:270: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:273: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:306: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:307: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:310: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:343: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:344: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:347: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:380: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:381: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:384: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:417: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:418: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:421: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:454: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:455: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:458: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:491: trailing whitespace.
++tests/test_regna_q25_execution.py:26: 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:492: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:495: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:535: trailing whitespace.
++    
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:538: trailing whitespace.
++    
+review/regna-cpu-integration-20261102/evidence/01-stdout.txt:545: trailing whitespace.
++    

@@ -1,0 +1,21 @@
+27d706d962ac41d7fdf7592296f93c2449b0a02b
+## codex/regna-shipping-20261102
+?? review/regna-shipping-20261102/
+489d0e2a feat: add fixed Regna Qwen2.5 CPU operation
+d37cbf76 docs: record Regna Qwen2.5 CPU review
+beb404af fix: close Regna Qwen2.5 supervision failure paths
+d217485e docs: finalize Regna Q25 CPU execution report
+0e623545 fix: pin manifest bytes during Regna validation
+babf4520 docs: record final manifest review and verification
+d6738e4f fix: redact foreign Q25 operation conflicts
+81112f86 docs: record Q25 conflict privacy fix
+232350b5 fix: redact conflicts involving active Q25 jobs
+68ba02d6 docs: record symmetric Q25 conflict review
+19a7180d docs: record Regna CPU integration verification
+f169a1f7 docs: record blocked Regna integration push
+58f7aeeb docs: record Regna GitHub access follow-up
+748c35c6 docs: record restored Regna focused verification
+20764ae3 feat(operations): add fixed Regna N4 CPU connector
+a07ca4cf docs: record Regna N4 connector evidence
+68283b65 fix: correct Regna N4 baseline reuse and evidence boundaries
+27d706d9 docs: record N4 correction follow-up evidence

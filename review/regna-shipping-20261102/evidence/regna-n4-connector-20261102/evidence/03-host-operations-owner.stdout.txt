@@ -1,0 +1,3 @@
+.........                                                                [100%]
+db reset: 9 selective (avg 8.2/120 tables), 0 forced full, 0 fell back to full
+9 passed, 71 deselected in 1.05s

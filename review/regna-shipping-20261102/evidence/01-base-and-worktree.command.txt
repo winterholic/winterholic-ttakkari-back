@@ -1,0 +1,1 @@
+sh -c git rev-parse HEAD origin/main; git merge-base origin/main HEAD; git merge-base --is-ancestor origin/main HEAD; printf "ancestor_exit=%s\\n" "$?"; git rev-list --count origin/main..HEAD; git status --short --branch

@@ -1,0 +1,12 @@
+controller_revision=83302612c8edaaa40844a423e7223d2ee346e382
+91:def ensure_revision(expected: str) -> None:
+245:    async def run_security_gate(self, job: dict, env: dict[str, str]) -> None:
+247:        from ttakkari.security.gate import build_security_gate_command
+249:        command = build_security_gate_command(BACK / ".venv/bin/python", timeout=120)
+252:    async def prepare(self, job: dict) -> None:
+272:            await self.run_security_gate(job, env)
+275:                await self.command(job, "uv", "run", "pytest", "-q", "-x", env=env)
+54:async def personal(sid: uuid.UUID, db: Db) -> None:
+71:async def request_deploy(
+76:        deployment.ensure_revision(body.revision)
+77:        job = deployment.JobStore(deployment.state_dir()).request(body.revision)

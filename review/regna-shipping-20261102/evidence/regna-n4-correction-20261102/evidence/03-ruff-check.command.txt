@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run ruff check src/ttakkari/research/regna_n4_combo_first6.py tests/test_regna_n4_execution.py tests/test_regna_n4_corrections.py

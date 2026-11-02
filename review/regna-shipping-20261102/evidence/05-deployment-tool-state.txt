@@ -1,0 +1,5 @@
+Observed through configured Ttakkari MCP tools during this Run (2026-11-02):
+- runtime_report: active API generation revision 83302612c8edaaa40844a423e7223d2ee346e382; the latest ops_list_deploys row for that revision is state=draining, reservation=3eada617-5ac1-45b1-a9ac-1e0ddaf72e31.
+- host_operation_status catalog contains runtime_report, performance_baseline, backup_status, backup_db, data_snapshot, restore_rehearsal, snapshot_verify, collection_scope_preview, collection_scope_apply. It has no arbitrary shell or exact deploy-gate kind.
+- MCP catalog contains request_backend_deploy(revision) for a committed clean backend SHA. Its standard tool description says the independent controller tests and applies the configured deployment strategy. This tool was not called because the commit was not pushed and this Run is pool=work.
+- No reservation ID was created by this Run. Draining above belongs to an earlier release reservation and is not evidence for the Regna candidate.

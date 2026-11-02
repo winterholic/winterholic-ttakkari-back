@@ -1,0 +1,1 @@
+UV_CACHE_DIR=/private/tmp/ttakkari-regna-uv-cache uv run pytest -q tests/test_regna_n4_corrections.py tests/test_regna_n4_execution.py

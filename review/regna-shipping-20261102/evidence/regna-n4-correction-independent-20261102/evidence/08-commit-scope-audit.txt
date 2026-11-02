@@ -1,0 +1,29 @@
+$ git show --stat --oneline --no-renames 27d706d962ac41d7fdf7592296f93c2449b0a02b
+27d706d9 docs: record N4 correction follow-up evidence
+ review/regna-n4-correction-20261102/REPORT.md                     | 8 ++++++++
+ .../evidence/06-follow-up-corrections.command.txt                 | 1 +
+ .../evidence/06-follow-up-corrections.exit.txt                    | 1 +
+ .../evidence/06-follow-up-corrections.stderr.txt                  | 0
+ .../evidence/06-follow-up-corrections.stdout.txt                  | 3 +++
+ .../evidence/07-follow-up-n4-execution.command.txt                | 1 +
+ .../evidence/07-follow-up-n4-execution.exit.txt                   | 1 +
+ .../evidence/07-follow-up-n4-execution.stderr.txt                 | 0
+ .../evidence/07-follow-up-n4-execution.stdout.txt                 | 3 +++
+ 9 files changed, 18 insertions(+)
+exit=0
+$ git show --format= --name-only 27d706d962ac41d7fdf7592296f93c2449b0a02b
+review/regna-n4-correction-20261102/REPORT.md
+review/regna-n4-correction-20261102/evidence/06-follow-up-corrections.command.txt
+review/regna-n4-correction-20261102/evidence/06-follow-up-corrections.exit.txt
+review/regna-n4-correction-20261102/evidence/06-follow-up-corrections.stderr.txt
+review/regna-n4-correction-20261102/evidence/06-follow-up-corrections.stdout.txt
+review/regna-n4-correction-20261102/evidence/07-follow-up-n4-execution.command.txt
+review/regna-n4-correction-20261102/evidence/07-follow-up-n4-execution.exit.txt
+review/regna-n4-correction-20261102/evidence/07-follow-up-n4-execution.stderr.txt
+review/regna-n4-correction-20261102/evidence/07-follow-up-n4-execution.stdout.txt
+exit=0
+git diff --quiet 68283b6597a5af180bfcd2616fcd554f144cd21d 27d706d962ac41d7fdf7592296f93c2449b0a02b -- src tests
+exit=0
+68283b6597a5af180bfcd2616fcd554f144cd21d:src/ttakkari/research/regna_n4_combo_first6.py sha256=a67579049167432a21df72be26b815f33f1add77c89339abf8aad3b637b1b4bf
+27d706d962ac41d7fdf7592296f93c2449b0a02b:src/ttakkari/research/regna_n4_combo_first6.py sha256=a67579049167432a21df72be26b815f33f1add77c89339abf8aad3b637b1b4bf
+tests rerun for document-only follow-up: no

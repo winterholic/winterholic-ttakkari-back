@@ -1,0 +1,1 @@
+git diff --check origin/main HEAD -- src tests docs/adr/0037-execution-capabilities-and-host-gpu.md docs/api-contract.md

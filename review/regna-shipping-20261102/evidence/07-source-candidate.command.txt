@@ -1,0 +1,1 @@
+git rev-parse HEAD; git status --short --branch; git log --reverse --oneline origin/main..HEAD

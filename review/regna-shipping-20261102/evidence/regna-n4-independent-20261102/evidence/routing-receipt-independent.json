@@ -1,0 +1,29 @@
+{
+  "captured_at_utc": "2026-11-01T23:35:31.690474+00:00",
+  "source": "Ttakkari spawn_worker response followed by get_worker routing receipt",
+  "worker_id": "dba84860-ed19-408a-b051-ba23abe6d5fb",
+  "selected_actual_model": "gpt-6-luna",
+  "selected_engine": "codex",
+  "verification_required": false,
+  "routing_reason": "task_fit_then_known_quota_then_stage_then_headroom_per_run",
+  "account_usage_tool": "not exposed in this Run; selected model recorded from get_worker.routing.selected",
+  "initial_spawn_metadata_model": "claude-sonnet-5-5-high (excluded by routing receipt as not in account model list)",
+  "status_at_receipt": "succeeded",
+  "account_scope": "not present in retained routing summary; unverified",
+  "verifier_get_worker_lookup": {
+    "worker_id": "dba84860-ed19-408a-b051-ba23abe6d5fb",
+    "result": "HTTP-like 404 not_found: this task session is not a parent of that worker"
+  },
+  "account_usage_lookup": "tool not exposed in this Run",
+  "producer_internal_review_routing": {
+    "engine": "auto",
+    "task_type": "general",
+    "scope": "not recorded in producer routing summary"
+  },
+  "current_verifier_assignment": {
+    "requested_engine": "auto",
+    "requested_task_type": "verification",
+    "source": "user instruction",
+    "actual_routing_receipt": "not exposed in this Run; unverified"
+  }
+}

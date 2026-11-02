@@ -1,0 +1,126 @@
+tracked_src_tests_equal_exit=0
+a67579049167432a21df72be26b815f33f1add77c89339abf8aad3b637b1b4bf  src/ttakkari/research/regna_n4_combo_first6.py
+ .../0037-execution-capabilities-and-host-gpu.md    |   15 +
+ docs/api-contract.md                               |    2 +
+ review/regna-cpu-execution-20261102/REPORT.md      |  122 ++
+ review/regna-cpu-integration-20261102/REPORT.md    |   57 +
+ .../evidence/01-command.txt                        |    1 +
+ .../evidence/01-exit.txt                           |    1 +
+ .../evidence/01-stderr.txt                         |    5 +
+ .../evidence/01-stdout.txt                         |  569 ++++++++
+ .../evidence/02-command.txt                        |    1 +
+ .../evidence/02-exit.txt                           |    1 +
+ .../evidence/02-stderr.txt                         |    0
+ .../evidence/02-stdout.txt                         |    4 +
+ .../evidence/03-command.txt                        |    1 +
+ .../evidence/03-exit.txt                           |    1 +
+ .../evidence/03-stderr.txt                         |    0
+ .../evidence/03-stdout.txt                         |    1 +
+ .../evidence/04-command.txt                        |    1 +
+ .../evidence/04-exit.txt                           |    1 +
+ .../evidence/04-stderr.txt                         |    2 +
+ .../evidence/04-stdout.txt                         |    0
+ .../evidence/05-command.txt                        |    1 +
+ .../evidence/05-exit.txt                           |    1 +
+ .../evidence/05-stderr.txt                         |    0
+ .../evidence/05-stdout.txt                         |    1 +
+ .../evidence/06-command.txt                        |    1 +
+ .../evidence/06-exit.txt                           |    1 +
+ .../evidence/06-stderr.txt                         |    0
+ .../evidence/06-stdout.txt                         |    8 +
+ .../evidence/07-command.txt                        |    1 +
+ .../evidence/07-exit.txt                           |    1 +
+ .../evidence/07-stderr.txt                         |    0
+ .../evidence/07-stdout.txt                         |    3 +
+ .../evidence/08-command.txt                        |    1 +
+ .../evidence/08-exit.txt                           |    1 +
+ .../evidence/08-initial-exec-error.txt             |    4 +
+ .../evidence/08-stderr.txt                         |    2 +
+ .../evidence/08-stdout.txt                         |    0
+ review/regna-n4-connector-20261102/REPORT.md       |  124 ++
+ .../evidence/01-regna-n4.command.txt               |    1 +
+ .../evidence/01-regna-n4.exit.txt                  |    1 +
+ .../evidence/01-regna-n4.stderr.txt                |    0
+ .../evidence/01-regna-n4.stdout.txt                |    3 +
+ .../evidence/02-regna-n3-regression.command.txt    |    1 +
+ .../evidence/02-regna-n3-regression.exit.txt       |    1 +
+ .../evidence/02-regna-n3-regression.stderr.txt     |    0
+ .../evidence/02-regna-n3-regression.stdout.txt     |    3 +
+ .../evidence/03-host-operations-owner.command.txt  |    1 +
+ .../evidence/03-host-operations-owner.exit.txt     |    1 +
+ .../evidence/03-host-operations-owner.stderr.txt   |    0
+ .../evidence/03-host-operations-owner.stdout.txt   |    3 +
+ .../evidence/04-mcp-fixed-allowlist.command.txt    |    1 +
+ .../evidence/04-mcp-fixed-allowlist.exit.txt       |    1 +
+ .../evidence/04-mcp-fixed-allowlist.stderr.txt     |    0
+ .../evidence/04-mcp-fixed-allowlist.stdout.txt     |    3 +
+ .../evidence/05-ruff-check.command.txt             |    1 +
+ .../evidence/05-ruff-check.exit.txt                |    1 +
+ .../evidence/05-ruff-check.stderr.txt              |    0
+ .../evidence/05-ruff-check.stdout.txt              |    1 +
+ .../evidence/06-pitfall-scan.command.txt           |    1 +
+ .../evidence/06-pitfall-scan.exit.txt              |    1 +
+ .../evidence/06-pitfall-scan.stderr.txt            |    0
+ .../evidence/06-pitfall-scan.stdout.txt            |    1 +
+ .../evidence/07-format-new-files.command.txt       |    1 +
+ .../evidence/07-format-new-files.exit.txt          |    1 +
+ .../evidence/07-format-new-files.stderr.txt        |    0
+ .../evidence/07-format-new-files.stdout.txt        |    1 +
+ .../evidence/08-py-compile.command.txt             |    1 +
+ .../evidence/08-py-compile.exit.txt                |    1 +
+ .../evidence/08-py-compile.stderr.txt              |    0
+ .../evidence/08-py-compile.stdout.txt              |    0
+ .../evidence/09-mypy.command.txt                   |    1 +
+ .../evidence/09-mypy.exit.txt                      |    1 +
+ .../evidence/09-mypy.stderr.txt                    |    2 +
+ .../evidence/09-mypy.stdout.txt                    |    0
+ .../evidence/check-results.json                    |   58 +
+ .../evidence/initial-red.txt                       |    7 +
+ .../evidence/pin-sha-after.json                    |  346 +++++
+ .../evidence/pin-sha-before.json                   |  345 +++++
+ .../evidence/routing-receipt-summary.json          |   16 +
+ review/regna-n4-correction-20261102/REPORT.md      |   70 +
+ .../evidence/01-corrections.command.txt            |    1 +
+ .../evidence/01-corrections.exit.txt               |    1 +
+ .../evidence/01-corrections.stderr.txt             |    0
+ .../evidence/01-corrections.stdout.txt             |    3 +
+ .../evidence/02-n4-execution.command.txt           |    1 +
+ .../evidence/02-n4-execution.exit.txt              |    1 +
+ .../evidence/02-n4-execution.stderr.txt            |    0
+ .../evidence/02-n4-execution.stdout.txt            |    3 +
+ .../evidence/03-ruff-check.command.txt             |    1 +
+ .../evidence/03-ruff-check.exit.txt                |    1 +
+ .../evidence/03-ruff-check.stderr.txt              |    0
+ .../evidence/03-ruff-check.stdout.txt              |    1 +
+ .../evidence/04-ruff-format.command.txt            |    1 +
+ .../evidence/04-ruff-format.exit.txt               |    1 +
+ .../evidence/04-ruff-format.stderr.txt             |    0
+ .../evidence/04-ruff-format.stdout.txt             |    1 +
+ .../evidence/05-diff-check.command.txt             |    1 +
+ .../evidence/05-diff-check.exit.txt                |    1 +
+ .../evidence/05-diff-check.stderr.txt              |    0
+ .../evidence/05-diff-check.stdout.txt              |    0
+ .../evidence/06-follow-up-corrections.command.txt  |    1 +
+ .../evidence/06-follow-up-corrections.exit.txt     |    1 +
+ .../evidence/06-follow-up-corrections.stderr.txt   |    0
+ .../evidence/06-follow-up-corrections.stdout.txt   |    3 +
+ .../evidence/07-follow-up-n4-execution.command.txt |    1 +
+ .../evidence/07-follow-up-n4-execution.exit.txt    |    1 +
+ .../evidence/07-follow-up-n4-execution.stderr.txt  |    0
+ .../evidence/07-follow-up-n4-execution.stdout.txt  |    3 +
+ .../evidence/routing-receipt.json                  |   24 +
+ .../evidence/source-pin-identity.json              |   20 +
+ src/ttakkari/api/operations.py                     |   62 +-
+ src/ttakkari/operations/jobs.py                    |   33 +-
+ src/ttakkari/operations/plans.py                   |   28 +-
+ src/ttakkari/operations/runner.py                  |   34 +-
+ src/ttakkari/orchestrator/mcp_server.py            |   11 +-
+ src/ttakkari/research/regna_n4_combo_first6.py     | 1482 ++++++++++++++++++++
+ src/ttakkari/research/regna_q25_first6.py          |  824 +++++++++++
+ tests/test_host_operations.py                      |   92 ++
+ tests/test_regna_n4_corrections.py                 |  346 +++++
+ tests/test_regna_n4_execution.py                   |  603 ++++++++
+ tests/test_regna_q25_execution.py                  |  541 +++++++
+ tests/test_research_q25_dispatch.py                |   89 ++
+ tests/test_route_inventory.py                      |   12 +
+ 123 files changed, 6016 insertions(+), 25 deletions(-)

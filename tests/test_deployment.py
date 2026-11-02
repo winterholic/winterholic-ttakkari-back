@@ -138,7 +138,14 @@ async def test_reserved_restart_blocks_new_runs_without_losing_queue(
     result = await wait_run(client, auth, run["id"])
     assert result["status"] == "succeeded"
     assert len(agent_calls()) == 1
-    lock = gate.acquire(exclusive=True)
+    # Run 이 succeeded 로 보인 직후에도 공유 잠금은 마무리 단계에서 풀린다. 전체 게이트처럼 부하가 크면 그 틈이 길어져
+    # 바로 단독 잠금을 시도하면 간헐로 실패했다(2026-11-03 배포 d8105d88). 풀릴 때까지 잠깐 기다린다.
+    lock = None
+    for _ in range(100):
+        lock = gate.acquire(exclusive=True)
+        if lock is not None:
+            break
+        await asyncio.sleep(0.1)
     assert lock is not None
     lock.close()
 

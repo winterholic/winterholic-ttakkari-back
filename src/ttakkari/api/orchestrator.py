@@ -142,6 +142,7 @@ class WorkerOut(BaseModel):
     verification_status: str | None = None
     false_completion: bool | None = None
     completion_status: str | None = None  # 완료|부분|막힘, 상태 줄이 없으면 "위반"
+    advisory: str | None = None  # 같은 지시를 반복하기 전에 읽을 경고(연속 완료 미달 등)
     status: str
     context: str = ""
     context_usage: dict | None = None
@@ -378,6 +379,15 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
     out.false_completion = usage_info.get("false_completion")
     if comp := usage_info.get("completion"):
         out.completion_status = "위반" if comp.get("violation") else comp.get("status")
+    streak = 0
+    for r in runs:  # 최신순. 진행 중이거나 계약 대상이 아닌 Run 에서 끊는다.
+        c = (r.usage or {}).get("completion") if r.status not in ACTIVE else None
+        if not c or (not c.get("violation") and c.get("status") == "완료"):
+            break
+        streak += 1
+    if streak >= 2:
+        out.advisory = (f"최근 {streak}회 연속 완료 기준 미달(부분·막힘·상태 줄 없음)이다. 같은 지시를 또 보내지 말고 "
+                        "미충족 항목을 좁힌 단위로 나누거나 다른 엔진·fresh_context로 재계획하라.")
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None

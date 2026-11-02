@@ -126,8 +126,8 @@ class Settings(BaseSettings):
     deploy_source_root: Path | None = None
     migration_online: bool = False
     delivery_pipeline_enabled: bool = False
-    database_pool_size: int = Field(default=5, ge=1, le=20)
-    database_pool_overflow: int = Field(default=3, ge=0, le=10)
+    database_pool_size: int = Field(default=8, ge=1, le=20)
+    database_pool_overflow: int = Field(default=5, ge=0, le=10)
 
     jwt_secret: str = Field(default="", repr=False)
     access_token_ttl_seconds: int = 15 * 60

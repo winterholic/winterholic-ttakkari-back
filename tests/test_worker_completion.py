@@ -107,3 +107,28 @@ async def test_worker_out_and_metrics_expose_completion(client, auth, make_dir, 
     assert detail["completion_status"] == "막힘"
     metrics = (await client.get("/api/orchestrator/workers/metrics", headers=h)).json()["metrics"]
     assert sum(m["contract_runs"] for m in metrics) == 1 and sum(m["blocked_runs"] for m in metrics) == 1
+
+
+async def test_advisory_after_two_consecutive_unmet_runs(client, auth, make_dir, contract_on):
+    orch, wid = await _spawn(client, auth, make_dir, "STATUS_부분 first")
+    h = _orch(issue_token(orch["id"]))
+    first = (await _runs(client, auth, wid))[0]
+    await wait_run(client, auth, first["id"])
+    assert (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()["advisory"] is None
+    r = await client.post(f"/api/orchestrator/workers/{wid}/messages", headers=h, json={"prompt": "STATUS_막힘 again"})
+    assert r.status_code == 202, r.text
+
+    async def second_done():
+        runs = await _runs(client, auth, wid)
+        return runs if len(runs) == 2 and all(x["status"] == "succeeded" for x in runs) else None
+    await _wait(second_done, what="두 번째 Run")
+    detail = (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()
+    assert detail["completion_status"] == "막힘" and "연속 완료 기준 미달" in detail["advisory"]
+    ok = await client.post(f"/api/orchestrator/workers/{wid}/messages", headers=h, json={"prompt": "STATUS_완료 fixed"})
+    assert ok.status_code == 202
+
+    async def third_done():
+        runs = await _runs(client, auth, wid)
+        return runs if len(runs) == 3 and all(x["status"] == "succeeded" for x in runs) else None
+    await _wait(third_done, what="세 번째 Run")
+    assert (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()["advisory"] is None

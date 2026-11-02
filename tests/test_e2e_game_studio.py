@@ -14,7 +14,13 @@ import shutil
 from pathlib import Path
 
 import pytest
-from game_browser import free_port, require_browser, run_scenario, serve_games
+from game_browser import (
+    free_port,
+    require_bind_mount,
+    require_browser,
+    run_scenario,
+    serve_games,
+)
 from helpers import fresh_dir
 from test_api_games import register, wait_build
 from test_game_build_snapshots import (  # noqa: F401
@@ -52,6 +58,7 @@ def apply_fixture(root: Path, version: str, message: str) -> str:
 @pytest.mark.timeout(1500)
 async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkeypatch, tmp_path):
     require_browser()
+    require_bind_mount(tmp_path)
     base = os.environ.get("TTAKKARI_GAME_EVIDENCE_DIR")
     out = Path(base) / "g14-replay" if base else tmp_path / "g14-replay"
     out.mkdir(parents=True, exist_ok=True)

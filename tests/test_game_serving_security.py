@@ -12,6 +12,7 @@ from pathlib import Path
 import httpx
 import jwt
 import pytest
+from game_browser import require_bind_mount
 from test_api_games import fake_adapter, make_repo, register, wait_build  # noqa: F401
 from test_game_build_snapshots import (  # noqa: F401
     _cleanup_snapshots,
@@ -269,7 +270,8 @@ def _free_port() -> int:
 
 
 @requires_runtime
-async def test_real_phaser_build_served_by_separate_game_origin_process(client, auth, game_origin):
+async def test_real_phaser_build_served_by_separate_game_origin_process(client, auth, game_origin, tmp_path):
+    require_bind_mount(tmp_path)
     root = game_dir("serve-real")
     await PhaserAdapter().scaffold_project(root, manifest("serve-real"))
     game = (await register(client, auth, "serve-real")).json()

@@ -79,6 +79,38 @@ def require_browser() -> None:
     pytest.skip(f"브라우저 자동화 필요: {problem}")
 
 
+def require_bind_mount(base: Path) -> None:
+    """컨테이너 데몬이 방금 만든 호스트 폴더를 마운트할 수 있는지 먼저 시험한다.
+
+    배포 감독(launchd) 환경에서 데몬이 `error while creating mount source path`로 새 임시 폴더를 계속 거절해 게임 빌드
+    시험이 배포 게이트를 며칠씩 막았다(2026-10-31~11-03). 이 환경 문제는 코드 결함이 아니므로 사유를 남기고 건너뛴다.
+    TTAKKARI_REQUIRE_GAME_RUNTIME=1 이면 건너뛰지 않고 실패시킨다."""
+    import uuid
+
+    from ttakkari.config import get_settings
+    image = get_settings().game_build_image
+    exe = shutil.which(get_settings().game_build_runtime)
+    if exe is None:
+        return
+    if subprocess.run([exe, "image", "inspect", image], capture_output=True, check=False).returncode != 0:
+        return  # 이미지가 없으면 러너가 받는다. 마운트 시험은 이미지가 있을 때만 의미가 있다.
+    probe = base / f"mount-probe-{uuid.uuid4().hex[:8]}" / "src"
+    probe.mkdir(parents=True)
+    out = ""
+    for _ in range(3):
+        run = subprocess.run([exe, "run", "--rm", "--entrypoint", "/bin/true", "-v", f"{probe}:/probe:ro", image],
+                             capture_output=True, text=True, timeout=120, check=False)
+        out = (run.stdout + run.stderr).strip()
+        if run.returncode == 0:
+            return
+        time.sleep(2)
+    if "error while creating mount source path" not in out:
+        return  # 마운트 외 오류는 이 시험이 판단할 일이 아니다. 본 시험이 사유를 드러낸다.
+    if os.environ.get("TTAKKARI_REQUIRE_GAME_RUNTIME") == "1":
+        pytest.fail(f"TTAKKARI_REQUIRE_GAME_RUNTIME=1 인데 데몬이 임시 폴더를 마운트하지 못한다: {out[:200]}", pytrace=False)
+    pytest.skip(f"컨테이너 데몬이 새 임시 폴더를 마운트하지 못함(환경 문제): {out[:160]}")
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     # Opt-in only after one idle bootstrap into isolated releases.
     runtime_generation: bool = False
     run_executor_mode: Literal["local", "remote"] = "local"
+    # 작업자 활동 감시(runs/activity.py, runs/watchdog.py). 긴 한도 대기와 오래 조용한 Run 을 기획 세션에 한 번 알린다.
+    worker_wait_notice_seconds: int = Field(default=3600, ge=60)
+    worker_stall_seconds: int = Field(default=1800, ge=60)
     # 작업자 완료 계약(상태 줄 확인·완료 확인 Run). 끄면 보고와 Run 흐름이 이전과 같다.
     worker_completion_contract: bool = True
     auto_resume_interrupted: bool = False  # FND-01 / ADR 0066: 무조건 자동 재큐잉 기본 비활성화

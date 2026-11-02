@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -732,11 +732,19 @@ class RunManager:
                 waiting_payload["qwen_local"] = {"ready": False, "reason": qwen_state}
             events.append(db, run, "run.waiting", waiting_payload)
             run.resume_after = datetime.fromtimestamp(until, UTC)
+        # 긴 대기는 Run 이 끝나지 않아 보고가 가지 않는다. 기획 세션이 기다릴지 재배정할지 정하게 한 번 알린다.
+        notice_parent = None
+        if (not repeat and sess.kind == SessionKind.worker
+                and until - time.time() >= get_settings().worker_wait_notice_seconds):
+            notice_parent = await _enqueue_report(
+                db, sess, run, notice=_wait_notice(sess, run, blocked, until, capacity_wait))
         # Notification deduplication must not skip persisting a renewed wait.
         # Otherwise rollback leaves DB=NULL while the memory timer blocks it.
         await self._commit(db, run)
         if not repeat:
             _spawn(_notify_waiting(run, sess.title, until, capacity_wait=capacity_wait))
+        if notice_parent is not None:
+            _spawn(self.dispatch(notice_parent))
         self._arm(run.id, sess.id, until)
 
     async def release_waiting(self) -> None:
@@ -2510,6 +2518,11 @@ async def _reconsider_quota_waits() -> None:
         await db.commit()
     for sid in awoken_sessions:
         await manager.dispatch(sid)
+    try:
+        from ttakkari.runs import watchdog
+        await watchdog.scan_stalled_workers()
+    except Exception:
+        logging.getLogger("ttakkari.watchdog").exception("stalled worker scan failed")
 
 def _looks_like_agent(pid: int) -> bool:
     """재부팅 뒤에는 PID 가 재사용될 수 있다. 엉뚱한 프로세스 그룹을 죽이지 않게 이름을 확인한다."""
@@ -2791,8 +2804,23 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
     return (text[:WAIT_HANDOFF_CHARS] if waiting else text) + "\n\n"
 
 
-async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
-    """작업 세션 Run 이 끝나면 오케스트레이터에게 결과 보고 Run 을 넣는다. 시작 전 보고가 있으면 거기에 덧붙인다."""
+def _wait_notice(sess: ChatSession, run: Run, blocked: list[tuple[profiles_mod.Profile, float]], until: float,
+                 capacity_wait: bool) -> str:
+    kst = timezone(timedelta(hours=9))
+    accounts = ", ".join(f"{p.name}({datetime.fromtimestamp(u, kst):%m-%d %H:%M})"
+                         for p, u in sorted(blocked, key=lambda b: b[1])[:6])
+    why = "모델 혼잡" if capacity_wait else "사용량 한도"
+    return (f"[작업 대기] 작업 세션 '{sess.title}' (worker_id={sess.id})가 {why} 때문에 "
+            f"{datetime.fromtimestamp(until, kst):%m-%d %H:%M}(KST)까지 쓸 수 있는 계정이 없어 대기한다. 대기 계정: {accounts}. "
+            "이 시각까지 기다려도 되는 일이면 아무것도 하지 않는다(백엔드가 여유가 생기면 바로 재개한다). 기다릴 수 없으면 "
+            "get_worker 로 진행을 확인하고 stop_worker 로 활성 Run 을 끝낸 뒤 message_worker(reroute=True, task_type=...) 로 "
+            "다른 경로에 재배정하거나 남은 일을 좁혀 다시 보내라.")
+
+
+async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run, *, notice: str | None = None) -> uuid.UUID | None:
+    """작업 세션 Run 이 끝나면 오케스트레이터에게 결과 보고 Run 을 넣는다. 시작 전 보고가 있으면 거기에 덧붙인다.
+
+    notice 를 주면 결과 대신 그 문장을 보고한다(긴 한도 대기·정지 의심처럼 Run 이 끝나기 전에 알려야 하는 경우)."""
     if sess.kind != SessionKind.worker or sess.parent_id is None:
         return None
     from ttakkari.runs.agent_control import should_suppress_report
@@ -2826,7 +2854,7 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     if run.error:
         body.append("오류: " + run.error[:1000])
     body.append("작업 세션 컨텍스트: " + context_usage.describe(await context_usage.latest(db, sess)))
-    text = "\n".join(body)
+    text = notice if notice is not None else "\n".join(body)
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
         .order_by(Run.created_at.desc()).limit(1).with_for_update())

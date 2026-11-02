@@ -37,6 +37,7 @@ from ttakkari.models import (
     RunStatus,
     SessionKind,
     Workspace,
+    utcnow,
 )
 from ttakkari.orchestrator import work
 from ttakkari.orchestrator.runtime import OrchestratorSession
@@ -143,6 +144,8 @@ class WorkerOut(BaseModel):
     false_completion: bool | None = None
     completion_status: str | None = None  # 완료|부분|막힘, 상태 줄이 없으면 "위반"
     advisory: str | None = None  # 같은 지시를 반복하기 전에 읽을 경고(연속 완료 미달 등)
+    activity: str = "idle"  # working|blocked|stalled|queued|done|partial|failed|cancelled|idle (runs/activity.py)
+    activity_detail: str | None = None
     status: str
     context: str = ""
     context_usage: dict | None = None
@@ -395,6 +398,17 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
         if detail:
             arts = await db.scalars(select(Artifact.filename).where(Artifact.run_id == done.id, Artifact.deleted_at.is_(None)))
             out.artifacts = list(arts)
+    from ttakkari.runs import activity
+    age = (utcnow() - prog_ev.created_at).total_seconds() if active and prog_ev is not None else None
+    if active is not None and active.status == RunStatus.running and age is None and active.started_at is not None:
+        age = (utcnow() - active.started_at).total_seconds()
+    out.activity, out.activity_detail = activity.classify(
+        active_status=active.status if active else None, waiting_limit=out.waiting_limit,
+        waiting_reason=out.waiting_reason, is_stuck=out.is_stuck,
+        last_progress_type=prog_ev.type if active and prog_ev is not None else None, last_progress_age_s=age,
+        done_status=done.status if done is not None else None,
+        completion_status=(usage_info.get("completion") or {}).get("status"),
+        stall_seconds=get_settings().worker_stall_seconds)
     return out
 
 

@@ -111,12 +111,34 @@ ROUTES = {
     # 영수증 trigger가 initial로 찍힌다(반례 2).
     "general": ((SONNET, MUSE_SPARK, COPILOT_AUTO), (FLASH,), (NATIVE_SONNET, LUNA)),
     "routine": ((FLASH, MUSE_SPARK, COPILOT_AUTO), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
-    # Luna 는 마지막 단계다. Claude 계열이 모두 한도이거나 꺼져 있으면 디자인이 며칠씩 멈추므로(2026-11-02 지식도서관 UI 작업이
-    # Antigravity Claude 한도 140시간 대기), Claude 가 되는 동안은 항상 Claude 가 먼저고 Flash 는 넣지 않는다.
-    "design": ((SONNET,), (NATIVE_SONNET,), (LUNA,)),
+    # Claude 계열이 모두 한도이거나 꺼져 있으면 디자인이 며칠씩 멈추므로(2026-11-02 지식도서관 UI 작업이 Antigravity Claude
+    # 한도 140시간 대기, 11-03 Codex 도 주간 한도로 29시간째 대기) 뒤 단계를 둔다. Claude 가 되는 동안은 항상 Claude 가 먼저,
+    # 그다음 Luna, 마지막이 Gemini Argon(독립 한도 풀)이다. Flash 는 디자인 품질이 낮아 넣지 않는다.
+    "design": ((SONNET,), (NATIVE_SONNET,), (LUNA,), (ARGON,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
 }
+
+
+def stranded_stages(task_type: str) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """오래 막힌 Run 이 마지막으로 넓히는 후보. 다른 작업 유형의 경로와 Flash 까지 모두 쓴다.
+
+    작업 유형의 정책 경로가 모두 한도이거나 꺼져 있어도 다른 계정에 여유가 있으면 며칠씩 놀지 않게 한다(자율 복구).
+    품질은 정책 경로보다 낮을 수 있으나 멈춰 있는 것보다 낫다. verification 은 독립성이 목적이라 넓히지 않는다."""
+    if task_type == "verification":
+        return ()
+    own = {route for stage in ROUTES[task_type] for route in stage}
+    extra: list[tuple[str, str]] = []
+    for other, stages in ROUTES.items():
+        if other in (task_type, "verification"):
+            continue
+        for stage in stages:
+            for route in stage:
+                if route not in own and route not in extra:
+                    extra.append(route)
+    if FLASH not in own and FLASH not in extra:
+        extra.append(FLASH)
+    return tuple((route,) for route in extra)
 
 
 def muse_auto_enabled() -> bool:
@@ -230,11 +252,14 @@ def pinned_stages(session_engine: str, requested_model: str | None = None,
     return tuple(stages)
 
 
-async def availability(db: AsyncSession, task_type: str, pool: str, *, model: str | None = None):
-    """Expand model-aware candidates while preserving scope, enable flags, configured IDs and cooldowns."""
+async def availability(db: AsyncSession, task_type: str, pool: str, *, model: str | None = None,
+                       stranded: bool = False):
+    """Expand model-aware candidates while preserving scope, enable flags, configured IDs and cooldowns.
+
+    stranded 이면 정책 경로 뒤에 stranded_stages 를 더한다(오래 막힌 Run 의 자율 복구)."""
     settings = get_settings()
     free, blocked = [], []
-    for stage in ROUTES[task_type]:
+    for stage in (*ROUTES[task_type], *(stranded_stages(task_type) if stranded else ())):
         for engine, default_model in stage:
             if not _routable(engine):
                 continue
@@ -440,7 +465,8 @@ def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind
 
 
 def first_stage(candidates: list[profiles.Profile], task_type: str,
-                probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset()) -> list[profiles.Profile]:
+                probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset(),
+                *, allow_unstaged: bool = False) -> list[profiles.Profile]:
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
     # The one exception is a Muse exploration the caller already reserved in the DB (profiles.claim_muse_probe):
     # without it an unobserved Muse is never chosen, so no stream observation can ever end the unknown state.
@@ -454,6 +480,8 @@ def first_stage(candidates: list[profiles.Profile], task_type: str,
                  in engines_and_families]
         if match:
             return match
+    if allow_unstaged and usable:
+        return usable  # stranded 확장 후보는 정책 단계에 없다. 가용성에서 이미 걸러졌으니 그대로 고른다.
     raise ValueError("No candidate belongs to the task policy")
 
 

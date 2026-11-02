@@ -1157,6 +1157,7 @@ class RunManager:
         remaining = list(profiles)
         initial_profile_ids = {p.id for p in profiles}
         choose_account = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
+        stranded_run = await _stranded(db, run)
 
         async def choose(candidates, run_id, **kwargs):
             if run.status == RunStatus.running:  # 첫 선택은 시작 슬롯이 보호한다. 폴백 재선택만 여기서 연결을 푼다.
@@ -1171,11 +1172,11 @@ class RunManager:
                 # 않는다(Qwen은 auto 단계가 없다, 반례 2). maybe는 muse만 해당이라
                 # 전부-Qwen이면 비어 있어 아래 probe 분기도 돌지 않는다.
                 if not all(p.engine == "qwen-local" for p in candidates):
-                    candidates = worker_routing.first_stage(candidates, task_type, maybe)
+                    candidates = worker_routing.first_stage(candidates, task_type, maybe, allow_unstaged=stranded_run)
                 if maybe:
                     won = await profiles_mod.claim_muse_probe([p for p in candidates if p.id in maybe])
                     if maybe - won:
-                        candidates = worker_routing.first_stage(all_candidates, task_type, won)
+                        candidates = worker_routing.first_stage(all_candidates, task_type, won, allow_unstaged=stranded_run)
                     kwargs = {**kwargs, "probe_ids": won}
                 counts = await profiles_mod.running_counts_async()
                 # Selection excludes this Run's own claim; receipts use the same denominator.
@@ -2432,6 +2433,13 @@ def _profile_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile,
     return prof.model if is_meeting or task or pinned else _launch_model(sess, run, prof, first)[0]
 
 
+async def _stranded(db: AsyncSession, run: Run) -> bool:
+    """이 Run 이 한도 대기로 worker_stranded_wait_seconds 넘게 막혀 있었는지."""
+    first = await db.scalar(select(RunEvent.created_at).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
+                            .order_by(RunEvent.seq).limit(1))
+    return first is not None and (utcnow() - first).total_seconds() >= get_settings().worker_stranded_wait_seconds
+
+
 async def _eligible_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
     from ttakkari.meetings import routing as meeting_routing
     from ttakkari.runs import worker_routing
@@ -2459,7 +2467,8 @@ async def _eligible_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_m
         return [profiles_mod.Profile(id=profile_id, name=f"Qwen local ({sess.pool})", engine="qwen-local",
                                      model=QWEN_LOCAL_MODEL)], []
     if task:
-        return await worker_routing.availability(db, task, sess.pool, model=requested)
+        return await worker_routing.availability(db, task, sess.pool, model=requested,
+                                                 stranded=await _stranded(db, run))
     if pinned:
         return await worker_routing.pinned_availability(
             db, sess.engine, sess.pool, model=requested, task_type=sess.worker_task_type,

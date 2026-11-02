@@ -265,8 +265,8 @@ async def test_all_eligible_models_capped_wait_without_engine_launch(client, aut
     await client.post(f"/api/runs/{runs[0]['id']}/cancel", headers=auth)
 
 
-async def test_design_prefers_claude_and_uses_luna_only_as_last_stage(client, auth, make_dir, accounts):
-    """Flash 는 디자인에 쓰지 않는다. Luna 는 마지막 단계라 Claude 가 되는 동안은 고르지 않는다."""
+async def test_design_prefers_claude_and_uses_luna_and_argon_only_as_last_stages(client, auth, make_dir, accounts):
+    """Flash 는 디자인에 쓰지 않는다. Luna·Argon 은 뒤 단계라 Claude 가 되는 동안은 고르지 않는다."""
     from ttakkari.runs import worker_routing as routing
     agy = next(a for a in accounts if a["engine"]=="antigravity")
     quota(uuid.UUID(agy["id"]), claude=0)
@@ -274,7 +274,7 @@ async def test_design_prefers_claude_and_uses_luna_only_as_last_stage(client, au
         ready, _ = await routing.availability(db, "design", "personal")
     models = {(p.engine, p.model) for p in ready}
     assert ("claude", "sonnet") in models and all(m != FLASH for _, m in models)
-    assert {e for e, _ in models} <= {"claude", "codex"}
+    assert models <= {("claude", "sonnet"), ("codex", "gpt-6-luna"), ("antigravity", "gemini-4-argon-high")}
     first = routing.first_stage(ready, "design")
     assert {(p.engine, p.model) for p in first} == {("claude", "sonnet")}
 
@@ -288,7 +288,9 @@ async def test_design_does_not_starve_when_every_claude_route_is_unavailable(cli
             await client.patch(f"/api/accounts/{a['id']}", json={"enabled": False}, headers=auth)
     async with sessionmaker()() as db:
         ready, _ = await routing.availability(db, "design", "personal")
-    assert ready and {(p.engine, p.model) for p in ready} == {("codex", "gpt-6-luna")}
+    assert {(p.engine, p.model) for p in ready} == {("codex", "gpt-6-luna"), ("antigravity", "gemini-4-argon-high")}
+    # 뒤 단계 중에서도 Luna 가 Argon 보다 먼저다.
+    assert {(p.engine, p.model) for p in routing.first_stage(ready, "design")} == {("codex", "gpt-6-luna")}
 
 
 async def test_unsupported_configured_model_is_not_launched(client, auth, accounts, monkeypatch):
@@ -814,3 +816,58 @@ async def test_legacy_argon_conversation_is_not_resumed_as_opus_on_same_account(
 ])
 def test_permission_failures_with_quota_words_are_not_provider_limits(message):
     assert not profiles.is_usage_limit(message)
+
+
+def test_stranded_stages_widen_policy_but_never_verification():
+    from ttakkari.runs import worker_routing as routing
+    design = {r for stage in routing.stranded_stages("design") for r in stage}
+    assert routing.FLASH in design and routing.SOL in design
+    own = {r for stage in routing.ROUTES["design"] for r in stage}
+    assert not (design & own)  # 정책 경로와 겹치지 않는다
+    assert routing.stranded_stages("verification") == ()  # 독립 검증은 넓히지 않는다
+    assert routing.FLASH not in {r for stage in routing.ROUTES["design"] for r in stage}  # 평시 design 에는 여전히 Flash 가 없다
+
+
+async def test_stranded_design_run_gets_extra_candidates_only_after_long_wait(client, auth, make_dir, accounts, monkeypatch):
+    from ttakkari.runs import worker_routing as routing
+    agy = next(a for a in accounts if a["engine"] == "antigravity")
+    quota(uuid.UUID(agy["id"]), claude=0)
+    for a in accounts:
+        if a["engine"] in ("claude", "codex"):
+            await client.patch(f"/api/accounts/{a['id']}", json={"enabled": False}, headers=auth)
+    async with sessionmaker()() as db:
+        normal, _ = await routing.availability(db, "design", "personal")
+        widened, _ = await routing.availability(db, "design", "personal", stranded=True)
+    assert FLASH not in {p.model for p in normal}
+    assert FLASH in {p.model for p in widened}
+    stage = routing.first_stage(widened, "design", allow_unstaged=True)
+    assert stage  # 정책 단계에 없는 후보도 고를 수 있다
+    with pytest.raises(ValueError):
+        routing.first_stage([p for p in widened if p.model == FLASH], "design")  # 평시에는 여전히 거절
+
+
+async def test_stranded_detects_runs_waiting_longer_than_the_threshold(client, auth, make_dir, monkeypatch):
+    from datetime import timedelta
+
+    from ttakkari.config import get_settings
+    from ttakkari.models import Run, RunEvent, RunOrigin, RunStatus, utcnow
+    from ttakkari.runs import manager as mgr
+    monkeypatch.setattr(get_settings(), "worker_stranded_wait_seconds", 600)
+    sess = (await client.post("/api/sessions", json={"workspace_id": (await client.post("/api/workspaces", json={
+        "name": "s", "root_path": str(make_dir())}, headers=auth)).json()["id"]}, headers=auth)).json()
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(sess["workspace_id"]), engine="claude",
+                  prompt="p", status=RunStatus.queued, origin=RunOrigin.orchestrator)
+        db.add(run)
+        await db.flush()
+        assert await mgr._stranded(db, run) is False  # 대기 이력이 없다
+        run.last_seq += 1
+        db.add(RunEvent(run_id=run.id, seq=run.last_seq, type="run.waiting", payload={}, created_at=utcnow() - timedelta(minutes=5)))
+        await db.flush()
+        assert await mgr._stranded(db, run) is False  # 5분 < 10분
+        run.last_seq += 1
+        db.add(RunEvent(run_id=run.id, seq=run.last_seq, type="run.waiting", payload={}, created_at=utcnow()))
+        first = await db.scalar(mgr.select(RunEvent).where(RunEvent.run_id == run.id).order_by(RunEvent.seq).limit(1))
+        first.created_at = utcnow() - timedelta(minutes=30)
+        await db.flush()
+        assert await mgr._stranded(db, run) is True  # 첫 대기가 30분 전

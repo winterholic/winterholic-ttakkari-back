@@ -23,7 +23,7 @@ from ttakkari.runs import events
 
 STATUSES = ("완료", "부분", "막힘")
 # 마크다운 장식(`**`, `>`, 목록 기호)이 붙어도 읽는다. 첫 몇 줄 안에 있어야 계약을 지킨 것으로 본다.
-_STATUS_RE = re.compile(r"^[\s*_#>`\-]*상태\s*[:：]\s*[*_`]*\s*(완료|부분|막힘)", re.M)
+_STATUS_RE = re.compile(r"^[\s*_#>`\-]*상태\s*[:：]\s*[*_`]*\s*(완료|부분|막힘)", re.MULTILINE)
 HEAD_LINES = 6
 MAX_CLOSURES_PER_SESSION = 2
 _TASK_ORIGINS = (RunOrigin.orchestrator, RunOrigin.user)

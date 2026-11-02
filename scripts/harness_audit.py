@@ -22,7 +22,7 @@ def main() -> None:
     args = ap.parse_args()
 
     def get(path: str):
-        out = subprocess.run([args.ttk, "get", path], capture_output=True, text=True).stdout
+        out = subprocess.run([args.ttk, "get", path], capture_output=True, text=True, check=False).stdout
         try:
             return json.loads(out)
         except ValueError:
@@ -46,7 +46,7 @@ def main() -> None:
 
     with ThreadPoolExecutor(6) as pool:
         runs = [r for rs in pool.map(runs_of, workers) for r in rs]
-    u = lambda r, k: (r.get("usage") or {}).get(k)  # noqa: E731
+    u = lambda r, k: (r.get("usage") or {}).get(k)
 
     print(f"since {args.since}: workers {len(workers)}, runs {len(runs)}")
     print("engine:", dict(collections.Counter(u(r, "selected_engine") or "?" for r in runs).most_common()))

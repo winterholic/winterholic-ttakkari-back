@@ -265,13 +265,30 @@ async def test_all_eligible_models_capped_wait_without_engine_launch(client, aut
     await client.post(f"/api/runs/{runs[0]['id']}/cancel", headers=auth)
 
 
-async def test_design_never_falls_back_to_gpt_or_flash(client, auth, make_dir, accounts):
+async def test_design_prefers_claude_and_uses_luna_only_as_last_stage(client, auth, make_dir, accounts):
+    """Flash 는 디자인에 쓰지 않는다. Luna 는 마지막 단계라 Claude 가 되는 동안은 고르지 않는다."""
     from ttakkari.runs import worker_routing as routing
     agy = next(a for a in accounts if a["engine"]=="antigravity")
     quota(uuid.UUID(agy["id"]), claude=0)
     async with sessionmaker()() as db:
         ready, _ = await routing.availability(db, "design", "personal")
-    assert ready and {(p.engine, p.model) for p in ready} == {("claude", "sonnet")}
+    models = {(p.engine, p.model) for p in ready}
+    assert ("claude", "sonnet") in models and all(m != FLASH for _, m in models)
+    assert {e for e, _ in models} <= {"claude", "codex"}
+    first = routing.first_stage(ready, "design")
+    assert {(p.engine, p.model) for p in first} == {("claude", "sonnet")}
+
+
+async def test_design_does_not_starve_when_every_claude_route_is_unavailable(client, auth, make_dir, accounts):
+    from ttakkari.runs import worker_routing as routing
+    agy = next(a for a in accounts if a["engine"]=="antigravity")
+    quota(uuid.UUID(agy["id"]), claude=0)
+    for a in accounts:
+        if a["engine"] == "claude":
+            await client.patch(f"/api/accounts/{a['id']}", json={"enabled": False}, headers=auth)
+    async with sessionmaker()() as db:
+        ready, _ = await routing.availability(db, "design", "personal")
+    assert ready and {(p.engine, p.model) for p in ready} == {("codex", "gpt-6-luna")}
 
 
 async def test_unsupported_configured_model_is_not_launched(client, auth, accounts, monkeypatch):

@@ -111,7 +111,9 @@ ROUTES = {
     # 영수증 trigger가 initial로 찍힌다(반례 2).
     "general": ((SONNET, MUSE_SPARK, COPILOT_AUTO), (FLASH,), (NATIVE_SONNET, LUNA)),
     "routine": ((FLASH, MUSE_SPARK, COPILOT_AUTO), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
-    "design": ((SONNET,), (NATIVE_SONNET,)),
+    # Luna 는 마지막 단계다. Claude 계열이 모두 한도이거나 꺼져 있으면 디자인이 며칠씩 멈추므로(2026-11-02 지식도서관 UI 작업이
+    # Antigravity Claude 한도 140시간 대기), Claude 가 되는 동안은 항상 Claude 가 먼저고 Flash 는 넣지 않는다.
+    "design": ((SONNET,), (NATIVE_SONNET,), (LUNA,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
 }

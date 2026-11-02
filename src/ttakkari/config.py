@@ -115,6 +115,8 @@ class Settings(BaseSettings):
     # Opt-in only after one idle bootstrap into isolated releases.
     runtime_generation: bool = False
     run_executor_mode: Literal["local", "remote"] = "local"
+    # 작업자 완료 계약(상태 줄 확인·완료 확인 Run). 끄면 보고와 Run 흐름이 이전과 같다.
+    worker_completion_contract: bool = True
     auto_resume_interrupted: bool = False  # FND-01 / ADR 0066: 무조건 자동 재큐잉 기본 비활성화
     runtime_api_url: str = "http://127.0.0.1:8791"
     runtime_poll_seconds: float = Field(default=5, ge=0.05)

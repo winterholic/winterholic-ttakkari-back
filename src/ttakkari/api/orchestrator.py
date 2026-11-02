@@ -141,6 +141,7 @@ class WorkerOut(BaseModel):
     verification_required: bool = False
     verification_status: str | None = None
     false_completion: bool | None = None
+    completion_status: str | None = None  # 완료|부분|막힘, 상태 줄이 없으면 "위반"
     status: str
     context: str = ""
     context_usage: dict | None = None
@@ -375,6 +376,8 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
         "pending" if out.verification_required else None
     )
     out.false_completion = usage_info.get("false_completion")
+    if comp := usage_info.get("completion"):
+        out.completion_status = "위반" if comp.get("violation") else comp.get("status")
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None
@@ -627,8 +630,16 @@ async def worker_metrics(sid: OrchestratorSession, db: Db) -> dict:
             "model": model, "engine": u.get("selected_engine") or run.engine, "task_type": task,
             "total_runs": 0, "verification_required_runs": 0,
             "verified_passed_runs": 0, "false_completion_runs": 0, "unverified_runs": 0,
+            "contract_runs": 0, "contract_violation_runs": 0, "partial_runs": 0, "blocked_runs": 0,
         })
         bucket["total_runs"] += 1
+        # 완료 계약(runs/completion.py): 상태 줄 이행률과 부분·막힘 비율을 같은 표에서 본다.
+        if comp := u.get("completion"):
+            bucket["contract_runs"] += 1
+            if comp.get("violation"):
+                bucket["contract_violation_runs"] += 1
+            bucket["partial_runs"] += comp.get("status") == "부분"
+            bucket["blocked_runs"] += comp.get("status") == "막힘"
         if u.get("verification_required"):
             bucket["verification_required_runs"] += 1
         v_status = u.get("verification_status")

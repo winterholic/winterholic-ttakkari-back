@@ -2123,6 +2123,11 @@ class RunManager:
         from ttakkari.orchestrator import work
         if sess is not None:
             await work.after_run(db, sess, run)
+        closure = None
+        if sess is not None:
+            from ttakkari.runs import completion
+            if completion.annotate(sess, run) is not None:
+                closure = await completion.closure_run(db, sess, run)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
         if sess is not None:
             await _post_lead_report(db, sess, run)
@@ -2135,6 +2140,8 @@ class RunManager:
             _spawn(self.dispatch(reverse_next))
         if parent_id is not None:
             _spawn(self.dispatch(parent_id))
+        if closure is not None and sess is not None:
+            _spawn(self.dispatch(sess.id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))
         if (run.usage or {}).get("game"):  # 자동 빌드 여부와 무관하게 종료 시점의 잠금 상태를 요청 기록에 남긴다
@@ -2810,6 +2817,9 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
             "최종 완료로 판단하기 전에 다른 공급자(task_type='verification', GPT-6 Luna 또는 Claude Sonnet)로 "
             "독립 검증하고, 결과를 message_worker(verification_outcome='passed'|'failed')로 기록하세요."
         )
+    from ttakkari.runs import completion
+    if line := completion.report_line(usage_info.get("completion")):
+        body.append(line)
     if run.result_text:
         body.append("결과:\n" + run.result_text[:REPORT_CHARS])
     if run.error:

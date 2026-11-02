@@ -245,9 +245,12 @@ def main():
     m = re.search(r"CTX(\d+)", prompt)
     used = int(m.group(1) if m else 10) * 2000
     usage = {"input_tokens": 10, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": used - 1015, "output_tokens": 5}
+    # STATUS_<완료|부분|막힘> 이면 완료 계약대로 첫 줄에 상태를 쓴다. 완료 확인 Run 의 지시문(`[완료 확인]`)에도 그렇게 답한다.
+    st = re.search(r"STATUS_(완료|부분|막힘)", prompt)
+    final = f"상태: {st.group(1)}\n- 항목 1: ok" if st else ("상태: 완료\n- 확인함" if "[완료 확인]" in prompt else "done")
     emit({"type": "assistant", "message": {"model": "claude-haiku-4-5", "usage": usage,
-                                           "content": [{"type": "text", "text": "done"}]}})
-    emit({"type": "result", "subtype": "success", "is_error": False, "result": "done", "session_id": sid,
+                                           "content": [{"type": "text", "text": final}]}})
+    emit({"type": "result", "subtype": "success", "is_error": False, "result": final, "session_id": sid,
           "total_cost_usd": 0.01, "num_turns": 2, "duration_ms": 100,
           "modelUsage": {"claude-haiku-4-5": {"contextWindow": 200000}}})
     return 0

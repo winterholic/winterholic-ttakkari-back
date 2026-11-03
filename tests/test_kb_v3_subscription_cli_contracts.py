@@ -276,6 +276,7 @@ async def test_unusable_output_is_classified_and_charged(fake_cli, tmp_path, mar
 
 
 async def test_timeout_kills_the_process_and_removes_the_temp_dir(fake_cli, tmp_path):
+    profiles._in_use.clear()  # 앞선 시험이 남긴 전역 사용 표에 오염되지 않게, 이 시험이 만든 누수만 검사한다
     await _account(tmp_path, "personal")
     with pytest.raises(L2TransportError) as excinfo:
         await _adapter(timeout=1.0)("MODE_SLEEP", L2_SCHEMA)
@@ -289,6 +290,7 @@ async def test_timeout_kills_the_process_and_removes_the_temp_dir(fake_cli, tmp_
 
 
 async def test_cancel_kills_the_process_and_removes_the_temp_dir(fake_cli, tmp_path):
+    profiles._in_use.clear()  # 앞선 시험이 남긴 전역 사용 표에 오염되지 않게, 이 시험이 만든 누수만 검사한다
     await _account(tmp_path, "personal")
     task = asyncio.create_task(_adapter(timeout=30.0)("MODE_SLEEP", L2_SCHEMA))
     for _ in range(100):

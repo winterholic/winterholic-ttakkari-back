@@ -73,6 +73,9 @@ os.environ.update({
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_COLLECTOR_CONTROL_ENABLED": "false",
     "TTAKKARI_KB_SEMANTIC_ENABLED": "false",
+    # 일반 통합 tests 가 자동 cloud/구독 CLI 를 호출하지 않도록 시험 격리용으로 L2 를 명시적 비활성화한다.
+    # 제품 기본 활성 동작(subscription_cli, gpt-6-luna)은 test_kb_v3_default_activation.py 등 전용 단위 테스트에서 검증한다.
+    "TTAKKARI_KB_L2_ADAPTER": "disabled",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",
     "TTAKKARI_QWEN_FLASH_POLL_SECONDS": "0",
     "TTAKKARI_RESOURCE_SAMPLE_SECONDS": "0",
@@ -387,3 +390,21 @@ def fake_muse_runtime(tmp_path):
         yield runtime_root
     finally:
         settings.muse_runtime_root = before
+
+
+@pytest.fixture
+def classified_ingest(monkeypatch):
+    """kb_store.ingest_source 로 만든 문서에도 운영처럼 접근 행(personal/global)을 붙인다.
+
+    운영 흐름(API·CLI·research import)은 모두 kb_library.ensure_document_access 로 행을 만든다. v3 접근 규칙은 행 없는 문서를
+    work_only 로 보아 개인 도서관에 숨기므로(test_kb_v3_fixes_realdb), 행 없이 문서를 만들던 옛 시험은 이 픽스처로 운영 상태를 맞춘다."""
+    from ttakkari import kb_library, kb_store
+
+    original = kb_store.ingest_source
+
+    async def with_access(db, **kwargs):
+        result = await original(db, **kwargs)
+        await kb_library.ensure_document_access(db, result.document_id, scope="personal")
+        return result
+
+    monkeypatch.setattr(kb_store, "ingest_source", with_access)

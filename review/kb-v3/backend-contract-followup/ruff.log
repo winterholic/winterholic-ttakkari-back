@@ -1,0 +1,33 @@
+ISC004 Unparenthesized implicit string concatenation in collection
+  --> unit_tests/test_kb_access_backfill_currency.py:32:13
+   |
+30 |               "CREATE TABLE kb_revisions (id TEXT PRIMARY KEY, document_id TEXT, source_id TEXT, rev_no INTEGER)",
+31 |               "CREATE TABLE kb_observations (id TEXT, document_id TEXT, revision_id TEXT, event_time TEXT, recorded_at TEXT)",
+32 | /             "CREATE TABLE kb_document_access (document_id TEXT PRIMARY KEY, tenant_id TEXT, scope TEXT, "
+33 | |             "origin_scope TEXT, visibility TEXT, hidden BOOLEAN)",
+   | |_________________________________________________________________^
+34 |           ):
+35 |               self.connection.exec_driver_sql(ddl)
+   |
+help: Did you forget a comma?
+help: Wrap implicitly concatenated strings in parentheses
+
+PIE807 [*] Prefer `list` over useless lambda
+  --> unit_tests/test_kb_v3_contract_followup.py:42:40
+   |
+41 |         async def execute(self, statement):
+42 |             return SimpleNamespace(all=lambda: [])
+   |                                        ^^^^^^^^^^
+43 |
+44 |         async def scalars(self, statement):
+   |
+help: Replace with `lambda` with `list`
+   |
+41 |         async def execute(self, statement):
+   -             return SimpleNamespace(all=lambda: [])
+42 +             return SimpleNamespace(all=list)
+43 |
+   |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

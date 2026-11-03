@@ -55,7 +55,8 @@ async def test_multiple_database_heads_refuse_deployment_without_choosing_first(
     (["0074_collection_single_library"], ("online", "0074_collection_single_library")),
     (["0072_research_lab_v2"], ("online", "0072_research_lab_v2")),
     (["0073_research_reuse_source"], ("online", "0073_research_reuse_source")),
-    (["0075_collection_research_merge"], ("current", "0075_collection_research_merge")),
+    (["0075_collection_research_merge"], ("online", "0075_collection_research_merge")),
+    (["0076_kb_v3_collection_merge"], ("current", "0076_kb_v3_collection_merge")),
     (["unknown_branch"], ("idle", "unknown_branch")),
     ([], ("idle", None)),
 ])

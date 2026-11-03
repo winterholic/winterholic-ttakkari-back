@@ -378,7 +378,8 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
 
     # 4. KB 검색을 통해 중복 없이 1건 정상 색인/검색 확인
     hits = (await client.get("/api/assistant/kb/search?q=직렬화", headers=auth)).json()["items"]
-    assert len(hits) == 1
+    # v3 검색은 패시지 단위 결과를 돌려준다. 중복 배달이 없다는 뜻은 문서가 하나라는 것이다.
+    assert len({hit["document"]["id"] for hit in hits}) == 1
 
     # [순서 2 및 유한 retention 경계 실증]: 유한 retention 문서의 unhold 거부 및 불변 보존
     _, finite_mission, finite_item = await _make_held_mission(
@@ -612,7 +613,8 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
 
     # 4. KB 검색을 통해 중복 없이 1건 정상 색인/검색 확인
     hits = (await client.get("/api/assistant/kb/search?q=분산합의", headers=auth)).json()["items"]
-    assert len(hits) == 1
+    # v3 검색은 패시지 단위 결과를 돌려준다. 중복 배달이 없다는 뜻은 문서가 하나라는 것이다.
+    assert len({hit["document"]["id"] for hit in hits}) == 1
 
     # [유한 retention 경계 실증 - consume_pending_once 관점]: 유한 retention 문서의 import 차단 및 불변 보존
     _, _finite_mission, finite_item = await _make_held_mission(

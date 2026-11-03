@@ -1,0 +1,7 @@
+SHA 27ea2f44
+UV_CACHE_DIR /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-runtime-check-27ea/.cache/uv
+COMMAND ['/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/.venv/bin/python', '-m', 'pytest', '-q', 'tests/test_kb_v3_schema_migration.py::test_migration_0072_offline_sql_generation']
+EXIT 0
+.                                                                        [100%]
+db reset: 1 selective (avg 3.0/119 tables), 0 forced full, 0 fell back to full
+1 passed in 5.44s

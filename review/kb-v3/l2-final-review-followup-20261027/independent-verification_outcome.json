@@ -1,0 +1,24 @@
+{
+  "verification_outcome": "failed",
+  "target_sha": "f774928b2c999da28e33e5139841742ed8544f56",
+  "base_sha": "c07ea7cd0440363abc6cacb909b3f0cd338ef43b",
+  "implementer_session_id": "26fff9a3-7859-4c2e-a79a-60bcc7a569dd",
+  "verifier_engine": "codex",
+  "cross_provider": true,
+  "task_type_verification_receipt_available": false,
+  "blockers": [
+    "held jobs with zero assertions, evidence, and conflicts return succeeded",
+    "default worker can claim global backlog outside the three verification jobs",
+    "30-second deadline does not bound gather of worker tasks",
+    "inline cancellation does not stop side effects and final status can overwrite cancellation"
+  ],
+  "limits": [
+    "no PostgreSQL execution because TTAKKARI_TEST_DB ownership markers were incomplete",
+    "no cloud CLI, host operation, production operation, push, or deployment",
+    "retry-derived-data reconciliation remains source-inspected, not database-executed"
+  ],
+  "evidence": ["probe-target-f774928b.py", "probe-target-output.txt", "probe-blocked-default-home.txt"],
+  "branch_advanced_during_review": true,
+  "follow_up_commit_observed_not_verified": "1e5d7bb264ffc62b16afaaca514d348eeb4179b5",
+  "target_review_source": "clean git archive of target_sha"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "postgres-evidence",
+    "command": [
+      ".venv/bin/pytest",
+      "-q",
+      "--tb=short",
+      "tests/test_kb_library.py::test_evidence_accepts_valid_span_and_rejects_bad_digest_or_range",
+      "tests/test_kb_library.py::test_immutable_tables_reject_update"
+    ],
+    "exit": 0,
+    "raw_sha256": "36826eecb0d3af67304b52dc2183608b7a8ec3f696aacee72853ce2289df09ad"
+  },
+  {
+    "name": "ruff",
+    "command": [
+      ".venv/bin/ruff",
+      "check",
+      "src/ttakkari/operations/kb_v3_verify.py",
+      "src/ttakkari/operations/plans.py",
+      "tests/test_kb_v3_verify_operation.py"
+    ],
+    "exit": 1,
+    "raw_sha256": "0d65427dfbb6b4fbb43d98ceefee89844bd374a4c47b8b806f7d2e752749acf6"
+  }
+]

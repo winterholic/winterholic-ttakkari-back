@@ -15,12 +15,14 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.common.chunking import chunk_structured_document
 from ttakkari.config import get_settings
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.models import utcnow
@@ -35,6 +37,38 @@ DEFAULT_ORPHAN_GRACE_SECONDS = 60.0
 DEFAULT_TMP_GRACE_SECONDS = 60.0
 # DB 컬럼 길이(문자 수). 초과 입력은 파일을 쓰기 전에 거부한다.
 _FIELD_LIMITS = {"source_key": 500, "kind": 40, "media_type": 120, "lang": 16, "parser_version": 60}
+
+
+def domain_from_locator(locator: str | None) -> str | None:
+    """http(s) 주소의 호스트(소문자, 포트·계정 제외). URL 이 아니면 None 이다. `domain` 필터와 표시의 단일 정의다."""
+    if not locator:
+        return None
+    try:
+        parts = urlsplit(locator.strip())
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        return None
+    return host.rstrip(".") or None
+
+
+def source_domain(source: KbSource | None) -> str | None:
+    """기록된 source_meta.domain 이 우선이고, 수집 경로가 기록하기 전의 기존 행은 locator 에서 도출한다."""
+    if source is None:
+        return None
+    recorded = (source.source_meta or {}).get("domain")
+    return recorded if isinstance(recorded, str) and recorded else domain_from_locator(source.locator)
+
+
+# locator 에서 호스트만 뽑는 POSIX 정규식(대소문자 무시, 계정·포트·경로 제외). domain_from_locator 와 같은 규칙이다.
+_LOCATOR_HOST_REGEX = r"(?i)^https?://(?:[^/@?#]*@)?([^/:?#\[]+)"
+
+
+def source_domain_expression():
+    """SQL 쪽 source_domain. kb_sources 는 UPDATE 가 불변이라 기존 행은 갱신하지 않고 읽을 때 같은 규칙으로 도출한다."""
+    derived = func.lower(func.substring(KbSource.locator, _LOCATOR_HOST_REGEX))
+    return func.coalesce(func.lower(KbSource.source_meta["domain"].astext), derived)
 
 
 class KbInputError(ValueError):
@@ -108,9 +142,14 @@ def _has_nul(value: object) -> bool:
     return False
 
 
-def _validate_ingest_input(data: bytes, fields: dict[str, str | None], origin_meta: dict | None) -> None:
-    """DB INSERT 가 실패할 입력을 파일 쓰기 전에 거른다(NUL 은 text·jsonb 모두 저장 불가)."""
-    if b"\x00" in data:
+def _validate_ingest_input(
+    data: bytes, fields: dict[str, str | None], origin_meta: dict | None, *, allow_binary: bool = False
+) -> None:
+    """DB INSERT 가 실패할 입력을 파일 쓰기 전에 거른다(NUL 은 text·jsonb 모두 저장 불가).
+
+    원본 바이트의 NUL 은 파서가 본문을 따로 만드는 바이너리 업로드(allow_binary)에서만 허용한다. 필드·메타의 NUL 은 항상 거부한다.
+    """
+    if not allow_binary and b"\x00" in data:
         raise KbInputError("원본에 NUL(0x00) 바이트가 있어 저장할 수 없다")
     for name, value in fields.items():
         if value is None:
@@ -154,6 +193,10 @@ async def ingest_source(
     collected_at: datetime | None = None,
     origin_meta: dict | None = None,
     normalized_body: str | None = None,
+    allow_binary: bool = False,
+    original_filename: str | None = None,
+    parser_name: str | None = None,
+    source_meta: dict | None = None,
 ) -> IngestResult:
     """원본 바이트를 수집한다. 같은 (source_key, sha256) 재수집은 기존 행을 돌려준다(멱등).
 
@@ -167,7 +210,10 @@ async def ingest_source(
         {"source_key": source_key, "kind": kind, "locator": locator, "media_type": media_type,
          "title": title, "lang": lang, "parser_version": parser_version},
         origin_meta,
+        allow_binary=allow_binary,
     )
+    if source_meta is not None and _has_nul(source_meta):
+        raise KbInputError("source_meta 에 NUL 문자가 있어 저장할 수 없다")
     # 파일을 쓰기 전에 공유 락을 잡고 커밋/롤백까지 쥔다. 고아 정리기(배타 락)가 이 트랜잭션의
     # 미커밋 파일을 고아로 오인해 지우지 못한다.
     await db.execute(sa_text("SELECT pg_advisory_xact_lock_shared(:k)"), {"k": KB_ADVISORY_LOCK_ID})
@@ -206,13 +252,27 @@ async def ingest_source(
     _ensure_blob(root / relpath, data, digest)
     source_id = existing.id if existing is not None else uuid.uuid4()
     if existing is None:
+        extra: dict = {}
+        # v3 컬럼(0072)은 값이 있을 때만 쓴다: 값이 없으면 서버 기본값이 채운다. kb_sources 는 불변이라 나중에 고칠 수 없다.
+        if original_filename is not None:
+            extra["original_filename"] = original_filename[:500]
+        if parser_name is not None:
+            extra["parser_name"] = parser_name[:60]
+            extra["parser_version"] = parser_version[:60]
+        meta = {}
+        if (domain := domain_from_locator(locator)):
+            meta["domain"] = domain
+        if source_meta:
+            meta.update(source_meta)
+        if meta:
+            extra["source_meta"] = meta
         await db.execute(
-        insert(KbSource).values(
-            id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
-            byte_size=len(data), media_type=media_type, store_path=str(relpath),
-            collected_at=collected, origin_meta=origin_meta or {}, created_at=now,
+            insert(KbSource).values(
+                id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
+                byte_size=len(data), media_type=media_type, store_path=str(relpath),
+                collected_at=collected, origin_meta=origin_meta or {}, created_at=now, **extra,
+            )
         )
-    )
     doc = (await db.execute(select(KbDocument).where(KbDocument.doc_key == source_key))).scalar_one_or_none()
     if doc is None:
         doc_id = uuid.uuid4()
@@ -277,16 +337,27 @@ def split_paragraphs(text: str) -> list[tuple[str | None, str, int, int]]:
     return out
 
 
-async def segment_revision(db: AsyncSession, revision_id: uuid.UUID) -> list[KbPassage]:
-    """리비전 본문을 패시지로 나눠 저장한다. 재실행해도 같은 행이 남는다(멱등)."""
+async def segment_revision(
+    db: AsyncSession, revision_id: uuid.UUID, *, locator_spans: list | None = None
+) -> list[KbPassage]:
+    """리비전 본문을 구조 보존 청킹(common.chunking)으로 패시지로 나눠 저장한다. 재실행해도 같은 행이 남는다(멱등).
+
+    section_path·chunk_kind·heading 을 채워 추출기(L0 헤딩 계층)와 검색이 문서 구조를 쓸 수 있게 한다.
+    locator_spans 는 파서가 준 페이지·슬라이드·시간 구간이다(없으면 마크다운 구조에서 유도한다).
+    """
     rev = await db.get(KbRevision, revision_id)
     if rev is None:
         raise KeyError(f"kb revision not found: {revision_id}")
     now = utcnow()
-    for ordinal, (_heading, body, start, end) in enumerate(split_paragraphs(rev.body)):
+    for chunk in chunk_structured_document(rev.body, locator_spans, min_chars=0):
         stmt = insert(KbPassage).values(
-            id=uuid.uuid4(), revision_id=revision_id, ord=ordinal, heading=None, body=body,
-            char_start=start, char_end=end, sha256=sha256_hex(body.encode("utf-8")), created_at=now,
+            id=uuid.uuid4(), revision_id=revision_id, ord=chunk.ord,
+            heading=(chunk.section_path[-1] if chunk.section_path else None), body=chunk.body,
+            char_start=chunk.char_start, char_end=chunk.char_end, sha256=chunk.sha256,
+            section_path=list(chunk.section_path), chunk_kind=chunk.chunk_kind,
+            page_no=chunk.page_no, slide_no=chunk.slide_no,
+            time_start_ms=chunk.time_start_ms, time_end_ms=chunk.time_end_ms,
+            token_estimate=chunk.token_estimate, search_text=chunk.search_text, created_at=now,
         )
         stmt = stmt.on_conflict_do_nothing(constraint="uq_kb_passage_ord")
         await db.execute(stmt)

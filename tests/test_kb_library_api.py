@@ -5,6 +5,7 @@ import uuid
 
 import pytest
 from sqlalchemy import func, select
+from test_kb_agent_api import headers  # noqa: F401 -- actual personal/work sessions
 
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbDocument, KbRevision, KbSource
@@ -193,21 +194,27 @@ async def test_evidence_reports_original_position_and_hash(client, auth):
     assert (await client.get(f"{BASE}/passages/{uuid.uuid4()}/evidence", headers=auth)).status_code == 404
 
 
-async def test_unsegmented_revision_becomes_searchable_after_backfill(client, auth):
+async def test_unsegmented_revision_becomes_searchable_after_backfill(client, auth, headers):  # noqa: F811
     from ttakkari.kb_library import segment_unsegmented
     from ttakkari.kb_store import ingest_source
 
     async with sessionmaker()() as db:
         await ingest_source(db, source_key="file:legacy.md", data="레거시 문단은 격리 수준을 다룬다.\n".encode(), title="레거시")
         await db.commit()
-    before = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    # 미상 출처는 work_only: 소유자는 단일 도서관에서 보지만 개인 에이전트에는 계속 닫힌다.
+    work = {"q": "격리 수준", "scope": "work"}
+    before = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert before["items"] == []
     async with sessionmaker()() as db:
         assert await segment_unsegmented(db) == {"revisions_checked": 1, "passages": 1}
         await db.commit()
         assert await segment_unsegmented(db) == {"revisions_checked": 0, "passages": 0}
-    after = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    after = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert [h["document"]["title"] for h in after["items"]] == ["레거시"]
+    owner = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    assert [h["document"]["title"] for h in owner["items"]] == ["레거시"]
+    personal = (await client.get("/api/agent/kb/search", params={"q": "격리 수준"}, headers=headers["personal"])).json()
+    assert personal["items"] == []
 
 
 async def test_cli_kb_ingest_makes_the_document_searchable(client, auth, tmp_path):
@@ -223,7 +230,8 @@ async def test_cli_kb_ingest_makes_the_document_searchable(client, auth, tmp_pat
 
     def run():
         return subprocess.run(
-            [sys.executable, "-m", "ttakkari.cli", "kb-ingest", str(sample), "--source-key", "file:cli.md", "--title", "CLI 문서"],
+            [sys.executable, "-m", "ttakkari.cli", "kb-ingest", str(sample), "--source-key", "file:cli.md", "--title", "CLI 문서",
+             "--scope", "personal"],
             env=env, capture_output=True, text=True, timeout=120, check=False,
         )
 

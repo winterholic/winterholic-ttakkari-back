@@ -470,6 +470,11 @@ async def import_source(db, study, body, actor):
             "library_purpose": body.purpose,
         },
     )
+    # 접근 행이 없으면 work 연구 자료가 개인 검색에 노출된다. 연구 scope(= source_key 에 들어 있는 scope)로 항상 쓴다.
+    try:
+        await kb_library.ensure_document_access(db, imported.document_id, scope=study.scope)
+    except kb_store.KbInputError as exc:
+        raise HTTPException(409, f"research_{exc}") from exc
     units = await kb_store.segment_revision(db, imported.revision_id)
     if not units:
         raise HTTPException(422, "research_empty_normalized_source")

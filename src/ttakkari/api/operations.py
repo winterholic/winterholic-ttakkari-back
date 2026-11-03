@@ -28,13 +28,24 @@ DESCRIPTIONS = {
     "snapshot_verify": "최근 데이터 스냅샷을 격리 임시 위치에 풀어 파일 해시를 대조하고 지움",
     "collection_scope_preview": "스키마·활성 세대·이전 세대 종료를 확인하고 단일 도서관 통합을 실행한 뒤 롤백",
     "collection_scope_apply": "이전 세대 종료 후 기존 이력·접근 pool을 보존해 단일 도서관 통합 적용",
+    "kb_v3_verify": "지식 도서관 v3 L2 추출·상충 실검증 (공개 합성 PDF 1건 + 상충 30일/90일 정책 2건 제품 파이프라인 검증)",
 }
 
 
 class StartIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db", "data_snapshot",
-                  "restore_rehearsal", "snapshot_verify", "collection_scope_preview", "collection_scope_apply"]
+    kind: Literal[
+        "runtime_report",
+        "performance_baseline",
+        "backup_status",
+        "backup_db",
+        "data_snapshot",
+        "restore_rehearsal",
+        "snapshot_verify",
+        "collection_scope_preview",
+        "collection_scope_apply",
+        "kb_v3_verify",
+    ]
 
 
 async def caller(sid: uuid.UUID, db: Db) -> None:

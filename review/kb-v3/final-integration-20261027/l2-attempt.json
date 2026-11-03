@@ -1,0 +1,5 @@
+{
+  "elapsed_ms": 172,
+  "text_present": false,
+  "error": "WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)\nError: failed to initialize in-process app-server client: Operation not permitted (os error 1)"
+}

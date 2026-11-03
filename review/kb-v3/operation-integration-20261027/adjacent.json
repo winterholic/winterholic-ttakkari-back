@@ -1,0 +1,16 @@
+{
+  "command": [
+    ".venv/bin/pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_host_operations.py",
+    "tests/test_collection_scope_operations.py",
+    "tests/test_route_inventory.py",
+    "tests/test_kb_v3_generation_coexistence.py"
+  ],
+  "head": "36abf6e1690e03a94a3ca7640f6ba040ba68ec67",
+  "exit": 1,
+  "raw_sha256": "d403199bc96e483ba68e3f9dae5a0ce4d40616910a452b45d41aa7458b26e83c",
+  "run_owned_db_verified": true,
+  "run_id": "56c418a7-825f-41fc-957f-3932def06d7e"
+}

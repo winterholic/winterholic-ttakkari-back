@@ -1,0 +1,98 @@
+......F..FF......F.                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_utc_day_change_gets_fresh_budget_and_fences_stale_lease _________
+
+    async def test_utc_day_change_gets_fresh_budget_and_fences_stale_lease():
+        day_one = datetime(2026, 10, 25, 23, 59, 30, tzinfo=UTC)
+        day_two = day_one + timedelta(seconds=60)
+        suffix = uuid.uuid4().hex
+        async with sessionmaker()() as db:
+            late = await reserve_daily_budget(
+                db, reservation_key=f"late-{suffix}", requested_calls=1, max_budget=1, now=day_one
+            )
+            await db.commit()
+            assert late.granted_calls == 1
+            row = await db.get(KbL2BudgetReservation, late.reservation_id)
+            assert row.lease_expires_at == datetime(2026, 10, 26, tzinfo=UTC)
+    
+            # The lease never carries yesterday's allowance into the new UTC day.
+            with pytest.raises(DailyBudgetExhausted):
+                await begin_budgeted_call(db, late.reservation_id, now=day_two)
+            await db.rollback()
+    
+            fresh = await reserve_daily_budget(
+                db, reservation_key=f"fresh-{suffix}", requested_calls=1, max_budget=1, now=day_two
+            )
+            assert fresh.granted_calls == 1
+            await db.commit()
+            # Yesterday's unfinished lease expired without any in-flight call to charge.
+            stale = await db.get(KbL2BudgetReservation, late.reservation_id)
+>           assert stale.status == "expired"
+E           AssertionError: assert 'active' == 'expired'
+E             
+E             - expired
+E             + active
+
+tests/test_kb_v3_l2_budget_boundaries.py:193: AssertionError
+___________ test_paid_api_credentials_are_never_inherited_by_the_cli ___________
+
+fake_cli = <test_kb_v3_subscription_cli_contracts.fake_cli.<locals>.Fake object at 0x113d3ba10>
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4950/test_paid_api_credentials_are_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1140f09f0>
+
+    async def test_paid_api_credentials_are_never_inherited_by_the_cli(fake_cli, tmp_path, monkeypatch):
+        for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL"):
+            monkeypatch.setenv(key, "must-not-reach-the-subscription-cli")
+        await _account(tmp_path, "personal")
+    
+        await _adapter()("env check", L2_SCHEMA)
+    
+>       assert fake_cli.calls()[0]["paid_env"] == []
+E       AssertionError: assert ['ANTHROPIC_A...NAI_BASE_URL'] == []
+E         
+E         Left contains 4 more items, first extra item: 'ANTHROPIC_API_KEY'
+E         Use -v to get more diff
+
+tests/test_kb_v3_subscription_cli_contracts.py:165: AssertionError
+_________ test_claude_command_is_tool_free_and_carries_the_json_schema _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4950/test_claude_command_is_tool_fr0')
+
+    def test_claude_command_is_tool_free_and_carries_the_json_schema(tmp_path):
+        from ttakkari.runs import desk
+    
+        schema_path = tmp_path / "schema.json"
+        schema_path.write_text(json.dumps(L2_SCHEMA), encoding="utf-8")
+>       cmd = desk._claude_cmd({}, "system", "prompt", output_schema=schema_path)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: _claude_cmd() got an unexpected keyword argument 'output_schema'
+
+tests/test_kb_v3_subscription_cli_contracts.py:173: TypeError
+____________________ test_missing_executable_is_not_charged ____________________
+
+fake_cli = <test_kb_v3_subscription_cli_contracts.fake_cli.<locals>.Fake object at 0x11404d2b0>
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4950/test_missing_executable_is_not0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1140f1b70>
+
+    async def test_missing_executable_is_not_charged(fake_cli, tmp_path, monkeypatch):
+        await _account(tmp_path, "personal")
+        monkeypatch.setattr(get_settings(), "codex_bin", str(tmp_path / "no-such-codex"))
+        with pytest.raises(L2TransportError) as excinfo:
+            await _adapter()("anything", L2_SCHEMA)
+        assert excinfo.value.diagnosis == DIAG_NONZERO_EXIT
+>       assert excinfo.value.consumed is False
+E       AssertionError: assert True is False
+E        +  where True = L2TransportError('[nonzero_exit] subscription CLI call failed').consumed
+E        +    where L2TransportError('[nonzero_exit] subscription CLI call failed') = <ExceptionInfo L2TransportError('[nonzero_exit] subscription CLI call failed') tblen=3>.value
+
+tests/test_kb_v3_subscription_cli_contracts.py:263: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.kb_pipeline.subscription_transport:subscription_transport.py:306 Subscription L2 CLI execution failed: diagnosis=nonzero_exit, elapsed_ms=4
+db reset: 19 selective (avg 4.2/119 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_kb_v3_l2_budget_boundaries.py::test_utc_day_change_gets_fresh_budget_and_fences_stale_lease
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_paid_api_credentials_are_never_inherited_by_the_cli
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_claude_command_is_tool_free_and_carries_the_json_schema
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_missing_executable_is_not_charged
+4 failed, 15 passed in 4.60s
+exit=1

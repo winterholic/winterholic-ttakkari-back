@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-current-20261027/tests/test_kb_v3_schema_migration.py", line 504, in <module>
+    test_alembic_v3_single_head_and_lineage()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-current-20261027/tests/test_kb_v3_schema_migration.py", line 65, in test_alembic_v3_single_head_and_lineage
+    assert heads[0] == "0074_kb_v3_research_merge"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

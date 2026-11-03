@@ -8,6 +8,8 @@ from ttakkari import kb_library, kb_retrieval, kb_store
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 
+pytestmark = pytest.mark.usefixtures("classified_ingest")
+
 
 @pytest.mark.parametrize("locator", ["/repo/docs/research/report.md", "session:old-request", "repo:commit:report.md"])
 async def test_existing_research_sources_stay_out_of_general_library(locator):

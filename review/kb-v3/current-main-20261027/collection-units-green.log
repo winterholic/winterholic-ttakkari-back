@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-current-20261027
+configfile: pyproject.toml
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collected 68 items
+
+unit_tests/test_collection_adapters.py ...........                       [ 16%]
+unit_tests/test_collection_plan.py ......                                [ 25%]
+unit_tests/test_collection_research.py ......................            [ 57%]
+unit_tests/test_collector_parser.py .............................        [100%]
+
+============================== 68 passed in 1.06s ==============================

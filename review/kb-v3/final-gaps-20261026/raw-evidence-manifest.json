@@ -1,0 +1,38 @@
+[
+  {
+    "original_name": "product-search-results.json",
+    "gzip": "product-search-results.json.gz",
+    "uncompressed_sha256": "58964583c3ec7b914931bb239d76033392680a684e265e8eee377e40e7e0c05b",
+    "bytes": 6051985
+  },
+  {
+    "original_name": "server.log",
+    "gzip": "server.log.gz",
+    "uncompressed_sha256": "749152ea34fa4c56fd5a6eff995fc81dab3485068864e437c64bc125bf60c258",
+    "bytes": 156010
+  },
+  {
+    "original_name": "identity-regression-suite.log",
+    "gzip": "identity-regression-suite.log.gz",
+    "uncompressed_sha256": "87091db4db6470a1291ac1988921eea6942e959d24c65e982d88dc6302268af1",
+    "bytes": 327604
+  },
+  {
+    "original_name": "mcp-roundtrip.log",
+    "gzip": "mcp-roundtrip.log.gz",
+    "uncompressed_sha256": "f4595d711645c03e170037218f8e0fac6956e843b9b2f5722dae943876518eea",
+    "bytes": 4583
+  },
+  {
+    "original_name": "mcp-roundtrip-fixed-sdk.log",
+    "gzip": "mcp-roundtrip-fixed-sdk.log.gz",
+    "uncompressed_sha256": "020f3d936c4d3c4857c63584ceb1e7a312a06060f470a5a201ecda1968ebbd3b",
+    "bytes": 4547
+  },
+  {
+    "original_name": "mcp-roundtrip-legacy-scopes.log",
+    "gzip": "mcp-roundtrip-legacy-scopes.log.gz",
+    "uncompressed_sha256": "e4a1e5949ae4c2543bb0b6b098a4c6cd40c1db77c7e093f1bcd891e7e36f7892",
+    "bytes": 28893
+  }
+]

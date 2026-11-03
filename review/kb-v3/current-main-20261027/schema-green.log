@@ -1,0 +1,19 @@
+PASS: test_alembic_v3_single_head_and_lineage
+PASS: test_metadata_all_v3_tables_registered
+PASS: test_kb_document_has_no_current_revision_id_pointer
+PASS: test_kb_sources_additive_columns
+PASS: test_kb_passages_location_metadata
+PASS: test_kb_document_access_scope_unification_contract
+PASS: test_migration_0072_executes_one_statement_per_op_execute
+PASS: test_immutable_ledger_foreign_keys_are_restrict
+PASS: test_relation_active_needs_evidence_constraint
+PASS: test_ontology_provenance_and_visibility_isolation
+PASS: test_ontology_unicode_norm_form_preservation
+PASS: test_migration_0072_structure_and_operations
+PASS: test_postgresql_ddl_compilation
+PASS: test_migration_0072_offline_sql_generation
+PASS: test_negative_work_access_visibility_leak_protection
+PASS: test_negative_relation_active_without_evidence_rejected
+========================================
+ALL 15 KB v3 SCHEMA MIGRATION TESTS PASSED!
+========================================

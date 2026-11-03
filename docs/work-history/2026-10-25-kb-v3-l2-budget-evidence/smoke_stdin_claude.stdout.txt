@@ -1,0 +1,34 @@
+{
+  "engine": "claude",
+  "results": [
+    {
+      "heading": "PostgreSQL pgvector",
+      "body_chars": 169,
+      "ok": true,
+      "entities": [
+        "pgvector",
+        "PostgreSQL",
+        "vectors",
+        "nearest neighbor search",
+        "HNSW",
+        "IVFFlat"
+      ],
+      "assertions": 6,
+      "relations": 4,
+      "quotes_total": 10,
+      "quotes_exact_substring": 10,
+      "sample": {
+        "subject": "pgvector",
+        "predicate": "is",
+        "object_entity": null,
+        "object_value": "an open-source extension for PostgreSQL",
+        "modality": "fact",
+        "polarity": "positive",
+        "applies_version": null,
+        "evidence_quote": "pgvector is an open-source extension for PostgreSQL"
+      },
+      "elapsed_s": 18.0
+    }
+  ]
+}
+exit=0

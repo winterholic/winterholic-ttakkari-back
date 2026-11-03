@@ -1,0 +1,38 @@
+[
+  {
+    "name": "ruff-fix",
+    "command": [
+      ".venv/bin/ruff",
+      "check",
+      "--fix",
+      "src/ttakkari/operations/kb_v3_verify.py",
+      "src/ttakkari/operations/plans.py",
+      "tests/test_kb_v3_verify_operation.py"
+    ],
+    "exit": 0,
+    "raw_sha256": "dfb07b12748aa872177e357c267d123773c61020a9a3de883985df0de5913666"
+  },
+  {
+    "name": "resumed-gate-green",
+    "command": [
+      ".venv/bin/pytest",
+      "-q",
+      "--tb=short",
+      "tests/test_kb_v3_verify_operation.py"
+    ],
+    "exit": 0,
+    "raw_sha256": "1146140148e3cdf7848c6d626f3ba4fea3910b2062559981c0fac1f65b41ca1e"
+  },
+  {
+    "name": "ruff-final",
+    "command": [
+      ".venv/bin/ruff",
+      "check",
+      "src/ttakkari/operations/kb_v3_verify.py",
+      "src/ttakkari/operations/plans.py",
+      "tests/test_kb_v3_verify_operation.py"
+    ],
+    "exit": 0,
+    "raw_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+  }
+]

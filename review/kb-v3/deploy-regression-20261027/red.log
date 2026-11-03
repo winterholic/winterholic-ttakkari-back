@@ -1,0 +1,46 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_quota_wait_persists_resume_after_across_restart _____________
+
+new_session = <function new_session.<locals>._new at 0x1147fc7c0>
+
+    async def test_quota_wait_persists_resume_after_across_restart(new_session):
+        """한도 대기(run.waiting) 시 run.resume_after 가 DB 에 영속 저장되어 재기동 후에도 유지됨을 검증."""
+        from ttakkari.runs import profiles
+        from ttakkari.runs.manager import manager, resume_queued
+    
+        ws, sess = await new_session()
+        async with sessionmaker()() as db:
+            run = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]),
+                      prompt="quota wait test", engine="claude", status=RunStatus.queued)
+            db.add(run)
+            await db.commit()
+            await db.refresh(run)
+    
+            # manager._wait_for_reset 호출 시뮬레이션
+            chat_sess = await db.get(ChatSession, run.session_id)
+            future_until = (utcnow() + timedelta(minutes=15)).timestamp()
+            accounts = await profiles.accounts(db)
+            for a in accounts:
+                profiles.cool_down(a.id, 900)
+            prof = type("FakeProfile", (), {"name": "claude-main", "engine": "claude"})()
+>           await manager._wait_for_reset(db, run, chat_sess, [(prof, future_until)], handoff="test handoff")
+
+tests/test_scheduled_actions.py:357: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/runs/manager.py:640: in _wait_for_reset
+    capacity_wait = any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x114e6a3b0>
+
+>   capacity_wait = any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))
+                                                                                              ^^^^^^^
+                        for p, _ in blocked)
+E   AttributeError: 'FakeProfile' object has no attribute 'model'
+
+src/ttakkari/runs/manager.py:640: AttributeError
+db reset: 1 selective (avg 3.0/133 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_scheduled_actions.py::test_quota_wait_persists_resume_after_across_restart
+1 failed in 0.60s

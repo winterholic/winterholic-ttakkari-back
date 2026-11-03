@@ -1800,7 +1800,12 @@ def classify_table(name: str) -> str:
 def classify_migration(stem: str) -> str:
     s = stem.lower()
     # Core & Control
-    if s in ("0071_library_platform_v2_merge", "0075_collection_research_merge"):
+    if s in (
+        "0071_library_platform_v2_merge",
+        "0074_kb_v3_research_merge",
+        "0075_collection_research_merge",
+        "0076_kb_v3_collection_merge",
+    ):
         # A no-op merge joins the library and execution branches; deployment
         # owns convergence, while each parent retains its domain's DDL.
         return "core.generation_deploy"
@@ -2163,6 +2168,12 @@ def classify_source_file(rel_path: str) -> str:
         or "kb_embedding" in p
         or "kb_retrieval" in p
         or "/api/kb_" in p
+        or "kb_" in p
+        or "/kb_pipeline" in p
+        or "/kb_parsers" in p
+        or "/kb_ontology" in p
+        or "/common/" in p
+        or "kb_visibility" in p
     ):
         return "domain.knowledge_rag"
     if "/collector/" in p or "collector" in p or "/api/collect" in p:

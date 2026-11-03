@@ -1,0 +1,82 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0 -- /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2-red/../back-kb-v3-l2/.venv/bin/python
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2-red
+configfile: pyproject.toml
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 9 items / 7 deselected / 2 selected
+
+tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[legacy_cli] FAILED [ 50%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[subscription_cli] FAILED [100%]
+
+=================================== FAILURES ===================================
+_________ test_two_extractors_share_one_daily_call_budget[legacy_cli] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1109bbe30>
+adapter_name = 'legacy_cli'
+
+    @pytest.mark.parametrize("adapter_name", ["legacy_cli", "subscription_cli"])
+    async def test_two_extractors_share_one_daily_call_budget(monkeypatch, adapter_name: str):
+        settings = get_settings()
+        monkeypatch.setattr(settings, "kb_l2_daily_budget", 1)
+        monkeypatch.setattr(settings, "kb_l2_max_calls_per_doc", 1)
+    
+        first = await _context("예산 경합을 검증하는 첫 문서입니다. 고유 내용 A.")
+        second = await _context("예산 경합을 검증하는 두 번째 문서입니다. 고유 내용 B.")
+        adapter = BarrierAdapter(adapter_name)
+        processor = ExtractingProcessor(adapter_factory=lambda: adapter)
+        read_barrier = asyncio.Barrier(2)
+        read_calls_today = processor._l2_calls_today
+    
+        async def synchronized_read(ctx):
+            value = await read_calls_today(ctx)
+            await read_barrier.wait()
+            return value
+    
+        monkeypatch.setattr(processor, "_l2_calls_today", synchronized_read)
+    
+        results = await asyncio.gather(processor(first), processor(second))
+    
+>       assert adapter.calls == 1
+E       assert 2 == 1
+E        +  where 2 = <test_kb_v3_l2_budget_concurrency.BarrierAdapter object at 0x110a9dbe0>.calls
+
+tests/test_kb_v3_l2_budget_concurrency.py:82: AssertionError
+______ test_two_extractors_share_one_daily_call_budget[subscription_cli] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110d08450>
+adapter_name = 'subscription_cli'
+
+    @pytest.mark.parametrize("adapter_name", ["legacy_cli", "subscription_cli"])
+    async def test_two_extractors_share_one_daily_call_budget(monkeypatch, adapter_name: str):
+        settings = get_settings()
+        monkeypatch.setattr(settings, "kb_l2_daily_budget", 1)
+        monkeypatch.setattr(settings, "kb_l2_max_calls_per_doc", 1)
+    
+        first = await _context("예산 경합을 검증하는 첫 문서입니다. 고유 내용 A.")
+        second = await _context("예산 경합을 검증하는 두 번째 문서입니다. 고유 내용 B.")
+        adapter = BarrierAdapter(adapter_name)
+        processor = ExtractingProcessor(adapter_factory=lambda: adapter)
+        read_barrier = asyncio.Barrier(2)
+        read_calls_today = processor._l2_calls_today
+    
+        async def synchronized_read(ctx):
+            value = await read_calls_today(ctx)
+            await read_barrier.wait()
+            return value
+    
+        monkeypatch.setattr(processor, "_l2_calls_today", synchronized_read)
+    
+        results = await asyncio.gather(processor(first), processor(second))
+    
+>       assert adapter.calls == 1
+E       assert 2 == 1
+E        +  where 2 = <test_kb_v3_l2_budget_concurrency.BarrierAdapter object at 0x110bb3890>.calls
+
+tests/test_kb_v3_l2_budget_concurrency.py:82: AssertionError
+db reset: 2 selective (avg 5.5/117 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[legacy_cli]
+FAILED tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[subscription_cli]
+======================= 2 failed, 7 deselected in 0.69s ========================
+exit=1

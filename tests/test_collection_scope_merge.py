@@ -69,7 +69,7 @@ async def _restore_schema_version(_schema_and_app):
         await db.commit()
 
 
-async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0075_collection_research_merge"):
+async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0076_kb_v3_collection_merge"):
     from ttakkari import generation
     from ttakkari.config import get_settings
     from ttakkari.models import RuntimeControl, RuntimeGeneration
@@ -115,11 +115,12 @@ async def test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent(monk
 
 
 @pytest.mark.parametrize("previous,active,version,reason", [
-    ("draining", True, "0075_collection_research_merge", "previous_generation_not_drained"),
-    ("standby", True, "0075_collection_research_merge", "previous_generation_not_drained"),
-    ("offline_executor", True, "0075_collection_research_merge", "previous_generation_not_drained"),
-    (None, False, "0075_collection_research_merge", "inactive_generation"),
+    ("draining", True, "0076_kb_v3_collection_merge", "previous_generation_not_drained"),
+    ("standby", True, "0076_kb_v3_collection_merge", "previous_generation_not_drained"),
+    ("offline_executor", True, "0076_kb_v3_collection_merge", "previous_generation_not_drained"),
+    (None, False, "0076_kb_v3_collection_merge", "inactive_generation"),
     (None, True, "0073_research_reuse_source", "schema_not_ready"),
+    (None, True, "0075_collection_research_merge", "schema_not_ready"),
 ])
 async def test_operational_merge_refuses_unsafe_runtime_without_changes(monkeypatch, previous, active, version, reason):
     await _operation_generation(monkeypatch, previous=previous, active=active, version=version)

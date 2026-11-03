@@ -1,0 +1,160 @@
+- generic [ref=e2]:
+  - link "본문으로 건너뛰기" [ref=e33] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e34]:
+    - complementary "탐색" [ref=e35]:
+      - link "Ttakkari" [ref=e37] [cursor=pointer]:
+        - /url: /chat
+      - navigation "영역과 진행 중인 일" [ref=e39]:
+        - generic [ref=e40]:
+          - group "대화 공간" [ref=e41]:
+            - paragraph [ref=e42]: 대화 공간
+            - link "개인 대화" [ref=e43] [cursor=pointer]:
+              - /url: /chat
+            - link "회사 대화" [ref=e46] [cursor=pointer]:
+              - /url: /work
+          - link "작업" [ref=e50] [cursor=pointer]:
+            - /url: /tasks
+          - button "부가 기능" [ref=e55] [cursor=pointer]
+          - link "지식 도서관" [ref=e62] [cursor=pointer]:
+            - /url: /knowledge-library
+        - generic [ref=e65]:
+          - paragraph [ref=e66]: 진행 중
+          - paragraph [ref=e67]: 지금 도는 일이 없어요. 따까리에게 맡긴 일이 여기서 가지를 뻗어요.
+        - link "지난 작업 모두 보기" [ref=e68] [cursor=pointer]:
+          - /url: /tasks
+      - button "사용자 메뉴" [ref=e75] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e76]: W
+        - generic [ref=e77]:
+          - generic [ref=e78]: winterholic
+          - status [ref=e79]: Mac Studio 연결됨
+    - main [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - heading "지식 도서관" [level=1] [ref=e88]
+            - paragraph [ref=e89]:
+              - generic [ref=e90]: 문서 2 · 패시지 2
+          - generic [ref=e92]:
+            - button "자료 추가" [ref=e93] [cursor=pointer]:
+              - text: +
+              - generic [ref=e94]: 자료
+              - text: 추가
+            - 'button "처리 현황 열기: 진행 0건, 실패 0건, 보류 0건, 부분 완료 2건" [ref=e207] [cursor=pointer]':
+              - generic [ref=e96]: 처리 대기 없음
+            - button "다시 읽기" [ref=e97] [cursor=pointer]
+        - generic [ref=e104]:
+          - list "도서관 현황" [ref=e105]:
+            - listitem [ref=e106]:
+              - generic [ref=e107]: 문서
+              - strong [ref=e108]: "2"
+            - listitem [ref=e109]:
+              - generic [ref=e110]: 개념
+              - strong [ref=e111]: "4"
+            - listitem [ref=e112]:
+              - generic [ref=e113]: 주장
+              - strong [ref=e114]: "0"
+            - listitem [ref=e115]:
+              - generic [ref=e116]: 관계
+              - strong [ref=e117]: "1"
+            - listitem [ref=e118]:
+              - generic [ref=e119]: 후보 관계
+              - strong [ref=e120]: "0"
+            - listitem [ref=e121]:
+              - generic [ref=e122]: 열린 충돌
+              - strong [ref=e123]: "0"
+          - navigation "보기 방식" [ref=e124]:
+            - button "지식 탐색" [pressed] [ref=e125] [cursor=pointer]
+            - button "개념 그래프" [ref=e126] [cursor=pointer]
+            - button "문서·처리" [ref=e127] [cursor=pointer]
+            - button "충돌·품질" [ref=e128] [cursor=pointer]
+          - generic [ref=e129]:
+            - search [ref=e130]:
+              - searchbox "지식 도서관 검색" [ref=e134]: Kubernetes
+              - button "검색" [active] [ref=e135] [cursor=pointer]
+            - generic [ref=e137]:
+              - generic [ref=e138]: 검색 방식
+              - generic [ref=e139]:
+                - combobox "검색 방식 통합 (단어+의미+개념 관계)" [ref=e140] [cursor=pointer]:
+                  - generic [ref=e141]: 통합 (단어+의미+개념 관계)
+                - text: ✓
+          - region "필터" [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]:
+                - generic [ref=e145]: 주제
+                - generic [ref=e146]:
+                  - combobox "주제 모든 주제" [ref=e147] [cursor=pointer]:
+                    - generic [ref=e148]: 모든 주제
+                  - text: ✓
+              - generic [ref=e149]:
+                - generic [ref=e150]: 유형
+                - generic [ref=e151]:
+                  - combobox "유형 모든 유형" [ref=e152] [cursor=pointer]:
+                    - generic [ref=e153]: 모든 유형
+                  - text: ✓
+              - generic [ref=e154]:
+                - generic [ref=e155]: 기간
+                - generic [ref=e156]:
+                  - combobox "기간 전체 기간" [ref=e157] [cursor=pointer]:
+                    - generic [ref=e158]: 전체 기간
+                  - text: ✓
+              - generic [ref=e159]:
+                - generic [ref=e160]: 출처 주소
+                - textbox "출처 주소" [ref=e161]:
+                  - /placeholder: "예: postgresql.org"
+          - generic [ref=e272]:
+            - region "매칭된 개념" [ref=e273]:
+              - article "개념 Kubernetes" [ref=e274]:
+                - generic [ref=e275]:
+                  - heading "Kubernetes" [level=3] [ref=e276]
+                  - generic [ref=e277]:
+                    - generic [ref=e278]: 기술
+                    - generic [ref=e280]: 문서 2
+                - paragraph [ref=e282]: "다른 이름: 쿠버네티스 · k8s"
+                - paragraph [ref=e283]: 아직 근거로 뒷받침된 정본 요약이 없어요. 아래 근거 패시지를 확인해 주세요.
+                - generic [ref=e284]:
+                  - button "그래프에서 보기" [ref=e285] [cursor=pointer]
+                  - button "이 개념으로 좁혀 보기" [ref=e287] [cursor=pointer]
+            - list "검색 결과" [ref=e289]:
+              - listitem [ref=e290]:
+                - generic [ref=e291]:
+                  - heading "Kubernetes networking" [level=3] [ref=e292]
+                  - generic [ref=e293]:
+                    - generic [ref=e294]: 현재 버전
+                    - generic [ref=e296]: 직접 등록
+                    - generic [ref=e298]: en
+                - paragraph [ref=e300]:
+                  - mark [ref=e301]: Kubernetes
+                  - text: schedules containers on cluster nodes.
+                  - mark [ref=e302]: Kubernetes
+                  - text: manages Pods through Deployments. A Service routes requests to Pods. PostgreSQL stores relational data.
+                - generic "찾은 경로" [ref=e303]:
+                  - generic [ref=e304]: 단어
+                  - generic [ref=e306]: 의미
+                  - generic [ref=e308]: 정본 근거
+                - paragraph [ref=e310]: ui-only-20261027-0
+                - generic [ref=e311]:
+                  - button "근거 원문 보기" [ref=e312] [cursor=pointer]
+                  - button "문서 열기" [ref=e314] [cursor=pointer]
+              - listitem [ref=e316]:
+                - generic [ref=e317]:
+                  - heading "Kubernetes 한국어 안내" [level=3] [ref=e318]
+                  - generic [ref=e319]:
+                    - generic [ref=e320]: 현재 버전
+                    - generic [ref=e322]: 직접 등록
+                    - generic [ref=e324]: ko
+                - paragraph [ref=e326]:
+                  - text: 쿠버네티스(
+                  - mark [ref=e327]: Kubernetes
+                  - text: )는 컨테이너를 관리합니다. Deployment는 ReplicaSet을 관리합니다. Service는 Pod의 네트워크 접근을 제공합니다.
+                - generic "찾은 경로" [ref=e328]:
+                  - generic [ref=e329]: 단어
+                  - generic [ref=e331]: 의미
+                  - generic [ref=e333]: 정본 근거
+                - paragraph [ref=e335]: ui-only-20261027-1
+                - generic [ref=e336]:
+                  - button "근거 원문 보기" [ref=e337] [cursor=pointer]
+                  - button "문서 열기" [ref=e339] [cursor=pointer]
+            - paragraph [ref=e341]: 검색 순위는 내용이 사실이라는 판정이 아니에요. 근거 원문과 해시를 확인해 주세요.
+      - text: ✓
+    - status

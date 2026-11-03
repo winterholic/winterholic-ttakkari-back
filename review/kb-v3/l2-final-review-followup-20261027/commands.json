@@ -1,0 +1,18 @@
+{
+  "head": "12888c5552cc1479fdf236fd0f7b1431ce2dfeed",
+  "command": [
+    ".venv/bin/pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_agent_scope_auth.py"
+  ],
+  "exit": 0,
+  "raw_sha256": "3e2a465a0fb013efdab691f17324ad7ba99b937ed68098628df42334727adac9",
+  "db_ownership": {
+    "run_id": "308c681b-69c3-41e3-948c-39d1d6fa3f7e",
+    "host": "127.0.0.1",
+    "port": 63067,
+    "role": "ttk_test",
+    "marker_match": true
+  }
+}

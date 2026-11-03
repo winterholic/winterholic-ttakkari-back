@@ -1,0 +1,24 @@
+{
+  "head": "b7d15982259630b801edf80e41d355adf1898df4",
+  "command": [
+    ".venv/bin/pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_kb_v3_default_activation.py",
+    "tests/test_kb_v3_l2_budget_boundaries.py",
+    "tests/test_kb_v3_l2_budget_concurrency.py",
+    "tests/test_kb_v3_subscription_cli_contracts.py",
+    "tests/test_kb_v3_schema_realdb.py",
+    "tests/test_scheduled_actions.py"
+  ],
+  "exit": 0,
+  "log_sha256": "8eee5d9d8e1d2dbeee966ebb2e2e44ca1910715915734989dd2632ee5a77fbfa",
+  "implementation_sha": "f774928b2c999da28e33e5139841742ed8544f56",
+  "test_db_ownership": {
+    "run_id": "dceeabcd-8808-44fc-91c9-f009f4ddec7d",
+    "host": "127.0.0.1",
+    "port": 53365,
+    "role": "ttk_test",
+    "marker_verified": true
+  }
+}

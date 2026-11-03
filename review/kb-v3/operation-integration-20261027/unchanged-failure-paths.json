@@ -1,0 +1,7 @@
+{
+  "src/ttakkari/operations/runner.py:_child_setup": true,
+  "src/ttakkari/operations/runner.py:_execute": true,
+  "src/ttakkari/operations/runner.py:_group_gone": true,
+  "src/ttakkari/operations/runner.py:_kill_group": true,
+  "src/ttakkari/operations/inline.py:performance_baseline": true
+}

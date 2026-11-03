@@ -1,0 +1,6 @@
+SHA 27ea2f44
+Existing current-Run-owned DB, no initdb; schema reset only inside owned DB
+COMMAND ['/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/.venv/bin/python', '-m', 'pytest', '-q', 'tests/test_kb_v3_ontology_resolution.py::test_postgres_roundtrip_resolution_idempotency_and_visibility']
+EXIT 0
+.                                                                        [100%]
+1 passed in 0.48s

@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 import ttakkari.collector.budget_models
 import ttakkari.collector.control_models
 import ttakkari.delivery_models
+import ttakkari.kb_models
+import ttakkari.kb_ontology_models
+import ttakkari.kb_pipeline_models
 import ttakkari.kb_vector_models  # noqa: F401 - rebuildable KB projections
 from alembic import context
 from ttakkari.config import get_settings
@@ -36,9 +39,12 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     from ttakkari.schema_aliases import realign
+
     if moved := realign(connection):
         print(f"alembic_version {moved[0]} -> {moved[1]} (contract schema_aliases)")
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, compare_type=True
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -48,8 +54,11 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args={"server_settings": {"lock_timeout": "2000", "statement_timeout": "30000"}}
-        if get_settings().migration_online else {},
+        connect_args={
+            "server_settings": {"lock_timeout": "2000", "statement_timeout": "30000"}
+        }
+        if get_settings().migration_online
+        else {},
     )
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)

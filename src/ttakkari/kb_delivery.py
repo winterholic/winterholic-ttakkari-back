@@ -100,18 +100,46 @@ async def deliver_item(db, outbox, item):
                      "collector_source_key": item.source_key,
                      "mission": (env.get("extensions") or {}).get("collector:mission"),
                      "normalizer_version": normalized["normalizer_version"],
+                     "parser_version": normalized["parser_version"],
+                     "chunker_version": normalized["chunker_version"],
+                     "normalized_sha256": normalized["sha256"],
+                     "normalizer_steps": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "normalizer_steps", []
+                     ),
+                     "heading_structure": ((env.get("extensions") or {}).get("collector:lineage") or {}).get(
+                         "heading_structure"
+                     ),
                      "raw_alignment_handle": normalized["raw_alignment_handle"]},
     )
     access_row = await db.get(KbDocumentAccess, result.document_id)
+    origin_scope = "work" if (item.scope == "work" or pool == "work") else "personal"
+    visibility = "work_only" if (item.scope == "work" or pool == "work") else "global"
     if access_row is None:
-        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id=item.tenant_id, scope=LIBRARY_SCOPE, pool=pool))
+        db.add(
+            KbDocumentAccess(
+                document_id=result.document_id,
+                tenant_id=item.tenant_id,
+                scope=LIBRARY_SCOPE,
+                pool=pool,
+                origin_scope=origin_scope,
+                visibility=visibility,
+            )
+        )
     elif access_row.tenant_id != item.tenant_id:
         raise ValueError("delivery_existing_scope_mismatch")
     else:
         access_row.hidden = False
         # 같은 출처에 개인·회사 쪽 수집이 함께 닿으면 접근 범위는 좁은 쪽이다(회사 엔진이 개인 수집분을 새로 읽지 못한다).
         access_row.pool = narrowest_pool(effective_pool(access_row.pool, access_row.scope), pool)
+        if access_row.pool == "work" or pool == "work" or item.scope == "work":
+            access_row.visibility = "work_only"
+            access_row.origin_scope = "work"
     await segment_revision(db, result.revision_id)
+    from ttakkari.kb_pipeline import enqueue_pipeline_job
+
+    await enqueue_pipeline_job(
+        db, document_id=result.document_id, revision_id=result.revision_id
+    )
     observed = await db.scalar(select(KbObservation.id).where(KbObservation.envelope_id == outbox.envelope_id))
     if observed is None:
         db.add(KbObservation(document_id=result.document_id, revision_id=result.revision_id,

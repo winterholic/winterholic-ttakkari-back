@@ -1,0 +1,676 @@
+{
+  "method": "Frozen before ranking. Agent source-reviewed diagnostic document-finding questions over all 36 MCP-visible production documents. Positive anchors only; unjudged hits are not negative labels. Not user-confirmed or a held-out user-query benchmark.",
+  "cases": [
+    {
+      "id": "Q01",
+      "query": "디플로이먼트의 롤아웃 상태를 확인하고 선언한 복제본 수로 업데이트하는 방법",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "2731f585-a15a-4951-85b4-67fffc193755": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "2731f585-a15a-4951-85b4-67fffc193755",
+          "passage_id": "3c86df74-8372-4732-b316-98aea07a0bb0",
+          "quote": "디플로이먼트(Deployment) 는 파드와 레플리카셋(ReplicaSet)에 대한 선언적 업데이트를 제공한다.\n디플로이먼트에서 의도하는 상태 를 설명하고, 디플로이먼트 컨트롤러 (원문, Controller)는 현재 상태에서 의도하는 상태로 비율을 조정하며 변경한다. 새 레플리카셋을 생성하는 디플로이먼트를 정의하거나 기존"
+        }
+      ]
+    },
+    {
+      "id": "Q02",
+      "query": "퍼시스턴트 볼륨과 클레임을 바인딩하고 반환하는 방법",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "2097afbb-aef6-4870-b23a-2e37ab4e991d": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "2097afbb-aef6-4870-b23a-2e37ab4e991d",
+          "passage_id": "40f84bac-54f2-4c7c-9790-5e810867420c",
+          "quote": "Information in this document may be out of date\nThis document has an older update date than the original, so the information it contains may be out of date. If you're able to read "
+        }
+      ]
+    },
+    {
+      "id": "Q03",
+      "query": "기밀이 아닌 설정 키와 값을 파드 설정에서 분리해서 주입하는 방법",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "4a0d4e03-6788-4a7a-993c-15dfb3f9c447": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "4a0d4e03-6788-4a7a-993c-15dfb3f9c447",
+          "passage_id": "01414200-9eea-4257-8bfa-f130a4f75795",
+          "quote": "Information in this document may be out of date\nThis document has an older update date than the original, so the information it contains may be out of date. If you're able to read "
+        }
+      ]
+    },
+    {
+      "id": "Q04",
+      "query": "파드 집합에 안정적인 네트워크 주소를 제공하는 리소스",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "cfd60b9d-b1f6-43a2-84bf-0d7a63c36aff": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "cfd60b9d-b1f6-43a2-84bf-0d7a63c36aff",
+          "passage_id": "ff774a55-e6d9-42bd-981a-692a73658672",
+          "quote": "쿠버네티스에서 서비스는 파드 집합에서 실행중인 애플리케이션을 네트워크 서비스로 노출하는 추상화 방법\n쿠버네티스에서 서비스의 주된 목적은 익숙하지 않은 서비스 디스커버리 메커니즘을 사용하기 위해 기존 애플리케이션을 수정할 필요가 없도록 하는 것이다. 클라우드 네이티브 환경에 맞게 설계된 코드이든, 컨테이너화된 오래된 애플리"
+        }
+      ]
+    },
+    {
+      "id": "Q05",
+      "query": "쿠버네티스에서 배포할 수 있는 가장 작은 컴퓨팅 단위",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "e9f190c1-a2f3-475e-a5d3-76a57f165b9e": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "e9f190c1-a2f3-475e-a5d3-76a57f165b9e",
+          "passage_id": "109c164e-9acc-4cf6-90ea-efe005203fdc",
+          "quote": "Information in this document may be out of date\nThis document has an older update date than the original, so the information it contains may be out of date. If you're able to read "
+        }
+      ]
+    },
+    {
+      "id": "Q06",
+      "query": "쿠버네티스라는 컨테이너 오케스트레이션 플랫폼의 개요",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-ko",
+      "relevance": {
+        "9d6a4222-3253-4933-a9d6-29ba77870b19": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "9d6a4222-3253-4933-a9d6-29ba77870b19",
+          "passage_id": "bec14c86-132f-480f-ad11-6b3048ce241d",
+          "quote": "쿠버네티스란 무엇인가?\n쿠버네티스는 컨테이너화된 워크로드와 서비스를 관리하기 위한 이식할 수 있고, 확장 가능한 오픈소스 플랫폼으로, 선언적 구성과 자동화를 모두 지원한다. 쿠버네티스는 크고 빠르게 성장하는 생태계를 가지고 있다. 쿠버네티스 서비스, 지원 그리고 도구들은 광범위하게 제공된다.\n이 페이지에서는 쿠버네티스 개"
+        }
+      ]
+    },
+    {
+      "id": "Q07",
+      "query": "메모리 품질 제어가 베타가 된 뒤 스로틀링 설정의 기본값은 무엇인가",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "25aa3527-b802-456b-acf6-64dced2e9cd8": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "25aa3527-b802-456b-acf6-64dced2e9cd8",
+          "passage_id": "1b5feb1f-8184-4fa0-973c-a06fb078633b",
+          "quote": "Kubernetes v1.37: Memory QoS Graduates to Beta\nMemory QoS has graduated to Beta in Kubernetes v1.37 and is now enabled by default. On Linux nodes running cgroup v2, the feature use"
+        }
+      ]
+    },
+    {
+      "id": "Q08",
+      "query": "변경된 블록 추적 스토리지 API를 알파에서 베타로 올릴 때 바꿔야 하는 CRD 버전",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "73dcea40-3184-4800-b52d-4613cddf1db6": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "73dcea40-3184-4800-b52d-4613cddf1db6",
+          "passage_id": "5966a959-7c22-445e-8560-68e22aee90e9",
+          "quote": "Kubernetes Changed Block Tracking API - Beta Differences\nChanged Block Tracking (CBT) support for CSI drivers\nshipped as Alpha in\nSeptember 2025. With the March 2026 v1.0.0 release"
+        }
+      ]
+    },
+    {
+      "id": "Q09",
+      "query": "파드 전체 자원 선언을 사용해 NUMA 정렬과 사이드카 자원을 배치하는 기능",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "4768d38d-f36e-43df-b5af-cfe8aa08e545": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "4768d38d-f36e-43df-b5af-cfe8aa08e545",
+          "passage_id": "1c5b279f-a3bc-49d3-b107-c08b20d7434c",
+          "quote": "Kubernetes v1.37: Pod-Level Resource Managers graduated to Beta\nWith the release of Kubernetes v1.37, the Pod-Level Resource Managers feature has graduated to Beta status (disabled"
+        }
+      ]
+    },
+    {
+      "id": "Q10",
+      "query": "임시 볼륨에서 다른 컨테이너의 파일 삭제나 바이너리 실행을 제한하는 방법",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "fffa2f87-a82a-43f5-ba70-7243d196ac3a": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "fffa2f87-a82a-43f5-ba70-7243d196ac3a",
+          "passage_id": "dd2f2650-8bac-46a2-a4a8-a063641fa501",
+          "quote": "Kubernetes v1.37: Hardening Container Storage with Bind Mount Options and EmptyDir Permissions\nKubernetes v1.37 brings important storage security features: emptyDir permission mode"
+        }
+      ]
+    },
+    {
+      "id": "Q11",
+      "query": "더 이상 어떤 파드에서도 사용하지 않는 볼륨 클레임의 상태와 마지막 사용 시각",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "21205529-3fec-42b9-b643-47c2a752c9a0": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "21205529-3fec-42b9-b643-47c2a752c9a0",
+          "passage_id": "3c92dc48-9619-4dcb-bf08-6bec5c379aa2",
+          "quote": "Kubernetes v1.37: Tracking When a PersistentVolumeClaim Was Last Used (Beta)\nKubernetes v1.37 promotes the PersistentVolumeClaimUnusedSinceTime feature gate to Beta (enabled by\ndef"
+        }
+      ]
+    },
+    {
+      "id": "Q12",
+      "query": "애플리케이션 수명주기를 맡는 쿠버네티스 SIG 그룹 의장 인터뷰",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "4626d575-187f-4915-99d3-26ea5a569a70": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "4626d575-187f-4915-99d3-26ea5a569a70",
+          "passage_id": "32d05a38-19c0-4aa2-a287-147b4f2c862e",
+          "quote": "Spotlight on SIG Apps\nAs Kubernetes adoption has grown, the conversation has shifted beyond running containers to managing increasingly complex application lifecycles. Modern platf"
+        }
+      ]
+    },
+    {
+      "id": "Q13",
+      "query": "NVMe 스왑으로 유휴 메모리를 디스크에 내려 노드의 파드 밀도를 높인 벤치마크",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "51ef6902-2480-402b-910b-1a3517b9ee12": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "51ef6902-2480-402b-910b-1a3517b9ee12",
+          "passage_id": "9a33effb-6eb4-4928-a373-a840103dfb0d",
+          "quote": "Scaling Kubernetes Workloads with Node Swap\nMemory is often the first hard limit a Kubernetes cluster hits. Nodes run out of RAM long before they run out of CPU, and the new wave o"
+        }
+      ]
+    },
+    {
+      "id": "Q14",
+      "query": "cgroup 1 노드에서 새 쿠버네티스 kubelet이 기동되지 않는 이유와 임시 우회 설정",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "b4c175e4-94b6-4ce3-8afd-8d480a9bf9db": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "b4c175e4-94b6-4ce3-8afd-8d480a9bf9db",
+          "passage_id": "aca76ca2-0f0e-4037-930f-a48a3a6afe14",
+          "quote": "The Shift to cgroup v2 in Kubernetes: What You Need to Know\nIn Linux, cgroups (control groups) are a kernel feature used for managing system resources. Kubernetes uses cgroups to a"
+        }
+      ]
+    },
+    {
+      "id": "Q15",
+      "query": "대기 중인 작업의 Kueue 승인 상태를 Headlamp 화면에서 추적하는 방법",
+      "pool": "work",
+      "group": "kubernetes",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "3631f864-dddd-4483-bf3c-233a9de34476": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "3631f864-dddd-4483-bf3c-233a9de34476",
+          "passage_id": "9dfb65ad-f355-473c-85e1-b456710ee62e",
+          "quote": "Why Is My Kubernetes Job Still Pending? Tracing Kueue Admission with Headlamp\nYou submit a Kubernetes Job and wait for its Pods to appear. A minute passes. Then another. The Job is"
+        }
+      ]
+    },
+    {
+      "id": "Q16",
+      "query": "보상 해킹을 수동 판정하려면 작업 맥락과 코드를 읽어야 한다는 평가 보고서",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "4404b791-65ce-4826-8745-a5d5939a5650": 3,
+        "55ddc0e8-31ca-406c-9884-28af3e78af15": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "4404b791-65ce-4826-8745-a5d5939a5650",
+          "passage_id": "073c9f12-abd8-41df-a211-2503dbcf7d44",
+          "quote": "METR public eval report. Examples include attempts to read answer files from public repositories, hardcode solutions, and inspect scoring behavior; manual classification requires t"
+        },
+        {
+          "document_id": "55ddc0e8-31ca-406c-9884-28af3e78af15",
+          "passage_id": "41bdbedf-db92-4ebb-8502-c9cd4e5b0314",
+          "quote": "METR evaluation report. Exact passage: “manually recognizing reward hacking can be easy in some cases when the model explicitly describes its strategy, but in other cases it can re"
+        }
+      ]
+    },
+    {
+      "id": "Q17",
+      "query": "재시도로 복구된 Inspect 로그도 error 상태를 유지해서 재실행 대상이 되는가",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "46e2bb56-3184-4b9c-b893-bfbcfc973b24": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "46e2bb56-3184-4b9c-b893-bfbcfc973b24",
+          "passage_id": "9adfd00d-418e-414d-814e-f2ba00114afb",
+          "quote": "Inspect official error-handling docs. Exact passage: “the recovered log keeps status ‘error’ — so eval_set() and eval-retry will re-run them.” This distinguishes retry recovery fro"
+        }
+      ]
+    },
+    {
+      "id": "Q18",
+      "query": "Inspect에서 표본별 재시도와 토큰 비용 상한을 정하는 옵션",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "313ceee7-7110-40c9-8edb-f7c0adcc8108": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "313ceee7-7110-40c9-8edb-f7c0adcc8108",
+          "passage_id": "02bab84e-0179-45a9-ba10-b670d4e7540a",
+          "quote": "Inspect official options docs. Exact passages: “Retry samples if they encounter errors (no retries by default).” “Limit on total cost (in dollars) for each sample.” It exposes expl"
+        }
+      ]
+    },
+    {
+      "id": "Q19",
+      "query": "평가 로그에서 모델의 입력 및 출력 토큰 사용량을 확인하는 방법",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "737330b3-3d2c-49a4-b7b9-edb3919be9d1": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "737330b3-3d2c-49a4-b7b9-edb3919be9d1",
+          "passage_id": "7c76760f-a9a8-462d-b582-9c957cdd0a0b",
+          "quote": "Inspect official evaluation logging docs. Exact phrase: “Model usage statistics (input and output tokens).” Eval logs preserve run/sample information and retry state."
+        }
+      ]
+    },
+    {
+      "id": "Q20",
+      "query": "METR 평가에서 작업마다 적절한 토큰 예산과 반복 실행 횟수를 정하는 프로토콜",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "a62b2fa2-9624-40c1-83af-59c44a12e1f9": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "a62b2fa2-9624-40c1-83af-59c44a12e1f9",
+          "passage_id": "55b09fca-7e98-44d1-a9bf-a24088ce5166",
+          "quote": "METR evaluation protocol. Exact passage: “Run the model on the test-set tasks, with the appropriate token budget for each task, for the appropriate number of runs.” It lists memori"
+        }
+      ]
+    },
+    {
+      "id": "Q21",
+      "query": "작은 성능 차이를 paired multi-seed BCa bootstrap과 순열 검정으로 평가하는 방법",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "abb8f6e9-4894-4416-895a-6561678e542e": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "abb8f6e9-4894-4416-895a-6561678e542e",
+          "passage_id": "fed6c7e5-65e8-47c4-b912-0be976322c1f",
+          "quote": "Research paper abstract. Exact passage: “paired multi-seed runs, bias-corrected and accelerated (BCa) bootstrap confidence intervals, and a sign-flip permutation test on per-seed d"
+        }
+      ]
+    },
+    {
+      "id": "Q22",
+      "query": "이슈와 무관하거나 지나치게 구체적인 단위 테스트를 사람이 검토한 SWE 벤치마크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "ecaf609d-1d21-47a2-8369-87f2368cf294": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "ecaf609d-1d21-47a2-8369-87f2368cf294",
+          "passage_id": "dc6b3ee0-6b17-4261-a949-8382936bb4e4",
+          "quote": "OpenAI benchmark evaluation report. Exact passages: “The unit tests used to evaluate the correctness of a solution are often overly specific, and in some cases are even unrelated t"
+        }
+      ]
+    },
+    {
+      "id": "Q23",
+      "query": "macOS Docker 컨테이너가 실행되는 리눅스 가상 머신의 관리 방식",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "f8f1374f-5d4b-4804-95c2-96e6c42aa5fa": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "f8f1374f-5d4b-4804-95c2-96e6c42aa5fa",
+          "passage_id": "23342ab7-2329-4372-9bb5-40d75c7dd1ec",
+          "quote": "Docker official docs. Exact passage: “Docker Desktop supports multiple Virtual Machine Managers (VMMs) to power the Linux VM that runs containers.” macOS Docker containers therefor"
+        }
+      ]
+    },
+    {
+      "id": "Q24",
+      "query": "애플이 제공한 설치 이미지로 Mac 안에서 macOS 가상 머신을 실행하는 프레임워크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "604f4ca4-43ee-4c0a-a82c-ac88403cb52a": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "604f4ca4-43ee-4c0a-a82c-ac88403cb52a",
+          "passage_id": "94dc0360-3426-4042-bfa1-641feda8c31e",
+          "quote": "Apple Virtualization framework documentation. Exact passage: “The Virtualization framework provides everything you need to run macOS in a VM using macOS installation images you dow"
+        }
+      ]
+    },
+    {
+      "id": "Q25",
+      "query": "sandbox-exec 명령이 폐기 예정이라고 명시한 매뉴얼",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "638b3905-6674-47b3-8a85-2e35e9906b9a": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "638b3905-6674-47b3-8a85-2e35e9906b9a",
+          "passage_id": "edde40b2-aa78-46ae-b1bb-5fc5f2384409",
+          "quote": "macOS manual page mirror. Exact passage: “The sandbox-exec command is DEPRECATED.” It describes applying a profile to a process command; status and behavior must be revalidated on "
+        }
+      ]
+    },
+    {
+      "id": "Q26",
+      "query": "entitlements 파일에 요청한 기능으로만 앱의 문서와 시스템 자원 접근을 제한하는 모델",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "f86414e6-072d-4906-8df0-24f4529116a2": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "f86414e6-072d-4906-8df0-24f4529116a2",
+          "passage_id": "1c1a7613-7b23-4827-a907-e6f798dfa866",
+          "quote": "Apple documentation. Exact passage: “App Sandbox protects documents and system resources from malicious abuse by limiting your app’s access to only the capabilities you request in "
+        }
+      ]
+    },
+    {
+      "id": "Q27",
+      "query": "보상을 생성하는 과정을 모델이 변경하고 은폐하는 reward tampering 연구",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "5f6c0db6-3af5-4d44-a433-cb36a2c913d8": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "5f6c0db6-3af5-4d44-a433-cb36a2c913d8",
+          "passage_id": "c9f7cc69-32c0-43a7-926c-c005c1f8730f",
+          "quote": "Anthropic research paper explainer. Exact passage: “Reward tampering is a specific, more troubling form of specification gaming.” It describes the model altering the reward-generat"
+        }
+      ]
+    },
+    {
+      "id": "Q28",
+      "query": "네트워크를 모델 엔드포인트로 제한하고 깨끗한 컨테이너에서 패치를 재채점하는 벤치마크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "2a4dd833-2eb6-493d-a7e2-1f2b86e22731": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "2a4dd833-2eb6-493d-a7e2-1f2b86e22731",
+          "passage_id": "63b2e513-fb5f-46b4-8aaa-255208f80185",
+          "quote": "Paper abstract from Research Lab discovery. Exact passage: “A hardened protocol restricts network access to the model endpoint and re-grades every patch in a clean container.” It a"
+        }
+      ]
+    },
+    {
+      "id": "Q29",
+      "query": "공개 테스트와 조합형 비공개 테스트의 통과율 격차로 보상 해킹을 측정하는 벤치마크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "c7f6d853-ff29-42fc-aa95-e6eb6eda6c8e": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "c7f6d853-ff29-42fc-aa95-e6eb6eda6c8e",
+          "passage_id": "fb8377a6-8969-49d0-8ea5-5ab19f2acf92",
+          "quote": "Paper abstract from Research Lab discovery. Exact passage: “we use the gap in pass rates on these two suites to quantify reward hacking.” The design contrasts visible tests exercis"
+        }
+      ]
+    },
+    {
+      "id": "Q30",
+      "query": "테스트 파일 수정과 하드코딩을 비공개 테스트 및 LLM judge로 탐지하는 벤치마크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "13539686-dbab-4566-84a9-2a4e1024934a": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "13539686-dbab-4566-84a9-2a4e1024934a",
+          "passage_id": "e216838f-5fa0-44fa-bef1-b5952231998b",
+          "quote": "Paper abstract from Research Lab discovery. Exact passage: “agents can easily reward hack, such as by hardcoding test cases or editing the testing files.” Detection combines held-o"
+        }
+      ]
+    },
+    {
+      "id": "Q31",
+      "query": "여러 코드 해답 표본에서 pass at k의 불편 추정량을 계산하는 논문",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "b0d0fbb6-c9fe-4417-bb47-011248cfc086": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "b0d0fbb6-c9fe-4417-bb47-011248cfc086",
+          "passage_id": "74714d0a-81cf-447e-acea-0c92e1e37397",
+          "quote": "Codex/HumanEval paper. Exact passage: “To estimate pass@k we sample n solutions per problem (n>k) and compute the unbiased estimator.” The paper defines functional correctness usin"
+        }
+      ]
+    },
+    {
+      "id": "Q32",
+      "query": "Leetcode Atcoder Codeforces 대회 문제를 계속 수집해 오염을 줄이는 코드 평가",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "b6235342-bb83-41f9-8714-d954b716d7dc": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "b6235342-bb83-41f9-8714-d954b716d7dc",
+          "passage_id": "da6266a8-4483-4757-b0c7-a6bba938d4b1",
+          "quote": "ICLR 2025 paper abstract. Exact passage: “collects new problems over time from contests across three competition platforms, Leetcode, Atcoder, and Codeforces.”"
+        }
+      ]
+    },
+    {
+      "id": "Q33",
+      "query": "고유 환경과 사람이 쓴 해답 및 종합 테스트를 갖춘 실제 터미널 작업 벤치마크",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "2deb06fd-89cc-4cbd-b450-b5b2c739a7c1": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "2deb06fd-89cc-4cbd-b450-b5b2c739a7c1",
+          "passage_id": "5a296bdf-3f8a-48a1-90b5-3779c31a6b7b",
+          "quote": "Paper abstract. Exact passage: “Each task features a unique environment, human-written solution, and comprehensive tests for verification.” The released benchmark is curated termin"
+        }
+      ]
+    },
+    {
+      "id": "Q34",
+      "query": "풀 리퀘스트의 기반 커밋에서 저장소를 설치한 Docker Image를 만드는 SWE 평가",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "fb4443bb-2c8a-432d-9a54-98c4785383e4": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "fb4443bb-2c8a-432d-9a54-98c4785383e4",
+          "passage_id": "6665105d-f2e9-40b9-b3ee-8706a0e17ad1",
+          "quote": "Official benchmark page. Exact passage: “Per instance, we construct an execution environment (Docker Image) with the repository successfully installed at the commit that the Pull R"
+        }
+      ]
+    },
+    {
+      "id": "Q35",
+      "query": "GitHub의 실제 이슈 설명과 코드베이스를 주고 코드를 수정하는 소프트웨어 수리 평가",
+      "pool": "personal",
+      "group": "research",
+      "answerable": true,
+      "language_pair": "ko-en",
+      "relevance": {
+        "1da8a7d6-bd3e-4faf-880a-6e2fca7d6abc": 3
+      },
+      "source_review_level": "agent_source_reviewed_positive_only",
+      "anchors": [
+        {
+          "document_id": "1da8a7d6-bd3e-4faf-880a-6e2fca7d6abc",
+          "passage_id": "b97a4f7c-cc2e-4d0c-a4bc-a8fd5e1e73b5",
+          "quote": "ICLR 2024 paper abstract. Exact passage: “Given a codebase along with a description of an issue to be resolved, a language model is tasked with editing the codebase to address the "
+        }
+      ]
+    }
+  ]
+}

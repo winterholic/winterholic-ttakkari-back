@@ -1,0 +1,7 @@
+{
+  "state": "unavailable",
+  "engine": "codex",
+  "model": "gpt-6-luna",
+  "diagnosis": "nonzero_exit",
+  "consumed": true
+}

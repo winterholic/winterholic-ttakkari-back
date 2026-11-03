@@ -1,0 +1,141 @@
+BASE ca23a4232aa83afeda43dcaf2e3e48b030810d77
+COMMAND ['.venv/bin/pytest', '-q', 'unit_tests/test_kb_v3_provenance_policy.py', 'unit_tests/test_kb_v3_conflict_redetection.py']
+EXIT 1
+F.F.......FF....                                                         [100%]
+=================================== FAILURES ===================================
+_ test_legacy_classification_keeps_the_most_restrictive_trusted_scope[research:personal:x-origin_meta0-prefixes0-work] _
+
+doc_key = 'research:personal:x'
+origin_meta = {'via': 'collector', 'scope': 'work'}, prefixes = ()
+expected = 'work'
+
+    @pytest.mark.parametrize(
+        ("doc_key", "origin_meta", "prefixes", "expected"),
+        [
+            ("research:personal:x", {"via": "collector", "scope": "work"}, (), "work"),
+            ("research:work:x", {"via": "collector", "scope": "personal"}, (), "work"),
+            ("research:personal:x", {"via": "collector", "scope": "work"}, ("research:personal:",), "work"),
+            ("collector:x", {"via": "collector", "scope": "work"}, ("collector:",), "work"),
+            ("research:work:x", None, ("research:",), "work"),
+            ("research:personal:x", None, (), "personal"),
+            ("collector:x", {"via": "collector", "scope": "personal"}, (), "personal"),
+            ("operator:x", None, ("operator:",), "personal"),
+            ("unknown:x", None, (), "work"),
+            ("unknown:x", {"scope": "personal"}, (), "work"),
+        ],
+    )
+    def test_legacy_classification_keeps_the_most_restrictive_trusted_scope(
+        doc_key, origin_meta, prefixes, expected
+    ):
+        scope, _rule = classify(doc_key, origin_meta, prefixes)
+>       assert scope == expected
+E       AssertionError: assert 'personal' == 'work'
+E         
+E         - work
+E         + personal
+
+unit_tests/test_kb_v3_provenance_policy.py:27: AssertionError
+_ test_legacy_classification_keeps_the_most_restrictive_trusted_scope[research:personal:x-origin_meta2-prefixes2-work] _
+
+doc_key = 'research:personal:x'
+origin_meta = {'via': 'collector', 'scope': 'work'}
+prefixes = ('research:personal:',), expected = 'work'
+
+    @pytest.mark.parametrize(
+        ("doc_key", "origin_meta", "prefixes", "expected"),
+        [
+            ("research:personal:x", {"via": "collector", "scope": "work"}, (), "work"),
+            ("research:work:x", {"via": "collector", "scope": "personal"}, (), "work"),
+            ("research:personal:x", {"via": "collector", "scope": "work"}, ("research:personal:",), "work"),
+            ("collector:x", {"via": "collector", "scope": "work"}, ("collector:",), "work"),
+            ("research:work:x", None, ("research:",), "work"),
+            ("research:personal:x", None, (), "personal"),
+            ("collector:x", {"via": "collector", "scope": "personal"}, (), "personal"),
+            ("operator:x", None, ("operator:",), "personal"),
+            ("unknown:x", None, (), "work"),
+            ("unknown:x", {"scope": "personal"}, (), "work"),
+        ],
+    )
+    def test_legacy_classification_keeps_the_most_restrictive_trusted_scope(
+        doc_key, origin_meta, prefixes, expected
+    ):
+        scope, _rule = classify(doc_key, origin_meta, prefixes)
+>       assert scope == expected
+E       AssertionError: assert 'personal' == 'work'
+E         
+E         - work
+E         + personal
+
+unit_tests/test_kb_v3_provenance_policy.py:27: AssertionError
+_ test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts[resolved_both_valid-user-False-0] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c2942b0>
+status = 'resolved_both_valid', resolved_by = 'user', replace_assertion = False
+expected_count = 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "resolved_by", "replace_assertion", "expected_count"),
+        [
+            ("resolved_both_valid", "user", False, 0),
+            ("resolved_both_valid", None, False, 0),
+            ("open", None, False, 0),
+            ("resolved_both_valid", "user", True, 1),
+            ("kept_separate", "system:revision_supersession", False, 1),
+            ("resolved_both_valid", "system:revision_supersession", False, 1),
+        ],
+    )
+    async def test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts(
+        monkeypatch, status, resolved_by, replace_assertion, expected_count
+    ):
+        db = ConflictStore(status, resolved_by=resolved_by, replace_assertion=replace_assertion)
+        current = {assertion.document_id: revision.id for assertion, revision in db.rows}
+        monkeypatch.setattr(
+            conflicts, "_current_revision_id", AsyncMock(side_effect=lambda _db, doc_id: current[doc_id])
+        )
+        try:
+            found = await conflicts.detect_conflicts_for_entity(db, db.entity.id)
+>           assert len(found) == expected_count
+E           assert 1 == 0
+E            +  where 1 = len([<ttakkari.kb_ontology_models.KbConflict object at 0x10c2fbed0>])
+
+unit_tests/test_kb_v3_conflict_redetection.py:89: AssertionError
+_ test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts[resolved_both_valid-None-False-0] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c6b4830>
+status = 'resolved_both_valid', resolved_by = None, replace_assertion = False
+expected_count = 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "resolved_by", "replace_assertion", "expected_count"),
+        [
+            ("resolved_both_valid", "user", False, 0),
+            ("resolved_both_valid", None, False, 0),
+            ("open", None, False, 0),
+            ("resolved_both_valid", "user", True, 1),
+            ("kept_separate", "system:revision_supersession", False, 1),
+            ("resolved_both_valid", "system:revision_supersession", False, 1),
+        ],
+    )
+    async def test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts(
+        monkeypatch, status, resolved_by, replace_assertion, expected_count
+    ):
+        db = ConflictStore(status, resolved_by=resolved_by, replace_assertion=replace_assertion)
+        current = {assertion.document_id: revision.id for assertion, revision in db.rows}
+        monkeypatch.setattr(
+            conflicts, "_current_revision_id", AsyncMock(side_effect=lambda _db, doc_id: current[doc_id])
+        )
+        try:
+            found = await conflicts.detect_conflicts_for_entity(db, db.entity.id)
+>           assert len(found) == expected_count
+E           assert 1 == 0
+E            +  where 1 = len([<ttakkari.kb_ontology_models.KbConflict object at 0x10c37e3f0>])
+
+unit_tests/test_kb_v3_conflict_redetection.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_kb_v3_provenance_policy.py::test_legacy_classification_keeps_the_most_restrictive_trusted_scope[research:personal:x-origin_meta0-prefixes0-work]
+FAILED unit_tests/test_kb_v3_provenance_policy.py::test_legacy_classification_keeps_the_most_restrictive_trusted_scope[research:personal:x-origin_meta2-prefixes2-work]
+FAILED unit_tests/test_kb_v3_conflict_redetection.py::test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts[resolved_both_valid-user-False-0]
+FAILED unit_tests/test_kb_v3_conflict_redetection.py::test_redetection_preserves_same_pair_decisions_without_hiding_new_conflicts[resolved_both_valid-None-False-0]
+4 failed, 12 passed in 0.21s

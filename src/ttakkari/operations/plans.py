@@ -22,10 +22,28 @@ from ttakkari.config import get_settings
 BACK = Path(__file__).resolve().parents[3]
 SCRIPTS = BACK / "scripts"
 
-HEAVY = ("backup_db", "data_snapshot", "restore_rehearsal", "snapshot_verify")
-INLINE = ("runtime_report", "performance_baseline", "backup_status", "collection_scope_preview", "collection_scope_apply")
+HEAVY = (
+    "backup_db",
+    "data_snapshot",
+    "restore_rehearsal",
+    "snapshot_verify",
+    "kb_v3_verify",
+)
+INLINE = (
+    "runtime_report",
+    "performance_baseline",
+    "backup_status",
+    "collection_scope_preview",
+    "collection_scope_apply",
+)
 KINDS = (*HEAVY, *INLINE)
-TIMEOUT_SECONDS = {"backup_db": 900, "data_snapshot": 1800, "restore_rehearsal": 1800, "snapshot_verify": 1800}
+TIMEOUT_SECONDS = {
+    "backup_db": 900,
+    "data_snapshot": 1800,
+    "restore_rehearsal": 1800,
+    "snapshot_verify": 1800,
+    "kb_v3_verify": 180,
+}
 BACKUP_RETENTION_DAYS = 30
 RESTORE_DB_PREFIX = "ttakkari_restore_rehearsal_"
 VERIFY_DIR = ".verify"
@@ -287,6 +305,12 @@ def make_plan(kind: str, job_id: str) -> Plan:
             key, _ = passphrase_file(create=False)
             argv += ["--passphrase-file", str(key)]
         return Plan(kind, argv, env, timeout, {"target_db": target, "manifest": manifest.name})
+    if kind == "kb_v3_verify":
+        # Python operation; backup-only OpenSSL checks do not apply.
+        env["TTAKKARI_DATABASE_URL"] = get_settings().database_url
+        python_bin = str(BACK / ".venv/bin/python") if (BACK / ".venv/bin/python").is_file() else sys.executable
+        argv = [python_bin, "-m", "ttakkari.operations.kb_v3_verify", job_id]
+        return Plan(kind, argv, env, timeout, {"kind": "kb_v3_verify"})
     _need()
     manifest = latest_manifest("data")
     verify_root = (backup_dir() / VERIFY_DIR).resolve()

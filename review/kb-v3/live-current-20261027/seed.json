@@ -1,0 +1,400 @@
+{
+  "ingest": [
+    {
+      "document_id": "36fda74e-9410-4ad7-a48c-5c3524bc8693",
+      "revision_id": "c5ef9e98-eab1-42a1-a883-d33877043eef",
+      "rev_no": 1,
+      "created": true,
+      "passage_count": 1,
+      "job_id": "587f3dd5-b525-47ee-b0f9-b7cd7f3486fa",
+      "pipeline_status": "registered"
+    },
+    {
+      "document_id": "750bd787-91c4-4bbe-b8cc-988eeefde0ed",
+      "revision_id": "031d93b6-ec6e-4fb9-8f02-dcf2566991f6",
+      "rev_no": 1,
+      "created": true,
+      "passage_count": 1,
+      "job_id": "f312406e-7077-4fd1-a6dc-79f426292ffb",
+      "pipeline_status": "registered"
+    }
+  ],
+  "jobs": {
+    "items": [
+      {
+        "id": "f312406e-7077-4fd1-a6dc-79f426292ffb",
+        "document_id": "750bd787-91c4-4bbe-b8cc-988eeefde0ed",
+        "revision_id": "031d93b6-ec6e-4fb9-8f02-dcf2566991f6",
+        "document_title": "Kubernetes 한국어 안내",
+        "rev_no": 1,
+        "status": "degraded",
+        "current_stage": "canonicalizing",
+        "hold_reason": "l2_disabled",
+        "error_code": null,
+        "error_detail": "l2_disabled",
+        "attempt_count": 1,
+        "max_attempts": 3,
+        "pipeline_version": "kb-v3.0",
+        "metrics": {
+          "stage_statuses": {
+            "linking": "succeeded",
+            "parsing": "succeeded",
+            "chunking": "succeeded",
+            "indexing": "succeeded",
+            "extracting": "degraded",
+            "canonicalizing": "succeeded"
+          },
+          "passage_count": 1,
+          "entity_count": 3,
+          "assertion_count": 0,
+          "relation_count": 1,
+          "relation_candidate_count": 0,
+          "conflict_count": 0,
+          "l2_calls": 0
+        },
+        "stages": [
+          {
+            "stage": "parsing",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "started_at": "2026-10-26T22:40:39.358368+00:00",
+            "finished_at": "2026-10-26T22:40:39.362481+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "structure-md-v1",
+            "detail": {
+              "body_len": 92,
+              "parser_kind": "structure_markdown",
+              "heading_spans": 0,
+              "locator_spans": 1,
+              "source_media_type": "text/plain",
+              "revision_parser_version": "raw-v1"
+            }
+          },
+          {
+            "stage": "chunking",
+            "status": "succeeded",
+            "duration_ms": 0,
+            "started_at": "2026-10-26T22:40:39.365839+00:00",
+            "finished_at": "2026-10-26T22:40:39.368571+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "chunker-reuse-v1",
+            "detail": {
+              "passage_count": 1,
+              "reused_existing": true,
+              "immutable_preserved": true,
+              "structured_passages": 0
+            }
+          },
+          {
+            "stage": "extracting",
+            "status": "degraded",
+            "duration_ms": 152,
+            "started_at": "2026-10-26T22:40:39.389810+00:00",
+            "finished_at": "2026-10-26T22:40:39.544492+00:00",
+            "error_message": "l2_disabled",
+            "attempt_count": 1,
+            "processor_version": "extract-l012-v1",
+            "detail": {
+              "l2": {
+                "reason": "l2_disabled",
+                "adapter": "disabled",
+                "available": false,
+                "calls_made": 0,
+                "daily_budget_remaining_before": 200
+              },
+              "reason": "l2_disabled",
+              "persisted": {
+                "visibility": "global",
+                "origin_scope": "personal",
+                "aliases_created": 0,
+                "entities_reused": 3,
+                "entities_created": 2,
+                "evidences_reused": 0,
+                "mentions_created": 0,
+                "relations_reused": 0,
+                "assertions_reused": 0,
+                "evidences_created": 4,
+                "relations_created": 1,
+                "assertions_created": 0,
+                "relations_promoted": 1,
+                "relations_scope_blocked": 0,
+                "relation_evidence_created": 1
+              },
+              "l0_filtered": {
+                "over_cap": 0,
+                "low_frequency": 0,
+                "symbol_not_entity": 0,
+                "heading_not_concept": 0
+              },
+              "l2_calls_made": 0,
+              "l1_seed_entities": 1,
+              "l0_entities_count": 0,
+              "l1_mentions_count": 1,
+              "rejected_mentions": 0,
+              "verified_mentions": 3,
+              "l0_relations_count": 0,
+              "l2_relations_count": 0,
+              "rejected_relations": 0,
+              "verified_evidences": 4,
+              "verified_relations": 1,
+              "l0_assertions_count": 0,
+              "l2_assertions_count": 0,
+              "rejected_assertions": 0,
+              "verified_assertions": 0,
+              "l1_selected_passages": 1,
+              "explicit_relations_count": 1,
+              "hallucinated_quotes_count": 0
+            }
+          },
+          {
+            "stage": "linking",
+            "status": "succeeded",
+            "duration_ms": 8,
+            "started_at": "2026-10-26T22:40:39.546652+00:00",
+            "finished_at": "2026-10-26T22:40:39.556351+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "link-resolver-v1",
+            "detail": {
+              "capped": false,
+              "entities_linked": 3,
+              "resolution_steps": {
+                "EXACT_NORM_NAME": 3
+              },
+              "ambiguity_conflicts": 0,
+              "resolved_to_other_entity": []
+            }
+          },
+          {
+            "stage": "indexing",
+            "status": "succeeded",
+            "duration_ms": 7,
+            "started_at": "2026-10-26T22:40:39.558409+00:00",
+            "finished_at": "2026-10-26T22:40:39.567570+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "indexing-v2",
+            "detail": {
+              "model_key": "hash:kb-full-v1:test",
+              "lexical_ready": true,
+              "passage_count": 1,
+              "vectors_total": 1,
+              "vectors_created": 1,
+              "too_long_passages": []
+            }
+          },
+          {
+            "stage": "canonicalizing",
+            "status": "succeeded",
+            "duration_ms": 15,
+            "started_at": "2026-10-26T22:40:39.570251+00:00",
+            "finished_at": "2026-10-26T22:40:39.586808+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "canonicalizing-v1",
+            "detail": {
+              "canonicals_updated": 3,
+              "conflicts_detected": 0,
+              "entities_processed": 3,
+              "assertions_superseded": 0
+            }
+          }
+        ],
+        "created_at": "2026-10-26T22:40:38.405886+00:00",
+        "updated_at": "2026-10-26T22:40:39.588171+00:00",
+        "completed_at": "2026-10-26T22:40:39.588097+00:00"
+      },
+      {
+        "id": "587f3dd5-b525-47ee-b0f9-b7cd7f3486fa",
+        "document_id": "36fda74e-9410-4ad7-a48c-5c3524bc8693",
+        "revision_id": "c5ef9e98-eab1-42a1-a883-d33877043eef",
+        "document_title": "Kubernetes networking",
+        "rev_no": 1,
+        "status": "degraded",
+        "current_stage": "canonicalizing",
+        "hold_reason": "l2_disabled",
+        "error_code": null,
+        "error_detail": "l2_disabled",
+        "attempt_count": 1,
+        "max_attempts": 3,
+        "pipeline_version": "kb-v3.0",
+        "metrics": {
+          "stage_statuses": {
+            "linking": "succeeded",
+            "parsing": "succeeded",
+            "chunking": "succeeded",
+            "indexing": "succeeded",
+            "extracting": "degraded",
+            "canonicalizing": "succeeded"
+          },
+          "passage_count": 1,
+          "entity_count": 2,
+          "assertion_count": 0,
+          "relation_count": 0,
+          "relation_candidate_count": 0,
+          "conflict_count": 0,
+          "l2_calls": 0
+        },
+        "stages": [
+          {
+            "stage": "parsing",
+            "status": "succeeded",
+            "duration_ms": 2,
+            "started_at": "2026-10-26T22:40:39.356885+00:00",
+            "finished_at": "2026-10-26T22:40:39.361503+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "structure-md-v1",
+            "detail": {
+              "body_len": 164,
+              "parser_kind": "structure_markdown",
+              "heading_spans": 0,
+              "locator_spans": 1,
+              "source_media_type": "text/plain",
+              "revision_parser_version": "raw-v1"
+            }
+          },
+          {
+            "stage": "chunking",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "started_at": "2026-10-26T22:40:39.364571+00:00",
+            "finished_at": "2026-10-26T22:40:39.367485+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "chunker-reuse-v1",
+            "detail": {
+              "passage_count": 1,
+              "reused_existing": true,
+              "immutable_preserved": true,
+              "structured_passages": 0
+            }
+          },
+          {
+            "stage": "extracting",
+            "status": "degraded",
+            "duration_ms": 151,
+            "started_at": "2026-10-26T22:40:39.369790+00:00",
+            "finished_at": "2026-10-26T22:40:39.522791+00:00",
+            "error_message": "l2_disabled",
+            "attempt_count": 1,
+            "processor_version": "extract-l012-v1",
+            "detail": {
+              "l2": {
+                "reason": "l2_disabled",
+                "adapter": "disabled",
+                "available": false,
+                "calls_made": 0,
+                "daily_budget_remaining_before": 200
+              },
+              "reason": "l2_disabled",
+              "persisted": {
+                "visibility": "global",
+                "origin_scope": "personal",
+                "aliases_created": 0,
+                "entities_reused": 0,
+                "entities_created": 2,
+                "evidences_reused": 0,
+                "mentions_created": 0,
+                "relations_reused": 0,
+                "assertions_reused": 0,
+                "evidences_created": 2,
+                "relations_created": 0,
+                "assertions_created": 0,
+                "relations_promoted": 0,
+                "relations_scope_blocked": 0,
+                "relation_evidence_created": 0
+              },
+              "l0_filtered": {
+                "over_cap": 0,
+                "low_frequency": 0,
+                "symbol_not_entity": 0,
+                "heading_not_concept": 0
+              },
+              "l2_calls_made": 0,
+              "l1_seed_entities": 2,
+              "l0_entities_count": 0,
+              "l1_mentions_count": 2,
+              "rejected_mentions": 0,
+              "verified_mentions": 2,
+              "l0_relations_count": 0,
+              "l2_relations_count": 0,
+              "rejected_relations": 0,
+              "verified_evidences": 2,
+              "verified_relations": 0,
+              "l0_assertions_count": 0,
+              "l2_assertions_count": 0,
+              "rejected_assertions": 0,
+              "verified_assertions": 0,
+              "l1_selected_passages": 1,
+              "explicit_relations_count": 0,
+              "hallucinated_quotes_count": 0
+            }
+          },
+          {
+            "stage": "linking",
+            "status": "succeeded",
+            "duration_ms": 19,
+            "started_at": "2026-10-26T22:40:39.525254+00:00",
+            "finished_at": "2026-10-26T22:40:39.546780+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "link-resolver-v1",
+            "detail": {
+              "capped": false,
+              "entities_linked": 2,
+              "resolution_steps": {
+                "EXACT_NORM_NAME": 2
+              },
+              "ambiguity_conflicts": 0,
+              "resolved_to_other_entity": []
+            }
+          },
+          {
+            "stage": "indexing",
+            "status": "succeeded",
+            "duration_ms": 9,
+            "started_at": "2026-10-26T22:40:39.548818+00:00",
+            "finished_at": "2026-10-26T22:40:39.559401+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "indexing-v2",
+            "detail": {
+              "model_key": "hash:kb-full-v1:test",
+              "lexical_ready": true,
+              "passage_count": 1,
+              "vectors_total": 1,
+              "vectors_created": 1,
+              "too_long_passages": []
+            }
+          },
+          {
+            "stage": "canonicalizing",
+            "status": "succeeded",
+            "duration_ms": 16,
+            "started_at": "2026-10-26T22:40:39.561258+00:00",
+            "finished_at": "2026-10-26T22:40:39.578815+00:00",
+            "error_message": null,
+            "attempt_count": 1,
+            "processor_version": "canonicalizing-v1",
+            "detail": {
+              "canonicals_updated": 2,
+              "conflicts_detected": 0,
+              "entities_processed": 2,
+              "assertions_superseded": 0
+            }
+          }
+        ],
+        "created_at": "2026-10-26T22:40:38.393708+00:00",
+        "updated_at": "2026-10-26T22:40:39.580855+00:00",
+        "completed_at": "2026-10-26T22:40:39.580663+00:00"
+      }
+    ],
+    "total": 2,
+    "limit": 50,
+    "offset": 0
+  },
+  "purpose": "UI acceptance; L2 disabled/hash embedder, no quality approval"
+}

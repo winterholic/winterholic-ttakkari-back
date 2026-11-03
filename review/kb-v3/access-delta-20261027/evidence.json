@@ -1,0 +1,74 @@
+{
+  "base_revision": "515982f3c120f166a370bd326504b2790260c093",
+  "run_id": "b2756214-153d-4251-84e3-9139c3dd09d2",
+  "database": "Run-owned PostgreSQL, loopback port 61321, role ttk_test; marker matched before tests; no DSN recorded",
+  "source": "PYTHONPATH=src overrides the shared editable environment",
+  "red": {
+    "command": "PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_v3_collection_access_delta.py unit_tests/test_kb_v3_pipeline.py::test_collector_delivery_queues_pipeline_job",
+    "exit_code": 1,
+    "result": "5 failed in 1.10s"
+  },
+  "related": {
+    "command": "UV_CACHE_DIR=\"$PWD/.cache/uv\" PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_v3_collection_access_delta.py tests/test_collection_scope_merge.py tests/test_collection_scope_operations.py tests/test_kb_agent_api.py tests/test_kb_library_api.py tests/test_kb_library.py tests/test_kb_retrieval.py tests/test_kb_v3_schema_migration.py tests/test_kb_v3_schema_realdb.py tests/test_generation_deployment.py unit_tests/test_kb_access.py unit_tests/test_kb_v3_pipeline.py",
+    "exit_code": 0,
+    "result": "151 passed in 16.90s"
+  },
+  "adjacent": {
+    "command": "UV_CACHE_DIR=\"$PWD/.cache/uv\" PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_v3_api_and_mcp.py tests/test_kb_v3_contract_delta_realdb.py tests/test_kb_v3_backfill.py tests/test_kb_v3_fixes_realdb.py tests/test_kb_v3_fixes_backfill.py tests/test_kb_v3_integration_flow.py",
+    "exit_code": 0,
+    "result": "74 passed in 13.80s"
+  },
+  "final_delta": {
+    "command": "UV_CACHE_DIR=\"$PWD/.cache/uv\" PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q --tb=short tests/test_kb_v3_collection_access_delta.py tests/test_collection_scope_merge.py unit_tests/test_kb_v3_pipeline.py::test_collector_delivery_queues_pipeline_job",
+    "exit_code": 0,
+    "result": "19 passed in 1.92s; overlaps prior tests and includes one added stale-0075 refusal case; do not add as 19 unique tests"
+  },
+  "checks": [
+    "ruff: All checks passed!",
+    "alembic heads: 0076_kb_v3_collection_merge (head)",
+    "git diff --check: exit 0"
+  ],
+  "scope": "Real PostgreSQL fixture + ASGI HTTP/session authentication; not a production/browser/L2 execution",
+  "logs": [
+    {
+      "path": "adjacent-first.log.gz",
+      "sha256_raw": "f7d7e79553617819c124fe7f0bf7e29a0edcebbc54ec63c58548849108e1ae05",
+      "raw_bytes": 2881
+    },
+    {
+      "path": "adjacent-green.log.gz",
+      "sha256_raw": "9ed6900aae0278ea25c0797775c02bb34a14428c76cc3070349049ee3ddd87c8",
+      "raw_bytes": 1062
+    },
+    {
+      "path": "final-delta.log.gz",
+      "sha256_raw": "fc8cb8270926f1097808a1f45001e1eb86c06b545559a3e18f91aa6fdc206c2e",
+      "raw_bytes": 1041
+    },
+    {
+      "path": "green-first.log.gz",
+      "sha256_raw": "2cbddb227e9c48c3df6877e40e8e767de832cd3340dd5d80edd4106a675b04da",
+      "raw_bytes": 928
+    },
+    {
+      "path": "red-real.log.gz",
+      "sha256_raw": "2a80f6ab3782ee9f152c899ddbe6426ec0e0d336a22f55be642688130601af37",
+      "raw_bytes": 3863
+    },
+    {
+      "path": "red.log.gz",
+      "sha256_raw": "13d0f3f641a4c83cb389d71fd63bc34e24e8db01af898241dc05e9f5ec22c0db",
+      "raw_bytes": 51
+    },
+    {
+      "path": "related-first.log.gz",
+      "sha256_raw": "22267fd65f0b553f6c26ccf4dc214155a5733a871ac01998c94ec0725c635d1b",
+      "raw_bytes": 2320
+    },
+    {
+      "path": "related-green.log.gz",
+      "sha256_raw": "b6bacf8b123514fe87510f53b580459f5807ef043ce8eaccbd736d0e0f3424da",
+      "raw_bytes": 911
+    }
+  ]
+}

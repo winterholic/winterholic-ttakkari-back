@@ -398,6 +398,22 @@ class Settings(BaseSettings):
     desk_qwen_cooldown_seconds: float = 60.0
     # 작업판+최근 대화+메시지 글자 수가 이보다 길면 Qwen 컨텍스트(서버 ctx 8192 기준)를 넘길 수 있어 CLI 경로로 보낸다.
     desk_qwen_max_prompt_chars: int = 4000
+    # 지식 도서관 v3 L2(깊은 추출) 어댑터. 제품 기본은 subscription_cli(기존 cloud 구독 CLI/tool-free bounded JSON).
+    # disabled | desk_qwen(접수용 단일 슬롯 공유, 접수가 바쁘면 건너뜀) | openai_compat(전용 OpenAI 호환 서버 kb_l2_base_url) | subscription_cli
+    kb_l2_adapter: Literal["disabled", "desk_qwen", "openai_compat", "subscription_cli"] = "subscription_cli"
+    kb_l2_base_url: str = ""
+    kb_l2_model: str = ""
+    kb_l2_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    kb_l2_max_calls_per_doc: int = Field(default=8, ge=0, le=64)
+    # UTC 하루 안에 모든 문서가 쓸 수 있는 L2 호출 수. 0 이면 호출하지 않는다.
+    kb_l2_daily_budget: int = Field(default=200, ge=0)
+    kb_l2_concurrency: int = Field(default=1, ge=1, le=4)
+    # subscription_cli 세부 설정 (앱 카탈로그/계정 지원 기본 모델 gpt-6-luna)
+    kb_l2_subscription_engine: Literal["codex", "claude"] = "codex"
+    kb_l2_subscription_model: str = "gpt-6-luna"
+    kb_l2_subscription_effort: str = ""
+    kb_l2_subscription_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
+    kb_l2_subscription_concurrency: int = Field(default=1, ge=1, le=4)
     # Qwen desk observer is preparation-only and opt-in only in test/staging environments.
     # No queue consumer or persistent sink is started by application startup.
     qwen35_shadow_enabled: bool = False

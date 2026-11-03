@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import signal
@@ -231,6 +232,20 @@ def _summarize(plan: plans.Plan, status: str, output: str, before: dict | None) 
                    "target_db_dropped": any("리허설 DB 삭제" in ln for ln in lines)}
         if bad or "복원 리허설 통과" not in output or matched == 0:
             return "failed", summary, "복원 리허설 통과 표지가 없거나 행 수가 맞지 않습니다."
+    elif plan.kind == "kb_v3_verify":
+        for line in reversed(output.strip().splitlines()):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    summary = json.loads(line)
+                    break
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        if not summary:
+            return "failed", summary, "kb_v3_verify 요약 JSON을 찾을 수 없습니다."
+        op_status = summary.get("status")
+        if op_status != "succeeded":
+            return "failed", summary, f"kb_v3_verify 검증 미달: {op_status}"
     else:
         found = _VERIFIED.search(output)
         summary = {"files_verified": int(found.group(1)) if found else 0}

@@ -243,8 +243,8 @@ async def test_desk_cold_child_is_owned_and_reaped_before_cancel_returns(tmp_pat
     assert hasattr(run_module, "attempt_handle"), "desk child ownership context is missing"
     monkeypatch.setattr(get_settings(), "home", tmp_path)
     monkeypatch.setattr(get_settings(), "desk_warm_pool", False)
-    monkeypatch.setattr(desk, "_claude_cmd", lambda *_: [sys.executable, "-c", "import time; time.sleep(60)"])
-    monkeypatch.setattr(desk, "_env", lambda _: {})
+    monkeypatch.setattr(desk, "_claude_cmd", lambda *_, **__: [sys.executable, "-c", "import time; time.sleep(60)"])
+    monkeypatch.setattr(desk, "_env", lambda _, **__: {})
     handle = _Handle(task=asyncio.current_task())
     scope = run_module.attempt_handle.set(handle)
     try:

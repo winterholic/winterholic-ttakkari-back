@@ -1,0 +1,5 @@
+{
+  "src/ttakkari/operations/kb_v3_verify.py": "53948a3461de272b9e7566d066fba2ac9e9bbd842bf3248cf35e4d306475f17c",
+  "src/ttakkari/operations/plans.py": "071d6a22ffaf2e43624c23d4c889438069c227c1a1abd5336d150bf4a5c5eb42",
+  "tests/test_kb_v3_verify_operation.py": "fc71cefe14f58dc1fe19b46c3de5655ab1e25be6737130005ee66a3b3bdcfa8e"
+}

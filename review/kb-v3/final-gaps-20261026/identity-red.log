@@ -1,0 +1,23 @@
+env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+cors_origins가 localhost/loopback 전용(http://127.0.0.1:5199)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/review/kb-v3/final-gaps-20261026/run_identity_regressions.py", line 22, in <module>
+    raise SystemExit(asyncio.run(main()))
+                     ~~~~~~~~~~~^^^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 726, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/review/kb-v3/final-gaps-20261026/run_identity_regressions.py", line 8, in main
+    ns=runpy.run_path(str(REPO/'tests/test_kb_v3_identity_concurrency.py'))
+  File "<frozen runpy>", line 294, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/tests/test_kb_v3_identity_concurrency.py", line 13, in <module>
+    from ttakkari.kb_ontology.seed_aliases import SEED_ENTITIES, ensure_seed_entity
+ImportError: cannot import name 'SEED_ENTITIES' from 'ttakkari.kb_ontology.seed_aliases' (/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/src/ttakkari/kb_ontology/seed_aliases.py)

@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from ttakkari.config import HOME, get_settings
 from ttakkari.runs import env_probe
+from ttakkari.timefmt import kst_label
 
 KST = ZoneInfo("Asia/Seoul")
 ENGINES = ("claude", "codex", "antigravity", "muse", "opencode", "copilot", "qwen-local", "host")
@@ -282,7 +283,7 @@ def prompt_note(now: float | None = None) -> str:
         fresh = {n: i["status"] for n, i in items.items() if not i["stale"] or i["measured_at"] is None}
         blocked = [n for n, st in fresh.items() if st == "blocked"]
         unknown = [n for n, st in fresh.items() if st == "unknown"]
-        part = f"- {engine} ({datetime.fromisoformat(view['measured_at']).strftime('%m-%d %H:%M')}): "
+        part = f"- {engine} ({kst_label(datetime.fromisoformat(view['measured_at']))}): "
         part += "blocked " + ", ".join(blocked) if blocked else "nothing blocked"
         if view["stale_items"]:
             part += "; stale " + ", ".join(view["stale_items"])

@@ -34,6 +34,7 @@ from ttakkari.schemas import (
     RunOut,
 )
 from ttakkari.security.auth import User
+from ttakkari.timefmt import kst_label
 
 router = APIRouter(prefix="/api", tags=["desk"])
 
@@ -52,7 +53,8 @@ def quota_wait_reason(run: Run, latest_event: RunEvent | None) -> str | None:
     if (run.status != RunStatus.queued or run.resume_after is None or latest_event is None
             or latest_event.type != "run.waiting"):
         return None
-    return f"한도 대기 ({run.resume_after.isoformat()[:16]})"
+    # resume_after 는 UTC 다. 그대로 찍으면 한국 시간보다 9시간 이른 시각으로 보인다.
+    return f"한도 대기 ({kst_label(run.resume_after)}까지)"
 
 
 def progress_label(event: RunEvent | None) -> str | None:

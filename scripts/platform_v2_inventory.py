@@ -2092,7 +2092,7 @@ def classify_source_file(rel_path: str) -> str:
         "/api/deployments" in p
         or "generation" in p
         or "/deploy/" in p
-        or p.endswith(("/deploy_gate.py", "/deployment.py", "/deploy_test_receipt.py"))
+        or p.endswith(("/deploy_gate.py", "/deployment.py", "/deploy_test_receipt.py", "/release_gc.py"))
     ):
         return "core.generation_deploy"
     if (

@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     # 한도 대기가 이만큼 길어지면 정책 경로 밖의 가용 계정까지 후보를 넓힌다(runs/worker_routing.stranded_stages).
     worker_stranded_wait_seconds: int = Field(default=1800, ge=60)
     worker_stall_seconds: int = Field(default=1800, ge=60)
+    # 오래된 배포 릴리스 자동 정리(release_gc.py). 주기 초, 0 이면 끈다. 최근 N개와 사용 중인 릴리스는 항상 남긴다.
+    release_gc_interval_seconds: int = Field(default=6 * 3600, ge=0)
+    release_gc_keep_recent: int = Field(default=8, ge=2)
+    release_gc_min_age_seconds: int = Field(default=3600, ge=0)
     # 오케스트레이터가 보내는 작업자 지시가 띄어쓰기 없는 압축체면 거절하고 다시 쓰게 한다(runs/prompt_quality.py).
     worker_prompt_quality_gate: bool = True
     # 작업자 완료 계약(상태 줄 확인·완료 확인 Run). 끄면 보고와 Run 흐름이 이전과 같다.

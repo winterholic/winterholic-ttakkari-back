@@ -68,7 +68,7 @@ def env(tmp_path):
         data_dir=data, host_gpu_enabled=True, host_gpu_server_path=str(server),
         host_gpu_models={"tiny": str(model)}, host_gpu_max_runtime_seconds=300, host_gpu_start_timeout_seconds=30,
         host_gpu_swap_growth_gb=1.0, host_gpu_port_min=19500, host_gpu_port_max=19599,
-        host_gpu_reserved_ports=[18987, 57170], qwen_flash_monitor_port=18987)
+        host_gpu_reserved_ports=[18987, 57170])
     yield SimpleNamespace(tmp=tmp_path, server=server, model=model, settings=settings,
                           dir=host_gpu.state_dir(data), gpu=HostGpu(settings))
     state = host_gpu._read_state(host_gpu.state_dir(data))

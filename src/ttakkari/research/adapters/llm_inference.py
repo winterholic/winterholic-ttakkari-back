@@ -24,7 +24,6 @@ from ttakkari.research.resources import checkpoint_resource
 # quant_type은 사전 양자화 GGUF 모델 별칭을 고르는 키다. 등록된 정확한 값만 받고 별칭("Q2K" 등)은 받지 않는다.
 QUANT_TYPE_MODELS: dict[str, str] = {
     "Q4_K_M": "qwen3.5-4b-q4_k_m",
-    "Q2_K": "qwen3.8-flash-next-q2k",
 }
 _LIVE_PHASES = ("starting", "ready")
 logger = logging.getLogger(__name__)
@@ -186,7 +185,7 @@ class LlmInferenceAdapter:
         if "main_gpu" in config:
             errors.append("main_gpu(다중 GPU 지정)는 HostGpu 실행기에서 미지원됩니다 (device='default' 또는 'none'만 지원).")
         if "quant_method" in config:
-            errors.append("quant_method(런타임 양자화 조절)는 미지원됩니다. 사전 양자화 모델(GGUF)을 model 또는 지원되는 quant_type('Q4_K_M', 'Q2_K')으로 지정하십시오.")
+            errors.append("quant_method(런타임 양자화 조절)는 미지원됩니다. 사전 양자화 모델(GGUF)을 model 또는 지원되는 quant_type('Q4_K_M')으로 지정하십시오.")
         if "temperature" in config and config["temperature"] is not None:
             try:
                 temp_val = float(config["temperature"])
@@ -209,7 +208,7 @@ class LlmInferenceAdapter:
             if quant_model:
                 model = quant_model
             elif quant_type is None:
-                errors.append("model 또는 지원되는 quant_type('Q4_K_M', 'Q2_K') 설정이 필수입니다.")
+                errors.append("model 또는 지원되는 quant_type('Q4_K_M') 설정이 필수입니다.")
         elif quant_model and quant_model != model:
             errors.append(
                 f"quant_type '{quant_type}'은 모델 '{quant_model}'에 대응하지만 model은 '{model}'입니다. 하나만 지정하거나 일치시키십시오."

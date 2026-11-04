@@ -77,7 +77,6 @@ os.environ.update({
     # 제품 기본 활성 동작(subscription_cli, gpt-6-luna)은 test_kb_v3_default_activation.py 등 전용 단위 테스트에서 검증한다.
     "TTAKKARI_KB_L2_ADAPTER": "disabled",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",
-    "TTAKKARI_QWEN_FLASH_POLL_SECONDS": "0",
     "TTAKKARI_RESOURCE_SAMPLE_SECONDS": "0",
     "TTAKKARI_LEAD_ARCHIVE_SCAN_SECONDS": "0",
     "TTAKKARI_OPS_LOG_SYNC_SECONDS": "0",

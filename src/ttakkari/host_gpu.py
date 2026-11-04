@@ -730,7 +730,7 @@ class HostGpu:
             "max_seconds": min(req.max_seconds or cap, cap), "start_timeout": self.s.host_gpu_start_timeout_seconds,
             "swap_limit_bytes": int(self.s.host_gpu_swap_growth_gb * GIB),
             "port_min": self.s.host_gpu_port_min, "port_max": self.s.host_gpu_port_max,
-            "reserved_ports": sorted({*self.s.host_gpu_reserved_ports, self.s.qwen_flash_monitor_port}),
+            "reserved_ports": sorted({*self.s.host_gpu_reserved_ports}),
         }
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         spec_path = self.dir / f"spec-{launch_id}.json"

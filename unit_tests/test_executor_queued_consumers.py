@@ -12,7 +12,7 @@ from ttakkari import executor, generation, generation_service, queued_work
 def test_consumers_are_registered_as_maintenance_jobs_with_the_poll_interval():
     settings = SimpleNamespace(
         runtime_poll_seconds=7, collector_consume_enabled=False, collector_control_enabled=False,
-        kb_semantic_enabled=False, reminder_scan_seconds=0, usage_poll_seconds=0, qwen_flash_poll_seconds=0,
+        kb_semantic_enabled=False, reminder_scan_seconds=0, usage_poll_seconds=0,
         resource_sample_seconds=0, lead_archive_scan_seconds=0, ops_log_sync_seconds=0)
 
     jobs = {name: (operation, interval) for name, operation, interval in generation_service.maintenance_jobs(settings)}

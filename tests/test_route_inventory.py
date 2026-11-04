@@ -328,7 +328,6 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("DELETE", "/api/tts/jobs/{job_id}"): "owner-plain",
     ("GET", "/api/accounts"): "owner-plain",
     ("GET", "/api/accounts/override"): "owner-plain",
-    ("GET", "/api/accounts/qwen-flash-usage"): "owner-plain",
     ("GET", "/api/accounts/qwen-usage"): "owner-plain",
     ("GET", "/api/accounts/usage"): "owner-plain",
     ("GET", "/api/accounts/usage/cached"): "owner-plain",

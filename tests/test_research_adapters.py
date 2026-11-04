@@ -777,7 +777,7 @@ def test_llm_inference_parameter_rejections_and_quant_type_mapping() -> None:
 
     # 4. quant_type mapping
     assert len(adapter.validate_config({"quant_type": "Q4_K_M"}, scope="personal")) == 0
-    assert len(adapter.validate_config({"quant_type": "Q2_K"}, scope="personal")) == 0
+    assert any("지원되지 않는 quant_type" in e for e in adapter.validate_config({"quant_type": "Q2_K"}, scope="personal"))
     # unsupported quant_type must NOT fall back silently, but be rejected
     errors_bad_quant = adapter.validate_config({"quant_type": "Q8_0"}, scope="personal")
     assert any("지원되지 않는 quant_type" in e for e in errors_bad_quant)
@@ -801,7 +801,7 @@ def test_llm_quant_type_rejects_non_canonical_without_crashing(bad) -> None:
 
 def test_llm_quant_type_conflicting_with_explicit_model_is_rejected() -> None:
     errors = LlmInferenceAdapter().validate_config(
-        {"model": "qwen3.5-4b-q4_k_m", "quant_type": "Q2_K"}, scope="personal"
+        {"model": "other-model", "quant_type": "Q4_K_M"}, scope="personal"
     )
     assert any("quant_type" in e and "model" in e for e in errors)
 

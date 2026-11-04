@@ -224,7 +224,6 @@ class Settings(BaseSettings):
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
     usage_poll_seconds: int = 300
-    qwen_flash_poll_seconds: int = Field(default=60, ge=0, le=3600)
     resource_sample_seconds: int = Field(default=30, ge=0)
     usage_poll_busy_seconds: int = 90
     usage_low_remaining_percent: int = 20
@@ -369,9 +368,6 @@ class Settings(BaseSettings):
     desk_timeout_seconds: float = 25.0
     # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
     desk_qwen_enabled: bool = True
-    # Read-only monitoring of the separate qwen-local-harness server. Never starts it.
-    qwen_flash_monitor_port: int = Field(default=18987, ge=1, le=65535)
-    qwen_flash_monitor_model: str = "qwen-flash-next-q2k"
     # 비우면 백엔드(세대) 프로세스가 llama-server 자식 프로세스를 직접 띄우고 끝낸다(runs/desk_qwen_service, OS 서비스 등록 없음).
     # 이미 떠 있는 서버를 쓰려면 주소를 지정한다: 이때는 health 만 확인하고 띄우지도 죽이지도 않는다.
     desk_qwen_base_url: str = ""
@@ -388,8 +384,6 @@ class Settings(BaseSettings):
     host_gpu_enabled: bool = True
     host_gpu_server_path: str = "~/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server"
     host_gpu_models: dict[str, str] = {
-        "qwen3.8-flash-next-q2k":
-            "~/private-resources/models/qwen38-flash-next-q2k/Qwen3.8-Flash-Next-Q2_K-00001-of-00002.gguf",
         "qwen3.5-4b-q4_k_m": "~/private-resources/service-data/ttakkari-qwen/model/Qwen3.5-4B-Q4_K_M.gguf",
     }
     host_gpu_max_runtime_seconds: int = Field(default=1800, ge=60, le=7200)

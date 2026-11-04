@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -227,14 +227,6 @@ async def list_accounts(_: User, db: Db, details: bool = True) -> list[AccountOu
     # Legacy clients keep the full shape, using the collector's last observation.
     # Filesystem/keychain checks must not block the server event loop.
     return list(await asyncio.gather(*(asyncio.to_thread(_out, a) for a in rows)))
-
-
-@router.get("/qwen-flash-usage")
-async def qwen_flash_usage(_: User, db: Db, response: Response) -> dict:
-    """Standalone Flash Next server counters, with persisted daily/weekly windows."""
-    from ttakkari.runs import qwen_flash_monitor
-    response.headers["Cache-Control"] = "no-store"
-    return await qwen_flash_monitor.snapshot_with_history(db)
 
 
 @router.get("/qwen-usage")

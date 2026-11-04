@@ -27,7 +27,7 @@ POLICY_FIELDS = {
     "접수": ["desk_qwen_enabled", "desk_qwen_model", "desk_qwen_timeout_seconds", "desk_qwen_max_prompt_chars",
             "desk_timeout_seconds", "desk_warm_pool"],
     "Qwen": ["qwen_local_enabled", "qwen_local_turns", "qwen_parallel_routing", "qwen_queue_retry_seconds",
-            "qwen_flash_poll_seconds", "qwen_flash_monitor_model", "qwen_flash_monitor_port", "qwen35_shadow_enabled",
+            "qwen35_shadow_enabled",
             "qwen35_shadow_sample_rate", "desk_qwen_manage", "desk_qwen_ctx", "desk_qwen_threads"],
     "실행·보안": ["claude_setting_sources", "engine_seatbelt", "engine_seatbelt_deny_keychain",
               "max_concurrent_desk", "max_concurrent_leads", "max_concurrent_workers", "run_timeout_seconds",

@@ -95,6 +95,20 @@ QWEN_LOCAL_ADAPTER = QwenLocalAdapter(worker_path=get_settings().qwen_local_work
                                       turns=get_settings().qwen_local_turns)
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
+# 에이전트가 outbox 를 작업 공간처럼 써서 빌드 트리·가상환경이 통째로 들어온다. 재생성 가능한 것이라 등록하지 않는다.
+# 등록하면 관리 영역으로 복사돼 용량이 불고, 수집 상한 200개를 먼저 채워 진짜 산출물이 밀려난다(2026-11-05 실측).
+OUTBOX_SKIP_DIRS = frozenset({
+    "target", ".venv", "venv", "node_modules", "__pycache__", ".git", ".cache",
+    ".pytest_cache", ".ruff_cache", ".mypy_cache", ".gradle", "DerivedData", ".build",
+})
+
+
+def iter_outbox_files(outbox: Path):
+    """outbox 의 일반 파일을 경로 순으로 낸다. 재생성 가능한 디렉터리는 내려가지 않는다."""
+    for dirpath, dirnames, filenames in os.walk(outbox, followlinks=False):
+        dirnames[:] = sorted(d for d in dirnames if d not in OUTBOX_SKIP_DIRS)
+        for name in sorted(filenames):
+            yield Path(dirpath) / name
 MAX_CHECKPOINT_UNTRACKED = 500
 STDERR_TAIL = 4000
 HANDOFF_TURNS = 8
@@ -2059,7 +2073,7 @@ class RunManager:
         found: list[tuple[ResolvedPath, str, str | None]] = []
         to_preview: list[uuid.UUID] = []
         n = 0
-        for p in sorted(outbox.rglob("*")):
+        for p in iter_outbox_files(outbox):
             if n >= MAX_OUTBOX_FILES:
                 events.append(db, run, "log", {"stream": "system", "text": f"outbox 파일이 {MAX_OUTBOX_FILES}개를 넘어 나머지는 등록하지 않았습니다."})
                 break

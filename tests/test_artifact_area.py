@@ -1621,3 +1621,17 @@ async def test_files_tab_hides_rows_without_a_keep_reason_and_agent_list_filters
     assert [a["filename"] for a in agent_files] == ["legit.md"]
     videos = (await client.get("/api/agent/artifacts", params={"category": "video"}, headers=h)).json()["artifacts"]
     assert [a["filename"] for a in videos] == ["clip.mp4"]
+
+
+def test_iter_outbox_files_skips_regenerable_dirs(tmp_path):
+    """빌드 트리·가상환경은 수집 대상이 아니다. 진짜 산출물은 하위 폴더에 있어도 수집된다."""
+    from ttakkari.runs.manager import iter_outbox_files
+
+    for rel in ("report.md", "docs/notes.md", "target/debug/app.o", "proj/target/x.rlib",
+                ".venv/lib/a.py", "node_modules/m/index.js", "pkg/__pycache__/a.pyc"):
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    (tmp_path / "link").symlink_to(tmp_path / "report.md")
+    got = [p.relative_to(tmp_path).as_posix() for p in iter_outbox_files(tmp_path)]
+    assert got == ["link", "report.md", "docs/notes.md"]

@@ -312,7 +312,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
                 if current and current[0].allows("store") and not current[0].check_url(parsed):
                     policy = current[0]
                     break
-        if not policy and entry["adapter"] in ("website", "paper_pdf"):
+        if not policy and entry["adapter"] in ("website", "paper_pdf") and entry.get("provenance") in AUTO_POLICY_PROVENANCE:
             policy = await ensure_auto_policy(db, ctx, entry, parsed)
         if not policy:
             gaps.append({"url": entry["url"], "reason": "source_policy_required", "message": "출처의 보관·이용 권한을 확인해야 합니다."})
@@ -411,6 +411,7 @@ async def launch(db, mission: CollectionMission) -> None:
 
 
 AUTO_POLICY_PAGES = 200
+AUTO_POLICY_PROVENANCE = frozenset({"catalog", "web_search", "user_reference"})
 
 
 async def ensure_auto_policy(db, ctx, entry, parsed):
@@ -523,7 +524,13 @@ async def prepare(job, ctx):
                             "repositories": [*(current.plan.get("repositories") or []),
                                              {k: v for k, v in _inventory.items() if k != "documents"}]}
             for doc in additions:
-                await register_document_license(db, current, doc)
+                try:
+                    async with db.begin_nested():
+                        await register_document_license(db, current, doc)
+                except CollectorContractError as exc:
+                    # One file whose grant cannot be expressed must not fail the whole preparation job (it did, three times).
+                    current.gaps = [*current.gaps, {"url": doc["url"], "reason": "document_policy_rejected",
+                                                    "message": f"이 파일의 이용 권한을 정책으로 만들 수 없습니다: {exc!s}"[:240]}]
             await launch(db, current)
             if _inventory["coverage"].get("limited") or _inventory["coverage"].get("truncated"):
                 current.gaps = [*current.gaps, {"url": _entry["url"], "reason": "repository_coverage_limited",
@@ -556,7 +563,9 @@ async def register_document_license(db, mission, doc):
         in_library(CollectorSource.scope), CollectorSource.source_key == key))
     if exists:
         return
-    policy = {"allowed_hosts": [parsed.host], "allowed_path_prefixes": [urlsplit(doc["url"]).path],
+    # The prefix must be the normalized path: the seed is checked after normalization, so a raw path with
+    # percent-escapes or dot segments would reject its own seed (path_outside_policy).
+    policy = {"allowed_hosts": [parsed.host], "allowed_path_prefixes": [urlsplit(parsed.url).path],
               "schemes": [parsed.scheme], "ports": [parsed.port],
               "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
               "license_id": license_info["id"], "policy_url": license_info["url"],

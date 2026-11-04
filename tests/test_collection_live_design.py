@@ -38,7 +38,11 @@ async def test_design_goal_runs_end_to_end(client, auth):
             delivered = await kb_delivery.deliver_once()
             ticks += 1
             if ticks % 10 == 0:
-                detail = (await client.get(BASE + "/missions/" + ident, headers=auth)).json()
+                response = await client.get(BASE + "/missions/" + ident, headers=auth)
+                if response.status_code != 200:
+                    print(f"[{int(time.monotonic() - started)}s] GET mission -> {response.status_code} {response.text[:600]}")
+                    continue
+                detail = response.json()
                 print(f"[{int(time.monotonic() - started)}s] status={detail['status']} counts="
                       f"{ {k: v for k, v in detail['counts'].items() if v} } jobs={len(detail['jobs'])}")
             if not ran and not delivered:

@@ -297,6 +297,14 @@ async def synthesize_canonical_for_entity(
     entity = await db.get(KbEntity, entity_id)
     if entity is None or entity.status != "active":
         return None
+    # Two jobs canonicalizing the same entity both saw "no card yet" and both inserted it (kb_entity_canonicals_pkey,
+    # 12 failed stages in one collection run). Identity writes of a tenant are serialized for the rest of this transaction.
+    from ttakkari.kb_ontology.write_lock import lock_identity_writes
+
+    await lock_identity_writes(db, getattr(entity, "tenant_id", None) or "owner")
+    await db.refresh(entity)
+    if entity.status != "active":
+        return None
 
     # 1. 미해결 충돌(open conflict) 유무 확인
     conflict_stmt = select(func.count(KbConflict.id)).where(

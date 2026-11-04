@@ -86,6 +86,13 @@ def looks_like_spa(body: bytes) -> bool:
     return len(" ".join(tree.text_content().split())) < MIN_STATIC_CHARS
 
 
+def _has_scripts(body: bytes) -> bool:
+    try:
+        return bool(lxml_html.fromstring(body).xpath("//script"))
+    except (ValueError, lxml_html.etree.ParserError):
+        return False
+
+
 def _find_chromium(browsers: Path) -> Path | None:
     for pattern in ("chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell",
                     "chromium_headless_shell-*/chrome-linux/headless_shell",
@@ -329,7 +336,9 @@ async def extract_with_fallback(
             return static, body, charset
     except ValueError as exc:
         static_error = str(exc)
-    if not looks_like_spa(body):
+    if not (looks_like_spa(body) or _has_scripts(body)):
+        # A page with enough static chrome (navigation, footer) to fail the "script shell" heuristic but no extractable main
+        # text is still client-rendered; cloudscape and atlassian component pages ended as empty_extraction this way.
         if static is None:
             raise ValueError(static_error or "empty_extraction")
         return static, body, charset
@@ -346,7 +355,7 @@ async def extract_with_fallback(
             raise ValueError(static_error or "empty_extraction") from exc
         return static, body, charset
     data = rendered.html.encode()
-    document = await asyncio.to_thread(parse.extract_document, data, url=url, kind="html", charset="utf-8")
+    document = await asyncio.to_thread(parse.extract_document, data, url=url, kind="html", charset="utf-8", lenient=True)
     signals["render"] = {"used": True, "engine": rendered.engine, "static_chars": static_chars, "rendered_chars": len(document.text.strip()),
                          "requests": rendered.requests, "bytes": rendered.bytes, "blocked": rendered.blocked,
                          "rendered_sha256": hashlib.sha256(data).hexdigest(), "seconds": round(rendered.elapsed, 2)}

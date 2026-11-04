@@ -123,8 +123,11 @@ def _parse_date(value: str | None) -> tuple[datetime | None, str | None]:
         return None, None
 
 
-def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = None) -> ExtractedDocument:
-    """Main text and metadata. Raises ValueError("empty_extraction") when nothing usable is found."""
+def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = None, lenient: bool = False) -> ExtractedDocument:
+    """Main text and metadata. Raises ValueError("empty_extraction") when nothing usable is found.
+
+    `lenient` adds recall-mode and DOM fallbacks. Only a browser-rendered DOM may use it: on a static page those fallbacks
+    return the navigation chrome of a script-rendered shell as if it were the document."""
     decoded, _ = decode_bytes(raw, charset)
     if kind == "text":
         text = decoded
@@ -141,6 +144,12 @@ def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = N
         favor_precision=True,
         deduplicate=False,
     )
+    if lenient and (doc is None or not (doc.text or "").strip()):
+        # Precision mode returns nothing for component-library pages whose content sits in unusual containers.
+        doc = trafilatura.bare_extraction(decoded, url=url, with_metadata=True, include_comments=False, include_tables=True,
+                                          include_formatting=False, favor_recall=True, deduplicate=False)
+    if lenient and (doc is None or not (doc.text or "").strip()):
+        doc = _dom_fallback(decoded)
     if doc is None or not (doc.text or "").strip():
         raise ValueError("empty_extraction")
     text = preserve_heading_structure(decoded, doc.text)
@@ -161,6 +170,41 @@ def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = N
         truncated=len(text) > MAX_TEXT_CHARS,
         meta=meta,
     )
+
+
+@dataclass
+class _FallbackDoc:
+    text: str
+    title: str | None = None
+    date: str | None = None
+    author: str | None = None
+    language: str | None = None
+    license: str | None = None
+
+
+FALLBACK_MIN_CHARS = 400
+
+
+def _dom_fallback(decoded: str) -> _FallbackDoc | None:
+    """Visible text of <main>/<article>/body without chrome, for pages trafilatura rejects. Needs real volume to count."""
+    try:
+        tree = lxml_html.fromstring(decoded)
+    except (etree.ParserError, ValueError):
+        return None
+    for element in tree.xpath("//script|//style|//noscript|//nav|//header|//footer|//aside|//form|//svg|//template"):
+        element.drop_tree()
+    roots = tree.xpath("//main|//article|//*[@role='main']") or tree.xpath("//body")
+    lines = []
+    for root in roots[:1]:
+        for block in root.xpath(".//h1|.//h2|.//h3|.//h4|.//p|.//li|.//td|.//th|.//pre|.//dd|.//dt"):
+            line = " ".join(block.text_content().split())
+            if line and (not lines or lines[-1] != line):
+                lines.append(line)
+    text = "\n".join(lines)
+    if len(text) < FALLBACK_MIN_CHARS:
+        return None
+    titles = tree.xpath("//title")
+    return _FallbackDoc(text=text, title=(titles[0].text_content().strip() if titles else None) or None)
 
 
 def _normalized_dom_text(element) -> str:

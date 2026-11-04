@@ -368,3 +368,17 @@ def test_render_runtime_is_found_outside_the_release_checkout(tmp_path, monkeypa
     monkeypatch.setattr(settings, "deploy_source_root", str(tmp_path / "none"))
     monkeypatch.setattr(settings, "collector_render_runtime_dir", str(tmp_path / "explicit"))
     assert render._runtime_root(settings) is None
+
+
+def test_lenient_extraction_is_only_for_rendered_pages():
+    """A static shell's navigation must not become the document; a rendered DOM may use the recall and DOM fallbacks."""
+    import pytest
+
+    from ttakkari.collector import parse
+
+    items = "".join(f"<li>Spacing token {i} sets the gap between elements to {i * 4} pixels in compact density.</li>" for i in range(12))
+    html = f"<html><head><title>Tokens</title></head><body><div class='shell'><ul>{items}</ul></div></body></html>".encode()
+    with pytest.raises(ValueError, match="empty_extraction"):
+        parse.extract_document(b"<html><body><script>1</script></body></html>", url="https://docs.test/x", kind="html", lenient=True)
+    doc = parse.extract_document(html, url="https://docs.test/x", kind="html", lenient=True)
+    assert "Spacing token 3" in doc.text and doc.title == "Tokens"

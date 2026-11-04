@@ -284,4 +284,10 @@ class FileBlobStore:
 
 
 def default_blob_store() -> FileBlobStore:
-    return FileBlobStore(get_settings().home / "collector" / "blobs")
+    root = get_settings().home / "collector" / "blobs"
+    if root.is_symlink():
+        # The owner may relocate the store (an external volume) by linking exactly this configured path. The link is
+        # resolved once to its real directory; the store then checks that real path component by component and
+        # everything below it, so a symlink anywhere else in the chain or inside the store is still refused.
+        root = root.resolve(strict=True)
+    return FileBlobStore(root)

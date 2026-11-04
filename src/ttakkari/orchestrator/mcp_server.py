@@ -1127,54 +1127,45 @@ async def reconcile_worker_lease(worker_id: str, run_id: str, expected_status: L
     })
 
 
+def _card(goal, done_criteria, location, read_first, limits, verification, context) -> dict[str, Any] | None:
+    """도구 인자를 작업 카드 본문으로 만든다. goal 이 없으면 카드를 쓰지 않는다(prompt 만 보낸다)."""
+    if not goal:
+        return None
+    return {k: v for k, v in (("goal", goal), ("done_criteria", done_criteria or []), ("location", location),
+                              ("read_first", read_first or []), ("limits", limits or []),
+                              ("verification", verification or []), ("context", context)) if v not in (None, [], "")}
+
+
 @server.tool()
-async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto",
+async def spawn_worker(title: str, prompt: str = "", engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,
                        task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
                        strict_engine: bool = False, game_id: str | None = None, game_build_id: str | None = None,
                        qwen_needs_mcp: bool | None = None, qwen_narrow_scope: bool | None = None,
-                       qwen_verifiable: bool | None = None) -> str:
+                       qwen_verifiable: bool | None = None,
+                       goal: str | None = None, done_criteria: list[str] | None = None, location: str | None = None,
+                       read_first: list[str] | None = None, limits: list[str] | None = None,
+                       verification: list[str] | None = None, context: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
-    `prompt` must be self-contained: the worker does not see this conversation.
-    Use engine="auto" and task_type; the backend enforces the policy returned by account_usage.worker_routing.
-    general: Antigravity Sonnet, then Flash, then native Sonnet/Luna balanced by capacity.
-    routine: Flash first (gemini-3.8-flash-low/medium can be specified for simple lookup/extraction/formatting).
-    design: Antigravity Sonnet then native Sonnet.
-    verification: independent review using native GPT-6 Luna first, then Claude Sonnet (Flash is excluded).
-    reasoning: Argon, then Antigravity Opus, then native Sol/Opus; escalation_reason is required.
-    When a general/routine worker runs on Gemini 3.8 Flash, verification_required=True is returned: run an
-    independent cross-provider verification (task_type="verification") before final completion and record
-    message_worker(verification_outcome="passed"|"failed").
-    Muse joins general/routine auto routing (shared first stage with Sonnet/Flash, personal accounts only) only when
-    account_usage.muse_auto_routing is true; its results also return verification_required=True and Muse never
-    verifies. Explicit engine="muse" remains a manual choice either way.
-    Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
-    It has no cloud account/quota and never falls back to another provider. When its single Mac-wide slot is busy,
-    an explicit Qwen worker waits in a queue (event "qwen.queued" with position and wait estimate) instead of failing.
-    It is not a normal auto stage, but the backend also routes one parallel-fit auto worker to it
-    while the slot is idle (receipt trigger "parallel"): for task_type="routine" in personal scope with sibling workers
-    alongside, the backend defaults to Qwen-fit without declarations (qwen_needs_mcp=True explicitly excludes it);
-    for task_type="general", declare qwen_needs_mcp=False, qwen_narrow_scope=True and qwen_verifiable=True for narrow
-    file search/extraction/small edit plus test runs. A lone task stays on cloud. Check account_usage.qwen_local for slot
-    busy state, queue and recent verification/handoff counts. As a last resort the backend routes general/routine workers to it
-    when every usable personal cloud account is usage-limited and readiness passes (receipt trigger "emergency"). Orchestrator sessions join only that emergency, degraded
-    (receipt mode "orchestrator-degraded"): no spawn/message/notify tools, so they plan and do narrow file work
-    directly and queue delegation intents (spawn-queue/*.json) that the backend replays as worker sessions.
-    Qwen results need independent verification like Flash.
-    Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
-    usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
-    strictly lock the engine and wait for quota reset instead.
-    For a game studio project pass `game_id` (and optionally `game_build_id`, default the latest successful build): the
-    worker then runs in that game's repository workspace and the backend prepends the project, build and the user-approved
-    locked decisions to `prompt`, so write only the task itself. task_type="verification" makes it an independent review that
-    does not edit source. The worker must not change locked decisions; builds and activation are rejected if they differ.
-    Read its state with get_worker as usual.
-    Worker sessions may also call this to delegate one level: their sub-workers report back with
-    '[작업 보고]' like any worker, but a sub-worker cannot spawn again (the API rejects it).
+    The worker does not see this conversation, so the instruction must be self-contained. Prefer the task card fields:
+    goal (one sentence), done_criteria (checkable items), and when useful location, read_first (paths), limits (write
+    scope and prohibitions), verification (commands) and context (background and decisions, normal spaced sentences).
+    The backend renders them in one fixed, readable format and appends the report format (`상태:` first line), so do not
+    restate it. Use `prompt` only for a short free-form instruction. Korean written without word spacing is rejected.
+    Use engine="auto" and task_type; the backend enforces the policy in account_usage.worker_routing (general, routine,
+    design, verification = independent review, reasoning = needs escalation_reason). Explicit engine="claude"/"codex"/
+    "antigravity" is tried first and falls back to other routes when all its accounts are limited unless strict_engine=True.
+    Flash, Qwen and Muse results on general/routine return verification_required=True: verify independently
+    (task_type="verification") and record message_worker(verification_outcome=...). engine="qwen-local" is explicit-only,
+    for narrow self-contained work; check account_usage.qwen_local first. For a game studio project pass `game_id`
+    (and optionally `game_build_id`): the worker runs in that game's repository and the backend prepends the locked
+    decisions, so write only the task. Worker sessions may delegate one level; a sub-worker cannot spawn again.
     Returns worker_id, task_type, verification_required and the latest routing receipt when available."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine, "strict_engine": strict_engine}
+    if card := _card(goal, done_criteria, location, read_first, limits, verification, context):
+        body["card"] = card
     if game_id:
         body["game_id"] = game_id
     if game_build_id:
@@ -1288,8 +1279,13 @@ async def message_worker(worker_id: str, prompt: str = "", fresh_context: bool =
                          strict_engine: bool | None = None,
                          verification_outcome: Literal["passed", "failed"] | None = None,
                          verification_note: str | None = None,
-                         verifier_worker_id: str | None = None) -> str:
+                         verifier_worker_id: str | None = None,
+                         goal: str | None = None, done_criteria: list[str] | None = None, location: str | None = None,
+                         read_first: list[str] | None = None, limits: list[str] | None = None,
+                         verification: list[str] | None = None, context: str | None = None) -> str:
     """Send a follow-up instruction to an existing worker or record its independent verification outcome.
+    A follow-up that starts a new stage can use the same task card fields as spawn_worker (goal, done_criteria, ...);
+    a short correction can stay a plain `prompt`. Korean written without word spacing is rejected.
     fresh_context=True starts the worker's engine conversation over (use when its context is high); then the
     prompt must be self-contained and say where the progress is recorded.
     reroute=True converts an idle worker (including a legacy engine lock) to task-aware auto, preserving
@@ -1304,6 +1300,8 @@ async def message_worker(worker_id: str, prompt: str = "", fresh_context: bool =
         "prompt": prompt, "fresh_context": fresh_context, "reroute": reroute,
         "task_type": task_type, "escalation_reason": escalation_reason,
     }
+    if card := _card(goal, done_criteria, location, read_first, limits, verification, context):
+        payload["card"] = card
     if strict_engine is not None:
         payload["strict_engine"] = strict_engine
     if verification_outcome is not None:

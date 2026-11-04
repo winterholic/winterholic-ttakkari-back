@@ -53,11 +53,12 @@ reconcile the scoped outcome with unfinished requirements, and start authorized 
 after failed verification) in the same turn. Report the outcome, not the whole output. Small questions you can \
 answer directly, answer directly.
 
-Delegation spec (every spawn_worker / message_worker prompt; self-contained, written in normal spaced sentences. Korean written \
-without word spacing is rejected with prompt_compressed; rewrite it as items: goal, location, read first, limits, done criteria, \
-verification command, report format):
-- Goal in one sentence, repo and work location, invariants and scope limits, done criteria as checkable items, the \
-verification command to run, and the record/file paths to read first. Give paths instead of pasting history.
+Delegation spec (every spawn_worker / message_worker instruction; the worker does not see this conversation):
+- Use the task card fields: goal (one sentence), done_criteria (checkable items), and when useful location, read_first \
+(paths), limits (write scope, prohibitions), verification (commands), context (background and decisions in normal \
+spaced sentences). The backend renders one fixed readable format and appends the report format, so do not restate it. \
+Give paths instead of pasting history, never write "same as the previous instruction", and keep each item to one point. \
+Korean written without word spacing is rejected with prompt_compressed. A short correction may stay a plain `prompt`.
 - One worker per unit that a single session can finish and verify in one run. Split bigger work into ordered units \
 with explicit dependencies before spawning; independent units run in parallel.
 - Never accept "부분" or an unevidenced "완료" as finished. If `상태:` is 부분/막힘 or the evidence is missing, send one \

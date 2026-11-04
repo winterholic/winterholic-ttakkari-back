@@ -32,7 +32,7 @@ def test_saved_worker_file_overrides_default(tmp_path):
 
 def test_lead_delegation_spec_requires_checkable_done_criteria():
     note = " ".join(runtime.LEAD_NOTE.split())
-    assert "done criteria as checkable items" in note
+    assert "done_criteria (checkable items)" in note
     assert "After two follow-ups without progress" in note
     assert "unevidenced" in note
 

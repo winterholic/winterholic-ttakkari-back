@@ -47,11 +47,13 @@ from ttakkari.runs import (
     events,
     luna_benchmark,
     prompt_quality,
+    task_card,
     worker_routing,
 )
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
+from ttakkari.runs.task_card import TaskCard
 
 router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator"])
 RESULT_CHARS = 4000
@@ -73,7 +75,9 @@ class QwenFitIn(BaseModel):
 
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
-    prompt: str = Field(min_length=1, max_length=100_000)
+    # 카드(항목 필드)로 보내면 prompt 는 비워도 된다. 카드가 있으면 항상 같은 틀로 조립한 지시문이 prompt 가 된다.
+    prompt: str = Field(default="", max_length=100_000)
+    card: TaskCard | None = None
     engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local", "opencode", "copilot"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
@@ -85,6 +89,13 @@ class WorkerIn(BaseModel):
     game_build_id: uuid.UUID | None = None
     # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
     escalation_reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def compose_card(self):
+        if self.card is None and not self.prompt.strip():
+            raise ValueError("Give either `prompt` or a task card (goal and done_criteria).")
+        self.prompt = task_card.compose(self.prompt, self.card)
+        return self
 
     @model_validator(mode="after")
     def antigravity_model_policy(self):
@@ -112,6 +123,7 @@ class WorkerIn(BaseModel):
 
 class MessageIn(BaseModel):
     prompt: str = Field(default="", max_length=100_000)
+    card: TaskCard | None = None  # 후속 지시도 카드로 보낼 수 있다(새 단계의 목표·완료 기준 등)
     # True 면 이 작업 세션의 엔진 대화를 버리고 새로 시작한다(컨텍스트 교체). 지시는 자기 완결적이어야 한다.
     fresh_context: bool = False
     reroute: bool = False
@@ -124,8 +136,13 @@ class MessageIn(BaseModel):
 
     @model_validator(mode="after")
     def require_prompt_unless_verification_only(self):
-        if not self.prompt.strip() and self.verification_outcome is None:
-            raise ValueError("prompt is required unless recording verification_outcome.")
+        if not self.prompt.strip() and self.card is None and self.verification_outcome is None:
+            raise ValueError("prompt or a task card is required unless recording verification_outcome.")
+        return self
+
+    @model_validator(mode="after")
+    def compose_card(self):
+        self.prompt = task_card.compose(self.prompt, self.card)
         return self
 
 

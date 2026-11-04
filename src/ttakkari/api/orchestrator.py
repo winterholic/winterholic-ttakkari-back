@@ -42,7 +42,13 @@ from ttakkari.models import (
 from ttakkari.orchestrator import work
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
-from ttakkari.runs import context_usage, events, luna_benchmark, worker_routing
+from ttakkari.runs import (
+    context_usage,
+    events,
+    luna_benchmark,
+    prompt_quality,
+    worker_routing,
+)
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
@@ -481,8 +487,17 @@ async def _game_worker_context(db: Db, spawner: ChatSession, body: WorkerIn, tas
     return ctx.workspace.id, game_worker.compose_prompt(ctx, kind, body.prompt), tag
 
 
+def _require_readable_prompt(prompt: str) -> None:
+    """띄어쓰기 없는 압축 지시는 받지 않고 다시 쓰게 한다."""
+    if not get_settings().worker_prompt_quality_gate:
+        return
+    if guide := prompt_quality.rewrite_request(prompt):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "prompt_compressed", "message": guide})
+
+
 @router.post("/workers", response_model=WorkerOut, status_code=201)
 async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
+    _require_readable_prompt(body.prompt)
     spawner = await _spawner(db, sid)
     cap = MAX_ACTIVE_WORKERS if spawner.kind == SessionKind.orchestrator else worker_routing.WORKER_SPAWN_MAX_ACTIVE
     active = await db.scalar(
@@ -576,6 +591,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
 
 @router.post("/workers/{worker_id}/messages", response_model=WorkerOut, status_code=202)
 async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
+    _require_readable_prompt(body.prompt)
     caller = await _manager(db, sid)
     w = await _owned_worker(db, caller, worker_id)
     if w.archived_at is not None:

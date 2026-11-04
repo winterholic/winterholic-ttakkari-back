@@ -247,7 +247,7 @@ class Settings(BaseSettings):
     collector_consume_enabled: bool = False
     # Managed source loop only handles jobs explicitly registered through the source management API.
     collector_control_enabled: bool = True
-    collector_daily_page_cap: int = Field(default=500, ge=1, le=100000)
+    collector_daily_page_cap: int = Field(default=5000, ge=1, le=100000)
     # 절대 지출 상한(architecture 6, 제안 기본값). teacher 는 한도를 강제하는 엔진이 연결되기 전까지 꺼 둔다.
     collector_teacher_enabled: bool = False
     # 수집 임무 2단계 경량 ML(e5 임베딩 축). 켜져 있어도 context_embedder 가 e5 가 아니면 자동으로 쓰이지 않는다.

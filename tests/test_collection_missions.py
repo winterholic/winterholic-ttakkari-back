@@ -1150,14 +1150,23 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
         assert reservation.charged_tokens == reservation.reserved_tokens
 
 
-async def test_unknown_rights_is_visible_without_registering_fake_permission(client, auth):
+async def test_unreviewed_public_source_gets_a_recorded_auto_policy_that_is_not_a_license_claim(client, auth):
+    """Topic and URL missions must not stop at a per-source policy form. The grant is explicit and narrow."""
     made = await client.post(BASE + "/missions", headers=auth, json={"goal": "문서 수집", "urls": ["https://unknown.example/docs/"]})
     assert made.status_code == 202, made.text
     mission = made.json()
-    assert mission["status"] == "waiting_sources"
+    assert mission["status"] == "running"
     assert mission["counts"]["imported"] == 0
-    assert mission["gaps"][0]["reason"] == "source_policy_required"
-    assert mission["jobs"] == []
+    assert [g for g in mission["gaps"] if g["reason"] == "source_policy_required"] == []
+    assert len(mission["jobs"]) == 1
+    async with sessionmaker()() as db:
+        from ttakkari.collector import store
+        job = await db.get(CollectorJob, uuid.UUID(mission["jobs"][0]["job_id"]))
+        policy = (await store.active_policy(db, job.tenant_id, job.scope, job.source_key))[0]
+        assert policy.license_id == "public-web-unreviewed" and policy.robots_required
+        assert policy.allows("store") and policy.allows("knowledge")
+        assert not policy.allows("export") and not policy.allows("train")
+        assert "Not a license review" in policy.basis
 
 
 async def test_mission_plan_preview_does_not_enqueue_and_create_is_idempotent(client, auth):

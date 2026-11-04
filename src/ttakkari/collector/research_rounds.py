@@ -80,7 +80,7 @@ async def view_block(db, mission: CollectionMission) -> dict[str, Any] | None:
     plan = mission.plan
     if not (plan.get("coverage") or plan.get("research") or plan.get("papers")):
         return None
-    coverage = research.compute_coverage(plan, await evidence(db, mission))
+    coverage = research.compute_coverage(plan, await evidence(db, mission, text_limit=3000 if plan.get("targets") else 0))
     st = state(plan, mission.current_run_seq or 1)
     papers = plan.get("papers") or []
     return {"coverage": coverage, "remaining": research.coverage_gaps(coverage), "round": st["round"], "stop": st["stop"],

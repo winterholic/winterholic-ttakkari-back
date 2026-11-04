@@ -16,12 +16,15 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
+from ttakkari.collector import catalog
+
 MAX_ROUNDS = 3
 INITIAL_QUERY_CAP = 10
 MAX_FOLLOWUP_QUERIES = 6
 MAX_PAPERS = 20
 COVERED_DOCUMENTS = 2
 COVERED_HOSTS = 2
+TARGET_COVERED_DOCUMENTS = 5
 
 # Particles stripped from the end of a Korean token. Only applied when at least two characters remain.
 _PARTICLES = ("에서는", "으로는", "에서", "으로", "에는", "이란", "라는", "에게", "까지", "부터", "와의", "과의", "에", "의", "과", "와", "을", "를", "은",
@@ -304,6 +307,9 @@ def host_of(url: str) -> str:
     return ".".join(parts[-3:] if len(parts) >= 3 and parts[-2] in {"co", "ac", "or", "go", "com"} else parts[-2:]) if len(parts) >= 2 else host
 
 
+catalog_topic_keys = frozenset(topic["key"] for topic in catalog.TOPICS)
+
+
 def compute_coverage(plan: dict[str, Any], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Per-topic coverage from what was actually found and collected, never from what was planned.
 
@@ -318,8 +324,16 @@ def compute_coverage(plan: dict[str, Any], items: list[dict[str, Any]]) -> list[
             sources.setdefault(key, set()).add(source["url"])
     accepted: dict[str, list[dict[str, Any]]] = {}
     attempted: Counter[str] = Counter()
+    named = {entry.get("key") for entry in plan.get("coverage", [])}
     for item in items:
-        for key in item.get("topics") or []:
+        keys = set(item.get("topics") or [])
+        if any(isinstance(key, str) and (key.startswith("t:") or key in catalog_topic_keys) for key in named):
+            # Catalog goals: a page belongs to the target whose host it came from and to every topic its text is actually about.
+            target = catalog.target_for_host(urlsplit(item["url"]).hostname or "")
+            if target:
+                keys.add(f"t:{target.key}")
+            keys.update(catalog.topics_matching(item.get("text") or ""))
+        for key in keys:
             attempted[key] += 1
             if item["status"] == "accepted":
                 accepted.setdefault(key, []).append(item)
@@ -328,7 +342,9 @@ def compute_coverage(plan: dict[str, Any], items: list[dict[str, Any]]) -> list[
         key = entry.get("key") or entry["topic"]
         docs = accepted.get(key, [])
         hosts = {host_of(doc["url"]) for doc in docs}
-        if docs:
+        if docs and str(key).startswith("t:"):
+            state = "covered" if len(docs) >= TARGET_COVERED_DOCUMENTS else "thin"  # one official host is the whole target
+        elif docs:
             state = "covered" if len(docs) >= COVERED_DOCUMENTS and len(hosts) >= COVERED_HOSTS else "thin"
         elif attempted[key]:
             state = "unavailable"

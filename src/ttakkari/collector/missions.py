@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
 from ttakkari.collector import (
+    catalog,
     control,
     jobs,
     precise_eval,
@@ -116,10 +117,17 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
     if len(sources) > 100:
         raise ValueError("한 임무에는 참고 주소를 100개까지 넣을 수 있습니다.")
     research = not sources
-    parts = research_logic.initial_plan_parts(goal, context) if research else {}
+    named = catalog.targets_in(f"{goal}\n{context}")
+    named_topics = catalog.topics_in(goal)
+    catalog_parts = catalog.plan_parts(goal, named, named_topics) if (named or len(named_topics) >= 3) else None
+    if catalog_parts:
+        known = {entry["url"] for entry in sources}
+        sources = sources + [entry for entry in catalog_parts["sources"] if entry["url"] not in known]
+    parts = (catalog_parts if catalog_parts else research_logic.initial_plan_parts(goal, context)) if research else {}
     return {
-        "version": 1, "title": goal.strip().splitlines()[0][:100],
+        "version": 1, "title": goal.strip().splitlines()[0].lstrip("# ").strip()[:100],
         "mode": "research" if research else "mixed" if context else "sources", "goal": goal.strip(),
+        **({"targets": [{"key": t.key, "name": t.name, "kind": t.kind, "roots": list(t.roots)} for t in named]} if catalog_parts else {}),
         "sources": sources,
         "context": {"text": context, "provenance": "user_provided", "fact_check_status": "unverified"},
         "queries": parts.get("queries", []), "coverage": parts.get("coverage", []),
@@ -127,7 +135,7 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
         "steps": (["하위 주제와 한·영 검색어 구성", "독립 출처 탐색", "수집 자료의 참고문헌·새 키워드로 추가 탐색"] if research
                   else ["문서 구조와 참고 자료 확인"] + (["수집 자료와 사용자 맥락의 관계 확인"] if context else []))
                  + ["적절한 수집기로 자료 확보", "관련성·품질·중복 평가", "지식 도서관 적재와 결과 확인"],
-        "budget": {"pages": max_pages, "depth": max_depth, "searches": 16, "seconds": 1800, "rounds": research_logic.MAX_ROUNDS,
+        "budget": {"pages": max_pages, "depth": max_depth, "searches": catalog.CATALOG_SEARCH_BUDGET if catalog_parts else 16, "seconds": 1800, "rounds": research_logic.MAX_ROUNDS,
                    "papers": research_logic.MAX_PAPERS, "model_calls": 0},
         "stop_conditions": ["임무 예산 소진", "허용 범위 탐색 종료", "연속 탐색에서 유의미한 신규 자료 없음", "모든 영역 확보"],
     }
@@ -303,6 +311,8 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
                 if current and current[0].allows("store") and not current[0].check_url(parsed):
                     policy = current[0]
                     break
+        if not policy and entry["adapter"] in ("website", "paper_pdf"):
+            policy = await ensure_auto_policy(db, ctx, entry, parsed)
         if not policy:
             gaps.append({"url": entry["url"], "reason": "source_policy_required", "message": "출처의 보관·이용 권한을 확인해야 합니다."})
             continue
@@ -396,6 +406,43 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
 async def launch(db, mission: CollectionMission) -> None:
     """Queue existing policy-backed sources without fetching or running models in the API."""
     await reconcile_mission(db, mission)
+
+
+AUTO_POLICY_PAGES = 200
+
+
+async def ensure_auto_policy(db, ctx, entry, parsed):
+    """A host-level policy for a source the mission itself found or the catalog named.
+
+    The gate that used to stop every discovered URL asked the owner to register a policy per source, which makes
+    topic-only missions impossible. The grant is recorded as what it is: public web, robots.txt enforced, structured
+    excerpts with the source kept, no export or training. It is not a license review, and says so in `basis`.
+    Returns None when the host cannot be covered (non-https port, URL rejected by the policy)."""
+    host = parsed.host
+    key = f"auto:{host}"
+    prefix = entry.get("path_prefix")
+    if prefix:
+        key += ":" + hashlib.sha256(prefix.encode()).hexdigest()[:8]
+    await store._lock(db, "control-source", ctx.tenant_id, key)
+    current = await store.active_policy(db, ctx.tenant_id, ctx.scope, key)
+    if current and current[0].allows("store") and not current[0].check_url(parsed):
+        return current[0]
+    if current:
+        return None  # An existing auto policy that rejects this URL was narrowed on purpose; do not widen it silently.
+    policy = {"allowed_hosts": [host], "schemes": ["https"], "ports": [443], "robots_required": True, "min_delay_seconds": 2.0,
+              "permissions": {"store": "allowed", "knowledge": "allowed", "export": "unknown", "train": "unknown"},
+              "license_id": "public-web-unreviewed", "policy_url": entry["url"],
+              "basis": "Mission auto-grant: public page fetched under robots.txt and pacing. Stored as structured excerpts with the "
+                       "source kept. Not a license review; export and training stay unknown.",
+              "checked_at": datetime.now(UTC).isoformat(), "max_pages_per_job": AUTO_POLICY_PAGES, "max_depth": 3,
+              **({"allowed_path_prefixes": [prefix]} if prefix else {})}
+    try:
+        _, spec = await control.register_source(db, ctx, source_key=key, title=f"자동 허용 {host}", seeds=[entry["url"]], policy=policy,
+                                                interval_minutes=None, max_pages=1, max_depth=0)
+    except (CollectorContractError, control.SourceKeyExists):
+        return None
+    await db.flush()
+    return spec
 
 
 async def register_python_docs(db, ctx):

@@ -326,6 +326,17 @@ async def detail(mission_id: uuid.UUID, _: User, db: Db):
     return await missions.view(db, mission)
 
 
+@router.get("/{mission_id}/trace")
+async def trace_mission(mission_id: uuid.UUID, _: User, db: Db):
+    """Goal, requirement states, stage counts, timeline and discarded items, derived from stored rows only."""
+    from ttakkari.collector import trace
+
+    mission = await db.scalar(select(CollectionMission).where(CollectionMission.id == mission_id, CollectionMission.tenant_id == "owner"))
+    if mission is None:
+        raise HTTPException(404, "수집 임무를 찾을 수 없습니다.")
+    return await trace.build(db, mission)
+
+
 @router.post("/{mission_id}/items/{item_id}/unhold")
 async def unhold_mission_item(mission_id: uuid.UUID, item_id: uuid.UUID, _: User, db: Db):
     try:

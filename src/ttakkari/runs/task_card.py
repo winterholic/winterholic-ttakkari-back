@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 REPORT_FORMAT = (
@@ -52,3 +55,36 @@ def render(card: TaskCard, extra: str = "") -> str:
 def compose(prompt: str, card: TaskCard | None) -> str:
     """카드가 있으면 카드로 조립하고 prompt 는 추가 지시로 붙인다. 없으면 prompt 그대로."""
     return render(card, prompt) if card is not None else prompt
+
+
+# 먼저 읽을 것에 큰 파일이 범위 없이 들어가면 시작 때마다 컨텍스트의 큰 몫을 쓴다(실측: 세션 도구 출력의 62%가 처음 12번 호출).
+# 한글 위주 문서는 바이트당 약 0.3토큰이다(RESEARCH.md 337KB가 약 9.9만 토큰).
+LARGE_READ_BYTES = 80_000
+_TOKENS_PER_BYTE = 0.3
+_RANGE_HINT = re.compile(r"(:\d+(-\d+)?\s*$|#L?\d+|\d+\s*[-~]\s*\d+\s*(줄|행|line)|(줄|행|line)s?\s*\d+|섹션|절|부분|항목|§|헤딩)", re.IGNORECASE)
+_PATH_TOKEN = re.compile(r"[^\s()（）\[\]'\"`,;]+")
+
+
+def read_budget_warnings(card: TaskCard, base_dirs: list[Path]) -> list[str]:
+    """먼저 읽을 것의 큰 파일을 범위 지정 없이 적은 항목을 찾아 오케스트레이터에게 알린다. 거절하지 않고 알리기만 한다."""
+    out: list[str] = []
+    for item in card.read_first:
+        m = _PATH_TOKEN.search(item.strip().lstrip("-* ").strip())
+        if not m or _RANGE_HINT.search(item):
+            continue
+        raw = m.group(0).rstrip(":")
+        path = Path(raw).expanduser()
+        candidates = [path] if path.is_absolute() else [b / path for b in base_dirs]
+        for cand in candidates:
+            try:
+                size = cand.stat().st_size if cand.is_file() else 0
+            except OSError:
+                continue
+            if size >= LARGE_READ_BYTES:
+                tokens = int(size * _TOKENS_PER_BYTE)
+                out.append(
+                    f"먼저 읽을 것 `{raw}` 은 {size // 1024}KB(약 {tokens // 1000}K토큰 추정)입니다. 통째로 읽히면 컨텍스트의 큰 몫을 씁니다. "
+                    "필요한 섹션이나 줄 범위를 적거나(예: `파일:120-260`), 요약 파일로 바꿔 주세요."
+                )
+                break
+    return out

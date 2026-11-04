@@ -1150,7 +1150,7 @@ async def spawn_worker(title: str, prompt: str = "", engine: Literal["auto", "cl
                        verification: list[str] | None = None, context: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     The worker does not see this conversation, so the instruction must be self-contained. Prefer the task card fields:
-    goal (one sentence), done_criteria (checkable items), and when useful location, read_first (paths), limits (write
+    goal (one sentence), done_criteria (checkable items), and when useful location, read_first (paths; for files over 80KB add a range or section such as `path:120-260`), limits (write
     scope and prohibitions), verification (commands) and context (background and decisions, normal spaced sentences).
     The backend renders them in one fixed, readable format and appends the report format (`상태:` first line), so do not
     restate it. Use `prompt` only for a short free-form instruction. Korean written without word spacing is rejected.

@@ -91,3 +91,41 @@ async def test_follow_up_with_card(client, auth, make_dir):
     assert r.status_code == 202, r.text
     runs = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()
     assert runs[-1]["prompt"].startswith("[작업 카드]")
+
+
+def test_read_budget_warns_for_large_file_without_range(tmp_path):
+    """큰 파일을 범위 없이 먼저 읽으라고 하면 알리고, 범위가 있거나 작은 파일이면 조용하다."""
+    big = tmp_path / "docs" / "RESEARCH.md"
+    big.parent.mkdir()
+    big.write_text("가" * 90_000)  # 한글은 파일 크기가 3배라 270KB
+    (tmp_path / "AGENTS.md").write_text("작은 파일")
+    card = TaskCard(goal="g", done_criteria=["d"], read_first=[
+        "AGENTS.md", "docs/RESEARCH.md", "docs/RESEARCH.md:120-260", "docs/RESEARCH.md 의 '현재 상태' 섹션"])
+    got = task_card.read_budget_warnings(card, [tmp_path])
+    assert len(got) == 1
+    assert "docs/RESEARCH.md" in got[0] and "KB" in got[0] and "토큰" in got[0]
+
+
+def test_read_budget_ignores_missing_and_absolute_paths(tmp_path):
+    big = tmp_path / "big.md"
+    big.write_text("x" * 200_000)
+    card = TaskCard(goal="g", done_criteria=["d"], read_first=[f"- {big}", "없는/파일.md"])
+    assert len(task_card.read_budget_warnings(card, [tmp_path / "elsewhere"])) == 1
+
+
+async def test_spawn_and_follow_up_report_read_budget_warnings(client, auth, make_dir, tmp_path):
+    """경고는 응답에 실리고 지시는 거절되지 않는다."""
+    big = tmp_path / "RESEARCH.md"
+    big.write_text("x" * 200_000)
+    card = {**CARD, "read_first": [str(big), "AGENTS.md"]}
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    h = _orch(issue_token(orch["id"]))
+    r = await client.post("/api/orchestrator/workers", headers=h, json={"title": "t", "engine": "claude", "card": card})
+    assert r.status_code == 201, r.text
+    assert len(r.json()["read_budget_warnings"]) == 1 and "RESEARCH.md" in r.json()["read_budget_warnings"][0]
+    wid = r.json()["worker_id"]
+    r2 = await client.post(f"/api/orchestrator/workers/{wid}/messages", headers=h, json={"card": card})
+    assert r2.status_code == 202, r2.text
+    assert len(r2.json()["read_budget_warnings"]) == 1
+    ok = await client.post(f"/api/orchestrator/workers/{wid}/messages", headers=h, json={"card": CARD})
+    assert ok.json()["read_budget_warnings"] == []

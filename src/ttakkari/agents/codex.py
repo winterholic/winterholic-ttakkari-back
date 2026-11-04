@@ -12,6 +12,7 @@ from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, t
 from ttakkari.agents.browser_mcp import BROWSER_TOOLS, SERVER_NAME, server_spec
 from ttakkari.config import get_settings
 from ttakkari.orchestrator.tool_policy import AUTO_APPROVED_TOOLS
+from ttakkari.runs import tool_output_limit
 
 SANDBOX_MODES = {"read-only", "workspace-write", "danger-full-access"}
 ROLLOUT_TAIL_BYTES = 4 * 1024 * 1024
@@ -161,6 +162,9 @@ class CodexAdapter:
             opts += ["-m", spec.model]
         if spec.effort:
             opts += ["-c", f'model_reasoning_effort="{spec.effort}"']
+        _, limit = tool_output_limit.arm(spec.session_id, s)
+        if limit:
+            opts += ["-c", f"tool_output_token_limit={limit}"]
         if spec.engine_session_id:
             return [*command, "resume", *opts, spec.engine_session_id, "--", spec.prompt]
         return [*command, *opts, "-C", str(spec.cwd), "--", spec.prompt]

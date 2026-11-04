@@ -334,6 +334,10 @@ class Settings(BaseSettings):
 
     claude_bin: str = "claude"
     codex_bin: str = "codex"
+    # Codex 작업자의 도구 출력(파일 읽기·명령 결과) 상한 A/B. 실측(2026-11-05)에서 20K자 넘는 출력이 도구 출력 부피의 약 66%였다.
+    # 세션 ID 해시로 percent% 의 세션에만 tokens 상한을 건다(0이면 끈다). 효과는 runs.usage.tool_output_arm 으로 비교한다.
+    codex_tool_output_ab_percent: int = Field(default=0, ge=0, le=100)
+    codex_tool_output_ab_tokens: int = Field(default=5000, ge=1000, le=20000)
     antigravity_bin: str = "/opt/homebrew/bin/agy"
     # Ask each account's own CLI which models it can run (`agy models`); off in tests.
     antigravity_model_probe: bool = True

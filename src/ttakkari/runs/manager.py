@@ -72,6 +72,7 @@ from ttakkari.runs import (
     context_usage,
     desk,
     events,
+    tool_output_limit,
     worker_routing,
 )
 from ttakkari.runs import instructions as instructions_mod
@@ -1754,6 +1755,10 @@ class RunManager:
         }
         if last_fallback is not None:
             routing_usage["fallback"] = last_fallback
+        if prof.engine == "codex":
+            tool_arm, _ = tool_output_limit.arm(str(sess.id), get_settings())
+            if tool_arm != "off":
+                routing_usage["tool_output_arm"] = tool_arm
         run.usage = {**(run.usage or {}), **state.usage, **context_usage.measure(state, prof.engine, prof.config_dir), **routing_usage}
         run.result_text = state.result_text or state.last_message
 

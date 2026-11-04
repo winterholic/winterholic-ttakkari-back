@@ -180,6 +180,8 @@ class WorkerOut(BaseModel):
     last_result: str | None = None
     last_error: str | None = None
     artifacts: list[str] = Field(default_factory=list)
+    # 작업 카드의 "먼저 읽을 것"에 큰 파일이 범위 없이 있을 때 지시한 쪽에 알린다(거절하지 않는다).
+    read_budget_warnings: list[str] = Field(default_factory=list)
 
 
 class ScheduleCreateIn(BaseModel):
@@ -603,7 +605,19 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
             run.usage = {**(run.usage or {}), "qwen_fit": fit.model_dump()}
 
     await queue_run(db, w, prompt, origin=RunOrigin.orchestrator, on_queued=_stash_fit)
-    return await _out(db, w)
+    out = await _out(db, w)
+    out.read_budget_warnings = await _read_budget_warnings(db, w.workspace_id, body.card)
+    return out
+
+
+async def _read_budget_warnings(db: Db, workspace_id: uuid.UUID | None, card: TaskCard | None) -> list[str]:
+    if card is None or not card.read_first:
+        return []
+    ws = await db.get(Workspace, workspace_id) if workspace_id else None
+    if ws is None:
+        return []
+    bases = [Path(ws.root_path)] + ([Path(card.location).expanduser()] if card.location else [])
+    return task_card.read_budget_warnings(card, bases)
 
 
 @router.post("/workers/{worker_id}/messages", response_model=WorkerOut, status_code=202)
@@ -655,7 +669,9 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
         await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
     else:
         await db.commit()
-    return await _out(db, w)
+    out = await _out(db, w)
+    out.read_budget_warnings = await _read_budget_warnings(db, w.workspace_id, body.card)
+    return out
 
 
 @router.post("/workers/{worker_id}/verification", response_model=WorkerOut)

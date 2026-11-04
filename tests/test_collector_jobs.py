@@ -428,7 +428,8 @@ async def test_consume_handler_error_retries_within_attempt_cap():
     runner.register_handler(boom)
     assert await runner.consume_once(limit=1) == 1
     stored = await row(job_id)
-    assert stored.status == "retry_wait" and stored.last_error == {"code": "handler_error", "type": "RuntimeError"}
+    assert stored.status == "retry_wait" and stored.last_error["code"] == "handler_error" and stored.last_error["type"] == "RuntimeError"
+    assert stored.last_error["message"] == "parser exploded" and stored.last_error["where"].endswith(" boom")
     assert stored.not_before > datetime.now(UTC)
 
 

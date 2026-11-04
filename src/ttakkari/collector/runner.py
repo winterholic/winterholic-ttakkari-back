@@ -154,6 +154,19 @@ async def recover() -> jobs.RecoveryReport:
     return report
 
 
+def _origin(exc: BaseException) -> str:
+    """Innermost frame of the exception as `file:line function`, so a stored error points at code."""
+    tb = exc.__traceback__
+    last = None
+    while tb is not None:
+        last = tb
+        tb = tb.tb_next
+    if last is None:
+        return ""
+    code = last.tb_frame.f_code
+    return f"{code.co_filename.rsplit('/', 1)[-1]}:{last.tb_lineno} {code.co_name}"
+
+
 async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
     """Run the handler and end the attempt. Returns the stored status, or None if the attempt was fenced."""
     try:
@@ -162,7 +175,9 @@ async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
         return None
     except Exception as e:
         log.exception("collector handler failed for job %s", job.id)
-        result = HandlerResult("retry_wait", {"code": "handler_error", "type": type(e).__name__})
+        # NOTE: type 만 남기면 운영에서 원인을 알 수 없다(임무 준비 6회 실패 사례). 메시지는 길이를 제한해 저장한다.
+        result = HandlerResult("retry_wait", {"code": "handler_error", "type": type(e).__name__,
+                                              "message": str(e)[:500], "where": _origin(e)})
     try:
         async with sessionmaker()() as db:
             if result.status == "yielded":

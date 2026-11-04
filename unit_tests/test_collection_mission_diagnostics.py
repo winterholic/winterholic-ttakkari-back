@@ -55,14 +55,25 @@ def test_diagnostic_classification_keeps_exception_contract_without_raw_message(
         "code": "attempts_exhausted", "type": "RuntimeError", "cause": "invalid_envelope",
         "error_type": "CollectorContractError",
         "error_code": "invalid_envelope", "retryable": False, "attempts": 3,
+        "detail": "password=[redacted]",
     }
+
+
+def test_diagnostic_detail_redacts_credentials_and_url_queries():
+    detail = _classified_error({"message": "GET https://u:p@docs.test/a/b?token=abc#x failed; api_key=KEY123 Bearer ZZZ"})["detail"]
+    assert "abc" not in detail and "KEY123" not in detail and "ZZZ" not in detail and "u:p" not in detail
+    assert "https://docs.test/a/b" in detail
+    assert len(_classified_error({"message": "x" * 5000})["detail"]) == 300
+    assert _classified_error({"where": "missions.py:42 prepare"})["where"] == "missions.py:42 prepare"
+    assert "where" not in _classified_error({"where": "/etc/passwd; rm -rf"})
 
 
 def test_diagnostic_classification_drops_unrecognized_free_text_fields():
     raw = "synthetic private exception detail"
     for key in ("code", "type", "cause", "cause_code", "error_type", "error_code"):
         assert key not in _classified_error({key: raw})
-    assert _classified_error({"cause": {"message": raw}, "message": raw}) == {}
+    assert _classified_error({"cause": {"message": raw}}) == {}
+    assert "message" not in _classified_error({"message": raw})
 
 
 def test_diagnostic_classification_keeps_stable_collector_codes():

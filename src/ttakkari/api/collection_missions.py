@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
@@ -52,8 +53,23 @@ _ERROR_TYPES = frozenset({
 })
 
 
+_SECRET_PAIR = re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key|authorization|cookie|bearer)\b(\s*[=:]\s*|\s+)\S+")
+_URL_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_URL_QUERY = re.compile(r"(\bhttps?://[^\s?#]+)[?#]\S*")
+
+
+def _safe_detail(value):
+    """Owner-facing failure text: credentials, URL queries and key=value secrets are removed, length is capped."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = _URL_USERINFO.sub(r"\1", value)
+    text = _URL_QUERY.sub(r"\1", text)
+    text = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}=[redacted]", text)
+    return " ".join(text.split())[:300]
+
+
 def _classified_error(error):
-    """Keep bounded exception classification; never return raw exception text or nested payloads."""
+    """Keep bounded exception classification. Free text is only returned as a redacted `detail` and `where`."""
     if not isinstance(error, dict):
         return {}
     result = {}
@@ -70,6 +86,11 @@ def _classified_error(error):
                 result[key] = value
         elif key == "retryable" and isinstance(value, bool):
             result[key] = value
+    if (detail := _safe_detail(error.get("message"))):
+        result["detail"] = detail
+    where = error.get("where")
+    if isinstance(where, str) and re.fullmatch(r"[\w.\-]+:\d+ \w+", where):
+        result["where"] = where
     return result
 
 

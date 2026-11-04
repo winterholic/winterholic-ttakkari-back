@@ -55,6 +55,13 @@ TERMINAL = {"succeeded", "partial", "failed", "cancelled", "policy_blocked", "qu
 log = logging.getLogger(__name__)
 
 
+SOURCE_WEIGHT = {"catalog": 20, "user_reference": 20, "web_search": 5, "github_api": 1}
+
+
+def _source_weight(entry: dict) -> int:
+    return SOURCE_WEIGHT.get(entry.get("provenance"), 2)
+
+
 def source_key_for(mission_id: uuid.UUID, url: str) -> str:
     return f"mission:{mission_id}:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
 
@@ -121,6 +128,9 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
     named = catalog.targets_in(f"{goal}\n{context}")
     named_topics = catalog.topics_in(goal)
     catalog_parts = catalog.plan_parts(goal, named, named_topics) if (named or len(named_topics) >= 3) else None
+    if catalog_parts:
+        # The composer's default of 200 pages would leave six pages for each of thirty named targets.
+        max_pages = min(100_000, max(max_pages, 100 * max(1, len(named))))
     if catalog_parts:
         known = {entry["url"] for entry in sources}
         sources = sources + [entry for entry in catalog_parts["sources"] if entry["url"] not in known]
@@ -295,6 +305,9 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
                     "last_job": last_job, "frontier": frontier,
                 })
 
+    # Official entry points the owner or the catalog named come first and get most of the budget. A thousand repository files
+    # once took all of it and left every official site in "budget reached" (each file is a source of its own).
+    need_work.sort(key=lambda item: -_source_weight(item["entry"]))
     queued = 0
     for index, item in enumerate(need_work):
         entry = item["entry"]
@@ -324,7 +337,8 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             gaps.append({"url": entry["url"], "reason": "mission_page_budget", "message": "임무의 수집 예산에 도달했습니다."})
             continue
 
-        fair_share = max(1, remaining // max(1, len(need_work) - index))
+        left_weight = sum(_source_weight(rest["entry"]) for rest in need_work[index:]) or 1
+        fair_share = max(1, remaining * _source_weight(entry) // left_weight)
         pages = min(policy.max_pages_per_job, fair_share)
         mission_ext = {"id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
                        "reference": entry, "run_seq": run_seq}
@@ -410,7 +424,7 @@ async def launch(db, mission: CollectionMission) -> None:
     await reconcile_mission(db, mission)
 
 
-AUTO_POLICY_PAGES = 200
+AUTO_POLICY_PAGES = 500
 GITHUB_REPO_FILE_CAP = 300  # one repository must not queue a thousand per-file jobs ahead of every other target
 AUTO_POLICY_PROVENANCE = frozenset({"catalog", "web_search", "user_reference"})
 

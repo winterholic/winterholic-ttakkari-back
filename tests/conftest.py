@@ -234,8 +234,8 @@ def _no_muse_ping():
 @pytest.fixture(autouse=True)
 def _no_live_paper_providers():
     # 논문 공급자(arXiv/Crossref)는 실제 공개 망을 부른다. 시험은 기본으로 막고, 필요한 시험만 직접 대체한다. (값을 직접 저장·복원하는 이유는 위와 같다.)
-    from ttakkari.collector import paper
-    before = paper.search_arxiv, paper.resolve
+    from ttakkari.collector import adapters, paper
+    before = paper.search_arxiv, paper.resolve, adapters.search_bing
 
     async def no_candidates(*args, **kwargs):
         return []
@@ -243,9 +243,10 @@ def _no_live_paper_providers():
     async def offline(*args, **kwargs):
         raise paper.PaperError("offline_test")
 
-    paper.search_arxiv, paper.resolve = no_candidates, offline
+    # search_bing 은 DuckDuckGo 가 거절할 때의 두 번째 공개 검색이다. 시험은 이것도 망에 보내지 않는다.
+    paper.search_arxiv, paper.resolve, adapters.search_bing = no_candidates, offline, no_candidates
     yield
-    paper.search_arxiv, paper.resolve = before
+    paper.search_arxiv, paper.resolve, adapters.search_bing = before
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")

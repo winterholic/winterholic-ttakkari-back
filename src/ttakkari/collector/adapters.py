@@ -107,6 +107,51 @@ async def search_web(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes
     return result
 
 
+def _bing_target(href: str) -> str:
+    """Bing wraps results as /ck/a?...&u=a1<base64url of the target>. Plain links pass through."""
+    import base64
+
+    query = parse_qs(urlsplit(href.replace("&amp;", "&")).query)
+    wrapped = (query.get("u") or [""])[0]
+    if wrapped.startswith("a1"):
+        encoded = wrapped[2:]
+        try:
+            return base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
+        except ValueError:
+            return ""
+    return href
+
+
+async def search_bing(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes]] = fetch_bytes, limit: int = 8) -> list[dict]:
+    """Second public search provider, used when DuckDuckGo refuses. Same trust rules: candidates only, never a grant."""
+    url = "https://www.bing.com/search?" + urlencode({"q": query[:500], "setlang": "ko"})
+    if fetch_bytes is _REAL_FETCH_BYTES:
+        await _pace_search()
+    raw = await fetch_bytes(url)
+    tree = lxml_html.fromstring(raw, parser=lxml_html.HTMLParser(encoding="utf-8"))  # titles are Korean; guessing the charset garbled them
+    links = tree.xpath('//li[contains(concat(" ", normalize-space(@class), " "), " b_algo ")]//h2/a')
+    if not links and (b"captcha" in raw.lower() or b"unusual traffic" in raw.lower()):
+        raise FetchError("search_provider_challenge", "Bing returned an anti-bot challenge")
+    result, seen = [], set()
+    for link in links:
+        try:
+            parsed = normalize_url(_bing_target(link.get("href", "")))
+        except ValueError:
+            continue
+        if parsed.url in seen or (urlsplit(parsed.url).hostname or "").endswith("bing.com"):
+            continue
+        seen.add(parsed.url)
+        parts = urlsplit(parsed.url)
+        kind = ("github" if parts.hostname == "github.com" and len(parts.path.strip("/").split("/")) >= 2
+                else "paper" if research.paper_reference_of_url(parsed.url) and not parts.path.lower().endswith(".pdf") and not parts.path.startswith("/pdf/")
+                else "paper_pdf" if parts.path.lower().endswith(".pdf") or parts.hostname in {"arxiv.org", "doi.org"} else "website")
+        result.append({"url": parsed.url, "adapter": kind, "provenance": "web_search", "query": query,
+                       "provider": "bing_html", "title": link.text_content().strip()[:500], "rank": len(result) + 1})
+        if len(result) >= limit:
+            break
+    return result
+
+
 async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[dict]] = fetch_json,
                             fetch_license: Callable[[str], Awaitable[bytes]] = fetch_bytes, limit: int = 200) -> dict:
     parsed = urlsplit(url)

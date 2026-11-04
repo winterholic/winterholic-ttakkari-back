@@ -276,37 +276,8 @@ async def finish(
         else:
             not_before = now + retry_delay(job.attempts, retry_after)
     _release(job, status, now=now, error=error, not_before=not_before)
-    if status in REFUND_STATUSES:
-        await _refund_unused_pages(db, job)
     await db.flush()
     return status
-
-
-REFUND_STATUSES = frozenset({"succeeded", "partial", "failed", "cancelled", "quarantined", "policy_blocked"})
-
-
-async def _refund_unused_pages(db: AsyncSession, job: CollectorJob) -> None:
-    """Return the part of the daily page reservation an ended job did not use.
-
-    enqueue() reserves max_pages up front. Sixteen jobs that failed before fetching a single page used up the whole
-    500-page day and blocked every later mission. Split children are created without a reservation and are skipped."""
-    from ttakkari.collector.budget import budget_day
-    from ttakkari.collector.control_models import CollectorDailyBudget
-
-    extensions = (job.envelope or {}).get("extensions") or {}
-    request = extensions.get("collector:request") or {}
-    if (extensions.get("collector:mission") or {}).get("parent_job_id") or (job.cursor or {}).get("pages_refunded"):
-        return
-    reserved = request.get("max_pages")
-    if not isinstance(reserved, int) or reserved <= 0:
-        return
-    unused = max(0, reserved - int((job.cursor or {}).get("processed", 0)))
-    job.cursor = {**(job.cursor or {}), "pages_refunded": True}
-    if not unused:
-        return
-    budget = await db.get(CollectorDailyBudget, budget_day(job.created_at), with_for_update=True)
-    if budget is not None:
-        budget.reserved_pages = max(0, budget.reserved_pages - unused)
 
 
 async def yield_attempt(db: AsyncSession, job_id: uuid.UUID, attempt_token: uuid.UUID) -> str:

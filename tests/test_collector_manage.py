@@ -80,7 +80,7 @@ async def test_management_reads_are_scoped_and_require_auth(client, auth, env, m
 async def test_budgets_report_the_absolute_ceiling_and_pages(client, auth):
     body = (await client.get(BASE + "/budgets", headers=auth)).json()
     assert body["teacher_enabled"] is False
-    assert body["calls"]["limit"] == 20 and body["tokens"]["limit"] == 60_000 and body["pages"]["limit"] == 5000
+    assert body["calls"]["limit"] == 20 and body["tokens"]["limit"] == 60_000
     assert body["timezone"] == "Asia/Seoul"
 
 

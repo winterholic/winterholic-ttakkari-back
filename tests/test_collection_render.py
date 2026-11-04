@@ -352,3 +352,19 @@ async def test_real_chromium_renders_a_script_shell_through_the_guarded_broker()
     assert "docs.test/socket" not in " ".join(recorded.urls)  # WebSocket never reached the broker
     # nothing the page fetched was stored: only the rendered text leaves the renderer
     assert "console.log" not in doc.text and "fetch(" not in doc.text
+
+
+def test_render_runtime_is_found_outside_the_release_checkout(tmp_path, monkeypatch):
+    """A deployed release has no .browser-runtime of its own; the deploy source tree's runtime must be used."""
+    from ttakkari.collector import render
+    from ttakkari.config import get_settings
+
+    source = tmp_path / "source"
+    (source / ".browser-runtime" / "node_modules" / "playwright-core").mkdir(parents=True)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "collector_render_runtime_dir", "")
+    monkeypatch.setattr(settings, "deploy_source_root", str(source))
+    assert render._runtime_root(settings) in (source / ".browser-runtime", render.Path(render.__file__).parents[3] / ".browser-runtime")
+    monkeypatch.setattr(settings, "deploy_source_root", str(tmp_path / "none"))
+    monkeypatch.setattr(settings, "collector_render_runtime_dir", str(tmp_path / "explicit"))
+    assert render._runtime_root(settings) is None

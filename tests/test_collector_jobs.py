@@ -511,27 +511,3 @@ async def test_get_job_is_scoped():
         assert (await jobs.get_job(db, "fixture-tenant", "personal", job_id)).id == job_id
         with pytest.raises(JobNotFoundError):
             await jobs.get_job(db, "fixture-tenant", "work", job_id)
-
-
-async def test_ended_job_returns_its_unused_page_reservation_exactly_once():
-    from sqlalchemy.orm.attributes import flag_modified
-
-    from ttakkari.collector.budget import budget_day
-    from ttakkari.collector.control_models import CollectorDailyBudget
-
-    job_id = await make_job(7)
-    async with sessionmaker()() as db:
-        job = await db.get(CollectorJob, job_id)
-        job.envelope = {**job.envelope, "extensions": {**job.envelope.get("extensions", {}),
-                                                         "collector:request": {"seeds": ["https://docs.test/"], "max_pages": 200}}}
-        flag_modified(job, "envelope")
-        job.cursor = {"processed": 15}
-        db.add(CollectorDailyBudget(day=budget_day(job.created_at), reserved_pages=200))
-        await db.commit()
-    c = (await claim())[0]
-    assert await finish(c, status="failed", error={"code": "x"}) == "failed"
-    async with sessionmaker()() as db:
-        budget = await db.get(CollectorDailyBudget, budget_day((await db.get(CollectorJob, job_id)).created_at))
-        assert budget.reserved_pages == 15  # 185 of 200 unused pages came back
-        await jobs._refund_unused_pages(db, await db.get(CollectorJob, job_id))
-        assert budget.reserved_pages == 15  # a second call is a no-op

@@ -394,6 +394,10 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
     holds = [*analysis.l0.flags, *analysis.profile_result.hold_reasons, *analysis.l1.hold_reasons]
     if exact is not None:
         holds.append("exact_duplicate")
+    elif any(n["jaccard"] >= textproc.NEAR_HOLD_THRESHOLD and n.get("url_key") != p.url_key for n in near):
+        # Another page with almost the same text. Held, not deleted: both stay recorded and it can be released from the
+        # review list. A new revision of the same URL is not a duplicate of its own history.
+        holds.append("near_duplicate")
     if req.l1.mode == "gate" and analysis.l1.error:
         holds.append("l1_unavailable")
     # C4: Lightweight multi-axis triage & goal relevance
@@ -462,7 +466,7 @@ async def _dedupe(db, job: ClaimedJob, p: Prepared) -> tuple[CollectorItem | Non
     ):
         jac = textproc.estimated_jaccard(a.minhash, cand.minhash)
         if jac >= textproc.NEAR_THRESHOLD:
-            near.append({"item_id": str(cand.id), "envelope_id": str(cand.envelope_id) if cand.envelope_id else None,
+            near.append({"url_key": cand.url_key, "item_id": str(cand.id), "envelope_id": str(cand.envelope_id) if cand.envelope_id else None,
                          "cluster_id": cand.cluster_id, "jaccard": round(jac, 3), "url": cand.final_url or cand.url})
     near.sort(key=lambda n: -n["jaccard"])
     return None, near[:5]

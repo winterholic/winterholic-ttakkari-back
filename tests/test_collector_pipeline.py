@@ -258,7 +258,7 @@ async def test_text_is_only_nfc_normalized_and_the_chain_is_hash_linked(env):
 # ---- policy gates ----------------------------------------------------------------------------------------------
 
 async def test_missing_policy_and_unverified_store_purpose_are_denied_without_network(env):
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     job_id = await submit(env, PERSONAL, "src-none", ["/a"])
     job = await run(job_id)
     assert job.status == "policy_blocked" and job.last_error["code"] == "source_policy_missing"
@@ -273,7 +273,7 @@ async def test_missing_policy_and_unverified_store_purpose_are_denied_without_ne
 
 
 async def test_policy_versions_are_append_only_and_jobs_pin_the_active_version(env):
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-v", spec(env, basis="terms v1"))
     await register(PERSONAL, "src-v", spec(env, basis="terms v1"))  # identical: no new version
     await register(PERSONAL, "src-v", spec(env, basis="terms v2 (updated)"))
@@ -289,7 +289,7 @@ async def test_policy_versions_are_append_only_and_jobs_pin_the_active_version(e
 
 async def test_robots_disallow_blocks_every_item_and_the_job_reports_policy_blocked(env):
     env.server.page("/robots.txt", "User-agent: *\nDisallow: /\n", "text/plain")
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-r", spec(env))
     job_id = await submit(env, PERSONAL, "src-r", ["/a", "/b"])
     job = await run(job_id)
@@ -331,9 +331,9 @@ async def test_request_cannot_widen_the_policy_and_invalid_requests_are_quaranti
 # ---- evaluation profiles (selected per job) --------------------------------------------------------------------
 
 async def test_news_profile_judges_freshness_and_general_profile_does_not(env):
-    env.server.page("/fresh", article_html("Fresh", [LONG_EN], published="2026-10-20T09:00:00+09:00"))
-    env.server.page("/stale", article_html("Stale", [LONG_EN + " old report details."], published="2026-08-01"))
-    env.server.page("/undated", article_html("Undated", [LONG_EN + " undated report details."]))
+    env.server.page("/fresh", article_html("Fresh", [prose("en", 101, 15)], published="2026-10-20T09:00:00+09:00"))
+    env.server.page("/stale", article_html("Stale", [prose("en", 102, 15) + " old report details."], published="2026-08-01"))
+    env.server.page("/undated", article_html("Undated", [prose("en", 103, 15) + " undated report details."]))
     for key in ("src-news", "src-general"):
         await register(PERSONAL, key, spec(env))
     news = await run(await submit(env, PERSONAL, "src-news", ["/fresh", "/stale", "/undated"], request={"profile": "news"}))
@@ -427,7 +427,7 @@ async def test_html_served_as_text_plain_and_binary_as_html_are_held_as_mismatch
 
 
 async def test_store_raw_false_keeps_hash_only_and_says_so(env):
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-nr", spec(env, store_raw=False))
     job = await run(await submit(env, PERSONAL, "src-nr", ["/a"]))
     (row,) = await items(job.id)
@@ -442,7 +442,7 @@ async def test_store_raw_false_keeps_hash_only_and_says_so(env):
 
 async def test_store_raw_true_leaves_the_blob_the_scan_looks_for(env):
     # Positive control for the store_raw=False scan above: the same helper must see a real preserved blob.
-    page = article_html("A", [LONG_EN])
+    page = article_html("A", [prose("en", 106, 15)])
     env.server.page("/a", page)
     await register(PERSONAL, "src-yr", spec(env, store_raw=True))
     job = await run(await submit(env, PERSONAL, "src-yr", ["/a"]))
@@ -493,7 +493,7 @@ async def test_feed_sitemap_and_link_discovery_respect_policy_depth_and_page_lim
 
 async def test_malformed_feed_is_held_and_the_job_continues(env):
     env.server.page("/feed.xml", "<?xml version='1.0'?><rss><channel><item><link>http://x", "application/rss+xml")
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-bf", spec(env))
     job = await run(await submit(env, PERSONAL, "src-bf", ["/feed.xml", "/a"]))
     got = by_path(await items(job.id))
@@ -580,14 +580,14 @@ async def release_job_and_host(job_id: uuid.UUID) -> None:
 
 
 async def test_transient_failure_defers_with_durable_cooldown_and_resumes_without_redoing_work(env):
-    env.server.page("/ok", article_html("Ok", [LONG_EN + " ok page marker."]))
+    env.server.page("/ok", article_html("Ok", [prose("en", 104, 15) + " ok page marker."]))
     state = {"flaky": 0}
 
     async def flaky(request):
         state["flaky"] += 1
         if state["flaky"] == 1:
             return web.Response(status=503, headers={"Retry-After": "120"})
-        return web.Response(text=article_html("Flaky", [LONG_EN + " flaky page marker."]), content_type="text/html")
+        return web.Response(text=article_html("Flaky", [prose("en", 105, 15) + " flaky page marker."]), content_type="text/html")
 
     env.server.routes["/flaky"] = flaky
     await register(PERSONAL, "src-t", spec(env))
@@ -633,7 +633,7 @@ async def test_url_is_failed_after_three_attempts_not_retried_forever(env):
 async def test_a_page_commits_atomically_and_a_crash_resumes_at_the_failed_page(env, monkeypatch):
     monkeypatch.setattr(pipeline, "PAGE_SIZE", 2)
     for i in range(4):
-        env.server.page(f"/p{i}", article_html(f"P{i}", [LONG_EN + f" distinct page {i} marker words."]))
+        env.server.page(f"/p{i}", article_html(f"P{i}", [prose("en", 200 + i, 15) + f" distinct page {i} marker words."]))
     await register(PERSONAL, "src-c", spec(env))
     job_id = await submit(env, PERSONAL, "src-c", [f"/p{i}" for i in range(4)])
 
@@ -665,7 +665,7 @@ async def test_a_page_commits_atomically_and_a_crash_resumes_at_the_failed_page(
 async def test_cancel_is_honoured_at_the_page_boundary_and_committed_pages_stay(env, monkeypatch):
     monkeypatch.setattr(pipeline, "PAGE_SIZE", 1)
     for i in range(4):
-        env.server.page(f"/p{i}", article_html(f"P{i}", [LONG_EN + f" distinct page {i} marker words."]))
+        env.server.page(f"/p{i}", article_html(f"P{i}", [prose("en", 200 + i, 15) + f" distinct page {i} marker words."]))
     await register(PERSONAL, "src-k", spec(env))
     job_id = await submit(env, PERSONAL, "src-k", [f"/p{i}" for i in range(4)])
     real_fetch = env.deps.polite.fetch
@@ -689,7 +689,7 @@ async def test_storage_cap_pauses_the_job_and_does_not_refetch_while_full(env, m
     # Contract (stage-handler.md, cap-full replay): when the root is full the job stops in retry_wait/storage_cap_reached
     # with the rejected URL and tail kept in the frontier. A fresh URL may be fetched once, because its bytes could dedupe
     # to a durable orphan; after a quota refusal it is not fetched again until `used + quota_bytes <= cap`.
-    page_a, page_b = article_html("A", [LONG_EN]), article_html("B", [LONG_EN + " second page marker."])
+    page_a, page_b = article_html("A", [prose("en", 106, 15)]), article_html("B", [LONG_EN + " second page marker."])
     env.server.page("/a", page_a)
     env.server.page("/b", page_b)
     size_a, size_b = len(page_a.encode()), len(page_b.encode())
@@ -732,7 +732,7 @@ class FakeScorer:
 
 
 async def test_l1_hook_shadow_gate_and_unavailable_scorer(env):
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-l1", spec(env))
     quality.register_scorer(FakeScorer(0.2))
     try:
@@ -793,7 +793,7 @@ async def test_host_state_is_public_data_only_and_policy_rows_are_tenant_scoped(
 
 
 async def test_work_is_committed_with_the_fence_so_a_stale_attempt_leaves_nothing(env):
-    env.server.page("/a", article_html("A", [LONG_EN]))
+    env.server.page("/a", article_html("A", [prose("en", 106, 15)]))
     await register(PERSONAL, "src-fence", spec(env))
     job_id = await submit(env, PERSONAL, "src-fence", ["/a"])
     async with sessionmaker()() as db:
@@ -818,3 +818,16 @@ async def test_work_is_committed_with_the_fence_so_a_stale_attempt_leaves_nothin
         await ctx.commit_work(work)
     assert stale_item["added"] and await items(job_id) == []
     assert (await job_row(job_id)).cursor is None
+
+
+async def test_a_near_copy_on_another_url_is_held_with_its_original_kept(env):
+    base = prose("en", 301, 40)
+    copy = base.replace("covering", "spanning", 1)
+    env.server.page("/orig", article_html("Report", [base]))
+    env.server.page("/mirror", article_html("Report mirror", [copy]))
+    await register(PERSONAL, "src-near", spec(env))
+    job = await run(await submit(env, PERSONAL, "src-near", ["/orig", "/mirror"]))
+    rows = by_path(await items(job.id))
+    assert rows["/orig"].status == "accepted"
+    assert rows["/mirror"].status == "held" and "near_duplicate" in rows["/mirror"].reason_codes
+    assert rows["/mirror"].envelope is not None and rows["/mirror"].signals["near_candidates"][0]["jaccard"] >= 0.92

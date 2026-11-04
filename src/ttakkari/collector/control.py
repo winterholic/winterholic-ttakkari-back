@@ -4,24 +4,21 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 from ttakkari.collector import jobs, store
-from ttakkari.collector.budget import budget_day
 from ttakkari.collector.contracts import (
     AuthContext,
     CollectorContractError,
     JobStateError,
     jcs,
 )
-from ttakkari.collector.control_models import CollectorDailyBudget, CollectorSource
+from ttakkari.collector.control_models import CollectorSource
 from ttakkari.collector.intake import submit_envelope
 from ttakkari.collector.library import LIBRARY_SCOPE, effective_pool, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.policy import CollectRequest, SourcePolicySpec
 from ttakkari.collector.quality import unmeasured_quality
 from ttakkari.collector_models import CollectorJob
-from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 
 ACTIVE = ("queued", "running", "retry_wait", "budget_wait")
@@ -116,14 +113,6 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     request = dict(source.request)
     if max_pages is not None:
         request["max_pages"] = max_pages
-    # A hard, global page admission ceiling: every new attempt is reserved before enqueue.
-    day = budget_day(now)
-    await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
-    budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
-    pages = request["max_pages"]
-    if budget.reserved_pages + pages > get_settings().collector_daily_page_cap:
-        raise JobStateError("daily collection page budget reached")
-    budget.reserved_pages += pages
     ident = uuid.uuid4()
     from ttakkari.collector import quality_service
     envelope = intake_envelope(source, policy[0], now, ident)
@@ -221,12 +210,6 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
         envelope["extensions"]["collector:request"] = request
     result = await submit_envelope(db, source_context(source), request_key, envelope)
     if result.status == "created":
-        day = budget_day(now)
-        await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
-        budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
-        if budget.reserved_pages + 1 > get_settings().collector_daily_page_cap:
-            raise JobStateError("daily collection page budget reached")
-        budget.reserved_pages += 1
         source.last_job_id = result.job_id
     from ttakkari.collector import jobs
     return await jobs.get_job(db, ctx.tenant_id, ctx.pool, result.job_id)

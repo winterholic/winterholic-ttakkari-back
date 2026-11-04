@@ -117,6 +117,7 @@ BANDS = 16
 ROWS = NUM_PERM // BANDS
 SHINGLE = 5
 NEAR_THRESHOLD = 0.80
+NEAR_HOLD_THRESHOLD = 0.92  # above this a page is the same text with a different header, footer or version banner
 MIN_NEAR_CHARS = 100
 MAX_SHINGLE_CHARS = 100_000
 _MASK = np.uint64(0xFFFFFFFFFFFFFFFF)

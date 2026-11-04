@@ -15,7 +15,6 @@ from ttakkari.collector.contracts import (
     parse_iso_datetime,
 )
 from ttakkari.collector.control_models import (
-    CollectorDailyBudget,
     CollectorDelivery,
     CollectorReview,
     CollectorSource,
@@ -175,7 +174,7 @@ async def sources(ctx: Access, db: Db):
         active = await store.active_policy(db, ctx.tenant_id, ctx.scope, source.source_key)
         items.append({**view(source), "policy": active[0].to_dict() if active else None})
     return {"items": items, "runtime_enabled": get_settings().collector_control_enabled,
-            "daily_page_cap": get_settings().collector_daily_page_cap, "ml_spending_enabled": False}
+            "ml_spending_enabled": False}
 
 
 @router.post("/sources", status_code=201)
@@ -389,17 +388,13 @@ async def collect_summary(ctx: Access, db: Db):
         "runtime": {"loop_available": s.collector_control_enabled, "paused": bool(paused.get("paused")),
                     "reason": paused.get("reason"), "since": paused.get("at")},
         "budget": await budget.snapshot(db),
-        "daily_page_cap": s.collector_daily_page_cap,
     }
 
 
 @router.get("/budgets")
 async def budgets(ctx: Access, db: Db):
     from ttakkari.collector import budget
-    day = budget.budget_day()
-    pages = await db.get(CollectorDailyBudget, day)
-    return {**await budget.snapshot(db), "pages": {"limit": get_settings().collector_daily_page_cap,
-                                                    "reserved": pages.reserved_pages if pages else 0}}
+    return await budget.snapshot(db)
 
 
 @router.get("/review")

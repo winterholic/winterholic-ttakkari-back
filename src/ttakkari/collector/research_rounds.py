@@ -97,10 +97,12 @@ async def _run_providers(query: str, topic: str | None) -> dict[str, Any]:
 
     providers: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
-    calls = [("duckduckgo_html", lambda: adapters.search_web(query))]
+    calls = [("duckduckgo_html", lambda: adapters.search_web(query)), ("bing_html", lambda: adapters.search_bing(query))]
     if topic == "papers" and re.search(r"[A-Za-z]{3}", query):
         calls.append(("arxiv_api", lambda: paper.search_arxiv(query)))
     for name, call in calls:
+        if name == "bing_html" and candidates and not any(p["status"] == "failed" for p in providers) and len(candidates) >= 3:
+            continue  # the first provider answered; the second is the fallback for a refusal or a thin answer
         try:
             found = await call()
         except Exception as exc:  # noqa: BLE001  any provider failure is a recorded failure, never an empty result
@@ -110,7 +112,8 @@ async def _run_providers(query: str, topic: str | None) -> dict[str, Any]:
         candidates += found
     failed = [p for p in providers if p["status"] == "failed"]
     return {"candidates": candidates, "providers": providers,
-            "status": "failed" if len(failed) == len(providers) else "ok",
+            # A provider that failed and left nothing behind is a failure, even if another provider answered with zero.
+            "status": "failed" if failed and not candidates else "ok",
             "error": failed[0]["code"] if failed else None, "retryable": any(p["retryable"] for p in failed)}
 
 

@@ -182,11 +182,10 @@ async def test_ssrf_counterexamples_are_stopped_before_any_connection(client, au
     await fetcher.aclose()
 
 
-async def test_absolute_limits_are_independent_of_collection_volume(client, auth, env, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(get_settings(), "collector_daily_page_cap", 20)
+async def test_collection_volume_is_not_capped_by_a_daily_page_ceiling(client, auth, env, monkeypatch):  # noqa: F811
     monkeypatch.setattr(get_settings(), "collector_pilot_enabled", False)
     admitted = {}
-    for volume in (3, 30):  # N sources then 10N: the admitted work is capped by the same absolute page ceiling
+    for volume in (3, 30):  # N sources then 10N: every run is admitted, there is no daily page ceiling
         async with sessionmaker()() as db:
             from sqlalchemy import delete
 
@@ -206,7 +205,7 @@ async def test_absolute_limits_are_independent_of_collection_volume(client, auth
             r = await client.post(BASE + f"/sources/{source['id']}/run", headers=auth)
             ok += r.status_code == 202
         admitted[volume] = ok
-    assert admitted[3] == 3 and admitted[30] == 20  # one page per source here: the 20-page ceiling holds for 10N
+    assert admitted[3] == 3 and admitted[30] == 30
     async with sessionmaker()() as db:  # and the whole collection path made zero model reservations
         assert await db.scalar(select(func.count()).select_from(CollectorBudgetReservation)) == 0
 

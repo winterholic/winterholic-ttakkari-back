@@ -33,7 +33,7 @@ KIND_LABEL = {
 
 TARGETS: tuple[Target, ...] = (
     Target("carbon", "IBM Carbon", "design_system", ("ibm carbon", "carbon design system", "carbon 디자인", "카본"), ("https://www.carbondesignsystem.com/",)),
-    Target("material", "Google Material Design", "design_system", ("material design", "material 3", "머티리얼"), ("https://m3.material.io/",)),
+    Target("material", "Google Material Design", "design_system", ("material design", "material 3", "머티리얼"), ("https://m3.material.io/", "https://m2.material.io/design")),
     Target("hig", "Apple Human Interface Guidelines", "design_system", ("apple hig", "human interface guidelines", "apple human interface", "hig"), ("https://developer.apple.com/design/human-interface-guidelines/",)),
     Target("fluent", "Microsoft Fluent", "design_system", ("microsoft fluent", "fluent design", "fluent 2", "fluent ui"), ("https://fluent2.microsoft.design/",)),
     Target("atlassian", "Atlassian Design System", "design_system", ("atlassian",), ("https://atlassian.design/",)),
@@ -63,10 +63,22 @@ TARGETS: tuple[Target, ...] = (
     Target("uswds", "U.S. Web Design System", "public_sector", ("uswds", "u.s. web design system"), ("https://designsystem.digital.gov/",)),
     Target("govuk", "GOV.UK Design System", "public_sector", ("gov.uk", "govuk"), ("https://design-system.service.gov.uk/",)),
     Target("nhs", "NHS Design System", "public_sector", ("nhs design", "nhs service manual"), ("https://service-manual.nhs.uk/design-system",)),
-    Target("toss", "토스 디자인 시스템", "design_system", ("toss design", "토스 디자인", "토스디자인", "toss tds", "tds"), (), ("https://toss.tech/",)),
-    Target("naver", "네이버 디자인 시스템", "design_system", ("naver design", "네이버 디자인", "네이버디자인", "nds"), ()),
-    Target("kakao", "카카오 디자인 시스템", "design_system", ("kakao design", "카카오 디자인", "카카오디자인"), ()),
-    Target("baemin", "우아한형제들 디자인", "design_system", ("우아한형제들", "배민 디자인", "baemin"), ()),
+    Target("mui", "Material UI", "design_system", ("material ui", "mui"), ("https://mui.com/material-ui/getting-started/",)),
+    Target("radix", "Radix UI", "design_system", ("radix ui", "radix themes"), ("https://www.radix-ui.com/themes/docs/overview/getting-started",)),
+    Target("shadcn", "shadcn/ui", "design_system", ("shadcn",), ("https://ui.shadcn.com/docs",)),
+    Target("mantine", "Mantine", "design_system", ("mantine",), ("https://mantine.dev/",)),
+    Target("tailwind", "Tailwind CSS", "design_system", ("tailwind",), ("https://tailwindcss.com/docs/installation/using-vite",)),
+    Target("bootstrap", "Bootstrap", "design_system", ("bootstrap",), ("https://getbootstrap.com/docs/5.3/getting-started/introduction/",)),
+    Target("geist", "Vercel Geist", "design_system", ("vercel geist", "geist"), ("https://vercel.com/geist/introduction",)),
+    Target("googledesign", "Google Design", "ux_research", ("google design",), ("https://design.google/library",)),
+    Target("krds", "KRDS 정부 디자인 시스템", "public_sector", ("krds", "정부 디자인 시스템", "범정부 ui"), ("https://www.krds.go.kr/",)),
+    Target("smashing", "Smashing Magazine UX", "ux_research", ("smashing magazine", "smashingmagazine"), ("https://www.smashingmagazine.com/category/ux-design/",)),
+    Target("alistapart", "A List Apart", "ux_research", ("a list apart", "alistapart"), ("https://alistapart.com/articles/",)),
+    Target("line", "LINE 디자인·엔지니어링", "design_system", ("line design", "라인 디자인", "라인 엔지니어링"), (), ("https://engineering.linecorp.com/ko/blog",)),
+    Target("toss", "토스 디자인 시스템", "design_system", ("toss design", "토스 디자인", "토스디자인", "toss tds", "tds", "토스"), ("https://tossmini-docs.toss.im/tds-mobile/",), ("https://toss.tech/",)),
+    Target("naver", "네이버 디자인 시스템", "design_system", ("naver design", "네이버 디자인", "네이버디자인", "nds", "네이버"), (), ("https://d2.naver.com/helloworld",)),
+    Target("kakao", "카카오 디자인 시스템", "design_system", ("kakao design", "카카오 디자인", "카카오디자인", "카카오"), (), ("https://tech.kakao.com/",)),
+    Target("baemin", "우아한형제들 디자인", "design_system", ("우아한형제들", "배민 디자인", "baemin", "배민"), (), ("https://techblog.woowahan.com/",)),
     Target("carrot", "당근 Seed 디자인 시스템", "design_system", ("당근 디자인", "seed design"), ()),
 )
 
@@ -141,7 +153,7 @@ def topics_matching(text: str) -> list[str]:
 PATH_PREFIX = {
     "hig": "/design/", "antd": "/docs/spec/", "nngroup": "/articles/", "ixdf": "/literature", "baymard": "/blog",
     "wcag": "/WAI/", "aria": "/WAI/ARIA/apg/", "nhs": "/design-system", "polaris": "/docs/api/polaris", "fiori": "/design-system/",
-    "blueprint": "/docs/", "material": "/",
+    "blueprint": "/docs/", "material": "/", "toss": "/tds-mobile/", "naver": "/helloworld", "tailwind": "/docs/", "googledesign": "/library",
 }
 
 EXTRA_RESEARCH = (

@@ -1360,8 +1360,8 @@ async def test_mission_auto_split_when_exceeding_source_policy_page_limit(client
     p2 = env.server.url("/split/page2")
     p3 = env.server.url("/split/page3")
     h1 = article_html("P1", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
-    h2 = article_html("P2", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
-    h3 = article_html("P3", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h2 = article_html("P2", [prose("en", 81, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h3 = article_html("P3", [prose("en", 82, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
     env.server.page("/split/page1", h1 + f'<a href="{p2}">P2</a>')
     env.server.page("/split/page2", h2 + f'<a href="{p3}">P3</a>')
     env.server.page("/split/page3", h3)
@@ -1427,8 +1427,8 @@ async def test_mission_fair_allocation_reclaims_unused_pages_for_other_sources(c
     u2 = env.server.url("/fair/long1")
     u3 = env.server.url("/fair/long2")
     env.server.page("/fair/short", article_html("Short", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", ""))  # 1 page total
-    h2 = article_html("L1", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
-    h3 = article_html("L2", [prose("en", 80, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h2 = article_html("L1", [prose("en", 81, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    h3 = article_html("L2", [prose("en", 82, 15)]).replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
     env.server.page("/fair/long1", h2 + f'<a href="{u3}">L2</a>')
     env.server.page("/fair/long2", h3)
 

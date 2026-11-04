@@ -96,6 +96,22 @@ def _find_chromium(browsers: Path) -> Path | None:
     return None
 
 
+def _runtime_root(settings) -> Path | None:
+    """First directory that holds node_modules/playwright-core.
+
+    A deployed release is a fresh checkout and never contains the untracked `.browser-runtime`, so the release-relative
+    default alone left every script-rendered site unrendered in production (the browser worked only from the source tree)."""
+    candidates = []
+    if settings.collector_render_runtime_dir:
+        candidates.append(Path(settings.collector_render_runtime_dir))
+    else:
+        candidates.append(Path(__file__).parents[3] / ".browser-runtime")
+        if settings.deploy_source_root:
+            candidates.append(Path(settings.deploy_source_root) / ".browser-runtime")
+        candidates.append(settings.home / "browser-runtime")
+    return next((root for root in candidates if (root / "node_modules" / "playwright-core").is_dir()), None)
+
+
 def runtime() -> dict[str, str]:
     """node, playwright-core and a Chromium build, or RendererUnavailable naming what is missing."""
     settings = get_settings()
@@ -104,8 +120,8 @@ def runtime() -> dict[str, str]:
     node = shutil.which("node")
     if node is None:
         raise RendererUnavailable("node_missing")
-    root = Path(settings.collector_render_runtime_dir) if settings.collector_render_runtime_dir else Path(__file__).parents[3] / ".browser-runtime"
-    if not (root / "node_modules" / "playwright-core").is_dir():
+    root = _runtime_root(settings)
+    if root is None:
         raise RendererUnavailable("playwright_core_missing")
     browsers = Path(settings.collector_render_browsers_path) if settings.collector_render_browsers_path else (
         Path.home() / ("Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright"))

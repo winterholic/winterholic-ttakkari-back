@@ -50,6 +50,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # managed collection, immutable delivery, scoped knowledge retrieval
     "tests/test_collector_control.py",
     "tests/test_collection_missions.py",
+    "tests/test_collection_catalog_plan.py",
     "tests/test_collection_agent.py",
     "tests/test_collection_mission_stage2.py",
     "tests/test_collection_scope_merge.py",

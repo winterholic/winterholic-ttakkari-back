@@ -7,17 +7,14 @@ A requirement's state comes from evidence counts, never from a model saying "don
 """
 from __future__ import annotations
 
-import uuid
 from collections import Counter
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from ttakkari.collector import catalog, missions
 from ttakkari.collector_models import CollectionMissionJob, CollectorItem, CollectorJob
-from ttakkari.kb_pipeline.types import PIPELINE_STAGES
-from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
 
 EVENT_LIMIT = 300
 DISCARD_LIMIT = 150
@@ -46,20 +43,6 @@ def evidence_grade(url: str) -> str:
 def _state_of_coverage(entry: dict[str, Any]) -> str:
     return {"covered": "met", "thin": "partial", "unavailable": "blocked", "sources_found": "active",
             "no_candidates": "empty", "unexplored": "pending"}.get(entry.get("state", "unexplored"), "pending")
-
-
-async def ontology_progress(db, document_ids: list[str]) -> dict[str, Any]:
-    """Per-stage status of the KB's own knowledge pipeline for the documents this mission delivered."""
-    ids = [uuid.UUID(value) for value in document_ids if value]
-    stages = {name: Counter() for name in PIPELINE_STAGES}
-    if ids:
-        rows = (await db.execute(
-            select(KbPipelineStage.stage, KbPipelineStage.status, func.count())
-            .join(KbPipelineJob, KbPipelineJob.id == KbPipelineStage.job_id)
-            .where(KbPipelineJob.document_id.in_(ids)).group_by(KbPipelineStage.stage, KbPipelineStage.status))).all()
-        for stage, status, count in rows:
-            stages.setdefault(stage, Counter())[status] += count
-    return {"documents": len(ids), "stages": [{"stage": name, "states": dict(stages[name])} for name in PIPELINE_STAGES]}
 
 
 def _rules(view: dict[str, Any], ontology: dict[str, Any], jobs: list[CollectorJob]) -> list[dict[str, Any]]:
@@ -103,7 +86,8 @@ def _stage_rows(view: dict[str, Any], ontology: dict[str, Any]) -> list[dict[str
     ]
 
 
-async def build(db, mission) -> dict[str, Any]:
+async def build(db, mission, *, ontology_progress) -> dict[str, Any]:
+    """`ontology_progress(db, document_ids)` is supplied by the API layer: the collector never imports the knowledge library."""
     view = await missions.view(db, mission)
     document_ids = [row["document_id"] for row in view["results"] if row.get("document_id")]
     ontology = await ontology_progress(db, document_ids)

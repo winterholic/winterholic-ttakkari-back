@@ -334,7 +334,28 @@ async def trace_mission(mission_id: uuid.UUID, _: User, db: Db):
     mission = await db.scalar(select(CollectionMission).where(CollectionMission.id == mission_id, CollectionMission.tenant_id == "owner"))
     if mission is None:
         raise HTTPException(404, "수집 임무를 찾을 수 없습니다.")
-    return await trace.build(db, mission)
+    return await trace.build(db, mission, ontology_progress=_ontology_progress)
+
+
+async def _ontology_progress(db, document_ids):
+    """Per-stage status of the KB's own knowledge pipeline for the delivered documents."""
+    from collections import Counter
+
+    from sqlalchemy import func
+
+    from ttakkari.kb_pipeline.types import PIPELINE_STAGES
+    from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
+
+    ids = [uuid.UUID(value) for value in document_ids if value]
+    stages = {name: Counter() for name in PIPELINE_STAGES}
+    if ids:
+        rows = (await db.execute(
+            select(KbPipelineStage.stage, KbPipelineStage.status, func.count())
+            .join(KbPipelineJob, KbPipelineJob.id == KbPipelineStage.job_id)
+            .where(KbPipelineJob.document_id.in_(ids)).group_by(KbPipelineStage.stage, KbPipelineStage.status))).all()
+        for stage, status, count in rows:
+            stages.setdefault(stage, Counter())[status] += count
+    return {"documents": len(ids), "stages": [{"stage": name, "states": dict(stages[name])} for name in PIPELINE_STAGES]}
 
 
 @router.post("/{mission_id}/items/{item_id}/unhold")

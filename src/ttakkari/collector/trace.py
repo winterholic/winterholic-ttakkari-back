@@ -146,9 +146,13 @@ async def build(db, mission) -> dict[str, Any]:
         if item.status in ("held", "failed", "blocked") and len(discarded) < DISCARD_LIMIT:
             discarded.append({"item_id": str(item.id), "url": item.url, "title": item.title or "", "status": item.status, "reasons": reasons,
                               "http_status": item.http_status, "grade": evidence_grade(item.url)})
+    by_reason: dict[str, list[dict[str, Any]]] = {}
     for gap in view["gaps"]:
-        events.append({"at": None, "order": 10_000, "stage": "acquire", "kind": "gap", "subject": gap.get("url"),
-                       "message": f"{gap['reason']} · {gap.get('message', '')}".strip(" ·")})
+        by_reason.setdefault(gap["reason"], []).append(gap)
+    for reason, gaps in by_reason.items():
+        sample = ", ".join(str(g.get("url") or g.get("identifier") or "")[:80] for g in gaps[:2] if g.get("url") or g.get("identifier"))
+        events.append({"at": None, "order": 10_000, "stage": "acquire", "kind": "gap", "subject": sample or None,
+                       "message": f"{reason} {len(gaps)}곳 · {gaps[0].get('message', '')}".strip(" ·")})
     events.sort(key=lambda e: (e["at"] is None, e["at"] or "", e["order"]), reverse=True)
 
     grades = Counter(evidence_grade(row["url"]) for row in view["results"] if row.get("document_id"))

@@ -51,6 +51,24 @@ async def fetch_bytes(url: str) -> bytes:
         await fetcher.aclose()
 
 
+_REAL_FETCH_BYTES = fetch_bytes
+SEARCH_SPACING_SECONDS = 6.0  # DuckDuckGo's HTML endpoint answered the 8th query in a row with an anti-bot challenge
+_search_pace = {"lock": None, "last": 0.0}
+
+
+async def _pace_search() -> None:
+    import asyncio
+    import time
+
+    if _search_pace["lock"] is None:
+        _search_pace["lock"] = asyncio.Lock()
+    async with _search_pace["lock"]:
+        wait = _search_pace["last"] + SEARCH_SPACING_SECONDS - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _search_pace["last"] = time.monotonic()
+
+
 async def search_web(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes]] = fetch_bytes, limit: int = 8) -> list[dict]:
     """Public HTML search. Results are untrusted candidates, never a license grant.
 
@@ -58,6 +76,8 @@ async def search_web(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes
     observable instead of becoming a successful collection.
     """
     url = "https://html.duckduckgo.com/html/?" + urlencode({"q": query[:500]})
+    if fetch_bytes is _REAL_FETCH_BYTES:  # injected fakes in tests are not the public provider
+        await _pace_search()
     raw = await fetch_bytes(url)
     tree = lxml_html.fromstring(raw)
     links = tree.xpath('//a[contains(concat(" ", normalize-space(@class), " "), " result__a ")]')

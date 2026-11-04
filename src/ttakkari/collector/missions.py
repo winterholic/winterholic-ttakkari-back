@@ -38,6 +38,7 @@ from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
 from ttakkari.collector.library import LIBRARY_SCOPE, effective_pool, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.pipeline import COUNT_KEYS
+from ttakkari.collector.policy import MAX_SEEDS
 from ttakkari.collector_models import (
     CollectionMission,
     CollectionMissionJob,
@@ -357,7 +358,8 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             envelope = control.intake_envelope(source, policy, now, ident)
             req_dict = dict(envelope["extensions"]["collector:request"])
             req_dict["max_pages"] = pages
-            req_dict["seeds"] = [e.get("url") or e.get("u") for e in item["frontier"]]
+            # The request holds at most MAX_SEEDS; the rest of the frontier travels in the child's cursor below.
+            req_dict["seeds"] = [url for url in (e.get("url") or e.get("u") for e in item["frontier"]) if url][:MAX_SEEDS]
             envelope["extensions"]["collector:request"] = req_dict
             envelope["extensions"]["collector:mission"] = {**mission_ext, "parent_job_id": str(item["last_job"].id)}
             child_cursor = {

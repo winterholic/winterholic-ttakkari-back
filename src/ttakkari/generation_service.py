@@ -429,7 +429,8 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     if s.ops_log_sync_seconds > 0:
         from ttakkari.oplog.ingest import sync_all
         jobs.append(("ops-logs", sync_all, s.ops_log_sync_seconds))
-    if s.release_gc_interval_seconds > 0 and (s.home / "deploy" / "releases").is_dir():
+    # 선택 작업이라 설정 객체에 값이 없으면(주기 작업 목록만 시험하는 가짜 설정) 꺼진 것으로 본다.
+    if getattr(s, "release_gc_interval_seconds", 0) > 0 and (s.home / "deploy" / "releases").is_dir():
         from ttakkari.release_gc import run_once as release_gc
         jobs.append(("release-gc", release_gc, float(s.release_gc_interval_seconds)))
     return jobs

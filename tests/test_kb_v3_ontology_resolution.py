@@ -694,3 +694,13 @@ async def test_postgres_roundtrip_resolution_idempotency_and_visibility(pg_db: A
     await expect_violation(visibility="public")
     await expect_violation(mention_count=-1)
     await expect_violation(entity_kind="technology", norm_name="kubernetes", visibility="global", tenant_id="personal")
+
+
+@pytest.mark.asyncio
+async def test_plural_only_difference_reuses_the_entity_and_other_similar_names_stay_candidates(async_db: AsyncSession) -> None:
+    first = await resolve_entity(async_db, "Fluid input height", entity_kind="concept", domain="dev", source_access="personal")
+    doc = await Doc().register(async_db)
+    same = await resolve_entity(async_db, "Fluid input heights", entity_kind="concept", domain="dev", **doc.kw())
+    assert not same.created and same.entity.id == first.entity.id and not same.conflicts
+    other = await resolve_entity(async_db, "Fluid input widths", entity_kind="concept", domain="dev", **doc.kw())
+    assert other.created and other.entity.id != first.entity.id

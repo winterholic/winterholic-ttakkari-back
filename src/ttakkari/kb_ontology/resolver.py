@@ -411,6 +411,20 @@ async def resolve_entity(
         exclude_ids={e.id for e, _ in collisions},
     )
 
+    # 복수형·대소문자·구두점만 다른 이름("Fluid input heights" / "Fluid input height")은 비슷한 이름이 아니라 같은 이름이다.
+    # 정확히 하나일 때만 합치고, kind·도메인이 호환돼야 한다. 그 밖의 유사 이름은 계속 후보로만 남긴다.
+    folded = _fold_inflection(target_norm)
+    twins = [
+        e for e, _ in similar
+        if _fold_inflection(e.norm_name.split("~")[0]) == folded
+        and is_kind_compatible(e.entity_kind, entity_kind) and is_domain_compatible(e.domain, domain, target_norm)
+    ]
+    if len(twins) == 1 and not collisions:
+        return await _finalize_match(
+            db, ctx, twins[0], EntityResolutionStep.EXACT_NORM_NAME, learnable, rejected,
+            "Same name apart from plural form",
+        )
+
     # -----------------------------------------------------------------
     # Step 4/신규: 일치가 없으면 독립 엔터티를 만들고 충돌·후보를 남긴다.
     # -----------------------------------------------------------------
@@ -643,6 +657,18 @@ async def _finalize_match(
         conflicts=conflicts,
         note=note,
     )
+
+
+def _fold_inflection(norm: str) -> str:
+    """Normalized name with each English token reduced to a crude singular, for plural-only differences."""
+    tokens = []
+    for token in norm.split():
+        if len(token) > 3 and token.endswith("ies"):
+            token = token[:-3] + "y"
+        elif len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+            token = token[:-1]
+        tokens.append(token)
+    return " ".join(tokens)
 
 
 async def _create_entity_with_candidates(

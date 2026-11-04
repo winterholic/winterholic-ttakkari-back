@@ -328,7 +328,8 @@ async def _collector_control() -> None:
         await control.schedule_once()
         pipeline.install()
         collector_precise_runtime.install()
-        await consume_once(limit=1, managed_only=True)
+        # One job per 10-second tick capped a 1000-page mission at ~6 pages a minute.
+        await consume_once(limit=get_settings().collector_batch_size, managed_only=True)
     # A pause stops new fetching only. Already collected items still reach their permitted sink, which re-checks rights.
     await delivery.deliver_once()
     await budget.sweep_orphans()

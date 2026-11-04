@@ -411,6 +411,7 @@ async def launch(db, mission: CollectionMission) -> None:
 
 
 AUTO_POLICY_PAGES = 200
+GITHUB_REPO_FILE_CAP = 300  # one repository must not queue a thousand per-file jobs ahead of every other target
 AUTO_POLICY_PROVENANCE = frozenset({"catalog", "web_search", "user_reference"})
 
 
@@ -494,7 +495,7 @@ async def prepare(job, ctx):
         if entry["adapter"] != "github" or entry["url"] in done:
             continue
         try:
-            inventory = await adapters.github_repository(entry["url"], limit=min(2000, strategy["budget"]["pages"]))
+            inventory = await adapters.github_repository(entry["url"], limit=min(2000, strategy["budget"]["pages"], GITHUB_REPO_FILE_CAP))
         except Exception as exc:  # noqa: BLE001
             # Metadata failure on one repository does not block subsequent independent sources; record as a gap
             done.append(entry["url"])

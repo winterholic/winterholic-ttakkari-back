@@ -1635,3 +1635,28 @@ def test_iter_outbox_files_skips_regenerable_dirs(tmp_path):
     (tmp_path / "link").symlink_to(tmp_path / "report.md")
     got = [p.relative_to(tmp_path).as_posix() for p in iter_outbox_files(tmp_path)]
     assert got == ["link", "report.md", "docs/notes.md"]
+
+
+async def test_run_outbox_is_a_real_path_even_when_the_outbox_root_is_a_symlink(client, auth, new_session, make_git_dir, tmp_path, monkeypatch):
+    """Codex rejects writable roots with a symlink component; a relocated (linked) outbox must not reach the engine as a link."""
+    import shutil
+
+    root = get_settings().outbox_root
+    real = tmp_path / "volume" / "outbox"
+    real.mkdir(parents=True)
+    backup = root.with_name("outbox-real-backup")
+    shutil.move(str(root), str(backup))
+    root.symlink_to(real)
+    try:
+        _ws, sess = await new_session(make_git_dir())
+        run = await run_to_end(client, auth, sess["id"], "MODIFY 파일을 만들어줘")
+        from ttakkari.db import sessionmaker as _sm
+        from ttakkari.models import Run as _Run
+
+        async with _sm()() as db:
+            stored = await db.scalar(select(_Run.outbox_path).where(_Run.id == uuid.UUID(run["id"])))
+        assert Path(stored) == real.resolve() / run["id"]
+        assert not any(part.is_symlink() for part in [Path(stored), *Path(stored).parents])
+    finally:
+        root.unlink()
+        shutil.move(str(backup), str(root))

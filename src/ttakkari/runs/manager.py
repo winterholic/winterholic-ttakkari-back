@@ -1368,7 +1368,10 @@ class RunManager:
                     run.checkpoint_ref = ref
                     events.append(db, run, "checkpoint", {"ref": ref, "untracked": sorted(untracked_before)[:MAX_CHECKPOINT_UNTRACKED]})
 
-        outbox = s.outbox_root / str(run.id)
+        # The owner may relocate data/outbox to another volume by linking it. Codex refuses a writable root that has a symlink
+        # component ("symlinked writable roots are not supported") and every Codex run died before its first command, so
+        # the run gets the real path.
+        outbox = s.outbox_root.resolve() / str(run.id)
         outbox.mkdir(parents=True, exist_ok=True)
         run.outbox_path = str(outbox)
         # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.

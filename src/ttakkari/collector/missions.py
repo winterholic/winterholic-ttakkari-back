@@ -86,6 +86,15 @@ async def begin_run(db, mission: CollectionMission, trigger: str) -> CollectionM
     return await get_run(db, mission, seq, trigger=trigger)
 
 
+def in_supplement(plan: dict, run_seq: int, entry: dict) -> bool:
+    """A supplement run touches only the sources of the weak targets and topics it was asked for; every other run touches all."""
+    scope = plan.get("supplement") or {}
+    if scope.get("run_seq") != run_seq:
+        return True
+    keys = set(scope.get("keys") or [])
+    return bool(keys & {*(entry.get("topics") or []), *([f"t:{entry['target']}"] if entry.get("target") else [])})
+
+
 def needs_preparation(strategy: dict) -> bool:
     """Search, repository inventory and paper resolution run in a durable preparation job, not in the API request."""
     return strategy["mode"] == "research" or any(entry["adapter"] in ("github", "paper") for entry in strategy["sources"])
@@ -288,7 +297,7 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
 
     need_work: list[dict[str, Any]] = []
     for entry in entries:
-        if entry["adapter"] in ("github", "paper"):
+        if entry["adapter"] in ("github", "paper") or not in_supplement(mission.plan, run_seq, entry):
             continue  # Expanded by the durable preparation job, never fetched as HTML.
         key = source_key_for(mission.id, entry["url"])
         if key in active_sources:
@@ -506,7 +515,7 @@ async def prepare(job, ctx):
         progress_state = research_rounds.state(strategy, fresh.current_run_seq or 1, job.cursor)
     search_cursor, no_new = progress_state["search_cursor"], progress_state["no_new"]
     for entry in strategy["sources"]:
-        if entry["adapter"] != "github" or entry["url"] in done:
+        if entry["adapter"] != "github" or entry["url"] in done or not in_supplement(strategy, fresh.current_run_seq or 1, entry):
             continue
         try:
             inventory = await adapters.github_repository(entry["url"], limit=min(2000, strategy["budget"]["pages"], GITHUB_REPO_FILE_CAP))
@@ -539,6 +548,8 @@ async def prepare(job, ctx):
                             "repositories": [*(current.plan.get("repositories") or []),
                                              {k: v for k, v in _inventory.items() if k != "documents"}]}
             for doc in additions:
+                if doc["url"] in known:
+                    continue
                 try:
                     async with db.begin_nested():
                         await register_document_license(db, current, doc)
@@ -954,6 +965,62 @@ async def extend(db, mission_id: uuid.UUID, *, add_pages: int, tenant_id: str = 
     await db.flush()
     await reconcile_mission(db, mission)
     return mission
+
+
+SUPPLEMENT_SEARCHES = 4  # extra searches granted per weak entry; the page budget of the new run is the usual per-run one
+
+
+async def supplement(db, mission_id: uuid.UUID, *, keys: list[str], tenant_id: str = "owner") -> tuple[CollectionMission, list[str]]:
+    """Collect again only what is still thin, empty or blocked.
+
+    A new run is started so budgets and the page ledger stay per run, but its sources are limited to the chosen
+    entries (`in_supplement`) and its searches to fresh angles on them (`catalog.supplement_queries`). Everything already
+    collected stays; fetching is conditional, so unchanged pages are not reloaded. Returns the keys it will work on."""
+    await store._lock(db, "mission-control", tenant_id, str(mission_id))
+    mission = await db.scalar(select(CollectionMission).where(
+        CollectionMission.id == mission_id, CollectionMission.tenant_id == tenant_id).with_for_update())
+    if mission is None:
+        raise ValueError("수집 임무를 찾을 수 없습니다.")
+    if mission.status in ("running", "queued", "discovery_pending"):
+        raise ValueError("수집이 진행 중입니다. 끝난 뒤 보충해 주세요.")
+    block = await research_rounds.view_block(db, mission)
+    coverage = (block or {}).get("coverage") or []
+    weak = {c["key"]: c for c in coverage if c.get("key") and c["state"] != "covered"}
+    wanted = [key for key in (keys or list(weak)) if key in weak]
+    if not wanted:
+        raise ValueError("보충할 항목이 없습니다. 요구한 대상과 분야가 모두 충족됐습니다.")
+    plan = dict(mission.plan)
+    sources, queries = list(plan.get("sources") or []), list(plan.get("queries") or [])
+    known_urls = {entry["url"] for entry in sources}
+    query_topics = dict(plan.get("query_topics") or {})
+    first_new_query = len(queries)
+    for key in wanted:
+        target = next((t for t in catalog.TARGETS if f"t:{t.key}" == key), None)
+        for url in (*(target.roots if target else ()), *(target.blog if target else ())):
+            if url not in known_urls:
+                adapter = "github" if (urlsplit(url).hostname or "") == "github.com" else "website"
+                sources.append({"url": url, "adapter": adapter, "provenance": "catalog", "topics": [key], "target": target.key,
+                                **({"path_prefix": catalog.PATH_PREFIX[target.key]} if target.key in catalog.PATH_PREFIX else {})})
+                known_urls.add(url)
+        for query in catalog.supplement_queries(key, weak[key]["topic"]):
+            if query.lower() not in {q.lower() for q in queries}:
+                queries.append(query)
+                query_topics[query] = key
+    run = await begin_run(db, mission, "supplement")
+    prior = research_rounds.state(plan, run.run_seq)
+    budget = {**plan["budget"], "searches": plan["budget"]["searches"] + SUPPLEMENT_SEARCHES * len(wanted)}
+    mission.plan = {**plan, "sources": sources, "queries": queries, "query_topics": query_topics, "budget": budget,
+                    "supplement": {"run_seq": run.run_seq, "keys": wanted},
+                    "research": {**prior, "run_seq": run.run_seq, "search_cursor": first_new_query, "no_new": 0, "stop": None,
+                                 "round": 0, "searches_used": 0, "failed": []}}
+    mission.gaps = [g for g in mission.gaps if g.get("reason") != "mission_page_budget"]
+    mission.status = "queued"
+    await db.flush()
+    await reconcile_mission(db, mission)
+    await queue_preparation(db, mission, run.run_seq)
+    mission.status = "running"
+    await db.flush()
+    return mission, wanted
 
 
 async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> CollectionMission:

@@ -49,3 +49,43 @@ async def test_trace_reports_goal_requirements_and_failures(client, auth):
     assert {r["key"] for r in body["rules"]} == {"library", "source", "judge", "failures", "budget", "ontology"}
     assert body["jobs"]["total"] >= 1
     assert set(body["grades"]) == {"공식 표준", "연구·이론", "기업·기관 권장", "경험·실무 글"}
+
+
+def test_supplement_scope_limits_a_run_to_the_chosen_entries():
+    entry = {"url": "https://x", "target": "carbon", "topics": ["t:carbon"]}
+    other = {"url": "https://y", "topics": ["typography"]}
+    plan = {"supplement": {"run_seq": 2, "keys": ["t:carbon"]}}
+    assert missions.in_supplement(plan, 2, entry) and not missions.in_supplement(plan, 2, other)
+    assert missions.in_supplement(plan, 3, other) and missions.in_supplement({}, 2, other)  # other runs are untouched
+
+
+def test_supplement_queries_take_a_new_angle_on_the_same_target_or_topic():
+    target = catalog.supplement_queries("t:toss", "토스 디자인 시스템")
+    assert any("toss.tech" in q for q in target) and all("documentation guidelines" not in q for q in target)
+    assert any("typography" in q for q in catalog.supplement_queries("typography", "타이포그래피"))
+
+
+async def test_supplement_starts_a_run_for_weak_entries_only(client, auth):
+    from sqlalchemy import select, update
+
+    from ttakkari.collector_models import CollectionMission
+    from ttakkari.db import sessionmaker
+
+    made = await client.post(f"{BASE}/missions", headers=auth, json={"goal": GOAL, "max_pages": 50, "max_depth": 1})
+    mid = made.json()["id"]
+    busy = await client.post(f"{BASE}/missions/{mid}/supplement", headers=auth, json={"keys": ["t:carbon"]})
+    assert busy.status_code == 422 and "진행 중" in busy.text  # a running mission is never supplemented underneath itself
+    async with sessionmaker()() as db:
+        await db.execute(update(CollectionMission).where(CollectionMission.id == mid).values(status="partial"))
+        await db.commit()
+    unknown = await client.post(f"{BASE}/missions/{mid}/supplement", headers=auth, json={"keys": ["t:nope"]})
+    assert unknown.status_code == 422
+    done = await client.post(f"{BASE}/missions/{mid}/supplement", headers=auth, json={"keys": ["t:carbon", "typography"]})
+    assert done.status_code == 200, done.text
+    body = done.json()
+    assert body["supplement_keys"] == ["t:carbon", "typography"] and body["run_seq"] == 2
+    async with sessionmaker()() as db:
+        plan = (await db.scalar(select(CollectionMission).where(CollectionMission.id == mid))).plan
+    assert plan["supplement"] == {"run_seq": 2, "keys": ["t:carbon", "typography"]}
+    assert any("case study" in q for q in plan["queries"])
+    assert plan["research"]["run_seq"] == 2 and plan["research"]["search_cursor"] >= 30  # earlier queries are not repeated

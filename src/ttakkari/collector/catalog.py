@@ -201,3 +201,20 @@ def plan_parts(goal: str, targets: list[Target], topics: list[dict[str, Any]]) -
     plan_topics = [{"key": c["key"], "label": c["topic"], "subject": "", "subject_en": ""} for c in coverage]
     return {"sources": sources, "topics": plan_topics, "queries": ordered[:INITIAL_QUERIES], "deferred_queries": ordered[INITIAL_QUERIES:],
             "query_topics": query_topics, "coverage": coverage}
+
+
+def supplement_queries(key: str, label: str) -> list[str]:
+    """Different angles on one weak target or topic, so a second pass does not repeat the first pass's searches.
+
+    The first pass asked for documentation and principles; this one asks for the authors' own words (interviews, case
+    studies, engineering posts) and for the official host directly."""
+    if key.startswith("t:"):
+        target = next((t for t in TARGETS if t.key == key[2:]), None)
+        name = target.name if target else label
+        queries = [f"{name} design system case study lessons learned", f"{name} 디자인 시스템 도입 사례 인터뷰", f"{name} engineering blog design decisions"]
+        queries += [f"site:{host} design system guidelines" for host in (target.hosts if target else ())[:2]]
+        return queries
+    topic = next((t for t in TOPICS if t["key"] == key), None)
+    base = topic["en"] if topic else label
+    name = topic["label"] if topic else label
+    return [f"{base} best practices examples", f"{name} 연구 논문 근거 사례", f"{base} case study enterprise product"]

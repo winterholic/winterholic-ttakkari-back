@@ -412,6 +412,21 @@ async def extend_mission(mission_id: uuid.UUID, body: ExtendInput, _: User, db: 
         raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
 
 
+class SupplementInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    keys: list[str] = Field(default_factory=list, max_length=100)  # empty: every target and topic that is not yet met
+
+
+@router.post("/{mission_id}/supplement")
+async def supplement_mission(mission_id: uuid.UUID, body: SupplementInput, _: User, db: Db):
+    try:
+        mission, wanted = await missions.supplement(db, mission_id, keys=body.keys)
+        await db.commit()
+        return {**await missions.view(db, mission), "supplement_keys": wanted}
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
 @router.post("/{mission_id}/rerun")
 async def rerun_mission(mission_id: uuid.UUID, _: User, db: Db):
     try:

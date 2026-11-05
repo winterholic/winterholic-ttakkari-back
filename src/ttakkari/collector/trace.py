@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import select
 
-from ttakkari.collector import catalog, missions
+from ttakkari.collector import catalog, missions, research, research_rounds
 from ttakkari.collector_models import CollectionMissionJob, CollectorItem, CollectorJob
 
 EVENT_LIMIT = 300
@@ -89,7 +89,11 @@ def _stage_rows(view: dict[str, Any], ontology: dict[str, Any]) -> list[dict[str
 async def build(db, mission, *, ontology_progress) -> dict[str, Any]:
     """`ontology_progress(db, document_ids)` is supplied by the API layer: the collector never imports the knowledge library."""
     view = await missions.view(db, mission)
-    document_ids = [row["document_id"] for row in view["results"] if row.get("document_id")]
+    # The mission view lists at most 100 results; the library documents come from the full evidence set.
+    evidence = [row for row in await research_rounds.evidence(db, mission, limit=3000) if row.get("document_id")]
+    seen_docs: set[str] = set()
+    evidence = [row for row in evidence if not (row["document_id"] in seen_docs or seen_docs.add(row["document_id"]))]
+    document_ids = [row["document_id"] for row in evidence]
     ontology = await ontology_progress(db, document_ids)
     job_rows = (await db.execute(select(CollectorJob, CollectionMissionJob.run_seq).join(
         CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id)
@@ -100,7 +104,14 @@ async def build(db, mission, *, ontology_progress) -> dict[str, Any]:
     coverage = (view.get("research") or {}).get("coverage") or plan.get("coverage") or []
     requirements = [{"group": "target" if str(c.get("key", "")).startswith("t:") else "topic", "key": c.get("key"), "label": c["topic"],
                      "status": _state_of_coverage(c), "documents": c.get("documents", 0), "sources": c.get("sources", 0),
+                     "need": research.TARGET_COVERED_DOCUMENTS if str(c.get("key", "")).startswith("t:") else research.COVERED_DOCUMENTS,
                      "kind": catalog.KIND_LABEL.get(c.get("kind", ""), "")} for c in coverage]
+    documents = []
+    for row in evidence:
+        host = (urlsplit(row["url"]).hostname or "").lower()
+        owner = catalog.target_for_host(host)
+        documents.append({"title": row["title"] or row["url"], "url": row["url"], "host": host, "target": f"t:{owner.key}" if owner else None,
+                          "grade": evidence_grade(row["url"]), "document_id": row["document_id"]})
 
     events: list[dict[str, Any]] = []
     for index, entry in enumerate(plan.get("search_history") or []):
@@ -139,12 +150,12 @@ async def build(db, mission, *, ontology_progress) -> dict[str, Any]:
                        "message": f"{reason} {len(gaps)}곳 · {gaps[0].get('message', '')}".strip(" ·")})
     events.sort(key=lambda e: (e["at"] is None, e["at"] or "", e["order"]), reverse=True)
 
-    grades = Counter(evidence_grade(row["url"]) for row in view["results"] if row.get("document_id"))
+    grades = Counter(doc["grade"] for doc in documents)
     return {
         "id": view["id"], "title": view["title"], "goal": view["goal"], "status": view["status"], "run_seq": view["run_seq"],
         "targets": plan.get("targets") or [],
         "requirements": requirements, "rules": _rules(view, ontology, jobs), "stages": _stage_rows(view, ontology),
-        "ontology": ontology,
+        "ontology": ontology, "documents": documents,
         "jobs": {"total": len(jobs), "failed": sum(job.status == "failed" for job in jobs),
                  "running": sum(job.status == "running" for job in jobs), "queued": sum(job.status in ("queued", "retry_wait") for job in jobs)},
         "grades": {GRADE_LABEL[key]: grades.get(key, 0) for key in GRADE_LABEL},

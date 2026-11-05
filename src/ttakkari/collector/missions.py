@@ -99,7 +99,7 @@ def input_url(raw: str):
 
 
 def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
-         max_pages: int = 200, max_depth: int = 3) -> dict:
+         max_pages: int = 2000, max_depth: int = 3) -> dict:
     if not goal.strip() or "\x00" in goal + context:
         raise ValueError("수집 목적을 입력해 주세요.")
     if len(goal) > 20_000 or len(context) > 500_000:
@@ -153,7 +153,7 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
 
 
 async def create(db, *, goal: str, context: str = "", urls: list[str] | None = None,
-                 max_pages: int = 200, max_depth: int = 3, request_key: str | None = None) -> CollectionMission:
+                 max_pages: int = 2000, max_depth: int = 3, request_key: str | None = None) -> CollectionMission:
     strategy = plan(goal, context=context, urls=urls, max_pages=max_pages, max_depth=max_depth)
     digest = hashlib.sha256(jcs(strategy).encode()).hexdigest()
     key = request_key or str(uuid.uuid4())

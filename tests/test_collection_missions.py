@@ -1197,7 +1197,7 @@ async def test_python_docs_use_verified_official_policy_without_manual_registrat
         assert policy[0].license_id == "PSF-2.0"
         assert policy[0].allows("knowledge")
         assert job.envelope["extensions"]["collector:request"]["max_depth"] == 3
-        assert job.envelope["extensions"]["collector:request"]["max_pages"] == 200
+        assert job.envelope["extensions"]["collector:request"]["max_pages"] == 500
 
 
 async def test_exported_material_does_not_wait_forever_or_count_as_kb_import(client, auth, env, monkeypatch):  # noqa: F811

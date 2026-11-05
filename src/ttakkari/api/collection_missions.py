@@ -278,14 +278,14 @@ class MissionInput(BaseModel):
     goal: str = Field(min_length=1, max_length=20_000)
     context: str = Field(default="", max_length=500_000)
     urls: list[str] = Field(default_factory=list, max_length=100)
-    max_pages: int = Field(default=200, ge=1, le=100_000)
+    max_pages: int = Field(default=2000, ge=1, le=100_000)
     max_depth: int = Field(default=3, ge=0, le=12)
     request_key: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class ExtendInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    add_pages: int = Field(default=50, ge=1, le=100_000)
+    add_pages: int = Field(default=1000, ge=1, le=100_000)
 
 
 class ScheduleInput(BaseModel):

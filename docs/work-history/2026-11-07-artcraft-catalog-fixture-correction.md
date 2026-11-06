@@ -154,3 +154,13 @@ $ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-0464247c ./scripts/verify_deploy_g
 ## 범위
 
 후속 변경은 테스트 fixture의 명시적 `ClassVar` 타입과 이 evidence 기록이다. 서비스 검증, 운영 DB, 계정, 바이너리와 provider 실행은 변경하지 않았다.
+
+## 누적 source push 및 예약 (2026-11-07)
+
+- 현재 Run `c42ff253-811d-4f24-8d5e-be1c44b16637`의 `/Users/winterholic/bin/ttk get /api/runs/{UUID}` 결과: `status=running`, `engine=codex`, `profile=회사 코덱스 ai2 (ai2@hyperez.io)`.
+- 수용 source `cc6236b185db2d5bef0716659a5bfba182b3fc16`, 포함 main `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`, 기존 문서 tip `7bc345d3ad3b34cc7471fd854709f7534331b5c0`를 보존했다. 독립 검증의 최종 source gate(계약 87, 변경 테스트 34, Ruff, exit 0)와 집중 34+3 통과 결과는 immutable `cc6236…`에서 재사용했다.
+- 새 `git fetch origin main`은 `fc37d89ffdc4ec5731bb321666cfadfb3756c948`를 받았다. 원격 추가 변경은 reverse 통합 문서와 같은 카탈로그 테스트였다. 테스트 차이는 선택 `primary_metric` 연결 및 Measurement의 필드 명시였고, `git merge --no-edit origin/main`으로 보존했다. merge 뒤 실제 바뀐 테스트 범위를 소유 증명한 현재 Run 테스트 DB에서 직렬 재검사: catalog `34 passed` (34 selective reset, forced full/fallback 0), 인접 measurement 계약 `3 passed`, Ruff `All checks passed!`.
+- DB 사전조건: URL `127.0.0.1`, `ttakkari_test`, 명시 port `51759`; 읽기 전용 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` 결과 `ttakkari_test/ttk_test/51759`; 반환 `/tmp/...` 경로를 canonical resolve한 `/private/tmp/ttakkari-run-test-99596-c06cae2e/data`; 그 디렉터리의 단일 marker에서 Run UUID, port, owner PID, folder 및 DB 사용자 일치.
+- 누적 source/merge SHA `2f14f897332e09e54676392d67eae32193c129f2`는 최신 `fc37d89f…`를 포함하며 `cc6236…`와 기존 ArtCraft `fe90547e09136551a482457b18d88082298fd855`의 조상이다. 정상 `git push origin HEAD:refs/heads/main`은 hook을 실행했고 원격 응답은 `2f14f897… HEAD -> main`; 직후 `git ls-remote origin refs/heads/main`도 같은 full SHA를 반환했다. hook의 캡처된 시작 출력은 `변경 파일 2개`, `ruff (변경된 파이썬 1개)`, `계약 묶음 (pytest -m contract)`이다. 출력 수집은 계약 실행 시작 부분에서 끝났으나 push가 성공해 hook은 거절하지 않았다. 이 merge source에는 별도 full-suite 검사를 하지 않았다.
+- `request_backend_deploy(revision="2f14f897332e09e54676392d67eae32193c129f2")` receipt: id `12cfd116-c2c4-4bb3-8a8c-87338b0abe6d`, `status=requested`, `skip_tests=false`, `strategy=generations`, `error=null`. 이는 예약 접수만 뜻하며 활성화·배포 성공을 뜻하지 않는다. 상태 조회는 하지 않았다.
+- 문서 tip 구분: 이 기록은 source SHA `2f14f897…` 뒤의 후속 문서-only 커밋에 기록한다. 배포 예약은 source SHA `2f14f897…`에 고정되어 있다.

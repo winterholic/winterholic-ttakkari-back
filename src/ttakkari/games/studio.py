@@ -56,6 +56,7 @@ def _exclude(root: Path) -> None:
     git = root / ".git"
     if not git.is_dir() or git.is_symlink():
         return
+    _refuse_symlink(root, Path(".git/info/exclude"))
     info = git / "info"
     info.mkdir(exist_ok=True)
     f = info / "exclude"
@@ -72,6 +73,13 @@ def install_kit(root: Path) -> KitInstall:
         if not (KIT_SRC / "SKILL.md").is_file():
             return KitInstall(False, "error", "키트 원본이 배포본에 없다")
         digest = kit_hash()
+        # 모든 설치 경계를 쓰기 전에 검사한다. 두 번째 대상 충돌로 첫 대상을 갱신하지 않는다.
+        _refuse_symlink(root, Path(".git/info/exclude"))
+        for rel in TARGETS:
+            _refuse_symlink(root, rel / STAMP)
+            dest = root / rel
+            if dest.exists() and not (dest / STAMP).is_file():
+                return KitInstall(False, "conflict", f"{rel} 가 이미 있고 따까리 키트가 아니다(덮어쓰지 않음)", digest)
         statuses: list[str] = []
         for rel in TARGETS:
             _refuse_symlink(root, rel)
@@ -109,6 +117,8 @@ def install_shared_skill(skills_root: Path) -> KitInstall:
             return KitInstall(False, "error", f"{skills_root} 가 심볼릭 링크다", digest)
         if dest.is_symlink():
             return KitInstall(False, "conflict", f"{dest} 가 심볼릭 링크다(덮어쓰지 않음)", digest)
+        if (dest / STAMP).is_symlink():
+            return KitInstall(False, "error", f"{dest / STAMP} 가 심볼릭 링크다", digest)
         status = "installed"
         if dest.exists():
             if not (dest / STAMP).is_file():

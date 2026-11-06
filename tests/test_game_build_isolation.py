@@ -91,6 +91,22 @@ def test_stage_source_copies_only_safe_regular_files(tmp_path: Path):
         assert needle in joined
 
 
+def test_stage_source_uses_git_ignore_but_keeps_tracked_and_new_sources(tmp_path: Path):
+    src = tmp_path / "repo"
+    write_project(src, {
+        "package.json": "{}", ".gitignore": "raw/\n*.png\n",
+        "raw/source.png": "x" * 4096, "public/hero.png": "tracked asset",
+        "src/new.ts": "new source",
+    })
+    subprocess.run(["git", "init", "-q", str(src)], check=True)
+    subprocess.run(["git", "-C", str(src), "add", "-f", "public/hero.png"], check=True)
+    skipped = stage_source(src, tmp_path / "stage", max_bytes=1024)
+    assert not (tmp_path / "stage/raw/source.png").exists()
+    assert (tmp_path / "stage/public/hero.png").read_text() == "tracked asset"
+    assert (tmp_path / "stage/src/new.ts").read_text() == "new source"
+    assert any("raw/" in item and "gitignored" in item for item in skipped)
+
+
 def test_stage_source_enforces_size_cap(tmp_path: Path):
     src = tmp_path / "src"
     write_project(src, {"a.bin": "x" * 2048})
@@ -112,6 +128,24 @@ def test_collect_output_rejects_symlink_and_missing_index(tmp_path: Path):
     with pytest.raises(IsolationError) as e:
         collect_output(dist, tmp_path / "out3", max_bytes=1024 * 1024)
     assert e.value.code == "no_index"
+
+
+@pytest.mark.parametrize("tag", ['<script src="/assets/app.js"></script>', "<link rel='stylesheet' href='/assets/app.css'>"])
+def test_collect_output_rejects_root_asset_paths_before_publishing(tmp_path: Path, tag: str):
+    dist = tmp_path / "dist"
+    write_project(dist, {"index.html": tag})
+    out = tmp_path / "out"
+    with pytest.raises(IsolationError) as e:
+        collect_output(dist, out, max_bytes=1024)
+    assert e.value.code == "absolute_asset_path"
+    assert "상대 경로" in str(e.value)
+    assert not out.exists()
+
+
+def test_collect_output_accepts_relative_asset_paths(tmp_path: Path):
+    dist = tmp_path / "dist"
+    write_project(dist, {"index.html": '<script src="./assets/app.js"></script>', "assets/app.js": "1"})
+    assert collect_output(dist, tmp_path / "out", max_bytes=1024) == ["assets/app.js", "index.html"]
 
 
 def test_collect_output_enforces_size_cap(tmp_path: Path):

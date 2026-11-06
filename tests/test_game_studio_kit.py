@@ -77,6 +77,27 @@ def test_install_refuses_symlinked_skill_dir(repo: Path, tmp_path: Path):
     assert list(outside.iterdir()) == []  # 링크 밖에 쓰지 않았다
 
 
+def test_install_does_not_write_through_git_exclude_symlinks(repo: Path, tmp_path: Path):
+    target = tmp_path / "outside-exclude"
+    target.write_text("keep\n")
+    (repo / ".git/info/exclude").symlink_to(target)
+    result = install_kit(repo)
+    assert not result.ok and "심볼릭" in result.detail
+    assert target.read_text() == "keep\n"
+
+
+def test_install_refuses_symlink_stamp_before_reading_or_updating(repo: Path, tmp_path: Path):
+    dest = repo / TARGETS[0]
+    dest.mkdir(parents=True)
+    target = tmp_path / "outside-stamp"
+    target.write_text("private marker")
+    (dest / STAMP).symlink_to(target)
+    result = install_kit(repo)
+    assert not result.ok and "심볼릭" in result.detail
+    assert (dest / STAMP).is_symlink()
+    assert target.read_text() == "private marker"
+
+
 def test_section_variants_and_failure_is_reported_not_hidden(repo: Path):
     ok = install_kit(repo)
     dev = studio_section(ok, "modify")

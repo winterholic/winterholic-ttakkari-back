@@ -24,6 +24,7 @@ import subprocess
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Literal
 
@@ -196,11 +197,32 @@ def _check_mount_path(path: Path) -> str:
     return text
 
 
+def _git_source_paths(source_dir: Path) -> tuple[set[str], set[str]] | None:
+    """실제 Git 저장소는 추적 파일과 무시되지 않은 새 파일을 복사한다. 훅·fsmonitor는 실행하지 않는다."""
+    git = source_dir / ".git"
+    if git.is_symlink() or not (git.is_file() or (git / "HEAD").is_file()):
+        return None  # Git 없는 scaffold·일반 폴더도 빌드할 수 있다.
+    env = _cli_env() | {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        result = subprocess.run(
+            ["git", "--no-optional-locks", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+             "-c", "core.untrackedCache=false", "-C", str(source_dir), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            capture_output=True, timeout=30, check=False, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise IsolationError(f"빌드 소스 목록을 읽지 못했습니다: {exc}", "source_inventory_failed") from exc
+    if result.returncode:
+        raise IsolationError("Git 소스 목록을 읽지 못했습니다.", "source_inventory_failed")
+    files = {os.fsdecode(name) for name in result.stdout.split(b"\0") if name}
+    dirs = {parent.as_posix() for name in files for parent in Path(name).parents if parent != Path(".")}
+    return files, dirs
+
+
 def stage_source(source_dir: Path, dest: Path, *, max_bytes: int) -> list[str]:
     """원본 프로젝트를 안전한 복사본으로 옮긴다. 일반 파일과 디렉터리만 복사하고 건너뛴 항목을 돌려준다."""
     source_dir = source_dir.resolve(strict=True)
     if not source_dir.is_dir():
         raise IsolationError("프로젝트 경로가 디렉터리가 아닙니다.", "not_a_dir")
+    inventory = _git_source_paths(source_dir)
     dest.mkdir(parents=True, exist_ok=False)
     skipped: list[str] = []
     total = 0
@@ -214,6 +236,8 @@ def stage_source(source_dir: Path, dest: Path, *, max_bytes: int) -> list[str]:
                 skipped.append(f"{rel} (symlink)")
             elif d in SKIP_DIRS:
                 skipped.append(f"{rel}/")
+            elif inventory is not None and rel not in inventory[1]:
+                skipped.append(f"{rel}/ (gitignored)")
             else:
                 keep.append(d)
                 (dest / rel_root / d).mkdir(parents=True, exist_ok=True)
@@ -227,6 +251,9 @@ def stage_source(source_dir: Path, dest: Path, *, max_bytes: int) -> list[str]:
             if f.startswith(".env") and f not in ENV_SAFE_NAMES:
                 skipped.append(f"{rel} (env)")
                 continue
+            if inventory is not None and rel not in inventory[0]:
+                skipped.append(f"{rel} (gitignored)")
+                continue
             total += full.stat().st_size
             if total > max_bytes:
                 raise IsolationError(f"소스가 제한({max_bytes // (1024 * 1024)}MB)을 넘었습니다.", "source_too_large")
@@ -234,6 +261,19 @@ def stage_source(source_dir: Path, dest: Path, *, max_bytes: int) -> list[str]:
             shutil.copyfile(full, target)
             target.chmod(0o755 if os.access(full, os.X_OK) else 0o644)
     return skipped
+
+
+class _EntryAssetPaths(HTMLParser):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        field = {"script": "src", "link": "href"}.get(tag)
+        if field is None:
+            return
+        for key, value in attrs:
+            if key == field and value and value.lstrip().startswith("/"):
+                raise IsolationError(
+                    "게임의 index.html이 루트 자산 경로를 사용합니다. 스튜디오에서는 상대 경로가 필요합니다. "
+                    "Vite라면 base: './'로 설정하고, 코드의 /assets 경로도 상대 경로로 바꿔 주세요.",
+                    "absolute_asset_path")
 
 
 def collect_output(dist: Path, out: Path, *, max_bytes: int) -> list[str]:
@@ -259,6 +299,8 @@ def collect_output(dist: Path, out: Path, *, max_bytes: int) -> list[str]:
             if total > max_bytes:
                 raise IsolationError(f"산출물이 제한({max_bytes // (1024 * 1024)}MB)을 넘었습니다.", "output_too_large")
             files.append((rel_root / n).as_posix())
+    # 토큰은 /p/<token>/ 경로에 있다. 루트 자산 요청은 토큰 없이 404가 되므로 게시 전에 설명한다.
+    _EntryAssetPaths().feed((dist / "index.html").read_text(encoding="utf-8", errors="replace"))
     out.mkdir(parents=True, exist_ok=False)
     for rel in files:
         target = out / rel

@@ -4,7 +4,8 @@
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { analyzePng } from './png.mjs';
 import { now, readJson, sha256Buf, writeJson } from './util.mjs';
@@ -26,35 +27,24 @@ export function loadPlaywright(root) {
   return { pw: null, reason: `playwright 모듈을 찾지 못했다(시도: ${tried.join(', ')}). STUDIO_PLAYWRIGHT_DIR(node_modules 가 있는 폴더)을 지정한다` };
 }
 
-function cachedBrowsers() {
-  const found = [];
-  for (const root of [path.join(os.homedir(), 'Library/Caches/ms-playwright'), path.join(os.homedir(), '.cache/ms-playwright')]) {
-    if (!fs.existsSync(root)) continue;
-    for (const d of fs.readdirSync(root).sort().reverse()) {
-      if (!d.startsWith('chromium')) continue;
-      for (const rel of ['chrome-headless-shell-mac-arm64/chrome-headless-shell', 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing', 'chrome-linux/headless_shell', 'chrome-linux/chrome']) {
-        const p = path.join(root, d, rel);
-        if (fs.existsSync(p)) found.push(p);
-      }
-    }
-  }
-  return found;
+// 이 프로세스와 같은 샌드박스에서 읽기 전용 IPC 사전 검사를 한다. 실패 시 브라우저를 띄우지 않는다.
+export function browserPreflight() {
+  const script = fileURLToPath(new URL('./browser_preflight.py', import.meta.url));
+  const check = spawnSync('python3', [script], { encoding: 'utf8', timeout: 10000 });
+  if (check.error) throw new Error(`browser preflight: ${check.error.message}`);
+  const report = JSON.parse(check.stdout);
+  if (check.status !== 0) throw new Error(`browser preflight: ${report.status ?? 'unknown'}`);
+  return report;
 }
 
-async function launch(chromium) {
-  const attempts = [];
-  const env = process.env.STUDIO_BROWSER_EXECUTABLE || process.env.TTAKKARI_BROWSER_EXECUTABLE;
-  if (env) attempts.push({ executablePath: env });
-  attempts.push({}, { channel: 'chrome' }, ...cachedBrowsers().map((executablePath) => ({ executablePath })));
-  const errors = [];
-  for (const o of attempts) {
-    try {
-      return await chromium.launch({ headless: true, ...o });
-    } catch (e) {
-      errors.push(String(e).split('\n')[0]);
-    }
+export async function launchStudioBrowser(chromium, preflight = browserPreflight) {
+  const report = await preflight();
+  if (!['permissions_allowed', 'not_applicable'].includes(report?.status)) {
+    throw new Error(`browser preflight: ${report?.status ?? 'unknown'}`);
   }
-  throw new Error('브라우저를 실행할 수 없다: ' + errors.join(' | '));
+  const executablePath = process.env.STUDIO_BROWSER_EXECUTABLE || process.env.TTAKKARI_BROWSER_EXECUTABLE;
+  // 실행 오류 후 다른 바이너리·채널로 재시도하지 않는다.
+  return chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.woff2': 'font/woff2' };
@@ -93,31 +83,15 @@ export function serveDir(dir) {
 
 const slug = (s) => String(s).replace(/[^\w.-]+/g, '_').slice(0, 60);
 
-/** 임시 폴더를 못 쓰는 샌드박스(mkdtemp EPERM)에서 브라우저가 못 뜨지 않게, 저장소 안 폴더를 TMPDIR 로 돌린다. 권한을 넓히는 것이 아니라 쓸 수 있는 곳을 쓰는 것이다. */
-function ensureTmp(root) {
-  try {
-    fs.rmdirSync(fs.mkdtempSync(path.join(os.tmpdir(), 'studio-probe-')));
-    return null;
-  } catch (e) {
-    if (e.code !== 'EPERM' && e.code !== 'EACCES') return null;
-    const alt = path.join(root, '.studio-tmp');
-    fs.mkdirSync(alt, { recursive: true });
-    process.env.TMPDIR = alt;
-    return alt;
-  }
-}
-
 /** 스크립트 한 편을 실행한다. 단계별 pass/fail 과 증거 파일을 result 에 모은다. */
 export async function runPlay({ root, script, url, outDir }) {
   const spec = typeof script === 'string' ? readJson(script) : script;
   const result = { tool: 'studio-play', name: spec.name ?? 'play', at: now(), url, ok: false, status: 'failed', steps: [], shots: [], console: { errors: [], pageErrors: [], failedRequests: [] }, vars: {} };
   const loaded = loadPlaywright(root);
   if (!loaded.pw) return { ...result, status: 'unsupported', reason: loaded.reason };
-  const tmpAlt = ensureTmp(root);
-  if (tmpAlt) result.tmpdir = tmpAlt;
   let browser;
   try {
-    browser = await launch(loaded.pw.chromium);
+    browser = await launchStudioBrowser(loaded.pw.chromium);
   } catch (e) {
     return { ...result, status: 'unsupported', reason: String(e.message) };
   }

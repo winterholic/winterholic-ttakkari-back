@@ -40,7 +40,7 @@ $STUDIO help
 
 ## 거부·불가 시
 
-- 브라우저를 못 띄운다 → `play` 가 `status: unsupported` 와 이유를 낸다. 샌드박스가 임시 폴더를 막으면 도구가 저장소 안 `.studio-tmp/` 를 쓴다. 그래도 안 되면 not-run 으로 기록하고 사용자 플레이 확인을 요청한다. 셸로 다른 Chrome 을 띄우는 우회는 하지 않는다.
+- 브라우저를 못 띄운다 → `play` 가 `status: unsupported` 와 이유를 낸다. 도구는 같은 실행 환경에서 macOS IPC 사전 검사를 하고 blocked·unknown·검사 실패면 실행하지 않는다. 실행 오류 후 재시도하지 않고 not-run 으로 기록한다. 승인된 브라우저 도구를 사용할 수 있으면 그 경로로 확인한다. 셸로 다른 Chrome 을 띄우는 우회는 하지 않는다.
 - 로컬 서버를 브라우저가 못 연다(loopback 차단) → `--url file://.../index.html` 로 열 수 있는 정적 산출물인지 확인하고, 안 되면 not-run.
 - 빌드는 플랫폼의 격리 러너가 한다. 호스트에서 npm install·빌드를 실행하지 않는다.
 

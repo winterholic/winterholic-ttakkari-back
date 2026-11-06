@@ -94,6 +94,7 @@ $ git diff --check
 
 - 독립 verifier는 자신의 검증된 비교와 필수 검사 증거를 모두 통과해야 한다. 실패 비교·검사 보고는 구현자의 비교와 분리해 latest에 보존된다.
 - verifier mismatch 또는 불충분한 검사 증거는 설정된 repair 한도를 따르며, repair 뒤 새 verifier Run을 만든다. 취소/중단은 부분 상태로 남고 retry 시 직전 결과를 history에 보존한다.
+- terminal 판정을 저장한 성공 verifier Run의 중복 callback은 멱등 no-op이며, 저장 결과·history·회차·repair 횟수를 다시 늘리지 않는다.
 - 상세 API의 `result`는 v2 JSON을 유지한다. `latest`, `history`, `result_state`는 같은 저장 결과를 반영한다.
 - 관찰에 `direct|document|inferred|unverified` 수준을 보존하며 기존 수준 누락은 미확인이다. 분석 전용 요청 의도와 짧은 제목 추천을 추가했다.
 - ZIP은 안전한 의존성 파일, 테스트, 허용 비교 manifest/raw capture를 담고 경로탈출·symlink·민감 파일·감지한 비밀 문자열은 제외한다.

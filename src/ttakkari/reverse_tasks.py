@@ -688,6 +688,12 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         return None
     if role != "verify" and job.session_id != run.session_id:
         return None
+    if role == "verify":
+        latest_result = _metadata(job.result).get("latest") or {}
+        verification = latest_result.get("independent_verification") or {}
+        if (latest_result.get("verification_run_id") == str(run.id)
+                and verification.get("status") in {"passed", "failed", "cancelled"}):
+            return None
     job.updated_at = utcnow()
     if run.status != RunStatus.succeeded:
         stopped = run.status in {RunStatus.cancelled, RunStatus.interrupted}

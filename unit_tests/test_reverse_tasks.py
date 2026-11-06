@@ -1,6 +1,8 @@
 """자연어 역분석은 관찰 증거와 작업공간의 재현 소스로 닫혀야 한다."""
 import hashlib
 import json
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -64,6 +66,59 @@ def test_manifest_reader_uses_this_run_and_handles_invalid_json(tmp_path):
     assert tasks.read_report(tmp_path, 'new')['ready'] is False
     (path / 'new.json').write_text('{')
     assert tasks.read_report(tmp_path, 'new')['ready'] is False
+
+
+@pytest.mark.asyncio
+async def test_successful_verifier_callback_is_idempotent(monkeypatch):
+    from ttakkari.models import RunStatus
+
+    verifier_session_id, implementation_session_id = uuid4(), uuid4()
+    job_id, verifier_run_id = uuid4(), uuid4()
+    implementation = SimpleNamespace(id=uuid4(), usage={})
+    verifier = SimpleNamespace(id=verifier_run_id, session_id=verifier_session_id,
+        status=RunStatus.succeeded, error=None,
+        usage={'reverse': {'job_id': str(job_id), 'role': 'verify'}})
+    previous = {'run_id': str(implementation.id), 'role': 'implement',
+        'source': {'files': ['src/main.py']}, 'report': {'observations': [{'finding': 'observed'}]},
+        'direct_comparison': {'status': 'match', 'count': 1, 'matched': 1, 'mismatched': 0, 'unverified': 0},
+        'independent_verification': {'status': 'pending', 'run_id': None, 'verdict': None}}
+    job = SimpleNamespace(id=job_id, kind=tasks.KIND, session_id=implementation_session_id,
+        verifier_session_id=verifier_session_id, status='running', error=None, updated_at=None,
+        output_path='.',
+        result={'schema_version': 2, 'job': {'repair_attempts': 0, 'max_repair_attempts': 1},
+                'latest': previous, 'history': []})
+
+    class FakeDb:
+        def __init__(self):
+            self.latest_lookup = 0
+            self.runs = [implementation, verifier]
+
+        async def get(self, _model, _id, **_kwargs):
+            return job
+
+        async def scalar(self, _statement):
+            self.latest_lookup += 1
+            return verifier.id if self.latest_lookup % 2 else implementation
+
+    db = FakeDb()
+    reads = []
+    monkeypatch.setattr(tasks, 'read_report', lambda *_args, **_kwargs: reads.append(verifier.id) or {
+        'ready': True, 'verdict': 'passed', 'source_files': ['src/main.py'],
+        'observations': [{'finding': 'observed'}], 'checks': [], 'execution_ready': True,
+        'comparisons': [{'result': 'match'}],
+        'direct_comparison': {'status': 'match', 'count': 1, 'matched': 1, 'mismatched': 0, 'unverified': 0},
+        'problems': []})
+
+    await tasks.on_finished(db, verifier)
+    assert job.status == 'done'
+    history_count = len(job.result['history'])
+    round_count = len(db.runs)
+    repair_attempts = job.result['job']['repair_attempts']
+    await tasks.on_finished(db, verifier)
+    assert len(job.result['history']) == history_count
+    assert len(db.runs) == round_count
+    assert job.result['job']['repair_attempts'] == repair_attempts
+    assert len(reads) == 1
 
 
 def test_zip_contains_sources_but_excludes_target_and_secrets(tmp_path):

@@ -368,7 +368,8 @@ async def test_claim_locks_session_and_run_for_update_before_leasing():
             s_str = str(stmt)
             if "ORDER BY runs.created_at" in s_str:
                 return run_id
-            if "count" in s_str.lower():
+            # A broad "count" substring also matches the sessions.account_id identifier.
+            if s_str.lstrip().lower().startswith("select count("):
                 return 0
             if "FROM runtime_control" in s_str:
                 return RuntimeControl(id=1, epoch=1, active_generation=runtime.id)

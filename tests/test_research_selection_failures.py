@@ -229,14 +229,24 @@ def test_failure_selection_retains_unrecognized_observation_conditions(observed)
     assert failure['applicability']['conditions'][-1]['missing'] == list(observed)
 
 
-def test_execution_receipts_alone_do_not_establish_failure_conditions():
-    observed = {'research_adapter_receipt': {
-        'status': 'failed', 'error_type': 'KeyError', 'error_message': "'text'",
-    }}
-    for declared in ({}, {'research_execution_owner': 'explicit-condition'}):
-        method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
-                  'research_context': {'failures': [{'declared_environment': declared,
-                                                     'observed_environment': observed}]}}
-        failure = rank_methods([method], {'backend': 'cpu'}, 60)[0]['reason']['research_context']['failures'][0]
-        assert failure['applicability']['status'] == 'unknown'
-        assert failure['affects_selection'] is True
+@pytest.mark.parametrize(
+    "receipt_field,receipt",
+    [
+        ("research_execution_owner", {"contract": 1, "token": "run-specific-identity"}),
+        ("research_adapter_receipt", {
+            "status": "failed", "error_type": "KeyError", "error_message": "'text'",
+        }),
+    ],
+)
+def test_execution_receipts_alone_do_not_establish_failure_conditions(receipt_field, receipt):
+    observed = {receipt_field: receipt}
+    declared = {}
+    failure_input = {'declared_environment': declared, 'observed_environment': observed}
+    method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
+              'research_context': {'failures': [failure_input]}}
+    failure = rank_methods([method], {'backend': 'cpu'}, 60)[0]['reason']['research_context']['failures'][0]
+    assert failure['applicability']['status'] == 'unknown'
+    assert failure['affects_selection'] is True
+    assert failure['execution_metadata_fields'] == [receipt_field]
+    assert failure['declared_environment'] == declared
+    assert failure['observed_environment'] == observed

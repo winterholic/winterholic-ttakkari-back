@@ -652,3 +652,14 @@ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-rselect-20261107 ./scripts/verify_de
 ```
 
 - 이 gate에서 `tests/test_research_selection_failures.py` 전체 파일을 실행했다. `--full`, 운영 E2E, 환경 거부 경로 재시도는 하지 않았다.
+
+### b05 비Research 실패 계약 대조 (2026-11-07)
+
+- 시작점: 지정 세션의 running Run 프로필은 `회사 코덱스 ai2 (ai2@hyperez.io)`였고 `/api/accounts`에서 같은 이름의 enabled 계정은 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a` 하나였다. 작업 HEAD `d0c629ca68d522ba4cdf5dbb5032211dd2398ab7`, clean, tracking 대비 ahead 6 / behind 11.
+- b05 원시 RED는 `/private/tmp/reverse-full-b05c9053-20261107.log` L112–118, L1354–1369, L1590–1597만 재사용했다. 전체 검사·host 49 재실행은 하지 않았다.
+- `ART-REVERSE`: `ReverseJob.result`는 JSON 결과 필드이며 `_prompt()`가 `_metadata(job.result)`를 호출한다. 전달 프롬프트는 작업 ZIP을 Run outbox에 두고 `share_file`로 대화 공유하며, 공유 파일과 outbox 파일은 AI 작업 파일에 남는다고 안내한다. RED는 테스트 SimpleNamespace가 `result`를 누락한 fixture 오류다. fixture에 빈 결과 `{}`를 추가하고 기존 share/AI 작업 파일 검사를 보존했다.
+- `ART-CRAFT`: 현행 NOTE는 `{out}` 산출물이 자동 수집되므로 결과 파일에 `share_file`을 호출하지 말라고 한다. `sweep_outputs()`는 새 유효 파일을 Run outbox로 복사하고, Run Manager는 이를 `agent_output`으로 Artifact 등록한다. `share_file`은 대화 공유, `keep_artifact`는 대화에서 사용자가 요청한 보관함 등록이라는 현행 계약은 서로 다른 책임이다. `에이전트 파일`이라는 낡은 문구 기대만 현행 자동 수집·공유·보관 의미를 검증하는 assertion으로 교정했고 제품 안내는 수정하지 않았다.
+- `ORCH-FAKE`: claim은 실제 count 조회 뒤 `ChatSession` 및 `Run` 행을 각각 `FOR UPDATE`로 조회한다. 테스트 fake의 `"count" in str(stmt).lower()`는 Session SELECT에 있는 `sessions.account_id`도 일치해 정수 0을 반환했다. fake는 `SELECT count(` 형태를 count 집계로 구별하고 Session/Run SELECT를 기존 fixture 행으로 반환한다. 두 `FOR UPDATE` assertion과 claim 토큰 검증은 유지했다.
+- `C-IMPORT` (미해결 제품 경계): 구조 검사는 `precise_eval.py`의 `ttakkari.kb_pipeline.subscription_transport` import 두 곳에서 실패한다. `precise_eval_pool()`은 허용 scope를 subscription account pool로 제한하고 알 수 없는 scope를 `L2TransportError(DIAG_SCOPE_CAPACITY_UNAVAILABLE)`로 거부한다. `consume_pending_once()`는 같은 transport 오류를 diagnosis/consumed에 따라 재시도 가능한 `pending` 또는 종결 `unresolved`로 기록하고 엔진·계정 진단 필드를 보존한다. 이는 실행 상태 전이에 실제로 연결된 runtime 의존이라 import 전체 허용이나 `precise_eval.py` 제외는 정당화되지 않는다. ADR의 독립 collector bounded context 및 envelope→knowledge adapter 결정과 대조하면 평가 결과는 명백히 KB 원장에 직접 쓰지 않지만, 공유 구독 transport/error 계약의 소유 경계는 명시되어 있지 않다. 최소 제품 제안: `L2TransportError` 및 diagnosis 상수를 중립적인 subscription transport contract 모듈로 올려 KB transport와 collector가 함께 사용하고, pool 검증도 collector/runtime 경계에 둔다. budget·scope fail-closed·retry 분류를 보존한 뒤 구조 검사를 계속 유지한다. 이번 변경에서는 제품 코드를 손대지 않았다. collector 안의 `ttakkari.runs` 직접 import는 검색되지 않았다.
+- Selection receipt-only 회귀는 두 사례로 복원했다: 조건 없는 owner receipt만 있는 실패와 조건 없는 adapter failure receipt만 있는 실패가 둘 다 `unknown` 및 `affects_selection=True`이며, 원본 declared/observed 환경과 receipt 필드가 결과에 보존된다. 제품 필드 분류는 바꾸지 않았다.
+- 이번 고정 변경 범위: `unit_tests/test_artifact_delivery_guidance.py`, `unit_tests/test_orchestrator_report_merge.py`, `tests/test_research_selection_failures.py`, 본 기록. Reverse 전달 문구, outbox/AI 작업 파일·대화 공유·보관함 assertion, Session/Run claim 잠금 assertion은 삭제하거나 약화하지 않았다.

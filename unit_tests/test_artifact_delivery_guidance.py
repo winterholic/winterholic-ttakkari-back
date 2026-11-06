@@ -9,7 +9,7 @@ from pathlib import Path
 def _reverse_prompt() -> str:
     from ttakkari.reverse_tasks import _prompt
 
-    job = types.SimpleNamespace(output_path="/tmp/rev", target="관찰 대상")
+    job = types.SimpleNamespace(output_path="/tmp/rev", target="관찰 대상", result={})
     run = types.SimpleNamespace(id=uuid.uuid4())
     return _prompt(job, run)
 
@@ -24,12 +24,15 @@ def test_reverse_prompt_requires_share_for_zip_delivery():
     assert "AI 작업 파일" in prompt
 
 
-def test_artcraft_note_requires_share_for_user_delivery():
+def test_artcraft_note_preserves_auto_collection_and_manual_delivery_contract():
     from ttakkari import artcraft_tasks
 
-    assert "자동으로 사용자에게 전달" not in artcraft_tasks.NOTE
-    assert "share_file" in artcraft_tasks.NOTE
-    assert "에이전트 파일" in artcraft_tasks.NOTE
+    note = artcraft_tasks.NOTE
+    assert "작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다" in note
+    assert "{out} 아래에 저장한 결과는 자동 수집" in note
+    assert "결과 파일에 share_file 을 호출하지 않는다" in note
+    assert "share_file 은 대화에 파일을 공유할 때" in note
+    assert "keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구" in note
 
 
 def test_system_note_outbox_goes_to_agent_area():

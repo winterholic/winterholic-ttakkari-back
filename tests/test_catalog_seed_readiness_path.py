@@ -9,13 +9,14 @@ import copy
 import json
 import uuid
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from ttakkari.models import utcnow
 from ttakkari.db import sessionmaker
+from ttakkari.models import utcnow
 from ttakkari.research import catalog_loader
 from ttakkari.research.adapters.registry import get_adapter_registry
 from ttakkari.research.models import (
@@ -210,8 +211,8 @@ async def test_readiness_and_planner_enforce_combinations_and_negative_control()
     # 4. Negative control: adapter details missing runtime/hardware identity -> fail-closed
     class AmbiguousAdapter:
         id = "llm_inference"
-        supported_methods = ["flash_attention"]
-        supported_parameters = ["flash_attn_enabled"]
+        supported_methods: ClassVar[list[str]] = ["flash_attention"]
+        supported_parameters: ClassVar[list[str]] = ["flash_attn_enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus
@@ -298,8 +299,8 @@ async def test_readiness_and_planner_enforce_combinations_and_negative_control()
 async def test_explicit_malformed_or_empty_combinations_fail_closed(combos):
     class LocalAdapter:
         id = "llm_inference"
-        supported_methods = ["sample"]
-        supported_parameters = ["enabled"]
+        supported_methods: ClassVar[list[str]] = ["sample"]
+        supported_parameters: ClassVar[list[str]] = ["enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus
@@ -346,8 +347,8 @@ async def test_explicit_malformed_or_empty_combinations_fail_closed(combos):
 async def test_conflicting_duplicate_hardware_runtime_tuples_fail_closed(combos):
     class LocalAdapter:
         id = "llm_inference"
-        supported_methods = ["sample"]
-        supported_parameters = ["enabled"]
+        supported_methods: ClassVar[list[str]] = ["sample"]
+        supported_parameters: ClassVar[list[str]] = ["enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus
@@ -382,8 +383,8 @@ async def test_conflicting_duplicate_hardware_runtime_tuples_fail_closed(combos)
 async def test_model_conditioned_tuples_are_not_duplicate_hardware_runtime_tuples():
     class LocalAdapter:
         id = "llm_inference"
-        supported_methods = ["sample"]
-        supported_parameters = ["enabled"]
+        supported_methods: ClassVar[list[str]] = ["sample"]
+        supported_parameters: ClassVar[list[str]] = ["enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus
@@ -422,8 +423,8 @@ async def test_model_conditioned_tuples_are_not_duplicate_hardware_runtime_tuple
 async def test_omitted_combinations_preserves_legacy_compatibility_meaning():
     class LocalAdapter:
         id = "llm_inference"
-        supported_methods = ["sample"]
-        supported_parameters = ["enabled"]
+        supported_methods: ClassVar[list[str]] = ["sample"]
+        supported_parameters: ClassVar[list[str]] = ["enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus
@@ -632,8 +633,8 @@ _HW, _RT = "apple_silicon_metal", "llama.cpp"
 def _model_status(combos, *, model=None, model_id=None, available=()):
     class LocalAdapter:
         id = "llm_inference"
-        supported_methods = ["sample"]
-        supported_parameters = ["enabled"]
+        supported_methods: ClassVar[list[str]] = ["sample"]
+        supported_parameters: ClassVar[list[str]] = ["enabled"]
 
         def check_environment(self, *, scope="personal"):
             from ttakkari.research.adapters.base import AdapterEnvironmentStatus

@@ -113,3 +113,61 @@ $ git diff --check
 - 성공 push 출력 `006130ab..f75ba352 HEAD -> main`. 직후 `git ls-remote origin refs/heads/main`과 local `git rev-parse HEAD` 모두 full SHA `f75ba35242deb22d755f54388b0a00c723315f28`; `git status --short --branch`는 clean이며 ahead/behind가 없었다. `git diff --check HEAD^ HEAD`도 출력 없이 exit 0.
 - `request_backend_deploy(revision="f75ba35242deb22d755f54388b0a00c723315f28")` receipt: id `c9babac4-8435-4069-876e-da7c0322cb3d`, `status=requested`, `skip_tests=false`, `strategy=generations`, `error=null`. 예약 접수만 확인했고 배포 상태 polling은 하지 않았다. 기존 실패 예약 `12cfd116-c2c4-4bb3-8a8c-87338b0abe6d`는 별도 과거 기록으로 유지한다.
 - 필수 pre-push 범위와 집중 검사는 통과했다. 전체 release pytest gate는 이 Run에서 실행하지 않았으며, 예약 controller의 독립 검사와 실제 active 확인, 운영 제작, PhotoCraft 적용 및 복구가 다음 운영 단계다. 이 문서 갱신은 source SHA 뒤의 별도 evidence-only 커밋으로 남긴다.
+
+## Collector hold-audit DB session factory 교정 (2026-11-07)
+
+### Run / checkout / 승인 DB 증명
+
+- Run API: `/Users/winterholic/bin/ttk get /api/runs/e287bee8-642f-4754-8375-0f56417d4969` 출력에서 `status=running`, `engine=codex`, `model=gpt-6-luna`, `effort=high`, `profile=회사 코덱스 ai2 (ai2@hyperez.io)`를 확인했다. 조건과 맞아 작업을 진행했다.
+- 시작 상태: `release/artcraft-main-20261107`, HEAD `91239dcd99821c89bfe2ac4795766a092e760a19`, clean, `origin/main`보다 1 commit ahead. `git pull --ff-only` → `Already up to date.`. `origin/main=f75ba35242deb22d755f54388b0a00c723315f28`이며 해당 revision과 수정 전 `src/ttakkari/collector_precise_runtime.py`, `tests/test_collector_manage.py`가 동일했다.
+- `TTAKKARI_TEST_DB` present. URL 원문은 출력하지 않았다. read-only 연결의 SQL은 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')`; 결과 `ttakkari_test / ttk_test / 52684 / /tmp/ttakkari-run-test-99596-866ce185/data`.
+- SQL 반환 경로의 정확한 부모 `/tmp/ttakkari-run-test-99596-866ce185/run-test-cluster.marker`에서 `run_id=e287bee8-642f-4754-8375-0f56417d4969`, `port=52684`, `owner_pid=99596`, `folder=ttakkari-run-test-99596-866ce185`를 읽었다. Run ID, URL/SQL port, marker folder와 owner PID가 맞고 SQL user `ttk_test`도 URL user와 일치했다. 다른 경로 검색이나 타 Run DB 사용은 없었다.
+
+### Immutable 실패 경계와 원인
+
+- 먼저 unmodified target을 단독 실행했을 때 통과했다. 원인은 test conftest가 `TTAKKARI_KB_L2_ADAPTER=disabled`로 격리하고 target이 실제 collector runtime을 설치하지 않아 해당 composition 경계를 밟지 않았기 때문이다. 그래서 target에서 `collector_precise_runtime.install()`을 명시하고, 이전 전역 runtime은 `monkeypatch`가 복원하도록 했다. 이는 제품 동작을 우회하지 않고 운영 runtime 경계를 테스트에 드러낸다.
+- immutable `f75ba352…`의 production source 상태에서 강화한 집중 red:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_manage.py::test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason -q -x --timeout=120 -p no:cacheprovider
+F
+E TypeError: 'async_sessionmaker' object does not support the asynchronous context manager protocol
+src/ttakkari/kb_pipeline/l2_adapters.py:173
+1 failed in 1.05s
+```
+
+- 경로는 `runner.consume_once → precise_eval.consume_pending_once → evaluate_document_guarded → collector_precise_runtime.availability → _adapter → SubscriptionCliL2Adapter.availability`다. `db.sessionmaker()` 선언은 `async_sessionmaker[AsyncSession]`를 반환한다. runtime이 함수 `sessionmaker` 자체를 adapter에 넘기면 adapter의 `self.session_factory()`가 `async_sessionmaker` 객체를 반환하고 이를 곧장 `async with`에 넣어 실패한다. `call_json()`도 같은 `self.session_factory()` 계약을 쓰므로 두 경로가 영향을 받는다.
+- 운영 composition은 `generation_service._collector_control()`과 `_collector_consume()`에서 `collector_precise_runtime.install()`을 호출한다. 따라서 fixture만의 오주입이 아니라 runtime 조립부의 실제 생산 코드 오류다.
+
+### 최소 수정과 집중 검증
+
+- `src/ttakkari/collector_precise_runtime.py`: adapter 생성 시 `sessionmaker` 대신 `sessionmaker()`를 전달한다. 이에 따라 adapter 호출 결과가 실제 `AsyncSession`이고 SQLAlchemy async context protocol을 만족한다. consumer·adapter 내부 쿼리 계약은 변경하지 않았다.
+- `tests/test_collector_manage.py`: hold-audit 통합 테스트가 production runtime을 명시 등록하고, 전역 `_runtime` 상태를 테스트 종료 때 복원하게 했다. 새 provider 호출, skip, 테스트 우회는 없다.
+- source/test 커밋: `548df81697be1bb4e87e6efb145f68a6fb03ee55` (`fix(collector): pass async session factory to precise runtime`). 이 커밋은 지정 source/test 경로 두 개만 포함한다.
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_manage.py::test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason -q -x --timeout=120 -p no:cacheprovider
+.                                                                        [100%]
+1 passed in 1.05s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_manage.py -q -x --timeout=120 -p no:cacheprovider
+..........                                                               [100%]
+10 passed in 2.08s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_mission_stage2.py::test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_everywhere tests/test_collection_mission_stage2.py::test_ready_engine_with_unavailable_scope_stays_waiting tests/test_kb_v3_default_activation.py tests/test_kb_v3_subscription_cli_contracts.py -q -x --timeout=120 -p no:cacheprovider
+......................                                                   [100%]
+22 passed in 4.56s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_artcraft_tasks.py::test_account_id_is_persisted_and_used_for_all_artcraft_rounds tests/test_artcraft_tasks.py::test_deleted_pinned_account_does_not_fall_back_to_peer tests/test_artcraft_tasks.py::test_limited_pinned_account_waits_without_account_or_emergency_fallback tests/test_artcraft_tasks.py::test_follow_up_round_gets_previous_outputs_and_sessions_resume tests/test_artcraft_tasks.py::test_update_api_queries_real_db_and_rejects_active_creation_run tests/test_artcraft_tasks.py::test_follow_up_report_lookup_does_not_require_a_file -q -x --timeout=120 -p no:cacheprovider
+.......                                                                  [100%]
+7 passed in 1.51s
+
+$ ../back/.venv/bin/ruff check src/ttakkari/collector_precise_runtime.py tests/test_collector_manage.py
+All checks passed!
+
+$ git diff --check
+[no output; exit 0]
+```
+
+- 검사는 기존 `../back/.venv`, `PYTHONPATH=src`, cache provider 비활성으로 직렬 실행했다. unavailable evaluator의 `pending/unavailable`과 ready evaluator의 capacity 대기 `pending/waiting` 검사를 그대로 통과했다. ArtCraft pin, lookup, updater 관련 변경 파일은 source diff에 없고, pin·resume·lookup·update 경계 테스트도 통과했다. 전체 release suite는 실행하지 않았다.
+- source/test 커밋 직후 local branch는 `origin/main`보다 2 commits ahead였다. work-history는 별도 경로 지정 문서 커밋으로 추가한다. push, provider 실행, 배포 조회/예약, service 변경은 하지 않았다. 배포 전 남은 일은 독립 리뷰와 요구된 release gate이며, 이번 범위에서 이를 실행하거나 배포하지 않았다.

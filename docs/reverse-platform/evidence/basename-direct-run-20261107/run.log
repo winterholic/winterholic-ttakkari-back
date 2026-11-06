@@ -1,0 +1,18 @@
+2026-11-07 01:18:48,885 INFO starting case=plain argv=['report.txt']
+2026-11-07 01:18:48,912 INFO finished case=plain result=match difference=None
+2026-11-07 01:18:48,912 INFO starting case=spaces-unicode argv=['폴더 이름/한글 파일.txt', '.txt']
+2026-11-07 01:18:48,929 INFO finished case=spaces-unicode result=match difference=None
+2026-11-07 01:18:48,929 INFO starting case=trailing-slashes argv=['folder///']
+2026-11-07 01:18:48,946 INFO finished case=trailing-slashes result=match difference=None
+2026-11-07 01:18:48,946 INFO starting case=root argv=['/']
+2026-11-07 01:18:48,963 INFO finished case=root result=match difference=None
+2026-11-07 01:18:48,963 INFO starting case=empty-string argv=['']
+2026-11-07 01:18:48,981 INFO finished case=empty-string result=match difference=None
+2026-11-07 01:18:48,981 INFO starting case=suffix-option argv=['-s', '.txt', 'hello world.txt']
+2026-11-07 01:18:49,007 INFO finished case=suffix-option result=match difference=None
+2026-11-07 01:18:49,008 INFO starting case=all-option argv=['-a', 'one.txt', 'two words.txt']
+2026-11-07 01:18:49,024 INFO finished case=all-option result=match difference=None
+2026-11-07 01:18:49,024 INFO starting case=missing-argument argv=[]
+2026-11-07 01:18:49,041 INFO finished case=missing-argument result=match difference=None
+2026-11-07 01:18:49,041 INFO starting case=invalid-option argv=['-z']
+2026-11-07 01:18:49,058 INFO finished case=invalid-option result=mismatch difference={'field': 'stderr', 'original': '/usr/bin/basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n', 'replica': 'basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n'}

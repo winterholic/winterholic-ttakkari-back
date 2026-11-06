@@ -8,6 +8,8 @@
 
 `ReverseJob.result` JSONB 안에 설정, 추천 근거·계획, `latest`, `history`를 저장한다. 별도 DB 모델·마이그레이션은 없다. 서버는 소스·실행 검사·직접 비교·독립 검증 상태를 별도 공개한다. 직접 비교 JSON은 `.reverse/comparisons/` 내부의 SHA-256 증거를 읽어 입력·사전 상태·환경·원본/복제 출력을 대조하고 stdout, stderr, 종료코드 일치를 재계산한다. 원본 실행 실패는 null/unverified와 사유를 보존한다. 잘못된 레코드도 제거하지 않고 unverified로 보인다. 결과 문구나 `passed`만으로 완료를 승격하지 않는다.
 
+CLI 비교는 `python -m ttakkari.reverse_compare --workspace <workspace> --spec <json>`으로 실행한다. API 비교는 HTTP(S) allowlist를 사용하고 redirect를 따라가지 않으며 URL의 민감 쿼리와 비밀 헤더를 캡처에서 가린다. 비교기 및 실측 `/usr/bin/basename` 증거는 [harness.md](harness.md), [contract-v2.md](contract-v2.md), [evidence](evidence/basename-direct-run-20261107)에 있다.
+
 직접 불일치는 `max_repair_attempts`(최대 3) 횟수 안에서 기존 구현 세션에 결함 중심 Run을 큐에 넣는다. 매 회차와 독립 검증 Run은 rounds에 남고 이전 latest 보고서·실패는 history로 이동한다. 분석 모드는 소스 없이 관찰·가설·미확인으로 종료할 수 있다. 정확도 종합 점수는 제공하지 않는다.
 
 재현 보고서에 README, 환경, 의존성, 실행 명령, 테스트 명령이 있어야 하며 README·소스·테스트·실행 로그를 기존 다운로드 ZIP에 담는다. 파일 접근은 Workspace 경로 정책과 기존 API 계약을 따른다. 수정 결과마다 별도 실행 로그가 검증되어야 한다.
@@ -15,8 +17,9 @@
 ## 실행과 한계
 
 ```bash
-PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py tests/test_reverse_compare.py
-/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/api/reverse.py src/ttakkari/reverse.py src/ttakkari/reverse_compare.py unit_tests/test_reverse_tasks.py tests/test_reverse_reconstruction.py tests/test_reverse_compare.py
+PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py
+PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q tests/test_reverse_compare.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py
+/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/api/reverse.py src/ttakkari/reverse.py src/ttakkari/reverse_compare.py unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py tests/test_reverse_reconstruction.py tests/test_reverse_compare.py
 git diff --check
 ```
 

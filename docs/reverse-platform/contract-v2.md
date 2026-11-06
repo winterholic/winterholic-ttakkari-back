@@ -55,7 +55,7 @@ Content-Type: application/json
 
 원시 실행 증거 JSON은 `schema_version:2, target_type, input, pre_state, environment, original, replica, execution_log, verified_at, run_id, complete`를 담는다. CLI 실행은 `python -m ttakkari.reverse_compare --workspace <workspace> --spec <json>`로 캡처한다. API는 `run_api_comparison`으로 allowlist된 호스트만 호출하고 응답 본문·상태·상태 전후를 캡처한다. 웹 관찰은 별도 browser 도구의 원본·복제 관찰을 보존하되 실제 브라우저 실행 결과를 서버가 확인할 수 없으면 미검증이다. 명령 실행 timeout·원본 실행 불가 시 원본은 null, complete=false, execution_log.error에 이유를 둔다.
 
-서버는 선언된 상대 경로의 정규화·심링크/탈출·민감 경로 차단, 일반 파일·크기 상한·SHA-256·JSON, `run_id`, `target_type`, 입력·사전 상태·환경·출력 필드의 상호 일치와 `complete`를 확인한다. CLI는 stdout/stderr/exit_code, API는 status/body/headers/state를 원시 캡처에서 재계산한다. 서버가 파일을 실제로 읽어 결과를 다시 만들어야 `direct`로 인정한다. 에이전트가 쓴 `result`, `passed`, 종료 문구는 판정 근거가 아니다. 비교가 없으면 직접 비교는 0건·unverified다. 독립 검증 상태는 별도 세션의 실재·검사 증거·verdict로만 갱신한다.
+서버는 선언된 상대 경로의 정규화·심링크/탈출·민감 경로 차단, 일반 파일·크기 상한·SHA-256·JSON, `run_id`, `target_type`, 입력·사전 상태·환경·출력 필드의 상호 일치와 `complete`를 확인한다. CLI는 stdout/stderr/exit_code, API는 status/body bytes/headers와 두 요청 로그의 method·URL·비밀값 마스킹을 원시 캡처에서 재검산한다. `input.state_path`가 있으면 각 응답의 상태 전/후 캡처가 모두 있어야 한다. HTTP redirect는 비교기가 따라가지 않는다. 서버가 파일을 실제로 읽어 결과를 다시 만들어야 `direct`로 인정한다. 에이전트가 쓴 `result`, `passed`, 종료 문구는 판정 근거가 아니다. 비교가 없으면 직접 비교는 0건·unverified다. 독립 검증 상태는 별도 세션의 실재·검사 증거·verdict로만 갱신한다.
 
 ## 응답 예시
 

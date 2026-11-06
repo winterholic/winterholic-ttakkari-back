@@ -179,6 +179,24 @@ def run_comparison(
 
 
 _SECRET_HEADER = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password", re.IGNORECASE)
+_SECRET_QUERY_KEY = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password|credential|session", re.IGNORECASE)
+
+
+def _safe_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    netloc = f"{host}:{port}" if port else host
+    query = urllib.parse.urlencode([
+        (key, "[REDACTED]" if _SECRET_QUERY_KEY.search(key) else value)
+        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    ])
+    return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
 
 
 def _store_structured(root: Path, comparison_id: str, run_id: str, capture: dict[str, Any]) -> dict[str, str]:
@@ -209,17 +227,22 @@ def _structured_record(root: Path, *, comparison_id: str, behavior: str, target_
 
 def _api_request(url: str, method: str, headers: dict[str, str], body: bytes | None,
                  timeout: float) -> dict[str, Any]:
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            return None
+
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    opener = urllib.request.build_opener(NoRedirect())
     try:
-        response = urllib.request.urlopen(request, timeout=timeout)
+        response = opener.open(request, timeout=timeout)
     except urllib.error.HTTPError as exc:
         response = exc
     with response:
         raw = response.read(1_048_577)
         if len(raw) > 1_048_576:
             raise ValueError("API response exceeds 1 MiB")
-        safe_headers = {key.lower(): value for key, value in response.headers.items()
-                        if not _SECRET_HEADER.search(key)}
+        safe_headers = {key.lower(): (_safe_url(value) if key.lower() == "location" else value)
+                        for key, value in response.headers.items() if not _SECRET_HEADER.search(key)}
         return {"status": response.code, "body": raw.decode("utf-8", errors="replace"),
                 "body_bytes_b64": base64.b64encode(raw).decode(), "headers": safe_headers}
 
@@ -282,12 +305,11 @@ def run_api_comparison(workspace: Path, *, comparison_id: str, behavior: str,
                                                     "replica": replica.get(field)}
                 break
     safe_headers = {k: "[REDACTED]" if _SECRET_HEADER.search(k) else v for k, v in request_headers.items()}
-    log = {"method": method, "request_headers": safe_headers,
-           "request_body_b64": base64.b64encode(body or b"").decode()}
+    log = {"method": method, "request_headers": safe_headers}
     capture = {"schema_version": 2, "target_type": "api", "input": input_data, "pre_state": pre_state or {},
         "original": original, "replica": replica,
-        "execution_log": [{**log, "side": "original", "url": original_url, "output": original, "error": error_a},
-                          {**log, "side": "replica", "url": replica_url, "output": replica, "error": error_b}],
+        "execution_log": [{**log, "side": "original", "url": _safe_url(original_url), "output": original, "error": error_a},
+                          {**log, "side": "replica", "url": _safe_url(replica_url), "output": replica, "error": error_b}],
         "environment": environment or {"os": platform.platform()},
         "verified_at": verified_at or datetime.now(UTC).isoformat(), "run_id": run_id,
         "complete": original is not None and replica is not None}

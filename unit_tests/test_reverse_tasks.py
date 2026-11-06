@@ -184,3 +184,60 @@ def test_pre_v2_result_remains_readable_without_inventing_direct_comparisons():
     assert metadata['latest']['report']['summary'] == '기존 재현 결과'
     assert metadata['latest']['direct_comparison'] == {'status': 'unverified', 'count': 0,
         'matched': 0, 'mismatched': 0, 'unverified': 0}
+
+
+def test_unhashable_target_type_is_preserved_as_unverified(tmp_path):
+    data = report(tmp_path)
+    data['comparisons'] = [{'id': 'bad-type', 'behavior': 'invalid', 'target_type': [], 'input': {},
+        'pre_state': {}, 'original': None, 'replica': None, 'environment': {}, 'evidence_level': 'direct',
+        'evidence': [], 'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'run-1',
+        'result': 'match', 'difference': None}]
+    checked = tasks.validate_report(tmp_path, data)
+    assert checked['comparisons'][0]['result'] == 'unverified'
+    assert checked['comparisons'][0]['difference']['reason']
+
+
+def test_api_stateful_comparison_without_state_capture_is_unverified(tmp_path):
+    import base64
+
+    body = base64.b64encode(b'{"ok":true}').decode()
+    output = {'status': 200, 'body': '{"ok":true}', 'body_bytes_b64': body, 'headers': {'content-type': 'application/json'}}
+    raw = {'schema_version': 2, 'target_type': 'api', 'run_id': 'api-run', 'complete': True,
+        'input': {'state_path': '/state'}, 'pre_state': {}, 'environment': {},
+        'original': output, 'replica': output,
+        'execution_log': [{'side': side, 'method': 'GET', 'url': 'http://localhost/api',
+            'request_headers': {}, 'output': output} for side in ('original', 'replica')]}
+    path = tmp_path / '.reverse/comparisons/api.json'
+    path.parent.mkdir(parents=True)
+    encoded = json.dumps(raw).encode()
+    path.write_bytes(encoded)
+    comparison = {'id': 'api-case', 'behavior': '상태 변화', 'target_type': 'api', 'input': raw['input'],
+        'pre_state': {}, 'original': output, 'replica': output, 'environment': {}, 'evidence_level': 'direct',
+        'evidence': [{'kind': 'execution', 'path': '.reverse/comparisons/api.json',
+                      'sha256': hashlib.sha256(encoded).hexdigest()}],
+        'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'api-run', 'result': 'match', 'difference': None}
+    checked = tasks.verify_comparisons(tmp_path, [comparison], expected_run_id='api-run')[0]
+    assert checked['result'] == 'unverified'
+    assert checked['evidence_level'] == 'observed'
+
+
+def test_api_location_header_query_secret_is_unverified(tmp_path):
+    body = ''
+    output = {'status': 302, 'body': body, 'body_bytes_b64': '',
+              'headers': {'location': 'http://localhost/next?token=leaked'}}
+    raw = {'schema_version': 2, 'target_type': 'api', 'run_id': 'api-run', 'complete': True,
+        'input': {}, 'pre_state': {}, 'environment': {}, 'original': output, 'replica': output,
+        'execution_log': [{'side': side, 'method': 'GET', 'url': 'http://localhost/start',
+            'request_headers': {}, 'output': output} for side in ('original', 'replica')]}
+    path = tmp_path / '.reverse/comparisons/api-location.json'
+    path.parent.mkdir(parents=True)
+    encoded = json.dumps(raw).encode()
+    path.write_bytes(encoded)
+    comparison = {'id': 'api-location', 'behavior': 'Location 비밀 쿼리', 'target_type': 'api', 'input': {},
+        'pre_state': {}, 'original': output, 'replica': output, 'environment': {}, 'evidence_level': 'direct',
+        'evidence': [{'kind': 'execution', 'path': '.reverse/comparisons/api-location.json',
+                      'sha256': hashlib.sha256(encoded).hexdigest()}],
+        'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'api-run', 'result': 'match', 'difference': None}
+    checked = tasks.verify_comparisons(tmp_path, [comparison], expected_run_id='api-run')[0]
+    assert checked['result'] == 'unverified'
+    assert checked['evidence_level'] == 'observed'

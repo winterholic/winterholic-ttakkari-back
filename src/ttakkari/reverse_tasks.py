@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -13,6 +14,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import select
 
@@ -45,6 +47,44 @@ MAX_REPORT = 1024 * 1024
 MAX_REPAIR_ATTEMPTS = 3
 TARGET_TYPES = {"auto", "cli", "web", "api", "source"}
 MODES = {"auto", "analyze", "reconstruct", "analyze_reconstruct"}
+SENSITIVE_EVIDENCE_KEY = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password|credential|session", re.IGNORECASE)
+
+
+def _valid_api_output(output: Any, *, require_state: bool) -> bool:
+    if not isinstance(output, dict) or type(output.get("status")) is not int:
+        return False
+    if not isinstance(output.get("headers"), dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) or SENSITIVE_EVIDENCE_KEY.search(key)
+            or (key.lower() == "location" and not _safe_captured_url(value))
+            for key, value in output["headers"].items()):
+        return False
+    if not isinstance(output.get("body"), str) or not isinstance(output.get("body_bytes_b64"), str):
+        return False
+    try:
+        body = base64.b64decode(output["body_bytes_b64"], validate=True)
+    except (ValueError, TypeError):
+        return False
+    if body.decode("utf-8", errors="replace") != output["body"]:
+        return False
+    if require_state:
+        for field in ("state_before", "state_after"):
+            state = output.get(field)
+            if not _valid_api_output(state, require_state=False):
+                return False
+    return True
+
+
+def _safe_captured_url(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+        if parsed.username or parsed.password:
+            return False
+        return all(not SENSITIVE_EVIDENCE_KEY.search(key) or token == "[REDACTED]"
+                   for key, token in parse_qsl(parsed.query, keep_blank_values=True))
+    except ValueError:
+        return False
 
 
 def _comparison_result(original: Any, replica: Any) -> tuple[str, dict[str, Any] | None]:
@@ -68,15 +108,17 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
     for index, item in enumerate(raw_comparisons[:100]):
         if not isinstance(item, dict):
             continue
+        target_type = item.get("target_type")
+        valid_target_type = isinstance(target_type, str) and target_type in TARGET_TYPES
         schema_valid = (set(item) == fields and isinstance(item.get("id"), str) and bool(item["id"].strip())
                         and isinstance(item.get("behavior"), str) and bool(item["behavior"].strip())
-                        and item.get("target_type") in TARGET_TYPES and isinstance(item.get("input"), dict)
+                        and valid_target_type and isinstance(item.get("input"), dict)
                         and isinstance(item.get("pre_state"), dict) and isinstance(item.get("environment"), dict)
                         and isinstance(item.get("verified_at"), str) and isinstance(item.get("run_id"), str))
         entry = {field: item.get(field) for field in fields}
         entry["id"] = item.get("id") if isinstance(item.get("id"), str) and item["id"].strip() else f"invalid-{index}"
         entry["behavior"] = item.get("behavior") if isinstance(item.get("behavior"), str) else ""
-        entry["target_type"] = item.get("target_type") if item.get("target_type") in TARGET_TYPES else "auto"
+        entry["target_type"] = target_type if valid_target_type else "auto"
         for key in ("input", "pre_state", "environment"):
             entry[key] = item.get(key) if isinstance(item.get(key), dict) else {}
         entry["original"] = item.get("original")
@@ -123,11 +165,23 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
             reason = "원본 또는 복제 명령이 제한 시간·출력 범위 안에서 완전하게 실행되지 않았습니다."
         elif entry.get("target_type") == "api":
             logs = {log.get("side"): log for log in capture["execution_log"] if isinstance(log, dict)}
-            if (any(not isinstance(output, dict) or type(output.get("status")) is not int
-                    or not isinstance(output.get("body_bytes_b64"), str) for output in (original, replica))
+            state_path = entry["input"].get("state_path")
+            require_state = bool(state_path)
+            if (not _valid_api_output(original, require_state=require_state)
+                    or not _valid_api_output(replica, require_state=require_state)
+                    or (state_path is not None and
+                        (not isinstance(state_path, str) or not state_path.startswith("/")))
                     or set(logs) != {"original", "replica"}
-                    or any(logs[side].get("output") != output for side, output in
-                           (("original", original), ("replica", replica)))):
+                    or any(not _safe_captured_url(logs[side].get("url"))
+                           or logs[side].get("method") not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
+                           or not isinstance(logs[side].get("request_headers"), dict)
+                           or any(not isinstance(key, str) or not isinstance(value, str)
+                                  or (SENSITIVE_EVIDENCE_KEY.search(key) and value != "[REDACTED]")
+                                  for key, value in logs[side]["request_headers"].items())
+                           or logs[side].get("output") != output
+                           for side, output in (("original", original), ("replica", replica)))
+                    or logs["original"].get("method") != logs["replica"].get("method")
+                    or logs["original"].get("request_headers") != logs["replica"].get("request_headers")):
                 reason = "원시 API 출력(status/body_bytes_b64)이 올바르지 않습니다."
         elif entry.get("target_type") == "web":
             reason = "웹 관찰 증거만으로는 독립적인 직접 비교 실행을 증명할 수 없습니다."

@@ -114,6 +114,45 @@ def test_api_comparison_rejects_unallowlisted_hosts(tmp_path):
         )
 
 
+def test_api_comparison_blocks_redirect_escape_and_redacts_query_secrets(tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    hits = {"redirect_target": 0}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/redirect-target"):
+                hits["redirect_target"] += 1
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"followed")
+                return
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/redirect-target?token=demo-secret")
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://localhost:{server.server_port}/redirect?access_token=demo-secret"
+    try:
+        result = run_api_comparison(
+            tmp_path, comparison_id="api-redirect", behavior="리다이렉트 차단", input_data={},
+            original_url=url, replica_url=url, run_id="run-redirect", allowed_hosts=("localhost",),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+    raw_text = (tmp_path / result["evidence"][0]["path"]).read_text("utf-8")
+    assert result["original"]["status"] == 302
+    assert hits["redirect_target"] == 0
+    assert "demo-secret" not in raw_text
+
+
 def test_web_functional_match_does_not_claim_visual_match(tmp_path):
     observation = {"events": [{"type": "click", "selector": "button#go"}], "dom": {"text": "완료"},
                    "state": {"done": True}, "network": [{"status": 200}]}

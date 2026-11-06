@@ -1,0 +1,410 @@
+{
+  "id": "150a007a-4c44-4ab8-b7ef-305d9d82f4c2",
+  "job_id": "2e23fcd5-5993-47cc-8ad2-87f246aa68f2",
+  "source_key": "mission:aa88050a-43a6-4912-bbb8-aad55927e295:8066ed9030332e2a",
+  "url": "https://www.techtarget.com/ai/tip/Physical-AI-deployment-challenges-and-how-to-address-them",
+  "final_url": "https://www.techtarget.com/news/Physical-AI-deployment-challenges-and-how-to-address-them/834023/",
+  "status": "accepted",
+  "stage": "scored",
+  "http_status": 200,
+  "language": "en",
+  "text_chars": 10927,
+  "reason_codes": [
+    "l0_pass",
+    "l1_off",
+    "review_needed",
+    "review:low_relevance"
+  ],
+  "errors": [],
+  "signals": {
+    "l0": {
+      "flags": [],
+      "signals": {
+        "char_count": 10927,
+        "line_count": 42,
+        "word_count": 1613,
+        "alpha_ratio": 0.9688,
+        "digit_ratio": 0.0016,
+        "url_density": 0.0,
+        "symbol_ratio": 0.0296,
+        "mean_line_chars": 259.19,
+        "short_line_ratio": 0.0952,
+        "duplicate_line_ratio": 0.0,
+        "repeated_trigram_ratio": 0.0559
+      },
+      "version": "l0-1"
+    },
+    "ml": {
+      "axes": {
+        "information_value": {
+          "raw": 0.815,
+          "scale": "ordinal",
+          "value": 0.815,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "validation": "unvalidated",
+          "review_floor": 0.959637
+        },
+        "explanation_quality": {
+          "scale": "none",
+          "value": null,
+          "reason": "no labelled data for explanation quality; only rule-based structure signals exist",
+          "status": "unmeasured",
+          "validation": "unvalidated"
+        },
+        "low_quality_likelihood": {
+          "scale": "raw_logit",
+          "value": -2.02,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "review_at": -1.497451,
+          "validation": "unvalidated",
+          "probability_uncalibrated": 0.1171
+        },
+        "topic_relevance_semantic": {
+          "bands": {
+            "low": 0.820132,
+            "high": 0.856681
+          },
+          "scale": "similarity",
+          "value": 0.8257,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "validation": "unvalidated"
+        }
+      },
+      "cost": {
+        "batch_docs": 1,
+        "per_doc_ms": 1327.1,
+        "batch_wall_ms": 1327.1,
+        "child_metrics": {
+          "load_seconds": 0.613,
+          "peak_rss_bytes": 1780563968.0,
+          "inference_seconds": 0.387
+        }
+      },
+      "reason": "",
+      "status": "evaluated",
+      "version": "e5-heads-v1",
+      "embedding": {
+        "model": "intfloat/multilingual-e5-large",
+        "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b",
+        "snapshot_ok": true
+      },
+      "artifact_digest": "ae4a5376b9eeee6e250682bd07443179e58c3b9baecf8246cc985eb9cf34888d"
+    },
+    "triage": {
+      "axes": {
+        "novelty": {
+          "kind": "rule",
+          "scale": "rule",
+          "value": 1.0,
+          "reason": "hand-written heuristic; no external human-labelled evaluation exists for this axis",
+          "evidence": [
+            "novel_content"
+          ],
+          "model_id": "ttakkari/lightweight-multiaxis-v1",
+          "validation": "unvalidated",
+          "model_revision": "2026.10.25"
+        },
+        "content_rules": {
+          "kind": "rule",
+          "scale": "rule",
+          "value": 1.0,
+          "reason": "hand-written heuristic; no external human-labelled evaluation exists for this axis",
+          "evidence": [],
+          "model_id": "ttakkari/lightweight-multiaxis-v1",
+          "validation": "unvalidated",
+          "model_revision": "2026.10.25"
+        },
+        "information_value": {
+          "raw": 0.815,
+          "kind": "ml",
+          "scale": "ordinal",
+          "value": 0.815,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+          "validation": "unvalidated",
+          "review_floor": 0.959637,
+          "model_revision": "ae4a5376b9ee/ac6781cd1cf8"
+        },
+        "relevance_lexical": {
+          "kind": "rule",
+          "scale": "similarity",
+          "value": 0.0256,
+          "reason": "hand-written heuristic; no external human-labelled evaluation exists for this axis",
+          "evidence": [
+            "term_coverage=0.05",
+            "title_overlap=0.00",
+            "lead_overlap=0.02",
+            "matched_terms=51/928",
+            "title_matches=ai,physical"
+          ],
+          "model_id": "ttakkari/lightweight-multiaxis-v1",
+          "validation": "unvalidated",
+          "model_revision": "2026.10.25"
+        },
+        "explanation_quality": {
+          "kind": "ml",
+          "scale": "none",
+          "value": null,
+          "reason": "no labelled data for explanation quality; only rule-based structure signals exist",
+          "status": "unmeasured",
+          "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+          "validation": "unvalidated",
+          "model_revision": "ae4a5376b9ee/ac6781cd1cf8"
+        },
+        "low_quality_likelihood": {
+          "kind": "ml",
+          "scale": "raw_logit",
+          "value": -2.02,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+          "review_at": -1.497451,
+          "validation": "unvalidated",
+          "model_revision": "ae4a5376b9ee/ac6781cd1cf8",
+          "probability_uncalibrated": 0.1171
+        },
+        "topic_relevance_semantic": {
+          "kind": "ml",
+          "bands": {
+            "low": 0.820132,
+            "high": 0.856681
+          },
+          "scale": "similarity",
+          "value": 0.8257,
+          "reason": "language_not_validated:en",
+          "status": "measured",
+          "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+          "validation": "unvalidated",
+          "model_revision": "ae4a5376b9ee/ac6781cd1cf8"
+        }
+      },
+      "mode": "active",
+      "action": "accept",
+      "scores": {
+        "trust": 1.0,
+        "novelty": 1.0,
+        "quality": 1.0,
+        "composite": 0.6102,
+        "relevance": 0.0256
+      },
+      "stage2": {
+        "cost": {
+          "batch_docs": 1,
+          "per_doc_ms": 1327.1,
+          "batch_wall_ms": 1327.1,
+          "child_metrics": {
+            "load_seconds": 0.613,
+            "peak_rss_bytes": 1780563968.0,
+            "inference_seconds": 0.387
+          }
+        },
+        "reason": "",
+        "status": "evaluated",
+        "effects": [],
+        "embedding": {
+          "model": "intfloat/multilingual-e5-large",
+          "snapshot": "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b",
+          "snapshot_ok": true
+        },
+        "artifact_digest": "ae4a5376b9eeee6e250682bd07443179e58c3b9baecf8246cc985eb9cf34888d"
+      },
+      "reasons": [
+        "review_needed",
+        "review:low_relevance"
+      ],
+      "version": "multiaxis-triage-v2",
+      "verified": false,
+      "thresholds": {
+        "max_hold_quality": 0.2,
+        "max_hold_relevance": 0.05,
+        "min_accept_novelty": 0.35,
+        "min_accept_quality": 0.45,
+        "min_accept_relevance": 0.25
+      },
+      "validation": {
+        "axes": {
+          "novelty": "unvalidated",
+          "content_rules": "unvalidated",
+          "information_value": "unvalidated",
+          "relevance_lexical": "unvalidated",
+          "explanation_quality": "unvalidated",
+          "low_quality_likelihood": "unvalidated",
+          "topic_relevance_semantic": "unvalidated"
+        },
+        "note": "unvalidated axes are recorded but never decide; deletion is never automatic",
+        "overall": "unvalidated",
+        "validated_axes": []
+      },
+      "precise_eval": {
+        "cap": 25,
+        "state": "pending",
+        "engine": {
+          "model": "qwen3.5-4b-q4_k_m",
+          "detail": "collector_teacher_enabled is False; teacher/evaluator is disabled",
+          "status": "unavailable"
+        },
+        "needed": true,
+        "reasons": [
+          "stage2_unavailable_or_unvalidated"
+        ]
+      },
+      "triage_status": "review_needed"
+    },
+    "profile": {
+      "profile": "general"
+    },
+    "detected_kind": "html"
+  },
+  "decision": {
+    "state": "accept",
+    "reason_codes": [
+      "l0_pass",
+      "l1_off",
+      "review_needed",
+      "review:low_relevance"
+    ],
+    "policy_version": "mission:aa88050a-43a6-4912-bbb8-aad55927e295:8066ed9030332e2a@v1+626485d012d5"
+  },
+  "quality": {
+    "spam": {
+      "scale": "raw_logit",
+      "value": -2.02,
+      "status": "measured",
+      "evidence": [
+        "validation=unvalidated",
+        "language_not_validated:en",
+        "axis=low_quality_likelihood"
+      ],
+      "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+      "query_id": null,
+      "calibration_id": null,
+      "model_revision": "ae4a5376b9ee/ac6781cd1cf8",
+      "preprocess_version": "triage-tokens-v1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    },
+    "novelty": {
+      "scale": "none",
+      "value": null,
+      "status": "unmeasured",
+      "evidence": [],
+      "model_id": null,
+      "query_id": null,
+      "calibration_id": null,
+      "model_revision": null,
+      "preprocess_version": "norm-1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    },
+    "utility": {
+      "scale": "none",
+      "value": null,
+      "status": "unmeasured",
+      "evidence": [],
+      "model_id": null,
+      "query_id": null,
+      "calibration_id": null,
+      "model_revision": null,
+      "preprocess_version": "norm-1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    },
+    "education": {
+      "scale": "ordinal",
+      "value": 0.815,
+      "status": "measured",
+      "evidence": [
+        "validation=unvalidated",
+        "language_not_validated:en",
+        "axis=information_value"
+      ],
+      "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+      "query_id": null,
+      "calibration_id": null,
+      "model_revision": "ae4a5376b9ee/ac6781cd1cf8",
+      "preprocess_version": "triage-tokens-v1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    },
+    "relevance": {
+      "scale": "similarity",
+      "value": 0.8257,
+      "status": "measured",
+      "evidence": [
+        "validation=unvalidated",
+        "language_not_validated:en",
+        "lexical_relevance=0.026"
+      ],
+      "model_id": "ttakkari/e5-heads-v1+intfloat/multilingual-e5-large",
+      "query_id": "d0cc047881f81e38",
+      "calibration_id": null,
+      "model_revision": "ae4a5376b9ee/ac6781cd1cf8",
+      "preprocess_version": "triage-tokens-v1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    },
+    "factuality": {
+      "scale": "none",
+      "value": null,
+      "status": "unmeasured",
+      "evidence": [],
+      "model_id": null,
+      "query_id": null,
+      "calibration_id": null,
+      "model_revision": null,
+      "preprocess_version": "norm-1",
+      "calibration_gold_hash": null,
+      "calibrated_probability": null
+    }
+  },
+  "dedupe": {
+    "exact_of": null,
+    "cluster_id": null,
+    "canonical_status": "unreviewed",
+    "algorithm_version": "dedupe-1:exact-sha256+minhash128-char5-lsh16x8@0.80",
+    "canonical_candidate": null
+  },
+  "lineage": [
+    "job:2e23fcd5-5993-47cc-8ad2-87f246aa68f2",
+    "item:150a007a-4c44-4ab8-b7ef-305d9d82f4c2",
+    "raw:sha256:de47022b4e7fc19e4f1dabb508212132db8db7b60ec1b4d520b0f60ca15a0979",
+    "seed:https://www.techtarget.com/ai/tip/Physical-AI-deployment-challenges-and-how-to-address-them",
+    "mission:aa88050a-43a6-4912-bbb8-aad55927e295"
+  ],
+  "versions": {
+    "parser": "trafilatura-2.3.1+parse-2",
+    "normalizer": "norm-1"
+  },
+  "hashes": {
+    "raw_sha256": "de47022b4e7fc19e4f1dabb508212132db8db7b60ec1b4d520b0f60ca15a0979",
+    "text_sha256": "66d146b2a9d1e9b5e3debb0250153f4050d712e0051a985250bc9cf0e13f460e",
+    "payload": "4b25039655f53e75c6e4dcdf645d67761774781c7ed3a497e8e92a96c7d574a6"
+  },
+  "rights": {
+    "permission": "allowed",
+    "purposes": [
+      "knowledge",
+      "store"
+    ],
+    "license_id": "public-web-unreviewed",
+    "policy_url": "https://www.techtarget.com/ai/tip/Physical-AI-deployment-challenges-and-how-to-address-them",
+    "retain_until": null
+  },
+  "fetched_at": "2026-11-06T11:38:36.596350+00:00",
+  "reviews": [],
+  "deliveries": [
+    {
+      "outbox_id": "6b05abff-7c21-42c9-bc70-3017ddf54d5a",
+      "sink": "export",
+      "status": "delivered",
+      "attempts": 0,
+      "last_error": null,
+      "outcome": "imported"
+    }
+  ],
+  "preview": "## People also ask\n# Physical AI deployment challenges and how to address them\nPhysical AI encompasses any system that combines artificial intelligence with real-time data and real-world hardware, enabling AI systems to perceive, reason and make decisions using real data. More popular perceptions of physical AI focus on robotics and autonomous systems, such as warehouse robots and autonomous vehicles. They use GPS, cameras, LiDAR and sensors combined with maps and other available data to operate and learn with minimal human intervention.\nThe promise and potential of physical AI are driving massive investments. The 2026 \"State of AI in the Enterprise report\" by Deloitte noted in their survey of over 3,200 business and IT leaders that \"58% of surveyed companies already use physical AI to some extent, and adoption is projected to hit 80% within two years.\"\nAs more organizations explore and embrace physical AI, it's important to understand the current scope of potential use cases while also considering the deployment challenges and best practices.\n### Physical AI use cases\nPhysical AI use cases are broad and diverse, typically deployed in industries where critical real-time data affects real-world conditions. They include the following:\n- Factory robots. From articulated arms to fully embodied AI, robots work on factory production lines to build products, such as microelectronics, vehicles and other heavy durable goods. Factory robots use sensors to collect data and manage interactions with the real world. That data is analyzed and used to refine and tune a robot's operations. Factory robots might operate independently as cobots in concert with human colleagues.\n- Inspection and quality control. Computer vision systems can inspect raw materials before manufacturing and product defects during manufacturing. They perform a wide range of inspection tasks, such as inspections of buildings, hazardous sites, submersible systems and heavy equipment, while mitigating risks to humans.\n- Defense. Autonomous robots are invaluable on the battlefield, gathering intelligence, delivering supplies, evacuating wounded combatants and making enemy contact. These robots use myriad cameras, data, sensors and motive systems to move heavy loads across unpredictable and treacherous terrain.\n- Logistics. Fully autonomous robots are well suited for warehouse and logistics work, picking, lifting, moving, packing, loading and storing inventory in manufacturing and order fulfillment environments. At the same time, other physical AI systems can track inventory using RFID, mobile scanning robots and other scannable tag technologies to monitor stock and coordinate ordering materials.\n- Autonomous vehicles. Physical AI embraces an ever-expanding assortment of autonomous vehicles -- each can be termed embodied AI -- that perform various tasks. Driverless cars can transport people, while driverless trucks can carry goods and materials packed by robots in warehouses or logistics hubs. Autonomous delivery systems are dedicated robots that deliver packages to waiting customers. Autonomous tractors and other heavy machinery can analyze terrain to optimize operation and minimize fuel use. All these vehicles use real-time GPS, weather and road data, along with visual data from cameras, radar, LiDAR and other sensors to complete their tasks.\n- Agriculture. Embodied AI can use smart tractors and other dedicated field robots to monitor plant growth and soil health, requesting irrigation and soil management as required. At the same time, embodied AI robots can distinguish crops from weeds, performing weeding operations to improve crop health while reducing pesticide and herbicide use.\n- Healthcare. Ever-improving robotic surgery systems can perform delicate procedures with precision, typically under the guidance of a skilled human surgeon. An orthopedic robot can use AI and preplanned 3D mapping data to align bones and perform precise drilling. These systems use cameras and "
+}

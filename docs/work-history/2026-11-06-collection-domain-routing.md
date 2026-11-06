@@ -48,3 +48,34 @@
 - TTS 실패는 이 환경에서 재현되지 않았다. 기존 실패 단언에 실제 ready 상태를 출력하도록 진단만 보강했다. TTS 문제까지 해결했다고 주장하지 않는다.
 - 최종 국소 검증: `PYTHONPATH=src:. .venv/bin/python -m pytest -q tests/test_fixture_reset.py tests/test_background_consumers.py tests/test_tts_queue.py tests/test_kb_v3_fixes_realdb.py tests/test_kb_v3_integration_flow.py --timeout=60 --tb=short` → **111 passed / 24.21s**. 변경 3개 Python 파일 ruff와 `git diff --check`도 통과했다.
 - 다음 실행은 이 교정과 기존 수집 수정을 함께 배포하여 전체 게이트 결과를 확인하는 것이다. 활성화 후 위 `scope-repair-v2` 생성·실제 적재·KB 검색 검증을 이어간다. TTS가 다시 실패하면 새 진단 상태로 원인을 추적한다.
+
+## 수정본 활성화와 두 번째 복구 (11:01Z~)
+
+- 배포 `a0af482c-ba0c-420a-a4cc-8cd351d2eee9`는 전체 pytest 100% 이후 활성화됐고, 공식 `ops_deploy_log`의 11:01:38Z 상태는 **succeeded**, error=null이다. `host_operation_start(runtime_report)` 영수증 `9082ea55-cf91-4a3b-a0d7-cf7ddcadd310`에서 현재 API와 active generation의 revision이 모두 `c396370f15a491b33a64805254636f33c4e1bfce`인 것을 확인했다. 이전 TTS·fixture 실패가 이번 전체 게이트에서는 재발하지 않았으나, TTS 과거 실패의 근본 원인을 확정한 것은 아니다.
+- 인증된 `~/bin/ttk post /api/assistant/collect/missions/plan`에 두 fixture 전문과 2,000쪽·깊이 3을 전달했다. sources=[] 및 원 주제 검색어 존재, 디자인시스템 질의 없음 assertions가 두 건 모두 통과했다.
+- 같은 원문을 공식 create API로 생성했다. 로보틱스 `aa88050a-43a6-4912-bbb8-aad55927e295`, 하네스 `5faff33d-3586-4827-b3a3-71390acb834a`. 각각 `scope-repair-v2:<최초 임무 ID>` 요청키를 사용했으며 둘 다 running/run_seq 1이다. 다시 생성하지 않는다. 생성·preview·첫 detail/trace는 `reports/collector/domain-recovery-v2-20261106.json.gz`에 보존했다.
+- 첫 관측에서 로보틱스는 관련 질의 4회와 출처 후보 31개, mission_prepare running/후속 30개 queued, failed 0이다. 후보에는 Physical AI 논문과 관련 글이 있다. 하네스는 mission_prepare queued다. 둘 다 imported 0으로 실제 적재·검색 검증은 아직 실행할 문서가 없다. 후보 URL만으로 본문 관련성이나 후속 글 유입 방지를 보증하지 않는다.
+- 다음 확인에서는 두 새 임무의 실제 적재 문서와 준비 작업 종료 상태를 읽고, 웹 출처 한 페이지 제한 및 문서별 KB 검색/인용 근거를 검증한다. 과거 네 임무와 자료는 보존한다.
+
+## 두 번째 복구 준비 진행 (11:13Z)
+
+- 인증된 `~/bin/ttk get /api/assistant/collect/missions/{id}`와 `/trace`를 두 임무에 실행했다. 로보틱스는 **mission_prepare succeeded/error=null**, 검색 10회·출처 107개·논문 서지 9개(전문 허용 2개/서지 전용 7개), 후속 intake 78개 queued다. 하네스는 mission_prepare running/error=null, 검색 10회·출처 421개·intake 351개 queued다. trace의 failed jobs는 둘 다 0이다. 영수증의 observations 배열에 이번 관측을 보존했다.
+- 실제 acquired/imported는 둘 다 0이며 문서가 없어 KB 검색과 인용 검증은 아직 미실행이다. 로보틱스 라이선스 처리 오류가 이번 준비 실행에서는 재발하지 않았으나 하네스 준비 종료와 실제 적재 검증은 남았다. source_policy_required·paper_rights_unregistered gap은 권한 미확인 자료를 보수적으로 제외한 기록이며 권한을 확대하지 않았다.
+- `/api/assistant/collect/runtime` 실제 응답은 loop_available=true, paused=false다. 일반 임의 작업 소비는 false지만 관리 출처 루프는 활성이다. `collector/runner.py:consume_once`는 claim 1건 뒤 run_one을 await하는 순차 처리다. 하네스 준비가 진행되는 동안 intake가 대기하는 것은 이 코드와 일치하며, 멈춤이나 운영 장애로 확정하지 않았다.
+- 다음 실행은 준비 종료·후속 intake 진행과 imported 문서를 확인한 뒤 document_id별 kb_search/kb_evidence를 수행한다. 두 새 임무를 다시 생성하거나 기존 통과 검사를 반복하지 않는다.
+
+## 로보틱스 실제 적재·검색 검증 (11:29Z~)
+
+- 인증된 detail/trace 재확인: 로보틱스 acquired 16/accepted 13/imported 11/pending_delivery 1, item failed 2/blocked 4, failed job 0이다. 두 실패 item은 네이버 블로그 URL의 HTTP 200/empty_extraction이며, 접근 제한 자료도 trace에 남는다. 로보틱스·하네스 두 준비 작업은 모두 succeeded/error=null로 끝났고 하네스는 intake 351개 queued/imported 0이다. 실제 수집은 계속 진행 중이다.
+- 관측한 로보틱스 적재 11건 전부의 URL을 계획의 출처 URL과 비교하여 일치(assertions 통과)했다. 예전 Ubuntu·Git·관광·태그 목록·Carbon 제목은 이 관측 집합에서 발견하지 않았다. 현재 관측한 11건의 범위이며 향후 수집 전체나 각 문서의 사실 정확성을 보증하지 않는다.
+- 새 문서 `b893055c-63c0-456d-be5d-00b354f018f2`(MSU Physical AI survey)를 `kb_search(query="physical AI", mode="hybrid", document_id=...)`로 검색했다. lexical/vector 양쪽 경로와 본문 passage를 반환했다. `kb_evidence(passage_id="1124726d-effe-42d4-bf39-5226a9a560ab", start=0, end=500)`는 hash_verified=true이며 지각·추론·행동을 수행하는 물리 시스템 내용으로 주제 관련성을 확인했다.
+- 새 문서 `1823570b-92c0-4d5c-9880-b44ebc63fd48`(한국어 피지컬 AI 글)도 문서 제한 hybrid 검색 및 `kb_evidence(passage_id="3d945761-5cd6-474a-b530-41cf71d35909", start=0, end=350)`에서 hash_verified=true를 확인했다. 로봇·자율주행·물류 로보틱스 활용 본문이므로 디자인시스템 혼입이 아닌 원 주제의 적재·검색 경로를 확인했다. 해시 일치는 저장된 인용 바이트의 검증이며 본문 주장 자체의 참을 뜻하지 않는다.
+- 검색·인용 영수증은 `reports/collector/domain-recovery-v2-kb-20261106.json`. 하네스의 실제 적재·검색 검증이 남아 있으므로 전체 목표는 active를 유지한다.
+
+## 복구 운영 검증 판정 (12:01Z~)
+
+- 인증된 detail/trace에서 로보틱스 imported **56건**, 하네스 imported **8건**을 확인했다. 두 prepare는 succeeded/error=null, 두 trace의 failed job은 0이다. 수집 자체는 running이며 백과사전 전체 구축 완료를 뜻하지 않는다. 로보틱스 retry_wait 1건은 robots_unreachable/fetch_deferred로 사유가 기록돼 있다.
+- 하네스 새 문서 `67bcee59-4a87-4483-8d8b-38c0736357d7` 및 `33dad6b5-d69a-402c-a862-26dc0cafd0c1`을 document_id로 제한해 `kb_search(query="Harness Engineering", mode="hybrid")`를 실행했다. lexical/vector 경로의 본문 passage를 반환했고, `kb_evidence`의 `28bf1972-8140-47e9-85c0-1584b8a758fc`/`1504a35c-db6a-42af-b1eb-bed5ec443083` 두 인용 모두 hash_verified=true다. 실제 내용은 AI 에이전트의 실행 환경·도구·규칙·피드백 루프 설계로 원 주제와 관련된다. 영수증은 `reports/collector/domain-recovery-v2-harness-kb-20261106.json`.
+- 하네스 적재 8건의 URL은 전부 선택한 plan.sources와 일치한다. 로보틱스 56건은 55건이 직접 일치하고 TechTarget 1건의 final_url만 달랐다. 최초 단순 URL 동등성 검사 1건 실패를 혼입으로 단정하지 않고 공식 item API의 requested url/final_url/HTTP 200과 실제 HTTP HEAD 최종 URL로 리디렉션을 검증했다. 리디렉션을 포함한 재검사는 robotics 56/harness 8 모두 통과했으며 unexpected follow-up URLs=0이다. item 영수증은 `reports/collector/domain-recovery-v2-url-20261106.json`. 이 판정은 현재 관측 문서 집합에 한정한다.
+- 생성·계획·관측 전체 JSON은 반복 본문으로 14.8MB가 되어 `domain-recovery-v2-20261106.json.gz`로 무손실 압축했다. 압축 해제 바이트가 원본과 동일함을 assert한 뒤 압축본으로 보존했다. 과거 임무·KB 데이터는 삭제하지 않았다.
+- 원인 규명, 주제 판정 교정과 회귀, 추가 운영 결함 교정 배포, 두 원문 복구 임무 생성 및 실제 적재·검색·관련성 검증이 충족됐다. **혼입 결함 교정과 운영 복구 검증은 완료**이며 새 수집 임무는 계속 실행한다. 원 지시문이 요구한 모든 기술 분야의 백과사전 완성·전문가 품질 검증은 이 복구 작업의 완료 범위가 아니다.

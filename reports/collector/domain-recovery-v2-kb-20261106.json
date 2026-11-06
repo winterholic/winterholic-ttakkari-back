@@ -1,0 +1,498 @@
+{
+  "at": "2026-11-06T11:30Z",
+  "scope": "robotics recovery; two newly imported documents; all 11 observed document URLs matched planned source URLs",
+  "searches": [
+    {
+      "query": "physical AI",
+      "terms": [
+        "physical",
+        "ai"
+      ],
+      "items": [
+        {
+          "passage_id": "ac2010a6-047b-45e8-bbf3-d28b63c9ec61",
+          "ord": 0,
+          "heading": null,
+          "snippet": "Comprehensive Survey · Physical AI · Systems Perspective\nPhysical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective\nA system-level synthesis of Physical Artificial Intelligence (PAI) — extending AI beyond the di…",
+          "highlights": [
+            [
+              23,
+              31
+            ],
+            [
+              32,
+              34
+            ],
+            [
+              57,
+              65
+            ],
+            [
+              66,
+              68
+            ],
+            [
+              173,
+              181
+            ],
+            [
+              208,
+              210
+            ],
+            [
+              224,
+              226
+            ]
+          ],
+          "score": 0.0415,
+          "char_start": 0,
+          "char_end": 1086,
+          "section_path": [],
+          "locator_meta": {
+            "page_no": null,
+            "slide_no": null,
+            "time_start_ms": null,
+            "time_end_ms": null
+          },
+          "document": {
+            "id": "b893055c-63c0-456d-be5d-00b354f018f2",
+            "title": "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective",
+            "lang": "en",
+            "domain": "seit.egr.msu.edu"
+          },
+          "revision": {
+            "id": "07665225-df85-44f7-b6ba-5ae1393b952d",
+            "rev_no": 1,
+            "current": true,
+            "char_count": 37723
+          },
+          "source": {
+            "id": "89083a4c-72d9-483b-848e-17e5c26da099",
+            "kind": "web",
+            "source_key": "collector:170039230cbf874f1a1e24a6bce227707426fc312a818ace3e8ae70e3ee576cb",
+            "locator": "https://seit.egr.msu.edu/pai-survey/",
+            "sha256": "947633949aeddad2f579b457ed74630bec1fcca37b9c0e974493574b0f180b77",
+            "byte_size": 65843,
+            "media_type": "text/html",
+            "collected_at": "2026-11-06T11:26:54.177443+00:00"
+          },
+          "assertions": [],
+          "has_conflict": false,
+          "match_paths": [
+            "lexical",
+            "vector"
+          ],
+          "conflict_warning": false,
+          "canonical_facts": []
+        },
+        {
+          "passage_id": "1124726d-effe-42d4-bf39-5226a9a560ab",
+          "ord": 10,
+          "heading": "AI that understands and acts in the physical world",
+          "snippet": "According to NVIDIA, Physical AI lets autonomous systems like cameras, robots, and self-driving cars perceive, understand, reason, and perform or orchestrate complex actions in the physical world.\nOur characterization\nFour necessary propert…",
+          "highlights": [
+            [
+              21,
+              29
+            ],
+            [
+              30,
+              32
+            ],
+            [
+              181,
+              189
+            ]
+          ],
+          "score": 0.0407,
+          "char_start": 3061,
+          "char_end": 4256,
+          "section_path": [
+            "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective",
+            "What makes a system Physical AI?",
+            "AI that understands and acts in the physical world"
+          ],
+          "locator_meta": {
+            "page_no": null,
+            "slide_no": null,
+            "time_start_ms": null,
+            "time_end_ms": null
+          },
+          "document": {
+            "id": "b893055c-63c0-456d-be5d-00b354f018f2",
+            "title": "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective",
+            "lang": "en",
+            "domain": "seit.egr.msu.edu"
+          },
+          "revision": {
+            "id": "07665225-df85-44f7-b6ba-5ae1393b952d",
+            "rev_no": 1,
+            "current": true,
+            "char_count": 37723
+          },
+          "source": {
+            "id": "89083a4c-72d9-483b-848e-17e5c26da099",
+            "kind": "web",
+            "source_key": "collector:170039230cbf874f1a1e24a6bce227707426fc312a818ace3e8ae70e3ee576cb",
+            "locator": "https://seit.egr.msu.edu/pai-survey/",
+            "sha256": "947633949aeddad2f579b457ed74630bec1fcca37b9c0e974493574b0f180b77",
+            "byte_size": 65843,
+            "media_type": "text/html",
+            "collected_at": "2026-11-06T11:26:54.177443+00:00"
+          },
+          "assertions": [],
+          "has_conflict": false,
+          "match_paths": [
+            "lexical",
+            "vector"
+          ],
+          "conflict_warning": false,
+          "canonical_facts": []
+        },
+        {
+          "passage_id": "846c428b-985f-40bd-9a58-63010dd8f675",
+          "ord": 4,
+          "heading": "From digital reasoning to physically grounded intelligence",
+          "snippet": "Definition\nWhat makes a system Physical AI?\nAlthough the term Physical AI is gaining traction, its meaning has been articulated quite\ndifferently by the academic and industrial communities. We summarize both perspectives below, and then\ndis…",
+          "highlights": [
+            [
+              31,
+              39
+            ],
+            [
+              40,
+              42
+            ],
+            [
+              62,
+              70
+            ],
+            [
+              71,
+              73
+            ],
+            [
+              78,
+              80
+            ]
+          ],
+          "score": 0.0199,
+          "char_start": 2123,
+          "char_end": 2455,
+          "section_path": [
+            "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective",
+            "From digital reasoning to physically grounded intelligence"
+          ],
+          "locator_meta": {
+            "page_no": null,
+            "slide_no": null,
+            "time_start_ms": null,
+            "time_end_ms": null
+          },
+          "document": {
+            "id": "b893055c-63c0-456d-be5d-00b354f018f2",
+            "title": "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective",
+            "lang": "en",
+            "domain": "seit.egr.msu.edu"
+          },
+          "revision": {
+            "id": "07665225-df85-44f7-b6ba-5ae1393b952d",
+            "rev_no": 1,
+            "current": true,
+            "char_count": 37723
+          },
+          "source": {
+            "id": "89083a4c-72d9-483b-848e-17e5c26da099",
+            "kind": "web",
+            "source_key": "collector:170039230cbf874f1a1e24a6bce227707426fc312a818ace3e8ae70e3ee576cb",
+            "locator": "https://seit.egr.msu.edu/pai-survey/",
+            "sha256": "947633949aeddad2f579b457ed74630bec1fcca37b9c0e974493574b0f180b77",
+            "byte_size": 65843,
+            "media_type": "text/html",
+            "collected_at": "2026-11-06T11:26:54.177443+00:00"
+          },
+          "assertions": [],
+          "has_conflict": false,
+          "match_paths": [
+            "lexical",
+            "vector"
+          ],
+          "conflict_warning": false,
+          "canonical_facts": []
+        }
+      ],
+      "matched_entities": [],
+      "coverage": "strong",
+      "limit": 3,
+      "offset": 0,
+      "has_more": true,
+      "include_candidates": false,
+      "retrieval": {
+        "model": "intfloat/multilingual-e5-large",
+        "model_key": "intfloat/multilingual-e5-large:kb-full-v1:ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b",
+        "indexed": 269252,
+        "total": 269252,
+        "failed": 0,
+        "enabled": true,
+        "last_error": null,
+        "quality_gate": "unverified",
+        "engine": "postgresql_exact_cosine",
+        "tenant_id": "owner",
+        "allowed_visibilities": [
+          "global"
+        ]
+      }
+    },
+    {
+      "query": "피지컬 AI 로보틱스",
+      "terms": [
+        "피지컬",
+        "ai",
+        "로보틱스"
+      ],
+      "items": [
+        {
+          "passage_id": "742e3608-8969-4d12-8d0d-2eebd536bd51",
+          "ord": 3,
+          "heading": "1. 들어가며",
+          "snippet": "챗GPT(ChatGPT)로 시작된 생성형 AI의 열풍은 인간의 언어를 이해하고 이미지를 그려내며 세상을 놀라게 했습니다. 하지만 이들은 결국 '디지털 세계(화면 속)'에 갇혀 있다는 치명적인 한계가 있습니다. 아무리 똑똑한 AI라도 당장 내 앞의 커피잔을 집어주거나, 방을 청소해 줄 수는 없기 때문입니다.\n이제 AI 혁신의 중심은 소프트웨어를 넘어 현실 세계의 물리적 시스템으로 이동하고 있습니다. 그 중심에 있는 기술이 바로 …",
+          "highlights": [
+            [
+              23,
+              25
+            ],
+            [
+              125,
+              127
+            ],
+            [
+              175,
+              177
+            ]
+          ],
+          "score": 0.0418,
+          "char_start": 97,
+          "char_end": 877,
+          "section_path": [
+            "[AI/Robotics] 피지컬 AI(Physical AI)란 무엇인가? (정의, 구성요소, 특징 및 장단점, 주요 활용 분야, 실습)",
+            "1. 들어가며"
+          ],
+          "locator_meta": {
+            "page_no": null,
+            "slide_no": null,
+            "time_start_ms": null,
+            "time_end_ms": null
+          },
+          "document": {
+            "id": "1823570b-92c0-4d5c-9880-b44ebc63fd48",
+            "title": "[AI/Robotics] 피지컬 AI(Physical AI)란 무엇인가? (정의, 구성요소, 특징 및 장단점, 주요 활용 분야, 실습)",
+            "lang": "ko",
+            "domain": "jaylenhan.tistory.com"
+          },
+          "revision": {
+            "id": "314f5634-af63-40a0-8095-ba6012987094",
+            "rev_no": 1,
+            "current": true,
+            "char_count": 7113
+          },
+          "source": {
+            "id": "5e12334a-d3af-47aa-bca9-429ddb532c86",
+            "kind": "web",
+            "source_key": "collector:7b69642556194e7d8250727ddf00e66c2df6469c10edebb22d009219139fe454",
+            "locator": "https://jaylenhan.tistory.com/entry/AIRobotics-%ED%94%BC%EC%A7%80%EC%BB%AC-AIPhysical-AI%EB%9E%80-%EB%AC%B4%EC%97%87%EC%9D%B8%EA%B0%80-%EC%A0%95%EC%9D%98-%EA%B5%AC%EC%84%B1%EC%9A%94%EC%86%8C-%ED%8A%B9%EC%A7%95-%EB%B0%8F-%EC%9E%A5%EB%8B%A8%EC%A0%90-%EC%A3%BC%EC%9A%94-%ED%99%9C%EC%9A%A9-%EB%B6%84%EC%95%BC-%EC%8B%A4%EC%8A%B5",
+            "sha256": "2329ea6ee3dbb02355b9af237fd194c8693a5bc85fddae2f60d43880a5e7b6eb",
+            "byte_size": 103949,
+            "media_type": "text/html",
+            "collected_at": "2026-11-06T11:22:52.082884+00:00"
+          },
+          "assertions": [],
+          "has_conflict": false,
+          "match_paths": [
+            "lexical",
+            "vector"
+          ],
+          "conflict_warning": false,
+          "canonical_facts": []
+        },
+        {
+          "passage_id": "3d945761-5cd6-474a-b530-41cf71d35909",
+          "ord": 21,
+          "heading": "5. 주요 활용 분야 및 사례",
+          "snippet": "피지컬 AI는 특정 산업에 국한되지 않고 물리적 노동이 존재하는 모든 곳을 혁신합니다.\n- 휴머노이드 로봇 (Humanoids): 테슬라 옵티머스, 보스턴 다이내믹스 아틀라스(Atlas), 유니트리 G1. 공장 조립부터 가정 내 가사 노동까지 인간의 환경에 맞춰 설계된 궁극의 피지컬 AI입니다.\n- 자율주행 및 모빌리티: 수많은 센서 데이터를 바탕으로 보행자와 차량을 인식하고 차량의 조향/가속을 직접 제어합니다.\n- 스마트 팩…",
+          "highlights": [
+            [
+              0,
+              3
+            ],
+            [
+              4,
+              6
+            ],
+            [
+              155,
+              158
+            ],
+            [
+              159,
+              161
+            ]
+          ],
+          "score": 0.0413,
+          "char_start": 2853,
+          "char_end": 3506,
+          "section_path": [
+            "[AI/Robotics] 피지컬 AI(Physical AI)란 무엇인가? (정의, 구성요소, 특징 및 장단점, 주요 활용 분야, 실습)",
+            "5. 주요 활용 분야 및 사례"
+          ],
+          "locator_meta": {
+            "page_no": null,
+            "slide_no": null,
+            "time_start_ms": null,
+            "time_end_ms": null
+          },
+          "document": {
+            "id": "1823570b-92c0-4d5c-9880-b44ebc63fd48",
+            "title": "[AI/Robotics] 피지컬 AI(Physical AI)란 무엇인가? (정의, 구성요소, 특징 및 장단점, 주요 활용 분야, 실습)",
+            "lang": "ko",
+            "domain": "jaylenhan.tistory.com"
+          },
+          "revision": {
+            "id": "314f5634-af63-40a0-8095-ba6012987094",
+            "rev_no": 1,
+            "current": true,
+            "char_count": 7113
+          },
+          "source": {
+            "id": "5e12334a-d3af-47aa-bca9-429ddb532c86",
+            "kind": "web",
+            "source_key": "collector:7b69642556194e7d8250727ddf00e66c2df6469c10edebb22d009219139fe454",
+            "locator": "https://jaylenhan.tistory.com/entry/AIRobotics-%ED%94%BC%EC%A7%80%EC%BB%AC-AIPhysical-AI%EB%9E%80-%EB%AC%B4%EC%97%87%EC%9D%B8%EA%B0%80-%EC%A0%95%EC%9D%98-%EA%B5%AC%EC%84%B1%EC%9A%94%EC%86%8C-%ED%8A%B9%EC%A7%95-%EB%B0%8F-%EC%9E%A5%EB%8B%A8%EC%A0%90-%EC%A3%BC%EC%9A%94-%ED%99%9C%EC%9A%A9-%EB%B6%84%EC%95%BC-%EC%8B%A4%EC%8A%B5",
+            "sha256": "2329ea6ee3dbb02355b9af237fd194c8693a5bc85fddae2f60d43880a5e7b6eb",
+            "byte_size": 103949,
+            "media_type": "text/html",
+            "collected_at": "2026-11-06T11:22:52.082884+00:00"
+          },
+          "assertions": [],
+          "has_conflict": false,
+          "match_paths": [
+            "lexical",
+            "vector"
+          ],
+          "conflict_warning": false,
+          "canonical_facts": []
+        }
+      ],
+      "matched_entities": [],
+      "coverage": "strong",
+      "limit": 2,
+      "offset": 0,
+      "has_more": true,
+      "include_candidates": false,
+      "retrieval": {
+        "model": "intfloat/multilingual-e5-large",
+        "model_key": "intfloat/multilingual-e5-large:kb-full-v1:ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b",
+        "indexed": 269252,
+        "total": 269252,
+        "failed": 0,
+        "enabled": true,
+        "last_error": null,
+        "quality_gate": "unverified",
+        "engine": "postgresql_exact_cosine",
+        "tenant_id": "owner",
+        "allowed_visibilities": [
+          "global"
+        ]
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "passage_id": "1124726d-effe-42d4-bf39-5226a9a560ab",
+      "document": {
+        "id": "b893055c-63c0-456d-be5d-00b354f018f2",
+        "title": "Physical AI: A Comprehensive Survey of Enabling Technologies From a Systems Perspective"
+      },
+      "revision": {
+        "id": "07665225-df85-44f7-b6ba-5ae1393b952d",
+        "rev_no": 1,
+        "text_sha256": "bef04a7150a5de0e69eb48ea332d9491a344a5bc805a09a0a832ee23f255672f"
+      },
+      "source": {
+        "id": "89083a4c-72d9-483b-848e-17e5c26da099",
+        "kind": "web",
+        "source_key": "collector:170039230cbf874f1a1e24a6bce227707426fc312a818ace3e8ae70e3ee576cb",
+        "locator": "https://seit.egr.msu.edu/pai-survey/",
+        "sha256": "947633949aeddad2f579b457ed74630bec1fcca37b9c0e974493574b0f180b77",
+        "byte_size": 65843,
+        "media_type": "text/html",
+        "collected_at": "2026-11-06T11:26:54.177443+00:00"
+      },
+      "span": {
+        "passage_start": 0,
+        "passage_end": 500,
+        "revision_start": 3061,
+        "revision_end": 3561,
+        "line_start": 61,
+        "line_end": 66,
+        "sha256": "c9e9019ac3981ac9759c5a1d414742e46c483306db48fff3c6fcd6924b7330f5",
+        "hash_verified": true
+      },
+      "quote": "According to NVIDIA, Physical AI lets autonomous systems like cameras, robots, and self-driving cars perceive, understand, reason, and perform or orchestrate complex actions in the physical world.\nOur characterization\nFour necessary properties of a Physical AI system\nAny intelligent system interacting with the physical world must be able to (i) acquire information from\nits environment, (ii) reason over this information to support decision-making, and (iii) act upon the\nenvironment to exert influ",
+      "before": "ctions with the real world.\n### The physical counterpart of digital AI\nIndustry view · NVIDIA\nAI that understands and acts in the physical world\n### AI that understands and acts in the physical world\n",
+      "after": "ence. These three requirements naturally correspond to perception,\ncognition, and actuation, forming a tightly coupled closed loop.\nBeyond this closed loop, PAI further demands that at least one compo",
+      "registered_evidence": [
+        {
+          "id": "0313a792-7d94-4a60-bb5b-dd3426225ad8",
+          "span_start": 852,
+          "span_end": 862,
+          "sha256": "aee50b18a03c89e4883a5acadf5c8614dd7fd2f111c3b616e1a8d6427edc3e3f",
+          "note": null
+        }
+      ]
+    },
+    {
+      "passage_id": "3d945761-5cd6-474a-b530-41cf71d35909",
+      "document": {
+        "id": "1823570b-92c0-4d5c-9880-b44ebc63fd48",
+        "title": "[AI/Robotics] 피지컬 AI(Physical AI)란 무엇인가? (정의, 구성요소, 특징 및 장단점, 주요 활용 분야, 실습)"
+      },
+      "revision": {
+        "id": "314f5634-af63-40a0-8095-ba6012987094",
+        "rev_no": 1,
+        "text_sha256": "8ea430cfc88ef411cf4dd9948f3888c90fa463c5e88cf07be15ae110fdeba521"
+      },
+      "source": {
+        "id": "5e12334a-d3af-47aa-bca9-429ddb532c86",
+        "kind": "web",
+        "source_key": "collector:7b69642556194e7d8250727ddf00e66c2df6469c10edebb22d009219139fe454",
+        "locator": "https://jaylenhan.tistory.com/entry/AIRobotics-%ED%94%BC%EC%A7%80%EC%BB%AC-AIPhysical-AI%EB%9E%80-%EB%AC%B4%EC%97%87%EC%9D%B8%EA%B0%80-%EC%A0%95%EC%9D%98-%EA%B5%AC%EC%84%B1%EC%9A%94%EC%86%8C-%ED%8A%B9%EC%A7%95-%EB%B0%8F-%EC%9E%A5%EB%8B%A8%EC%A0%90-%EC%A3%BC%EC%9A%94-%ED%99%9C%EC%9A%A9-%EB%B6%84%EC%95%BC-%EC%8B%A4%EC%8A%B5",
+        "sha256": "2329ea6ee3dbb02355b9af237fd194c8693a5bc85fddae2f60d43880a5e7b6eb",
+        "byte_size": 103949,
+        "media_type": "text/html",
+        "collected_at": "2026-11-06T11:22:52.082884+00:00"
+      },
+      "span": {
+        "passage_start": 0,
+        "passage_end": 350,
+        "revision_start": 2853,
+        "revision_end": 3203,
+        "line_start": 48,
+        "line_end": 52,
+        "sha256": "4805118db7b623fa9059266bdbf68a2cfa88593f40b6da77cc63d6d8ae987758",
+        "hash_verified": true
+      },
+      "quote": "피지컬 AI는 특정 산업에 국한되지 않고 물리적 노동이 존재하는 모든 곳을 혁신합니다.\n- 휴머노이드 로봇 (Humanoids): 테슬라 옵티머스, 보스턴 다이내믹스 아틀라스(Atlas), 유니트리 G1. 공장 조립부터 가정 내 가사 노동까지 인간의 환경에 맞춰 설계된 궁극의 피지컬 AI입니다.\n- 자율주행 및 모빌리티: 수많은 센서 데이터를 바탕으로 보행자와 차량을 인식하고 차량의 조향/가속을 직접 제어합니다.\n- 스마트 팩토리 & 물류 (로보틱스): 씨메스(CMES)와 같은 비전 AI 기반의 랜덤 물류 피킹 로봇, 불량품 실시간 검출 및 분류 시스템, 아마존의 자율 이동 로봇(AMR).\n- 의료 및 헬스케어: 환자의",
+      "before": "의 오류는 기계 파손, 대형 사고, 인명 피해로 직결됩니다. 해킹 시 사이버-물리적 테러가 발생할 수 있습니다.\n- 막대한 하드웨어 및 인프라 비용: 고성능 로봇 하드웨어, 엣지 AI 칩셋, 막대한 합성 데이터 생성(NVIDIA Omniverse 등)을 위한 초기 투자 비용이 매우 큽니다.\n5. 주요 활용 분야 및 사례\n## 5. 주요 활용 분야 및 사례\n",
+      "after": " 미세한 호흡과 움직임에 맞춰 수술 경로를 보정하는 지능형 수술 로봇, 재활 보조 웨어러블 로봇.\n6. [실습] Python으로 경험하는 피지컬 AI 핵심 기술\n피지컬 AI를 구축하기 위해서는 시뮬레이션 환경(MuJoCo, Isaac Sim 등), 컴퓨터 비전, 강화학습, 로봇 운영체제(ROS) 등 방대한 지식이 필요합니다. 여기서는 피지컬 AI의 1) 인",
+      "registered_evidence": [
+        {
+          "id": "a8207d37-4272-41c6-beb3-3f1b533a9951",
+          "span_start": 592,
+          "span_end": 595,
+          "sha256": "99d6dfaef080b0e0fb46ff58f5f84e73743455f6fa8ffae721e894ad9dc915eb",
+          "note": null
+        }
+      ]
+    }
+  ]
+}

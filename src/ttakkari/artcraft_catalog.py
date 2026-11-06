@@ -175,15 +175,15 @@ CATEGORIES: tuple[Category, ...] = (
         id="motion", section="av", title="모션·영상 효과", tagline="글자 움직임·합성·효과 영상",
         icon="sparkles", level="limited",
         apps=(AppRole("effectcraft", "EffectCraft", "모션 그래픽(애프터이펙트 방식)", "rootflags"),),
-        can=("레이어·키프레임·효과 합성", "한 장면 PNG 렌더", "구간을 H.264·WebM·GIF 등 영상으로 렌더"),
-        cannot=("After Effects 프로젝트(.aep) 열기", "외부 플러그인"),
+        can=("레이어·키프레임·효과 합성, 프로젝트 파일(.ecproj) 생성", "한 장면 PNG 렌더 및 CLI를 통한 MP4·WebM·GIF 영상 렌더"),
+        cannot=("MCP 도구 단독 동영상 렌더(MCP는 단일 프레임만 지원하므로 동영상 파일은 CLI render 명령 필수)", "After Effects 프로젝트(.aep) 열기", "외부 플러그인"),
         accepts=("png", "jpg", "jpeg", "svg", "mp4", "mov", "webm", "wav", "mp3", "ecproj"),
         outputs=("PNG", "MP4", "WEBM", "GIF"),
         templates=(
             Template("title-card", "제목 카드 영상", "아래 문구가 부드럽게 나타났다 사라지는 3초짜리 제목 영상을 만들어 MP4로 저장해 주세요.", "예: '2026 여름 여행' 흰 글자, 어두운 배경"),
             Template("still-frame", "합성 장면 이미지", "첨부한 이미지 위에 아래 문구를 얹은 장면을 PNG로 렌더해 주세요.", "예: 사진 위에 큰 제목", 1),
         ),
-        cli=("effectcraft: `artcraft run effectcraft --demo render-frame --out f.png` / `artcraft run effectcraft --project X.ecproj render --out o.mp4` / `artcraft run effectcraft commands`",),
+        cli=("effectcraft: 프레임 렌더 `artcraft run effectcraft --demo render-frame --out f.png` / 동영상 렌더 `artcraft run effectcraft --project X.ecproj render --out o.mp4` / `artcraft run effectcraft commands`",),
     ),
     Category(
         id="audio", section="av", title="오디오", tagline="소리 파일 변환·크기 맞추기·믹스",

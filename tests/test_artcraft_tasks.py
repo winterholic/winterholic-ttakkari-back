@@ -322,6 +322,7 @@ def test_sweep_outputs_filters_zero_byte_empty_and_sensitive_files(tmp_path: Pat
     out_dir.mkdir()
     outbox = tmp_path / "outbox"
     outbox.mkdir()
+    run = Run(started_at=utcnow(), created_at=utcnow())
 
     (out_dir / "empty.txt").write_bytes(b"")
     (out_dir / ".env").write_text("SECRET=1")
@@ -329,7 +330,6 @@ def test_sweep_outputs_filters_zero_byte_empty_and_sensitive_files(tmp_path: Pat
     (out_dir / "valid.png").write_bytes(b"\x89PNG real image")
 
     plan = RunPlan(prompt="", note="", mcp_servers={}, out_dir=out_dir)
-    run = Run(started_at=utcnow(), created_at=utcnow())
 
     copied = artcraft_tasks.sweep_outputs(plan, run, outbox)
     assert copied == 1

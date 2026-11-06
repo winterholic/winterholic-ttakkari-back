@@ -1,11 +1,12 @@
 """ArtCraft 작업(ADR 0039): 사용자의 창작 지시를 기존 세션·Run·Artifact 위에서 돌린다.
 
-새 실행기는 없다. 작업 = ``sessions`` 행 하나(``kind=chat``, 엔진 claude) + ``artcraft_tasks`` 행(범주·앱·옵션)이고, 라운드는 그 세션의
+새 실행기는 없다. 작업 = ``sessions`` 행 하나(``kind=chat``, 활성 개인 계정에서 선택한 엔진) + ``artcraft_tasks`` 행(범주·앱·옵션)이고, 라운드는 그 세션의
 Run 이다. 실행 직전 ``prepare_run`` 이 작업 폴더를 만들고 앱별 MCP 서버 명세·지시문 머리말·시스템 노트를 돌려주면 manager 가 기존 경로로
 엔진을 띄운다. 끝나면 ``sweep_outputs`` 가 ``out/`` 의 결과를 이 Run 의 outbox 로 복사해 기존 ``_collect_artifacts`` 가 Artifact 로 등록한다.
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 import uuid
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from ttakkari.models import (
     Workspace,
     utcnow,
 )
+from ttakkari.runs import profiles
 from ttakkari.schemas import ArtifactOut
 
 WORKSPACE_NAME = "ArtCraft 작업"
@@ -171,6 +173,22 @@ async def active_task_apps(db: AsyncSession) -> set[str]:
 
 
 
+# ---------------------------------------------------------------- 실행 엔진 동적 결정
+
+async def resolve_task_engine(db: AsyncSession) -> tuple[str, str]:
+    """ArtCraft 작업 실행에 사용할 활성 개인 계정 엔진을 동적으로 선택한다.
+
+    개인 계정의 유효 순서(임시 우선순위 포함)에서 첫 활성 계정을 선택한다.
+    활성 계정이 전혀 없으면 503 no_active_engine 에러를 발생시킨다.
+    """
+    accounts = await profiles.effective_order(db, pool="personal")
+    active = [a for a in accounts if profiles.is_on(a, pool="personal")]
+    if not active:
+        raise _err(503, "no_active_engine", "활성화된 실행 엔진(계정)이 없습니다. 설정에서 엔진을 켜주세요.")
+    chosen = active[0]
+    return chosen.engine, f"{chosen.engine.capitalize()} ({chosen.name})"
+
+
 # ---------------------------------------------------------------- 작업 생성·라운드
 
 async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt: str, input_ids: list[uuid.UUID],
@@ -178,7 +196,15 @@ async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt
     from ttakkari.api.sessions import queue_run
 
     def tag(run: Run) -> None:
-        run.usage = {**(run.usage or {}), "artcraft": {"task_id": str(task.id), "options": options, "use_previous": use_previous}}
+        run.usage = {
+            **(run.usage or {}),
+            "artcraft": {
+                "task_id": str(task.id),
+                "options": options,
+                "use_previous": use_previous,
+                "engine": sess.engine,
+            },
+        }
 
     return await queue_run(db, sess, prompt, context_artifact_ids=input_ids, effort=catalog.SPEEDS.get(speed), ip=ip,
                            on_queued=tag)
@@ -198,7 +224,8 @@ async def create_task(db: AsyncSession, *, category_id: str, prompt: str, templa
     clean = clean_options(tpl, options)
     await _load_inputs(db, cat, input_ids, tpl.min_files if tpl else 0)
     ws = await ensure_workspace(db)
-    sess = ChatSession(workspace_id=ws.id, title=_title(prompt, tpl), engine="claude", kind=SessionKind.chat, pool="personal")
+    engine, _engine_desc = await resolve_task_engine(db)
+    sess = ChatSession(workspace_id=ws.id, title=_title(prompt, tpl), engine=engine, kind=SessionKind.chat, pool="personal")
     db.add(sess)
     await db.flush()
     task = ArtcraftTask(session_id=sess.id, category=cat.id, apps=chosen, title=sess.title, template_id=tpl.id if tpl else None,
@@ -243,6 +270,19 @@ def _state(run: Run | None) -> str:
     return STATE_OF_RUN.get(run.status, "queued") if run is not None else "queued"
 
 
+def _expects_output_file(task: ArtcraftTask, run: Run | None = None) -> bool:
+    """정보·텍스트 조회는 파일을 만들지 않아도 성공이며, 나머지 요청은 기본적으로 파일을 만든다."""
+    if task.template_id in {"info", "text", "dxf-info"}:
+        return False
+    if run is not None and task.template_id is None:
+        prompt = (run.prompt or "").lower()
+        lookup = ("알려줘", "알려 주세요", "몇 개", "무엇", "무슨", "정보", "읽어줘", "읽어 주세요", "text ", "info ")
+        create = ("저장", "만들어", "제작", "내보내", "export", "render")
+        if any(word in prompt for word in lookup) and not any(word in prompt for word in create):
+            return False
+    return True
+
+
 async def _runs_by_session(db: AsyncSession, session_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[Run]]:
     out: dict[uuid.UUID, list[Run]] = {sid: [] for sid in session_ids}
     if not session_ids:
@@ -256,12 +296,17 @@ async def summaries(db: AsyncSession, tasks: list[ArtcraftTask]) -> list[dict[st
     sids = [t.session_id for t in tasks]
     runs = await _runs_by_session(db, sids)
     counts: dict[uuid.UUID, int] = {}
+    latest_counts: dict[uuid.UUID, int] = {}
     if sids:
+        latest_runs = {rs[-1].id: sid for sid, rs in runs.items() if rs}
         rows = await db.execute(
-            select(Artifact.session_id, func.count()).where(
+            select(Artifact.session_id, Artifact.run_id, func.count()).where(
                 Artifact.session_id.in_(sids), Artifact.source == OUTPUT_SOURCE, Artifact.deleted_at.is_(None),
-            ).group_by(Artifact.session_id))
-        counts = {sid: n for sid, n in rows.all()}
+            ).group_by(Artifact.session_id, Artifact.run_id))
+        for sid, run_id, n in rows.all():
+            counts[sid] = counts.get(sid, 0) + n
+            if run_id in latest_runs:
+                latest_counts[sid] = latest_counts.get(sid, 0) + n
     from ttakkari.api import desk_feedback
     last_runs = [rs[-1] for rs in runs.values() if rs]
     detailed = {r.id: r for r in await desk_feedback.runs_out(db, [r for r in last_runs if r.status in ACTIVE])}
@@ -272,7 +317,8 @@ async def summaries(db: AsyncSession, tasks: list[ArtcraftTask]) -> list[dict[st
         live = detailed.get(last.id) if last is not None else None
         output_count = counts.get(t.session_id, 0)
         last_error = (last.error or "")[:300] if last is not None and last.status == RunStatus.failed else None
-        if last is not None and last.status == RunStatus.succeeded and output_count == 0 and not last_error:
+        if (last is not None and last.status == RunStatus.succeeded and _expects_output_file(t, last)
+                and latest_counts.get(t.session_id, 0) == 0 and not last_error):
             last_error = "결과 파일 없음 (산출물이 생성되지 않았습니다)"
         items.append({
             "id": str(t.id), "session_id": str(t.session_id), "category": t.category, "title": t.title, "apps": list(t.apps or []),
@@ -326,7 +372,8 @@ async def task_detail(db: AsyncSession, task: ArtcraftTask) -> dict[str, Any]:
         live = detailed.get(run.id)
         round_outputs = outputs.get(run.id, [])
         round_error = run.error
-        if run.status == RunStatus.succeeded and len(round_outputs) == 0 and not round_error:
+        if (run.status == RunStatus.succeeded and _expects_output_file(task, run)
+                and len(round_outputs) == 0 and not round_error):
             round_error = "결과 파일 없음 (산출물이 생성되지 않았습니다)"
         rounds.append({
             "id": str(run.id), "index": index, "status": run.status, "state": _state(run), "prompt": run.prompt,
@@ -428,9 +475,10 @@ async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
 NOTE = """\
 [ArtCraft 작업 지침] 범주: {category}. 연결된 앱 MCP 서버: {servers}.
 - 작업 폴더: {base}  (in/ 입력 복사본, prev/ 이전 결과 복사본, work/ 중간 파일, out/ 최종 결과). 앱 도구는 이 폴더 안의 파일만 읽고 쓰게 설정돼 있다.
-- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 에 저장한 결과는 outbox로 복사되어 AI 작업 파일로 전달된다. 사용자가 대화에서 열어 보게 하려면 share_file 로 공유한다.
+- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 아래에 저장한 결과는 자동 수집되므로 결과 파일에 share_file 을 호출하지 않는다(중복 등록될 수 있음). share_file 은 대화에 파일을 공유할 때 쓰고, keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구다.
 - 앱 MCP 도구가 안 보이거나 오류가 나면 즉시 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
-- 끝내기 전에 0바이트 빈 파일이 아닌지 확인하고, 렌더·info·text 등으로 직접 열어 본다(이미지는 PNG 로 렌더). 확인한 내용을 답에 한두 줄로 적고, 요구한 결과 파일을 만들지 못했으면 실패 이유를 솔직히 적는다.
+- CLI 명령어 호출 시 shell 환경변수나 명령어 치환($VAR, $(cmd), eval)을 쓰지 않고 전체 리터럴 인자를 직접 실행한다. sudo, bypass 등 하네스 보안 가드를 우회하지 않는다.
+- 끝내기 전에 결과가 0바이트가 아닌지 확인하고 렌더·info·text 등으로 직접 열어 본다(이미지는 PNG 로 렌더). 확인한 내용을 답에 한두 줄로 적고, 요구한 결과 파일을 만들지 못했으면 실패 이유를 솔직히 적는다.
 - 앱이 못 하는 일은 지어내지 말고 무엇이 안 됐는지 솔직히 알린다. 유료·클라우드·AI 제공자 기능은 쓰지 않는다. 비밀·토큰 파일은 읽지 않는다.
 - 사용자는 폰으로 본다. 답은 한국어로 짧게(만든 파일 이름과 한 줄 설명, 막힌 점).
 {recipes}"""
@@ -494,7 +542,13 @@ async def prepare_run(db: AsyncSession, sess: ChatSession, run: Run, outbox: Pat
     if meta.get("use_previous"):
         head.append("이전 결과 파일(이어서 고칠 대상): " + (", ".join(rel(p) for p in previous) if previous else "없음(앞 라운드에 결과 파일이 없었음)"))
     head.append(f"선택 옵션: {option_text}")
-    head.append(f"최종 결과 저장 위치: 반드시 {folders['out']}")
+    head.append(f"최종 결과 저장 위치: {folders['out']} (반드시 이 위치에 저장)")
+    if task.category == "motion" or (task.apps and "effectcraft" in task.apps):
+        head.append(
+            "[EffectCraft 동영상 렌더 안내] EffectCraft MCP 도구는 단일 프레임 렌더(render_frame)만 지원합니다. "
+            "동영상(.mp4)을 생성하려면 프로젝트를 저장한 뒤 CLI를 실행하세요: "
+            f"`artcraft run effectcraft --project project.ecproj render --out {folders['out']}/effectcraft-render.mp4`"
+        )
     if log:
         head.append("주의: " + " / ".join(log))
     prompt = "\n".join(head) + "\n\n[사용자 지시]\n" + run.prompt
@@ -515,7 +569,8 @@ def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
 
     - 0바이트 빈 파일과 숨김/민감 파일(.env 등)은 결과물로 수집하지 않는다.
     - 심볼릭 링크 및 작업 폴더 외부를 가리키는 경로는 엄격히 배제한다.
-    - 이전 시도와 크기가 같아도 내용이 수정되었거나 mtime이 새로우면 정상 복사한다."""
+    - 이전 시도와 크기가 같아도 내용이 수정되었거나 mtime이 새로우면 정상 복사한다.
+    - 이미 같은 Run outbox 또는 out/ 에 같은 파일명·내용이 있으면 다시 복사하지 않는다."""
     start_time = run.started_at or run.created_at
     since = start_time.timestamp() if start_time else 0.0
     copied = 0
@@ -523,6 +578,15 @@ def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
     if not root.is_dir():
         return 0
     resolved_root = root.resolve()
+    existing: set[tuple[str, str]] = set()
+    for candidate in outbox.rglob("*"):
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        try:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        existing.add((candidate.name, digest))
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
@@ -542,6 +606,10 @@ def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
             # mtime 검사: since 이전 생성된 파일은 건너뜀
             if since > 0 and stat.st_mtime < since:
                 continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            identity = (path.name, digest)
+            if identity in existing:
+                continue
             # dest 가 이미 존재하고, 내용이 완전히 동일(크기와 내용 일치)하면 건너뜀
             if dest.exists():
                 dstat = dest.stat()
@@ -552,7 +620,81 @@ def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
                     except OSError:
                         pass
             _copy(path, dest)
+            existing.add(identity)
             copied += 1
         except OSError:
             continue
     return copied
+
+
+# ---------------------------------------------------------------- 산출물 독립 검증
+
+def verify_task_output(file_path: Path, expected_kind: str | None = None) -> dict[str, Any]:
+    """제작 산출물의 무결성(0바이트 빈 파일, 헤더 손상, 매직 바이트, 확장자 일치)을 독립 검증한다."""
+    p = Path(file_path)
+    if not p.exists():
+        return {"valid": False, "error": "파일이 존재하지 않습니다", "kind": None, "size_bytes": 0}
+    if p.is_symlink():
+        return {"valid": False, "error": "심볼릭 링크는 허용되지 않습니다", "kind": None, "size_bytes": 0}
+    try:
+        stat = p.stat()
+    except OSError as exc:
+        return {"valid": False, "error": f"파일 상태를 읽을 수 없습니다: {exc}", "kind": None, "size_bytes": 0}
+    if stat.st_size == 0:
+        return {"valid": False, "error": "0바이트 빈 파일입니다 (결과물 없음)", "kind": None, "size_bytes": 0}
+
+    kind: str | None = None
+    try:
+        header = p.read_bytes()[:64]
+    except OSError as exc:
+        return {"valid": False, "error": f"파일을 읽을 수 없습니다: {exc}", "kind": None, "size_bytes": stat.st_size}
+
+    # 바이너리 매직 바이트 검사
+    if header.startswith(b"%PDF"):
+        kind = "pdf"
+    elif header.startswith(b"\x89PNG\r\n\x1a\n"):
+        kind = "png"
+    elif header.startswith(b"\xff\xd8\xff"):
+        kind = "jpg"
+    elif header.startswith((b"GIF87a", b"GIF89a")):
+        kind = "gif"
+    elif len(header) >= 8 and (header[4:8] == b"ftyp" or b"ftyp" in header[:32]):
+        kind = "mp4"
+    elif header.startswith(b"PK\x03\x04"):
+        ext = p.suffix.lower().lstrip(".")
+        kind = ext if ext in {"docx", "xlsx", "pptx", "zip"} else "zip"
+    elif header.startswith(b"\x1a\x45\xdf\xa3"):
+        kind = "webm"
+    elif header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WAVE":
+        kind = "wav"
+    else:
+        # 텍스트 계열 포맷 검사 (SVG, DXF, JSON 등)
+        try:
+            head_txt = p.read_text(encoding="utf-8", errors="replace")[:1000].strip()
+            if "<svg" in head_txt.lower():
+                kind = "svg"
+            elif "section" in head_txt.lower() and any(k in head_txt.lower() for k in ("header", "entities", "0\n", "0\r\n")):
+                kind = "dxf"
+            elif head_txt.startswith("{") or head_txt.startswith("["):
+                try:
+                    import json
+                    json.loads(p.read_text(encoding="utf-8"))
+                    ext = p.suffix.lower().lstrip(".")
+                    kind = ext if ext in {"json", "ecproj"} else "json"
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    if kind is None:
+        return {"valid": False, "error": f"지원하지 않거나 인식할 수 없는 파일 포맷 헤더입니다: {header[:16]!r}", "kind": None, "size_bytes": stat.st_size}
+
+    if expected_kind is not None and kind != expected_kind.lower():
+        return {
+            "valid": False,
+            "error": f"기대한 형식({expected_kind})과 실제 감지된 형식({kind})이 일치하지 않습니다",
+            "kind": kind,
+            "size_bytes": stat.st_size,
+        }
+
+    return {"valid": True, "error": None, "kind": kind, "size_bytes": stat.st_size}

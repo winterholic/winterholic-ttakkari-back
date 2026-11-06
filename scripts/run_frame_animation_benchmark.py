@@ -7,20 +7,23 @@
 
 from __future__ import annotations
 
-import json
 import argparse
-import os
+import json
 import re
 import shutil
-import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # 작업 위치 기준 import 경로 추가
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
+from templates.frame_animation.presets import (
+    make_jump_and_cheer_poses,
+    make_walk_cycle_poses,
+    make_wave_poses,
+)
 from ttakkari.creative.v2.frame_animation import (
     AnimationProjectSpec,
     AnimationScene,
@@ -28,14 +31,7 @@ from ttakkari.creative.v2.frame_animation import (
     CharacterLayerBuilder,
     FrameAnimationAdapter,
     FrameAnimationRenderer,
-    LayerTransform,
-    RiggedPose,
     SubtitleCue,
-)
-from templates.frame_animation.presets import (
-    make_jump_and_cheer_poses,
-    make_walk_cycle_poses,
-    make_wave_poses,
 )
 
 
@@ -135,7 +131,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="렌더 산출물을 지정한 단일 outbox 폴더에 저장합니다.")
     parser.add_argument("--outbox-dir", required=True, type=Path, help="현재 Run에서 허용된 새 outbox 폴더")
-    parser.add_argument("--run-id", default=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    parser.add_argument("--run-id", default=datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"))
     args = parser.parse_args()
     try:
         args.run_id = validate_run_id(args.run_id)

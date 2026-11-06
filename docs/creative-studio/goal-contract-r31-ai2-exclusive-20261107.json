@@ -173,4 +173,3 @@
   "account_observation": "2026-11-07 02:06 KST 지원 account_usage는 회사Codex ai2만enabled/available true(주간64%잔여),다른계정모두false다. 실제Run GET에서총괄2dac33b0·core452cc3c0(running/Sol)·UI d9cb9886(running/Luna)는ai2다. 51118355/cfd748f1는queued/profile=null이라새Run이나중복지시를추가하지않았다. migration manifest의Creative항목0건과취소4건모두타계획을확인했다. backendHEAD439472b3/front31de7817및dirty는보존했다.",
   "stage3_observation": "Stage3 Run7951dc2c는ai2/Sol. events seq78/79 실제모델출력→명시적승인→로컬consumer성공/duplicateFalse/9.03초MP4 SHA9545d35f 및unknown품질,83/84 변경묶음38passed4.22s,87/88 최종19passed3.34s,219exit0를대조했다. 운영도메인API·원격consumer실소비는미배포/미검증이다. 실제모델Run중eb6ce21a는ai2,ea791aa5(01:44KST완료)·90bddc9c(01:50KST완료)는개인Codex였다. 계정전환전의완료기술증거는보존하되ai2추론증거와분리하고재실행하지않는다."
 }
-

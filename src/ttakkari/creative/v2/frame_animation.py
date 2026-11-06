@@ -12,16 +12,13 @@ Creative Studio v2 공통 엔진 통합 계약(`docs/creative-studio/engine-cont
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import math
-import os
-import shutil
+import struct
 import subprocess
 import time
 import wave
-import struct
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -216,7 +213,8 @@ class FrameAnimationAdapter:
                 missing.append("ffmpeg 실행 파일이 버전을 응답하지 않습니다.")
             else:
                 version = first
-        except Exception as e:
+        # Preserve the Preflight contract: environmental failures become a missing reason.
+        except Exception as e:  # noqa: BLE001
             missing.append(f"ffmpeg 실행 파일을 쓸 수 없습니다: {e}")
 
         if not CAPTION_FONT_PATH.is_file():
@@ -614,7 +612,7 @@ class FrameAnimationRenderer:
         w, h = canvas.size
         try:
             font = ImageFont.truetype(str(CAPTION_FONT_PATH), size=max(20, int(h * 0.045)))
-        except Exception:
+        except OSError:
             font = ImageFont.load_default()
 
         draw = ImageDraw.Draw(canvas)
@@ -738,7 +736,7 @@ class FrameAnimationRenderer:
         prod_fps = spec.production_fps
         play_fps = spec.playback_fps
         total_duration = spec.target_duration
-        total_play_frames = int(round(total_duration * play_fps))
+        total_play_frames = round(total_duration * play_fps)
 
         scene_ranges: list[tuple[float, float, AnimationScene]] = []
         cur_time = 0.0
@@ -758,7 +756,7 @@ class FrameAnimationRenderer:
 
         for f_idx in range(total_play_frames):
             t = f_idx / play_fps
-            prod_frame_idx = int(math.floor(t * prod_fps))
+            prod_frame_idx = math.floor(t * prod_fps)
 
             active_scene = scene_ranges[-1][2]
             for st, et, sc in scene_ranges:

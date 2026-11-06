@@ -1,11 +1,10 @@
-import os
 from pathlib import Path
+
 import pytest
 
-from ttakkari.creative.v2.engines import EngineAdapter, Limits, Preflight, adapter_by_id
+from ttakkari.creative.v2.engines import Limits, Preflight, adapter_by_id
 from ttakkari.creative.v2.hyperframes import (
     HyperFramesAdapter,
-    HyperFramesRenderOptions,
     find_browser,
     find_ffprobe,
     run_lint,
@@ -98,7 +97,7 @@ def test_hyperframes_lint_on_fixture(tmp_path):
 
 
 def test_render_segment_applies_spec_content_and_reports_real_render(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     spec = {
         "plan_id": "plan-test",
@@ -147,7 +146,7 @@ def test_render_segment_applies_spec_content_and_reports_real_render(monkeypatch
 
 
 def test_render_segment_maps_core_style_dna_to_fixed_template_values(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     spec = {
         "plan_id": "plan-core-contract",
@@ -225,7 +224,7 @@ def test_hyperframes_style_dna_prevalidation_names_unsupported_core_value():
 
 
 def test_render_segment_rejects_unsupported_core_style_dna_before_preflight(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     monkeypatch.setattr(
         hyperframes.ADAPTER,
@@ -262,7 +261,7 @@ def test_render_segment_rejects_unsupported_core_style_dna_before_preflight(monk
 
 
 def test_render_segment_returns_preflight_failure_without_render_fallback(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     spec = {
         "seconds": 16,
@@ -291,7 +290,7 @@ def test_render_segment_returns_preflight_failure_without_render_fallback(monkey
 
 
 def test_render_segment_rejects_unmapped_scene_count(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     result = hyperframes.render(
         {"seconds": 16, "scenes": [{"title": "Only one", "narration": "No silent fallback."}]},
@@ -306,7 +305,7 @@ def test_render_segment_rejects_unmapped_scene_count(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("scene_count", [1, 4])
 def test_render_segment_rejects_scene_counts_outside_fixed_template(scene_count, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     scenes = [{"title": f"Scene {i}", "narration": f"Narration {i}"} for i in range(scene_count)]
     result = hyperframes.render(
@@ -321,7 +320,7 @@ def test_render_segment_rejects_scene_counts_outside_fixed_template(scene_count,
 
 
 def test_render_segment_rejects_portrait_before_preflight(monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     monkeypatch.setattr(
         hyperframes.ADAPTER,
@@ -358,7 +357,7 @@ def test_render_segment_rejects_portrait_before_preflight(monkeypatch, tmp_path)
     ],
 )
 def test_render_segment_rejects_discovery_only_style_values_before_preflight(style, monkeypatch, tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     monkeypatch.setattr(
         hyperframes.ADAPTER,
@@ -385,7 +384,7 @@ def test_render_segment_rejects_discovery_only_style_values_before_preflight(sty
 
 
 def test_render_segment_rejects_style_fields_the_template_does_not_apply(tmp_path):
-    import ttakkari.creative.v2.hyperframes as hyperframes
+    from ttakkari.creative.v2 import hyperframes
 
     result = hyperframes.render(
         {
@@ -408,7 +407,8 @@ def test_render_segment_rejects_style_fields_the_template_does_not_apply(tmp_pat
 
 def test_preflight_blocks_cli_doctor_when_browser_ipc_is_denied(monkeypatch):
     import subprocess
-    import ttakkari.creative.v2.hyperframes as hyperframes
+
+    from ttakkari.creative.v2 import hyperframes
 
     calls = []
 

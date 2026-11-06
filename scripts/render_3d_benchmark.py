@@ -1,7 +1,6 @@
 """Creative 3D 씬 렌더링 실행 및 벤치마크 스크립트."""
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -50,7 +49,6 @@ def run_benchmark():
     # 4. Three.js 기존 성공 실험 결과물 확인 및 연계
     three_mp4 = LAB_3D / "out" / "cinematic_3d_v2.mp4"
     audio_wav = LAB_3D / "out" / "mix_a.wav"
-    three_record = LAB_3D / "records" / "three-cinematic-v1-v2" / "record.json"
 
     # 5. FFmpeg probe 검사 함수
     ff = ffmpeg()
@@ -60,8 +58,9 @@ def run_benchmark():
         r = subprocess.run(cmd, capture_output=True, text=True, check=False)
         return r.stderr
 
-    blender_probe = probe_file(blender_mp4)
-    three_probe = probe_file(three_mp4) if three_mp4.exists() else "None"
+    probe_file(blender_mp4)
+    if three_mp4.exists():
+        probe_file(three_mp4)
 
     # 6. 산출물 복사 및 디렉토리 구성
     for out_dir in [OUTBOX_8396, OUTBOX_1990]:

@@ -1,12 +1,13 @@
 """프레임 애니메이션 2D 엔진 및 렌더러 단위 테스트."""
 
-import shutil
-import tempfile
-from pathlib import Path
 
 import pytest
 from PIL import Image
 
+from templates.frame_animation.presets import (
+    make_walk_cycle_poses,
+    make_wave_poses,
+)
 from ttakkari.creative.v2.frame_animation import (
     AnimationProjectSpec,
     AnimationScene,
@@ -17,13 +18,8 @@ from ttakkari.creative.v2.frame_animation import (
     LayerTransform,
     RiggedPose,
     SubtitleCue,
-    transform_and_paste,
     _build_motion_eval,
-)
-from templates.frame_animation.presets import (
-    make_jump_and_cheer_poses,
-    make_walk_cycle_poses,
-    make_wave_poses,
+    transform_and_paste,
 )
 
 

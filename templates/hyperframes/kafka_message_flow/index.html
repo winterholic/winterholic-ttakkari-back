@@ -46,7 +46,7 @@
       position: absolute;
       inset: 0;
       background-size: 60px 60px;
-      background-image: 
+      background-image:
         linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     }
@@ -523,7 +523,7 @@
     const tl = gsap.timeline({ paused: true });
 
     // === ACT 1: 0.0s - 4.5s (Producer Entrance & Caption 1) ===
-    tl.fromTo("#caption-act1", 
+    tl.fromTo("#caption-act1",
       { opacity: 0, y: 15 },
       { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" },
       0.1
@@ -548,7 +548,7 @@
     );
 
     // Packet launches from Producer toward Cluster
-    tl.fromTo("#packet", 
+    tl.fromTo("#packet",
       { opacity: 0, x: 440, y: 480, scale: 0.6 },
       { opacity: 1, x: 730, y: 480, scale: 1.2, duration: 2.0, ease: "power2.inOut" },
       2.0

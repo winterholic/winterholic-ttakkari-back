@@ -13,15 +13,14 @@ import hashlib
 import json
 import logging
 import math
-import os
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ttakkari.creative.render import dimensions, ffmpeg
+from ttakkari.creative.render import ffmpeg
 from ttakkari.creative.v2 import engines
 
 logger = logging.getLogger(__name__)
@@ -184,7 +183,8 @@ class Scene3DAdapter:
                 missing.append("ffmpeg 실행 파일이 버전을 응답하지 않습니다.")
             else:
                 versions.append(first.strip().split()[2] if len(first.strip().split()) > 2 else first.strip())
-        except Exception as e:
+        # Preserve the Preflight contract: environmental failures become missing reasons.
+        except Exception as e:  # noqa: BLE001
             missing.append(f"ffmpeg 실행 파일을 쓸 수 없습니다: {e}")
 
         # 2. Node.js 확인
@@ -194,7 +194,8 @@ class Scene3DAdapter:
                 versions.append(f"Node {node_out.stdout.strip()}")
             else:
                 missing.append("Node.js를 실행할 수 없습니다.")
-        except Exception as e:
+        # Preserve the Preflight contract: environmental failures become missing reasons.
+        except Exception as e:  # noqa: BLE001
             missing.append(f"Node.js 확인 실패: {e}")
 
         # 3. 3D 템플릿/라이브러리 확인
@@ -216,7 +217,8 @@ class Scene3DAdapter:
                     versions.append(f"Blender {bpy_out.stdout.strip()}")
                 else:
                     missing.append(f"Blender 실행 확인 실패: {bpy_out.stderr.strip() or bpy_out.returncode}")
-            except Exception as e:
+            # Preserve the Preflight contract: bpy failures become a missing reason.
+            except Exception as e:  # noqa: BLE001
                 missing.append(f"Blender 실행 확인 실패: {e}")
         else:
             missing.append(f"Blender Python 실행 파일을 찾을 수 없습니다: {self.bpy_python or BPY_VENV_PYTHON}")
@@ -238,7 +240,7 @@ class Scene3DAdapter:
         if not local_nm.exists() and lab_nm.exists():
             try:
                 local_nm.symlink_to(lab_nm)
-            except Exception:
+            except OSError:
                 pass
 
         cmd = [self.node_bin, str(audit_script), version, "--json"]
@@ -252,7 +254,7 @@ class Scene3DAdapter:
             data = json.loads(res.stdout)
             ok = data.get("ok", ok)
             shots = data.get("report", [])
-        except Exception:
+        except json.JSONDecodeError:
             pass
 
         return AuditReport(ok=ok, version=version, shots=shots, raw_output=raw_text)

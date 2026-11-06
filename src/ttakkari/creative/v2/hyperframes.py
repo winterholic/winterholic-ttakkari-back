@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Literal
 
 from ttakkari.agents.browser_preflight import inspect_permissions
 from ttakkari.creative.render import ffmpeg
-from ttakkari.creative.v2.engines import Limits, Preflight, qa_media
+from ttakkari.creative.v2.engines import Limits, Preflight
 
 log = logging.getLogger("ttakkari.creative.v2.hyperframes")
 
@@ -96,7 +96,8 @@ class HyperFramesAdapter:
                 major = int(re.search(r"v(\d+)", node_ver).group(1)) if re.search(r"v(\d+)", node_ver) else 0
                 if major < 20:
                     missing.append(f"Node.js 버전({node_ver})이 권장(>=20)보다 낮습니다.")
-            except Exception as e:
+            # Preserve the Preflight contract: process failures become a missing reason.
+            except Exception as e:  # noqa: BLE001
                 missing.append(f"Node.js 실행 실패: {e}")
 
         # 2. HyperFrames CLI doctor check
@@ -117,7 +118,8 @@ class HyperFramesAdapter:
 
         try:
             ipc = inspect_permissions()
-        except Exception as exc:
+        # Permission probe failures are explicitly surfaced as status=unknown.
+        except Exception as exc:  # noqa: BLE001
             ipc = {"status": "unknown", "error": str(exc)}
         if ipc.get("status") not in {"permissions_allowed", "not_applicable"}:
             missing.append(f"HyperFrames browser IPC {ipc.get('status')}; CLI doctor/render not attempted")
@@ -143,7 +145,8 @@ class HyperFramesAdapter:
                         missing.append(f"HyperFrames 필수 검사 실패: {', '.join(failed_essential)}")
                 else:
                     missing.append(f"HyperFrames doctor 응답 오류 (code {res.returncode}): {res.stderr[:200]}")
-            except Exception as e:
+            # Doctor parse and process failures remain structured preflight diagnostics.
+            except Exception as e:  # noqa: BLE001
                 missing.append(f"HyperFrames doctor 실행 불가: {e}")
 
         # 3. FFmpeg check
@@ -152,7 +155,8 @@ class HyperFramesAdapter:
             res = subprocess.run([exe, "-version"], capture_output=True, text=True, timeout=10, check=False)
             if res.returncode != 0:
                 missing.append("FFmpeg 실행 파일이 정상 동작하지 않습니다.")
-        except Exception as e:
+        # Preserve the Preflight contract: environment failures become a missing reason.
+        except Exception as e:  # noqa: BLE001
             missing.append(f"FFmpeg 로드 실패: {e}")
 
         return Preflight(ok=len(missing) == 0, version=version_str, missing=missing)
@@ -246,13 +250,13 @@ def _style_dna_contract(
     if style_dna is None:
         return None
     if not isinstance(style_dna, dict):
-        raise ValueError("style_dna는 Core ComposeResult object여야 합니다.")
+        raise ValueError("style_dna는 Core ComposeResult object여야 합니다.")  # noqa: TRY004
     status = style_dna.get("status")
     if status not in {"resolved", "resolved_pending_confirmation"}:
         raise ValueError(f"Kafka flow는 resolved Style DNA만 받습니다(status={status!r}).")
     dna = style_dna.get("dna")
     if not isinstance(dna, dict):
-        raise ValueError("style_dna.dna가 object가 아닙니다.")
+        raise ValueError("style_dna.dna가 object가 아닙니다.")  # noqa: TRY004
 
     sources = {
         "theme": ("visual_identity", "theme"),
@@ -264,10 +268,10 @@ def _style_dna_contract(
     for name, (facet_name, param_name) in sources.items():
         facet = dna.get(facet_name) or {}
         if not isinstance(facet, dict):
-            raise ValueError(f"style_dna.dna.{facet_name}는 object여야 합니다.")
+            raise ValueError(f"style_dna.dna.{facet_name}는 object여야 합니다.")  # noqa: TRY004
         params = facet.get("params") or {}
         if not isinstance(params, dict):
-            raise ValueError(f"style_dna.dna.{facet_name}.params는 object여야 합니다.")
+            raise ValueError(f"style_dna.dna.{facet_name}.params는 object여야 합니다.")  # noqa: TRY004
         value = params.get(param_name)
         if value is None:
             continue
@@ -328,7 +332,7 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     supported_style = {"theme": "dark", "animation": "technical", "transition": "cut", "caption_style": "bottom_card"}
     style = spec.get("style") or {}
     if not isinstance(style, dict):
-        raise ValueError("style은 object여야 합니다.")
+        raise ValueError("style은 object여야 합니다.")  # noqa: TRY004
     unsupported_style = [f"{key}={value}" for key, value in style.items() if supported_style.get(key) != value]
     if unsupported_style:
         raise ValueError("Kafka flow 템플릿이 적용하지 않는 style: " + ", ".join(unsupported_style))
@@ -494,7 +498,7 @@ def run_snapshot(
     ts_arg = ",".join(f"{t:.2f}" for t in timestamps)
     cmd = ["npx", "-y", "hyperframes", "snapshot", "--at", ts_arg, "--output-dir", str(output_dir)]
     subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True, env=env, timeout=120, check=False)
-    return sorted(list(output_dir.glob("*.png")))
+    return sorted(output_dir.glob("*.png"))
 
 
 @dataclass

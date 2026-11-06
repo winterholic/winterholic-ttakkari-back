@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import math
 import json
+import math
 import runpy
+from pathlib import Path
+
 import pytest
 
 from ttakkari.creative.v2 import engines
 from ttakkari.creative.v2.scene_3d import (
     ADAPTER,
-    SCENE_3D_LIMITS,
     AuditReport,
     Scene3DAdapter,
-    get_lead_contract,
-    render,
     _normalize_render_input,
+    get_lead_contract,
 )
 
 
@@ -111,7 +110,7 @@ def test_unsupported_scene_and_style_are_not_silently_ignored():
 
 
 def test_render_rejects_actual_duration_mismatch_after_encoding(tmp_path, monkeypatch):
-    import ttakkari.creative.v2.scene_3d as scene_3d
+    from ttakkari.creative.v2 import scene_3d
 
     adapter = Scene3DAdapter()
     source = tmp_path / "source.mp4"

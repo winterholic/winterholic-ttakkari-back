@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import pytest
-
 from ttakkari.creative.v2 import engines
 from ttakkari.creative.v2.scene_3d import (
     ADAPTER,
-    SCENE_3D_LIMITS,
     AuditReport,
     Scene3DAdapter,
     get_lead_contract,
     preflight,
-    render,
 )
 
 

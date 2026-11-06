@@ -658,3 +658,15 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 ### 3. 캐시 관리
 - `GET /api/tts/cache/stats`: `{ entries, bytes, hits, misses, counters_since, max_bytes }` 반환.
 - `POST /api/tts/cache/prune`: `{ removed, freed_bytes }` 반환. 만료/용량 초과 캐시 청크를 정리한다.
+
+
+## 수집 주제와 실행 내역
+
+소유자 인증이 필요한 `/api/assistant/collect/missions`의 추가 계약이다. 기존 mission·run·item·KB 자료는 그대로 보존한다.
+
+- 목록과 상세에 `topic_key`와 `run_count`를 반환한다. 주제 키는 지시문 전문, 사용자 참고 맥락, 직접 지정한 참고 주소 집합의 SHA-256이다. 제목이나 계획기의 추론 결과가 같다는 이유로 합치지 않는다. 생성된 검색어·예산·복구 요청 키는 주제 식별에 포함하지 않는다.
+- `GET ?limit=20&offset=0`은 기존 `items/limit/offset`에 `has_more`를 추가한다. 최대 limit은 100이다. 내역을 더 읽으면 같은 주제 아래에 합칠 수 있다.
+- 생성 입력의 선택 필드 `reuse_existing`은 기본 false다. true이면 같은 주제의 현재 수집(활성 우선, 이후 생성 시각 내림차순)을 반환한다. 없는 주제일 때만 새로 생성한다. 같은 주제 생성은 트랜잭션 advisory lock으로 직렬화하여 동시에 누른 요청도 중복 작업을 만들지 않는다. 재사용은 취소된 수집을 재개하거나 재실행하지 않는다.
+- `reuse_existing=true`와 `request_key`를 함께 주면 422다. 명시적인 별도 복구 요청은 기존 request_key 계약을 유지하며, 같은 키와 다른 입력은 409다. 별도 복구 시도도 같은 topic_key로 연결된다.
+- 다시 실행·추가·보충 수집은 기존 mission 제어 API를 사용하고 그 mission의 실행 회차에 남긴다. `runs` 상세는 최근 20회차, `run_count`는 전체 회차 수다.
+- 현재 수집의 적재량은 이전 시도와 합산하지 않는다. 과거 오류로 적재된 문서를 현재 수집의 성과로 표시하지 않기 위함이다.

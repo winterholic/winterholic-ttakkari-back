@@ -281,6 +281,7 @@ class MissionInput(BaseModel):
     max_pages: int = Field(default=2000, ge=1, le=100_000)
     max_depth: int = Field(default=3, ge=0, le=12)
     request_key: str | None = Field(default=None, min_length=1, max_length=256)
+    reuse_existing: bool = False
 
 
 class ExtendInput(BaseModel):
@@ -296,7 +297,7 @@ class ScheduleInput(BaseModel):
 @router.post("/plan")
 async def preview(body: MissionInput, _: User):
     try:
-        return missions.plan(**body.model_dump(exclude={"request_key"}))
+        return missions.plan(**body.model_dump(exclude={"request_key", "reuse_existing"}))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -314,8 +315,9 @@ async def create(body: MissionInput, _: User, db: Db):
 @router.get("")
 async def list_missions(_: User, db: Db, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
     rows = list(await db.scalars(select(CollectionMission).where(CollectionMission.tenant_id == "owner")
-                                .order_by(CollectionMission.created_at.desc(), CollectionMission.id.desc()).limit(limit).offset(offset)))
-    return {"items": [await missions.view(db, row, detailed=False) for row in rows], "limit": limit, "offset": offset}
+                                .order_by(CollectionMission.created_at.desc(), CollectionMission.id.desc()).limit(limit + 1).offset(offset)))
+    return {"items": [await missions.view(db, row, detailed=False) for row in rows[:limit]],
+            "limit": limit, "offset": offset, "has_more": len(rows) > limit}
 
 
 @router.get("/{mission_id}")

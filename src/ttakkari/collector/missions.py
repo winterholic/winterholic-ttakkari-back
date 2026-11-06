@@ -163,17 +163,44 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
     }
 
 
+def topic_key(goal: str, strategy: dict) -> str:
+    """Identity of user intent, independent of generated plans, budgets and recovery request keys.
+
+    Full instructions, supplied context and explicit references must match. A shared title or
+    inferred subject alone is insufficient to merge two requests. Existing ledgers are never changed.
+    """
+    identity = {"goal": goal.strip(), "context": (strategy.get("context") or {}).get("text", "").strip(),
+                "references": sorted({entry["url"] for entry in strategy.get("sources", [])
+                                      if entry.get("provenance") == "user_reference"})}
+    return hashlib.sha256(jcs(identity).encode()).hexdigest()
+
+
 async def create(db, *, goal: str, context: str = "", urls: list[str] | None = None,
-                 max_pages: int = 2000, max_depth: int = 3, request_key: str | None = None) -> CollectionMission:
+                 max_pages: int = 2000, max_depth: int = 3, request_key: str | None = None,
+                 reuse_existing: bool = False) -> CollectionMission:
     strategy = plan(goal, context=context, urls=urls, max_pages=max_pages, max_depth=max_depth)
+    if reuse_existing and request_key is not None:
+        raise ValueError("기존 수집 재사용과 별도 실행 요청 키는 함께 지정할 수 없습니다.")
     digest = hashlib.sha256(jcs(strategy).encode()).hexdigest()
     key = request_key or str(uuid.uuid4())
+    # Every creation shares this lock: concurrent submissions cannot create duplicate active work.
+    topic = topic_key(goal, strategy)
+    await store._lock(db, "mission-topic", "owner", topic)
     await store._lock(db, "mission-create", "owner", key)
     existing = await db.scalar(select(CollectionMission).where(CollectionMission.tenant_id == "owner", CollectionMission.request_key == key))
     if existing:
         if existing.input_hash != digest:
             raise CollectorConflictError("request key already has a different mission")
         return existing
+    if reuse_existing:
+        candidates = list(await db.scalars(select(CollectionMission).where(
+            CollectionMission.tenant_id == "owner", CollectionMission.goal == goal.strip(),
+        ).order_by(CollectionMission.created_at.desc(), CollectionMission.id.desc())))
+        matches = [row for row in candidates if topic_key(row.goal, row.plan) == topic]
+        # Prefer the active recovery, then the newest retained attempt. Reusing never resumes it.
+        active = [row for row in matches if row.status not in TERMINAL]
+        if active or matches:
+            return (active or matches)[0]
     mission = CollectionMission(id=uuid.uuid4(), tenant_id="owner", request_key=key,
                                 input_hash=digest, goal=goal.strip(), plan=strategy, gaps=[], status="queued")
     db.add(mission)
@@ -733,6 +760,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
 
     return {
         "id": str(mission.id), "goal": mission.goal, "title": mission.plan["title"], "status": state,
+        "topic_key": topic_key(mission.goal, mission.plan), "run_count": mission.current_run_seq or 1,
         "plan": mission.plan if detailed else {k: v for k, v in mission.plan.items() if k != "context"},
         "run_seq": mission.current_run_seq or 1, "runs": runs,
         "gaps": mission.gaps, "counts": counts, "triage": triage_summary, "results": results,

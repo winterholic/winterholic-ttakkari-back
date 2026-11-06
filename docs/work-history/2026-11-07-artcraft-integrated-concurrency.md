@@ -81,3 +81,9 @@
 - 콜스택 대조: 이 테스트는 `ttakkari.db.sessionmaker`를 monkeypatch하지만, `tests/conftest.py`의 app-lifespan은 background consumer를 실행한다. reverse consumer도 같은 global factory를 읽어 mock `RunnerSession`으로 DB 접근을 시도했고, 그 추가 세션이 runner-session 순서 단언을 깨뜨렸다. 테스트 코드만 실행할 때는 `1 passed in 0.97s`로 재현되지 않아, 공유 test process의 background consumer 교차가 원인임을 확인했다.
 - 최소 수정: `test_start_update_job_actual_path_self_exclusion`에서 background consumer claiming을 잠시 멈추고 이미 진행 중인 pump가 끝날 때까지 기다린다. 테스트 teardown은 원래 `sessionmaker`를 복원한 뒤 이전에 paused가 아니었던 경우에만 consumer claiming을 재개한다. 변경은 단위 테스트만이며 제품 source는 바꾸지 않았다.
 - 수정 후 좁은 검증: `PYTHONPATH=src:tests:unit_tests ../back/.venv/bin/pytest unit_tests/test_artcraft_update.py::test_start_update_job_actual_path_self_exclusion -q -p no:cacheprovider -vv` → `1 passed in 0.97s`. 최종 candidate에 대한 필수 gate와 실제 push hook은 이 기록 commit 뒤 다시 실행할 예정이다.
+
+### 직렬 격리 수정 후 gate 결과 (2026-11-07)
+
+- 첫 수정 포함 commit `9b0262a8af2fd32e0a5f08b422c918787e735ef6`의 impacted gate는 계약 `85 passed, 6836 deselected in 15.36s`, 변경 테스트 `105 passed in 11.65s`였으나 새 테스트의 `from ttakkari import ...` 결합 import가 Ruff `I001`로 실패(exit 1)했다.
+- import를 `from ttakkari import artcraft_tasks, background_consumers`와 `from ttakkari import db as db_module`로 분리했다. 이후 latest fetch `origin/main=40e88581cc1010287ef2b82e13188e2d6c6e8df9`를 포함한 기준으로 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-453208be ./scripts/verify_deploy_gate.sh --commit 11bb047a894bb3d50cacd2af3b03095e91d037ae --base 40e88581cc1010287ef2b82e13188e2d6c6e8df9` 실행 → exit 0; Ruff 9 Python files 통과, 계약 `85 passed, 6836 deselected in 15.35s`, 변경 테스트 4 files `105 passed in 10.01s`, DB reset `38 selective`, `0 forced full`, `0 fell back to full`.
+- 이 검사는 필수 pre-push impacted 범위만 다룬다. 전체 suite는 반복하지 않았다. 이 기록 자체는 문서 변경이며, push hook은 최종 기록 commit SHA에서 다시 실행한다.

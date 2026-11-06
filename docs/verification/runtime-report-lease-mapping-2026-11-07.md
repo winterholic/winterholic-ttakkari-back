@@ -191,3 +191,40 @@ No claim2/identity10, account/L2, or precision-evaluation regressions were rerun
 serialization fix does not alter those paths. Existing owner-smoke OSError and GPU process-enumeration
 failure were not retried. No operating DB, cleanup/reconcile, process action, service restart, push, or
 deploy was performed.
+
+## Integration preparation (2026-11-07)
+
+The current Run profile gate was rechecked before integration:
+
+```text
+argv: /Users/winterholic/bin/ttk get /api/sessions/808ab849-afef-4f69-9d10-d098537b91ed/runs | jq '[.[] | select(.status == "running") | {id,status,profile}]'
+output: id=28ab85cf-0194-434e-8e6d-f27739dfe565, status=running, profile=회사 코덱스 ai2 (ai2@hyperez.io)
+```
+
+GitHub account listing showed `winterholic` registered and active. Latest remote main was fetched into
+`refs/remotes/origin/main`:
+
+```text
+argv: GH_AS_USER=winterholic GH_AS_TOKEN="$(gh auth token --hostname github.com --user winterholic)" git -c credential.helper= -c 'credential.helper=!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f' fetch origin main:refs/remotes/origin/main
+output: 293bb8440fb96aaf648a59c7c821a99348ce325c (origin/main)
+```
+
+The isolated candidate branch was already a descendant of `origin/main`, so no merge/rebase or source
+conflict resolution was needed. The candidate HEAD exactly matches the independently reviewed
+`ee52abc78113a617e3821e4e3934ce28f1ab8c27`; `origin/main`, original integration baseline
+`40e88581cc1010287ef2b82e13188e2d6c6e8df9`, and the earlier precision switch
+`b51df6fd70c9dfa008d3ae3977b184bf8d9180e9` are ancestors (each `git merge-base --is-ancestor ... HEAD`
+returned exit 0). This preserves the R3/L2/b51 baseline and adds the reviewed candidate unchanged.
+
+Independent evidence is retained in this repository:
+
+- `runtime-mapping-independent-review-6cdfa734.md` records the original missing-session finding and
+  prior scope/limitations.
+- `runtime-mapping-independent-review-ee52abc7.md` records the correction PASS and independent probe
+  results for `lease_only`, matched lease/group, and orphan group rows.
+- `runtime-mapping-independent-probe-ee52abc7.py` is the independent synthetic SQLite SQL probe.
+
+The candidate's existing focused runtime-report test, correction-specific SQLite probe, Ruff, and diff
+check receipts above remain the verification evidence. No claim2/identity10 or account/L2/precision full
+regressions were repeated. The push and deployment reservation receipts will be appended after the
+corresponding operations; the deployment activation status will not be polled.

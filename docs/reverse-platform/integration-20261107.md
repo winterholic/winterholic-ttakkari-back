@@ -246,3 +246,47 @@ exit 0 (no output)
 
 - DB/API 저장·dispatch, 실제 configured-browser provenance, ReverseJob 운영 E2E는 미검증이며 실행하지 않았다. `initdb shmget` 및 `.vite` 삭제 거부를 반복하거나 우회하지 않았다.
 - 운영 runtime은 변경하지 않았다. push·배포를 하지 않았다. 이 커밋 뒤 고정 revision 독립 재감사와 정상 배포가 다음 단계다.
+
+## 189 고정 감사 및 최신 origin/main 보존 통합 (2026-11-07)
+
+### 시작 기준·원격 통합
+
+- 작업 전 지원 API에서 이 Run의 `running` profile은 `회사 코덱스 ai2 (ai2@hyperez.io)`였고, `/api/accounts`의 동일 이름 단일 계정 ID는 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`였다. 다른 계정 전환·폴백·위임은 하지 않았다. GitHub 지원 조회는 `winterholic`과 `daeseon-dev`를 반환했고, 이 저장소 fetch/push에는 per-command `winterholic` 자격을 사용했다.
+- 출발 HEAD `18917626934ab38302bddfee1c7f4b9ebe6dde73`, 초기 worktree clean, `f0a382ec733022c4e5ddd2cb3540b24df96fa067`는 출발 HEAD의 조상이다. 기존 브랜치는 출발 시 `origin/main` 대비 ahead 21 / behind 32였다.
+- 통합 전 `origin/main` SHA는 `b56057c03c944d93cbd08857318955cc9cbeac1c`였다. 실행 명령과 출력:
+
+```text
+$ GH_AS_USER=winterholic GH_AS_TOKEN="$(gh auth token --hostname github.com --user winterholic)" git -c credential.helper= -c 'credential.helper=!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f' fetch origin main
+From https://github.com/winterholic/winterholic-ttakkari-back
+ * branch main -> FETCH_HEAD
+$ git merge --no-edit origin/main
+Merge made by the 'ort' strategy.
+36 files changed, 6783 insertions(+), 70 deletions(-)
+```
+
+- 일반 merge 결과 SHA는 `43238a8a76fa094c7552a73258fceb941f353793`, 부모는 `18917626934ab38302bddfee1c7f4b9ebe6dde73` 및 `b56057c03c944d93cbd08857318955cc9cbeac1c`다. 충돌은 없었다. 이 시점의 `git rev-list --left-right --count HEAD...origin/main`은 `22 0`이며 `origin/main`은 merge 결과의 조상이다.
+
+### 고정 감사 대조 및 보존 파일
+
+- 통합된 원격 변경은 ArtCraft account pin을 위해 `ChatSession.account_id`와 manager 선택 경로를 추가하고, runtime lease mapping 보고를 보강한다. Reverse 생성 경로는 기존 caller `pool`을 `queue_run`까지 전달하며 `account_id`를 지정하지 않아 기본 `None`을 쓴다. 원격의 pin 분기는 `account_id is not None`일 때만 적용된다. 고정 감사의 callback 완료 판정, pool 경계, release 경로 및 FIFO 가정은 이 변경으로 달라지지 않는다. Reverse 파일/전용 테스트는 `189...`와 merge 결과 사이에서 변경되지 않았다. remote main 쪽 ArtCraft/manager 변경의 직접 회귀는 아래에서 별도로 실행했다.
+- 감사 원본은 제품 파일을 가져오지 않고 `docs/reverse-platform/audit-integrated-18917626/`에 보고서, 보완 기록, 기획 신원 JSON, 두 raw probe JSON, 두 probe 스크립트를 보존했다. 원본과 복사본의 SHA-256이 7개 파일 모두 일치했다. 기존 `docs/reverse-platform/audit/`, `audit-core-7266a2a1/` 등 과거 감사는 삭제·수정하지 않았다.
+- 고정 감사의 결과를 이 단위에서 재사용한 경계: DB 비의존 callback positive/negative control, release/dev capture·verify 8회 exit 0, FIFO 4/4 timeout 없음. PNG 12 MiB 한계는 감사 보완에 기록된 이전 `efd15f92` 결과를 그대로 재사용했다. DB/API 저장·dispatch 및 운영 ReverseJob E2E는 계속 미검증이다. `initdb shmget` 및 `.vite` 삭제 거부는 재시도·우회하지 않았다.
+
+### 이번 merge 후 실행한 검사
+
+```text
+$ PYTHONDONTWRITEBYTECODE=1 TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py unit_tests/test_reverse_static.py unit_tests/test_reverse_web_core_integration.py unit_tests/test_reverse_web_evidence.py
+90 passed in 3.18s
+$ PYTHONDONTWRITEBYTECODE=1 TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_artcraft_tasks_unit.py unit_tests/test_artcraft_update.py unit_tests/test_collection_runtime_report.py
+73 passed in 5.70s
+$ ../back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/reverse_web_evidence.py src/ttakkari/api/reverse.py src/ttakkari/runs/manager.py src/ttakkari/operations/inline.py src/ttakkari/artcraft.py src/ttakkari/artcraft_catalog.py src/ttakkari/artcraft_tasks.py src/ttakkari/artcraft_update.py unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py unit_tests/test_reverse_static.py unit_tests/test_reverse_web_core_integration.py unit_tests/test_reverse_web_evidence.py unit_tests/test_artcraft_tasks_unit.py unit_tests/test_artcraft_update.py unit_tests/test_collection_runtime_report.py
+All checks passed!
+$ git diff --check
+exit 0 (no output)
+```
+
+이 검사들은 DB 비의존 단위 회귀다. 지정된 `tests/` DB/API 회귀와 운영 상태 검사는 수행하지 않았다. 원인은 기존 Codex command sandbox에서 `pg_sandbox.start_cluster() → initdb → shmget`이 `Operation not permitted`로 실패한 기록이며, 이 제한을 반복하거나 우회하지 않았다.
+
+### 최종 푸시·배포 후속
+
+- 이 기록 반영 후 최종 SHA, 정상 push 결과, 원격 main SHA, `request_backend_deploy`의 예약 ID 및 반환 상태를 이어 기록한다. 배포 완료와 운영 동작은 예약 수락으로 간주하지 않는다. 실제 ReverseJob E2E와 운영 health 확인은 배포 후 별도 실행 단위다.

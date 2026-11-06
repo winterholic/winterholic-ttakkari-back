@@ -1,0 +1,34 @@
+{
+  "checked_by_run": "01d2aeb2-e89e-4963-83f7-ab683e27d3a3",
+  "source_commands": [
+    "ttk get /api/accounts",
+    "ttk get /api/runs/861fee24-24a1-423b-9069-d11d363eb67b",
+    "ttk get /api/runs/af23fdfe-304d-4420-bfde-193672c3d0e9"
+  ],
+  "runs": [
+    {
+      "run_id": "861fee24-24a1-423b-9069-d11d363eb67b",
+      "status": "succeeded",
+      "profile": "회사 코덱스 ai2 (ai2@hyperez.io)",
+      "matched_accounts": [
+        {
+          "id": "6b76a5c4-a622-4345-b7e6-fb9e76b74b9a",
+          "name": "회사 코덱스 ai2 (ai2@hyperez.io)",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "run_id": "af23fdfe-304d-4420-bfde-193672c3d0e9",
+      "status": "succeeded",
+      "profile": "회사 코덱스 ai2 (ai2@hyperez.io)",
+      "matched_accounts": [
+        {
+          "id": "6b76a5c4-a622-4345-b7e6-fb9e76b74b9a",
+          "name": "회사 코덱스 ai2 (ai2@hyperez.io)",
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

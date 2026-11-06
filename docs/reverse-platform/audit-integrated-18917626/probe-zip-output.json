@@ -1,0 +1,323 @@
+{
+  "baseline": "1f4a0bf88f47ca3886f299a74d0ec7805b3b8df2",
+  "tmp": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4",
+  "prompt_paths": {
+    "development": {
+      "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_capture.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' --observations .reverse/input/web-observations.json",
+      "interpreter": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python",
+      "quoted_space_path": true,
+      "has_verify_command": true,
+      "prompt_mentions_both_roles": true
+    },
+    "mock_release": {
+      "release_root": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73",
+      "expected_venv": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python",
+      "execution": {
+        "commands": [
+          {
+            "role": "implementation",
+            "capture": {
+              "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' && PYTHONPATH='/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/src' '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python' '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_capture.py' --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' --observations .reverse/input/web-observations.json",
+              "exit": 0,
+              "stdout": "{\"report\": \".reverse/comparisons/release-impl-case-release-impl-run.web.json\", \"record\": {\"id\": \"release-impl-case\", \"behavior\": \"button changes screen\", \"target_type\": \"web\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"pre_state\": {\"screen\": \"ready\"}, \"original\": {\"run_id\": \"release-impl-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:00Z\", \"url\": \"https://example.test/original\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/original.png\", \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"replica\": {\"run_id\": \"release-impl-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:01Z\", \"url\": \"https://example.test/replica\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/replica.png\", \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"evidence_level\": \"observed\", \"evidence\": [{\"kind\": \"web_capture\", \"schema_version\": 1, \"capture\": {\"path\": \".reverse/web-captures/release-impl-case-release-impl-run.json\", \"sha256\": \"ea1074cc658ab28cdf4e3497b45708d9e02fad8765ccd015676602ce1c4e047a\", \"size_bytes\": 1960}, \"functional_result\": \"unverified\", \"visual_result\": \"unverified\", \"functional_differences\": [], \"visual\": {\"reason\": \"not recomputed yet\"}, \"integrity\": {\"status\": \"stored\", \"reason\": null}, \"provenance\": {\"status\": \"unverified\", \"reason\": \"capture writer cannot authenticate browser tool execution\"}}], \"verified_at\": \"2026-11-07T00:00:02Z\", \"run_id\": \"release-impl-run\", \"result\": \"unverified\", \"difference\": {\"reason\": \"not recomputed yet\"}}}",
+              "stderr": ""
+            },
+            "verify": {
+              "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' && PYTHONPATH='/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/src' '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python' '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_verify.py' --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' --comparison '.reverse/comparisons/release-impl-case-release-impl-run.web.json' --expected-run-id release-impl-run",
+              "exit": 0,
+              "stdout": "{\n  \"id\": \"release-impl-case\",\n  \"behavior\": \"button changes screen\",\n  \"target_type\": \"web\",\n  \"input\": {\n    \"steps\": [\n      {\n        \"action\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ]\n  },\n  \"pre_state\": {\n    \"screen\": \"ready\"\n  },\n  \"original\": {\n    \"run_id\": \"release-impl-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:00Z\",\n    \"url\": \"https://example.test/original\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/original.png\",\n      \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"replica\": {\n    \"run_id\": \"release-impl-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:01Z\",\n    \"url\": \"https://example.test/replica\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/replica.png\",\n      \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"environment\": {\n    \"browser\": \"independent-fixture\",\n    \"os\": \"audit\"\n  },\n  \"evidence_level\": \"observed\",\n  \"verified_at\": \"2026-11-07T00:00:02Z\",\n  \"run_id\": \"release-impl-run\",\n  \"evidence\": [\n    {\n      \"kind\": \"web_capture\",\n      \"schema_version\": 1,\n      \"capture\": {\n        \"path\": \".reverse/web-captures/release-impl-case-release-impl-run.json\",\n        \"sha256\": \"ea1074cc658ab28cdf4e3497b45708d9e02fad8765ccd015676602ce1c4e047a\",\n        \"size_bytes\": 1960\n      },\n      \"functional_result\": \"match\",\n      \"visual_result\": \"mismatch\",\n      \"functional_differences\": [],\n      \"visual\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"different_pixels\": 329160,\n        \"total_pixels\": 329160,\n        \"pixel_equality\": \"exact\"\n      },\n      \"integrity\": {\n        \"status\": \"verified\",\n        \"reasons\": []\n      },\n      \"provenance\": {\n        \"status\": \"unverified\",\n        \"reason\": \"hashed capture is self-asserted; no RunEvent/tool-result authentication is present\"\n      }\n    }\n  ],\n  \"result\": \"match\",\n  \"difference\": null\n}",
+              "stderr": ""
+            },
+            "python": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python",
+            "capture_script": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_capture.py",
+            "verify_script": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_verify.py"
+          },
+          {
+            "role": "verifier",
+            "capture": {
+              "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' && PYTHONPATH='/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/src' '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python' '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_capture.py' --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' --observations .reverse/input/web-observations.json",
+              "exit": 0,
+              "stdout": "{\"report\": \".reverse/comparisons/release-verifier-case-release-verifier-run.web.json\", \"record\": {\"id\": \"release-verifier-case\", \"behavior\": \"button changes screen\", \"target_type\": \"web\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"pre_state\": {\"screen\": \"ready\"}, \"original\": {\"run_id\": \"release-verifier-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:00Z\", \"url\": \"https://example.test/original\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/original.png\", \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"replica\": {\"run_id\": \"release-verifier-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:01Z\", \"url\": \"https://example.test/replica\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/replica.png\", \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"evidence_level\": \"observed\", \"evidence\": [{\"kind\": \"web_capture\", \"schema_version\": 1, \"capture\": {\"path\": \".reverse/web-captures/release-verifier-case-release-verifier-run.json\", \"sha256\": \"dbb1f99cd413c9c3bd79769814a846839913e12836c2b5c99d67649ee458139a\", \"size_bytes\": 1976}, \"functional_result\": \"unverified\", \"visual_result\": \"unverified\", \"functional_differences\": [], \"visual\": {\"reason\": \"not recomputed yet\"}, \"integrity\": {\"status\": \"stored\", \"reason\": null}, \"provenance\": {\"status\": \"unverified\", \"reason\": \"capture writer cannot authenticate browser tool execution\"}}], \"verified_at\": \"2026-11-07T00:00:02Z\", \"run_id\": \"release-verifier-run\", \"result\": \"unverified\", \"difference\": {\"reason\": \"not recomputed yet\"}}}",
+              "stderr": ""
+            },
+            "verify": {
+              "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' && PYTHONPATH='/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/src' '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python' '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_verify.py' --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Prompt Job With Spaces' --comparison '.reverse/comparisons/release-verifier-case-release-verifier-run.web.json' --expected-run-id release-verifier-run",
+              "exit": 0,
+              "stdout": "{\n  \"id\": \"release-verifier-case\",\n  \"behavior\": \"button changes screen\",\n  \"target_type\": \"web\",\n  \"input\": {\n    \"steps\": [\n      {\n        \"action\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ]\n  },\n  \"pre_state\": {\n    \"screen\": \"ready\"\n  },\n  \"original\": {\n    \"run_id\": \"release-verifier-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:00Z\",\n    \"url\": \"https://example.test/original\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/original.png\",\n      \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"replica\": {\n    \"run_id\": \"release-verifier-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:01Z\",\n    \"url\": \"https://example.test/replica\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/replica.png\",\n      \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"environment\": {\n    \"browser\": \"independent-fixture\",\n    \"os\": \"audit\"\n  },\n  \"evidence_level\": \"observed\",\n  \"verified_at\": \"2026-11-07T00:00:02Z\",\n  \"run_id\": \"release-verifier-run\",\n  \"evidence\": [\n    {\n      \"kind\": \"web_capture\",\n      \"schema_version\": 1,\n      \"capture\": {\n        \"path\": \".reverse/web-captures/release-verifier-case-release-verifier-run.json\",\n        \"sha256\": \"dbb1f99cd413c9c3bd79769814a846839913e12836c2b5c99d67649ee458139a\",\n        \"size_bytes\": 1976\n      },\n      \"functional_result\": \"match\",\n      \"visual_result\": \"mismatch\",\n      \"functional_differences\": [],\n      \"visual\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"different_pixels\": 329160,\n        \"total_pixels\": 329160,\n        \"pixel_equality\": \"exact\"\n      },\n      \"integrity\": {\n        \"status\": \"verified\",\n        \"reasons\": []\n      },\n      \"provenance\": {\n        \"status\": \"unverified\",\n        \"reason\": \"hashed capture is self-asserted; no RunEvent/tool-result authentication is present\"\n      }\n    }\n  ],\n  \"result\": \"match\",\n  \"difference\": null\n}",
+              "stderr": ""
+            },
+            "python": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/.venv/bin/python",
+            "capture_script": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_capture.py",
+            "verify_script": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/mock-deploy/releases/18917626934ab38302bddfee1c7f4b9ebe6dde73/scripts/reverse_web_evidence_verify.py"
+          }
+        ],
+        "all_exit_zero": true,
+        "release_venv_exists": true,
+        "mock_release_root_resolved_inside_tmp": true,
+        "mock_release_root_is_symlink": false,
+        "mock_release_venv_is_symlink": false,
+        "mock_release_interpreter_resolved_inside_tmp": true,
+        "mock_release_capture_script_exists": true,
+        "mock_release_verify_script_exists": true
+      }
+    }
+  },
+  "two_role_zip": {
+    "zip": "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/zip/reconstruction-source.zip",
+    "members": [
+      "README.md",
+      "src/main.py",
+      ".reverse/web-captures/impl-case-impl-audit-run.json",
+      ".reverse/web-captures/shared/original.png",
+      ".reverse/web-captures/shared/replica.png",
+      ".reverse/web-captures/verify-case-verify-audit-run.json",
+      "evidence/roles/implementation/checks/000-000-check.log",
+      "evidence/roles/implementation/impl-case-impl-audit-run.comparison.json",
+      "evidence/roles/verifier/checks/000-000-check.log",
+      "evidence/roles/verifier/verify-case-verify-audit-run.comparison.json",
+      "reverse-web-evidence-manifest.json"
+    ],
+    "roles": [
+      {
+        "role": "implementation",
+        "run_id": "impl-audit-run",
+        "session_id": "impl-audit-session",
+        "included": true,
+        "png_paths": [
+          ".reverse/web-captures/shared/original.png",
+          ".reverse/web-captures/shared/replica.png"
+        ]
+      },
+      {
+        "role": "verifier",
+        "run_id": "verify-audit-run",
+        "session_id": "verify-audit-session",
+        "included": true,
+        "png_paths": [
+          ".reverse/web-captures/shared/original.png",
+          ".reverse/web-captures/shared/replica.png"
+        ]
+      }
+    ],
+    "recomputed": [
+      {
+        "role": "implementation",
+        "run_id": "impl-audit-run",
+        "result": "match",
+        "functional": "match",
+        "visual": "mismatch",
+        "integrity": "verified"
+      },
+      {
+        "role": "verifier",
+        "run_id": "verify-audit-run",
+        "result": "match",
+        "functional": "match",
+        "visual": "mismatch",
+        "integrity": "verified"
+      }
+    ],
+    "logs": [
+      {
+        "role": "implementation",
+        "path": "evidence/roles/implementation/checks/000-000-check.log",
+        "sha256": "d99e042fc578149e06fa5838ba155f2b250b9828cecadb5d7a74fbda6bd40c9e",
+        "size_bytes": 30,
+        "run_id": "impl-audit-run"
+      },
+      {
+        "role": "verifier",
+        "path": "evidence/roles/verifier/checks/000-000-check.log",
+        "sha256": "611044d28c2decb1a9704954c352dc0138667b381537fc017cf617733772c996",
+        "size_bytes": 24,
+        "run_id": "verify-audit-run"
+      }
+    ],
+    "inventory": {
+      "implementation": {
+        "run_id": "impl-audit-run",
+        "session_id": "impl-audit-session",
+        "evidence_files": [
+          {
+            "path": ".reverse/web-captures/impl-case-impl-audit-run.json",
+            "kind": "raw_or_png",
+            "sha256": "53620a51e13ef28a39d664832881371530d668f6f6e0849e442b5f71a63cd460",
+            "size_bytes": 1946
+          },
+          {
+            "path": ".reverse/web-captures/shared/original.png",
+            "kind": "raw_or_png",
+            "sha256": "5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689",
+            "size_bytes": 2832
+          },
+          {
+            "path": ".reverse/web-captures/shared/replica.png",
+            "kind": "raw_or_png",
+            "sha256": "fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2",
+            "size_bytes": 2832
+          },
+          {
+            "path": "evidence/roles/implementation/impl-case-impl-audit-run.comparison.json",
+            "kind": "comparison",
+            "sha256": "f4a5b485d4a92100110079becd60738c5f3ef8026d68384b2113ac8cd607e969",
+            "size_bytes": 2406
+          }
+        ],
+        "check_log": {
+          "path": "evidence/roles/implementation/checks/000-000-check.log",
+          "sha256": "d99e042fc578149e06fa5838ba155f2b250b9828cecadb5d7a74fbda6bd40c9e",
+          "size_bytes": 30
+        }
+      },
+      "verifier": {
+        "run_id": "verify-audit-run",
+        "session_id": "verify-audit-session",
+        "evidence_files": [
+          {
+            "path": ".reverse/web-captures/verify-case-verify-audit-run.json",
+            "kind": "raw_or_png",
+            "sha256": "b5e5b80676082fcd34b4f35c50bf6ee26f7254d97b37850c49a95678a7443708",
+            "size_bytes": 1954
+          },
+          {
+            "path": ".reverse/web-captures/shared/original.png",
+            "kind": "raw_or_png",
+            "sha256": "5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689",
+            "size_bytes": 2832
+          },
+          {
+            "path": ".reverse/web-captures/shared/replica.png",
+            "kind": "raw_or_png",
+            "sha256": "fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2",
+            "size_bytes": 2832
+          },
+          {
+            "path": "evidence/roles/verifier/verify-case-verify-audit-run.comparison.json",
+            "kind": "comparison",
+            "sha256": "fa348d13f359b2a035733e4e4e8bd14e2d379f0139d05a1bf20ebed6a7e3bf74",
+            "size_bytes": 2418
+          }
+        ],
+        "check_log": {
+          "path": "evidence/roles/verifier/checks/000-000-check.log",
+          "sha256": "611044d28c2decb1a9704954c352dc0138667b381537fc017cf617733772c996",
+          "size_bytes": 24
+        }
+      }
+    },
+    "cli": [
+      {
+        "role": "implementation",
+        "capture": {
+          "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_capture.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' --observations .reverse/input/web-observations.json",
+          "exit": 0,
+          "stdout": "{\"report\": \".reverse/comparisons/impl-case-impl-audit-run.web.json\", \"record\": {\"id\": \"impl-case\", \"behavior\": \"button changes screen\", \"target_type\": \"web\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"pre_state\": {\"screen\": \"ready\"}, \"original\": {\"run_id\": \"impl-audit-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:00Z\", \"url\": \"https://example.test/original\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/original.png\", \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"replica\": {\"run_id\": \"impl-audit-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:01Z\", \"url\": \"https://example.test/replica\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/replica.png\", \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"evidence_level\": \"observed\", \"evidence\": [{\"kind\": \"web_capture\", \"schema_version\": 1, \"capture\": {\"path\": \".reverse/web-captures/impl-case-impl-audit-run.json\", \"sha256\": \"53620a51e13ef28a39d664832881371530d668f6f6e0849e442b5f71a63cd460\", \"size_bytes\": 1946}, \"functional_result\": \"unverified\", \"visual_result\": \"unverified\", \"functional_differences\": [], \"visual\": {\"reason\": \"not recomputed yet\"}, \"integrity\": {\"status\": \"stored\", \"reason\": null}, \"provenance\": {\"status\": \"unverified\", \"reason\": \"capture writer cannot authenticate browser tool execution\"}}], \"verified_at\": \"2026-11-07T00:00:02Z\", \"run_id\": \"impl-audit-run\", \"result\": \"unverified\", \"difference\": {\"reason\": \"not recomputed yet\"}}}",
+          "stderr": ""
+        },
+        "verify": {
+          "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_verify.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' --comparison '.reverse/comparisons/impl-case-impl-audit-run.web.json' --expected-run-id impl-audit-run",
+          "exit": 0,
+          "stdout": "{\n  \"id\": \"impl-case\",\n  \"behavior\": \"button changes screen\",\n  \"target_type\": \"web\",\n  \"input\": {\n    \"steps\": [\n      {\n        \"action\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ]\n  },\n  \"pre_state\": {\n    \"screen\": \"ready\"\n  },\n  \"original\": {\n    \"run_id\": \"impl-audit-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:00Z\",\n    \"url\": \"https://example.test/original\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/original.png\",\n      \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"replica\": {\n    \"run_id\": \"impl-audit-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:01Z\",\n    \"url\": \"https://example.test/replica\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/replica.png\",\n      \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"environment\": {\n    \"browser\": \"independent-fixture\",\n    \"os\": \"audit\"\n  },\n  \"evidence_level\": \"observed\",\n  \"verified_at\": \"2026-11-07T00:00:02Z\",\n  \"run_id\": \"impl-audit-run\",\n  \"evidence\": [\n    {\n      \"kind\": \"web_capture\",\n      \"schema_version\": 1,\n      \"capture\": {\n        \"path\": \".reverse/web-captures/impl-case-impl-audit-run.json\",\n        \"sha256\": \"53620a51e13ef28a39d664832881371530d668f6f6e0849e442b5f71a63cd460\",\n        \"size_bytes\": 1946\n      },\n      \"functional_result\": \"match\",\n      \"visual_result\": \"mismatch\",\n      \"functional_differences\": [],\n      \"visual\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"different_pixels\": 329160,\n        \"total_pixels\": 329160,\n        \"pixel_equality\": \"exact\"\n      },\n      \"integrity\": {\n        \"status\": \"verified\",\n        \"reasons\": []\n      },\n      \"provenance\": {\n        \"status\": \"unverified\",\n        \"reason\": \"hashed capture is self-asserted; no RunEvent/tool-result authentication is present\"\n      }\n    }\n  ],\n  \"result\": \"match\",\n  \"difference\": null\n}",
+          "stderr": ""
+        }
+      },
+      {
+        "role": "verifier",
+        "capture": {
+          "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_capture.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' --observations .reverse/input/web-observations.json",
+          "exit": 0,
+          "stdout": "{\"report\": \".reverse/comparisons/verify-case-verify-audit-run.web.json\", \"record\": {\"id\": \"verify-case\", \"behavior\": \"button changes screen\", \"target_type\": \"web\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"pre_state\": {\"screen\": \"ready\"}, \"original\": {\"run_id\": \"verify-audit-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:00Z\", \"url\": \"https://example.test/original\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/original.png\", \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"replica\": {\"run_id\": \"verify-audit-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:01Z\", \"url\": \"https://example.test/replica\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/replica.png\", \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"evidence_level\": \"observed\", \"evidence\": [{\"kind\": \"web_capture\", \"schema_version\": 1, \"capture\": {\"path\": \".reverse/web-captures/verify-case-verify-audit-run.json\", \"sha256\": \"b5e5b80676082fcd34b4f35c50bf6ee26f7254d97b37850c49a95678a7443708\", \"size_bytes\": 1954}, \"functional_result\": \"unverified\", \"visual_result\": \"unverified\", \"functional_differences\": [], \"visual\": {\"reason\": \"not recomputed yet\"}, \"integrity\": {\"status\": \"stored\", \"reason\": null}, \"provenance\": {\"status\": \"unverified\", \"reason\": \"capture writer cannot authenticate browser tool execution\"}}], \"verified_at\": \"2026-11-07T00:00:02Z\", \"run_id\": \"verify-audit-run\", \"result\": \"unverified\", \"difference\": {\"reason\": \"not recomputed yet\"}}}",
+          "stderr": ""
+        },
+        "verify": {
+          "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_verify.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/Reverse Web Job With Spaces' --comparison '.reverse/comparisons/verify-case-verify-audit-run.web.json' --expected-run-id verify-audit-run",
+          "exit": 0,
+          "stdout": "{\n  \"id\": \"verify-case\",\n  \"behavior\": \"button changes screen\",\n  \"target_type\": \"web\",\n  \"input\": {\n    \"steps\": [\n      {\n        \"action\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ]\n  },\n  \"pre_state\": {\n    \"screen\": \"ready\"\n  },\n  \"original\": {\n    \"run_id\": \"verify-audit-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:00Z\",\n    \"url\": \"https://example.test/original\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/original.png\",\n      \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"replica\": {\n    \"run_id\": \"verify-audit-run\",\n    \"input\": {\n      \"steps\": [\n        {\n          \"action\": \"click\",\n          \"target\": \"button#go\"\n        }\n      ]\n    },\n    \"viewport\": {\n      \"width\": 390,\n      \"height\": 844,\n      \"device_scale_factor\": 1\n    },\n    \"pre_state\": {\n      \"screen\": \"ready\"\n    },\n    \"environment\": {\n      \"browser\": \"independent-fixture\",\n      \"os\": \"audit\"\n    },\n    \"events\": [\n      {\n        \"type\": \"click\",\n        \"target\": \"button#go\"\n      }\n    ],\n    \"dom\": [\n      {\n        \"tag\": \"button\",\n        \"text\": \"Go\"\n      }\n    ],\n    \"state\": {\n      \"screen\": \"done\"\n    },\n    \"network\": [],\n    \"complete\": true,\n    \"capture_state\": \"complete\",\n    \"observed_at\": \"2026-11-07T00:00:01Z\",\n    \"url\": \"https://example.test/replica\",\n    \"screenshot\": {\n      \"path\": \".reverse/web-captures/shared/replica.png\",\n      \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\",\n      \"size_bytes\": 2832,\n      \"viewport\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"device_scale_factor\": 1\n      },\n      \"format\": \"png\"\n    }\n  },\n  \"environment\": {\n    \"browser\": \"independent-fixture\",\n    \"os\": \"audit\"\n  },\n  \"evidence_level\": \"observed\",\n  \"verified_at\": \"2026-11-07T00:00:02Z\",\n  \"run_id\": \"verify-audit-run\",\n  \"evidence\": [\n    {\n      \"kind\": \"web_capture\",\n      \"schema_version\": 1,\n      \"capture\": {\n        \"path\": \".reverse/web-captures/verify-case-verify-audit-run.json\",\n        \"sha256\": \"b5e5b80676082fcd34b4f35c50bf6ee26f7254d97b37850c49a95678a7443708\",\n        \"size_bytes\": 1954\n      },\n      \"functional_result\": \"match\",\n      \"visual_result\": \"mismatch\",\n      \"functional_differences\": [],\n      \"visual\": {\n        \"width\": 390,\n        \"height\": 844,\n        \"different_pixels\": 329160,\n        \"total_pixels\": 329160,\n        \"pixel_equality\": \"exact\"\n      },\n      \"integrity\": {\n        \"status\": \"verified\",\n        \"reasons\": []\n      },\n      \"provenance\": {\n        \"status\": \"unverified\",\n        \"reason\": \"hashed capture is self-asserted; no RunEvent/tool-result authentication is present\"\n      }\n    }\n  ],\n  \"result\": \"match\",\n  \"difference\": null\n}",
+          "stderr": ""
+        }
+      }
+    ],
+    "wrong_run_id": {
+      "included": false,
+      "reason": "comparison run_id does not match this role's Run"
+    },
+    "post_capture_png_tamper": {
+      "included": false,
+      "reason": "original: screenshot missing, truncated, or outside size bound; screenshot missing, truncated, or outside size bound"
+    }
+  },
+  "hostile_files": {
+    "rejected": {
+      "../outside.txt": "unsafe archive path",
+      "/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/outside.txt": "unsafe archive path",
+      "linked.txt": "file unavailable: 허용된 영역 밖의 경로입니다.",
+      ".env": "sensitive path",
+      "over-limit.txt": "file size 1048577 is outside 1..1048576 bytes",
+      "directory": "not a regular file"
+    },
+    "exact_limit_included": true,
+    "over_limit_included": false,
+    "normal_source_included": true
+  },
+  "fifo_hang": {
+    "timeout_seconds_per_subprocess": 3,
+    "capture_cli": {
+      "command": "cd '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/fifo-root' && PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/src /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-integrated-audit-20261107/scripts/reverse_web_evidence_capture.py --root '/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/Reverse Zip Audit o46wynf4/fifo-root' --observations .reverse/input/web-observations.json",
+      "exit": 0,
+      "stdout": "{\"report\": \".reverse/comparisons/fifo-web-case-fifo-web-run.web.json\", \"record\": {\"id\": \"fifo-web-case\", \"behavior\": \"button changes screen\", \"target_type\": \"web\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"pre_state\": {\"screen\": \"ready\"}, \"original\": {\"run_id\": \"fifo-web-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:00Z\", \"url\": \"https://example.test/original\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/original.png\", \"sha256\": \"5291d3389ed74fe2446bf624478bcd6400208d071a1e4dc3a21104a916e71689\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"replica\": {\"run_id\": \"fifo-web-run\", \"input\": {\"steps\": [{\"action\": \"click\", \"target\": \"button#go\"}]}, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"pre_state\": {\"screen\": \"ready\"}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"events\": [{\"type\": \"click\", \"target\": \"button#go\"}], \"dom\": [{\"tag\": \"button\", \"text\": \"Go\"}], \"state\": {\"screen\": \"done\"}, \"network\": [], \"complete\": true, \"capture_state\": \"complete\", \"observed_at\": \"2026-11-07T00:00:01Z\", \"url\": \"https://example.test/replica\", \"screenshot\": {\"path\": \".reverse/web-captures/shared/replica.png\", \"sha256\": \"fdd1d06703173b9b2a1639ceae3e3fe406063041bfcc4fb2d208b357b0697ab2\", \"size_bytes\": 2832, \"viewport\": {\"width\": 390, \"height\": 844, \"device_scale_factor\": 1}, \"format\": \"png\"}}, \"environment\": {\"browser\": \"independent-fixture\", \"os\": \"audit\"}, \"evidence_level\": \"observed\", \"evidence\": [{\"kind\": \"web_capture\", \"schema_version\": 1, \"capture\": {\"path\": \".reverse/web-captures/fifo-web-case-fifo-web-run.json\", \"sha256\": \"5af474fd8543a318e3253af4896ff9f5b193a98ecbbf4fa559f3bb6adb8ecf81\", \"size_bytes\": 1944}, \"functional_result\": \"unverified\", \"visual_result\": \"unverified\", \"functional_differences\": [], \"visual\": {\"reason\": \"not recomputed yet\"}, \"integrity\": {\"status\": \"stored\", \"reason\": null}, \"provenance\": {\"status\": \"unverified\", \"reason\": \"capture writer cannot authenticate browser tool execution\"}}], \"verified_at\": \"2026-11-07T00:00:02Z\", \"run_id\": \"fifo-web-run\", \"result\": \"unverified\", \"difference\": {\"reason\": \"not recomputed yet\"}}}",
+      "stderr": ""
+    },
+    "cases": {
+      "source": {
+        "exit": 0,
+        "timed_out": false,
+        "included": false,
+        "reason": "not a regular file",
+        "reason_mentions_nonregular": true
+      },
+      "check_log": {
+        "exit": 0,
+        "timed_out": false,
+        "included": false,
+        "reason": "not a regular file",
+        "reason_mentions_nonregular": true
+      },
+      "web_raw_json": {
+        "exit": 0,
+        "timed_out": false,
+        "included": false,
+        "reason": "일반 파일이 아닙니다.",
+        "reason_mentions_nonregular": true
+      },
+      "web_png": {
+        "exit": 0,
+        "timed_out": false,
+        "included": false,
+        "reason": "original: 일반 파일이 아닙니다.; 일반 파일이 아닙니다.",
+        "reason_mentions_nonregular": true
+      }
+    },
+    "all_returned_reason_without_timeout": true
+  },
+  "fake_collect_outputs": {
+    "verifier": {
+      "run_id": "verify-run",
+      "session_id": "verify-session",
+      "comparison_ids": [
+        "verifier-current"
+      ]
+    },
+    "implementation": {
+      "run_id": "impl-run",
+      "session_id": "impl-session",
+      "comparison_ids": [
+        "implementation-latest"
+      ]
+    }
+  },
+  "ordering": {
+    "manager_collect_outputs_line": 1783,
+    "manager_on_finished_line": 2159,
+    "note": "collect_outputs runs before _finish invokes on_finished; current report is read directly, stored latest report is role-joined"
+  }
+}

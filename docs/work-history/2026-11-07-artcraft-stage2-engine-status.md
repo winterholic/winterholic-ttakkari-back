@@ -102,3 +102,14 @@ $ git diff --check
 ```
 
 - Final source/test commit remains `88a79c4c…`; cumulative local merge commit is `2f8b5644811521c1e5cc4dbc0b2fcce5bb40dda4`, with latest origin `006130ab…` included. This evidence update creates a separate documentation tip. Both local commits remain unpushed as requested.
+
+## 독립 검증 수용 후 누적 source push 및 예약 (2026-11-07)
+
+- 현재 Run API `/api/runs/36b1a2fb-cb9c-4a08-8ebd-efeb77434a26`: `status=running`, `engine=codex`, `model=gpt-6-luna`, `effort=high`, `profile=회사 코덱스 ai2 (ai2@hyperez.io)`.
+- 시작 시 checkout은 `8afea8c6faffcc7f8da44638b1fcd7d7170c9be6`, clean, `origin/main`보다 6 commit ahead였다. `git fetch origin main` 결과 `006130ab2c160d2672fc011560cf27d893a60645`; 이는 이미 HEAD의 조상이어서 `git merge --no-edit origin/main`은 `Already up to date.`였다. 원격 추가 diff/충돌은 없고 독립 감사의 의미 판정이 무효화되지 않았다. ArtCraft account pin·lookup·updater와 catalog 수정 파일은 이 누적 source에서 변경되지 않아 동작과 검증 상태를 보존했다.
+- 독립 감사 `2026-11-07-artcraft-precise-status-independent-audit.md`를 수용해 `docs/api-contract.md`의 수집 mission 계약에 item `pending`=재시도 대기열, evaluator 미등록/not-ready=`unavailable`, ready evaluator의 용량 대기=`waiting`, mission summary=현재 전역 readiness를 명시했다. 과거 작업 기록은 덮어쓰지 않았다. 계약 추가 커밋 `f75ba35242deb22d755f54388b0a00c723315f28` (`docs(collector): define precise evaluator status meanings`).
+- 테스트 DB 사전 증명: 주입 URL 원문을 출력하지 않고 host `127.0.0.1`, database `ttakkari_test`, port `55022`, user `ttk_test`를 확인했다. read-only `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` 결과도 `ttakkari_test/ttk_test/55022`; 반환 data directory의 정확한 부모 marker에서 현재 Run UUID, port, `owner_pid=99596`이 일치했다. DB reset은 hook이 선택한 현재 Run test DB에서만 수행됐다.
+- 첫 정상 `git push origin HEAD:refs/heads/main`은 설치된 pre-push hook을 실행했으나 기본 `/Users/winterholic/.cache/uv`에 대한 `uv sync` 쓰기에서 `Operation not permitted`로 검사 초기화가 실패해 push가 거절됐다. 우회하지 않고 허용된 `/private/tmp/ttakkari-uv-cache-36b1a2fb-cb9c-4a08-8ebd-efeb77434a26`를 지정해 같은 정상 push를 재실행했다. hook 출력은 변경 파일 4개, Ruff 변경 Python 2개 통과, contract 87 통과, 변경 테스트 파일 1개(5개 테스트) 통과, 총 33초, exit 0이었다. DB 출력: contract `87 selective`, 변경 테스트 `5 selective`, forced full/fallback 각각 0.
+- 성공 push 출력 `006130ab..f75ba352 HEAD -> main`. 직후 `git ls-remote origin refs/heads/main`과 local `git rev-parse HEAD` 모두 full SHA `f75ba35242deb22d755f54388b0a00c723315f28`; `git status --short --branch`는 clean이며 ahead/behind가 없었다. `git diff --check HEAD^ HEAD`도 출력 없이 exit 0.
+- `request_backend_deploy(revision="f75ba35242deb22d755f54388b0a00c723315f28")` receipt: id `c9babac4-8435-4069-876e-da7c0322cb3d`, `status=requested`, `skip_tests=false`, `strategy=generations`, `error=null`. 예약 접수만 확인했고 배포 상태 polling은 하지 않았다. 기존 실패 예약 `12cfd116-c2c4-4bb3-8a8c-87338b0abe6d`는 별도 과거 기록으로 유지한다.
+- 필수 pre-push 범위와 집중 검사는 통과했다. 전체 release pytest gate는 이 Run에서 실행하지 않았으며, 예약 controller의 독립 검사와 실제 active 확인, 운영 제작, PhotoCraft 적용 및 복구가 다음 운영 단계다. 이 문서 갱신은 source SHA 뒤의 별도 evidence-only 커밋으로 남긴다.

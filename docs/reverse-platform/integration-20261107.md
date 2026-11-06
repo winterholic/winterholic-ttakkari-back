@@ -596,3 +596,21 @@ AttributeError: 'int' object has no attribute 'kind'
 - `unit_tests/test_schema_head_admission.py`: 0076은 contract online source로 유지하고 0077 단일 head는 current로 별도 확인한다. 0073/0074/0075 online 정책과 multiple-head 거부를 바꾸지 않았다.
 - Schema 외 14개와 host/process 49개는 수정·삭제·skip하지 않았다. 다음 순서: (1) 허용된 host process/sysctl 관측으로 host lookup과 환경을 구분, (2) research 4 timeout의 lock/stack 분석, (3) collector import 및 reverse/artcraft/orchestrator fixture 경계, (4) pagination/selection/receipt 행동 계약.
 - 이 분류는 고정 b05 실행의 관측값이며 88a79c4c 별도 runtime 의미 변경은 포함·검증하지 않았다. 전체 통과나 배포 가능 판정이 아니다.
+
+### 0077 schema fixture 교정 후 표준 gate 결과
+
+- 기존 b05 full 로그의 RED를 재사용했다. 이 실행에서는 직접 pytest/initdb와 전체 `--full`, host/sysctl/process 검사, 다른 엔진을 호출하지 않았다.
+- 테스트 전용 수정 커밋: `9c00881e761b87ee060a4c77835787c8ddc9fd78`. `git show --stat`에 통합 기록 1개와 지정 schema 테스트 6개만 있었고, `src/`, `alembic/versions/`, `deploy/generation-contract.json`은 변경하지 않았다.
+- 지원 기본 경로 실행:
+
+```text
+TTK_GATE_KEEP=1 UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-b05-schema-20261107 ./scripts/verify_deploy_gate.sh --commit 9c00881e761b87ee060a4c77835787c8ddc9fd78 --base b05c9053244f069742de0390eed7aa59b25ff6e3
+대상 커밋: 9c00881e761b
+변경 파일 7개; Ruff 대상 Python 6개
+계약 묶음: 87 passed, 6956 deselected in 17.14s; db reset 87 selective, full/fallback 0
+바뀐 테스트 파일: 47 passed, 4 warnings in 17.35s; db reset 25 selective, full/fallback 0
+통과: Ruff, 계약 묶음, 바뀐 테스트 파일; 총 48초; exit 0
+```
+
+- 이 결과는 지정된 기본 계약 및 변경 파일 regression만 확인한다. 70개 전체 failure에 대한 통과, host/process 환경 경로, 운영 DB/E2E를 뜻하지 않는다.
+- 검증 후 남은 변경은 이 문서의 gate 결과뿐이다. fetch/merge/push/deploy는 하지 않았다. 로컬 `origin/main`이 `f75ba35242deb22d755f54388b0a00c723315f28`로 기록돼 있어도 이 Run은 fetch하지 않았으며 원격 상태는 미검증이다. 88a79c4c의 의미 변경도 별도 통합 검토다.

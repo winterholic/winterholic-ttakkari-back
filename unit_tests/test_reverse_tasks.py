@@ -102,7 +102,10 @@ async def test_successful_verifier_callback_is_idempotent(monkeypatch):
         status=RunStatus.succeeded, error=None,
         usage={'reverse': {'job_id': str(job_id), 'role': 'verify'}})
     previous = {'run_id': str(implementation.id), 'role': 'implement',
-        'source': {'files': ['src/main.py']}, 'report': {'observations': [{'finding': 'observed'}]},
+        'source': {'status': 'verified', 'files': ['src/main.py']},
+        'execution': {'status': 'verified', 'checks': [{'command': 'pytest', 'exit_code': 0}]},
+        'report': {'ready': True, 'observations': [{'finding': 'observed'}]},
+        'implementation_status': 'passed',
         'direct_comparison': {'status': 'match', 'count': 1, 'matched': 1, 'mismatched': 0, 'unverified': 0},
         'independent_verification': {'status': 'pending', 'run_id': None, 'verdict': None}}
     job = SimpleNamespace(id=job_id, kind=tasks.KIND, session_id=implementation_session_id,
@@ -142,6 +145,237 @@ async def test_successful_verifier_callback_is_idempotent(monkeypatch):
     assert len(db.runs) == round_count
     assert job.result['job']['repair_attempts'] == repair_attempts
     assert len(reads) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_type", "implementation_direct", "implementation_visual", "expected"),
+    [
+        ("web", {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0},
+         {"status": "mismatch", "count": 1, "matched": 0, "mismatched": 1, "unverified": 0}, "partial"),
+        ("web", {"status": "unverified", "count": 1, "matched": 0, "mismatched": 0, "unverified": 1},
+         {"status": "unverified", "count": 1, "matched": 0, "mismatched": 0, "unverified": 1}, "partial"),
+        ("cli", {"status": "unverified", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0},
+         {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}, "partial"),
+        ("api", {"status": "unverified", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0},
+         {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}, "partial"),
+        ("cli", {"status": "mismatch", "count": 1, "matched": 0, "mismatched": 1, "unverified": 0},
+         {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}, "partial"),
+        ("api", {"status": "mismatch", "count": 1, "matched": 0, "mismatched": 1, "unverified": 0},
+         {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}, "partial"),
+        ("cli", {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0},
+         {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}, "done"),
+    ],
+)
+async def test_verifier_completion_requires_implementation_evidence_and_keeps_role_reports(
+        monkeypatch, target_type, implementation_direct, implementation_visual, expected):
+    from ttakkari.models import ReverseJob, Run, RunStatus
+
+    job_id, impl_session_id, verify_session_id = uuid4(), uuid4(), uuid4()
+    impl_run = SimpleNamespace(id=uuid4(), session_id=impl_session_id, status=RunStatus.succeeded,
+                               error=None, usage={"reverse": {"job_id": str(job_id), "role": "implement"}})
+    verify_run = SimpleNamespace(id=uuid4(), session_id=verify_session_id, status=RunStatus.succeeded,
+                                 error=None, usage={"reverse": {"job_id": str(job_id), "role": "verify"}})
+    job = SimpleNamespace(id=job_id, kind=tasks.KIND, target="reproduce target", workspace_id=uuid4(), session_id=impl_session_id,
+                          verifier_session_id=verify_session_id, status="running", error=None, updated_at=None,
+                          output_path=".", result={"schema_version": 2,
+                              "job": {"mode": "reconstruct", "target_type": target_type,
+                                      "repair_attempts": 0, "max_repair_attempts": 0},
+                              "latest": None, "history": []})
+    sessions = {impl_session_id: SimpleNamespace(id=impl_session_id, workspace_id=uuid4(), pool="work"),
+                verify_session_id: SimpleNamespace(id=verify_session_id, workspace_id=uuid4(), pool="work")}
+
+    class Query:
+        def __init__(self, target):
+            self.target = target
+
+        def where(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def limit(self, *_args):
+            return self
+
+    class FakeDb:
+        def __init__(self):
+            self.latest_run_id = impl_run.id
+            self.added = []
+
+        async def get(self, model, identity, **_kwargs):
+            return job if model is ReverseJob else sessions.get(identity)
+
+        async def scalar(self, query):
+            if query.target is Run.id:
+                return self.latest_run_id
+            if query.target is Run:
+                return impl_run
+            raise AssertionError(query.target)
+
+        def add(self, value):
+            self.added.append(value)
+
+        async def flush(self):
+            for value in self.added:
+                if isinstance(value, Run) and value.id is None:
+                    value.id = uuid4()
+
+    ready_report = {
+        "ready": True, "analysis_ready": False, "execution_ready": True, "verdict": "passed",
+        "source_files": ["src/main.py"], "observations": [{"finding": "observed", "evidence": "log"}],
+        "checks": [{"command": "pytest", "exit_code": 0, "log": "check.log"}],
+        "problems": [], "summary": "role-specific report",
+        "comparisons": [{"result": "match"}],
+        "direct_comparison": {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0},
+        "visual_comparison": {"status": "match" if target_type == "web" else "not_required",
+                              "count": 1 if target_type == "web" else 0,
+                              "matched": 1 if target_type == "web" else 0,
+                              "mismatched": 0, "unverified": 0},
+    }
+    impl_report = {**ready_report, "summary": "implementation report",
+                   "direct_comparison": implementation_direct,
+                   "visual_comparison": implementation_visual,
+                   "comparisons": [] if implementation_direct["count"] == 0 else [{"result": "mismatch"}]}
+    verifier_report = {**ready_report, "summary": "verifier report"}
+    reports = {str(impl_run.id): impl_report, str(verify_run.id): verifier_report}
+    monkeypatch.setattr(tasks, "select", Query)
+    monkeypatch.setattr(tasks, "read_report", lambda _root, run_id, **_kwargs: reports[run_id])
+    db = FakeDb()
+
+    await tasks.on_finished(db, impl_run)
+    latest = tasks._metadata(job.result)["latest"]
+    assert job.status == "running"
+    assert latest["report"]["summary"] == "implementation report"
+    db.latest_run_id = verify_run.id
+    await tasks.on_finished(db, verify_run)
+
+    latest = tasks._metadata(job.result)["latest"]
+    assert job.status == expected
+    assert latest["report"]["summary"] == "implementation report"
+    assert latest["verification_report"]["summary"] == "verifier report"
+    assert latest["verification_checks"] == verifier_report["checks"]
+    assert latest["verification_problems"] == []
+    assert latest["implementation_status"] == ("passed" if expected == "done" else "failed")
+    assert latest["independent_verification"]["status"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_repair_that_keeps_implementation_mismatch_finishes_partial_and_duplicate_is_noop(monkeypatch):
+    from ttakkari.models import ChatSession, ReverseJob, Run, RunStatus
+
+    job_id, session_id = uuid4(), uuid4()
+    implementation = SimpleNamespace(id=uuid4(), session_id=session_id, status=RunStatus.succeeded,
+        error=None, usage={"reverse": {"job_id": str(job_id), "role": "implement"}})
+    job = SimpleNamespace(id=job_id, kind=tasks.KIND, target="reproduce target", workspace_id=uuid4(), session_id=session_id, verifier_session_id=None,
+        status="running", error=None, updated_at=None, output_path=".",
+        result={"schema_version": 2, "job": {"mode": "reconstruct", "target_type": "web",
+                "repair_attempts": 0, "max_repair_attempts": 1}, "latest": None, "history": []})
+    session = SimpleNamespace(id=session_id, workspace_id=uuid4(), pool="work")
+
+    class Query:
+        def __init__(self, target): self.target = target
+        def where(self, *_args): return self
+        def order_by(self, *_args): return self
+        def limit(self, *_args): return self
+
+    class FakeDb:
+        def __init__(self):
+            self.latest_run_id = implementation.id
+            self.added = []
+
+        async def get(self, model, _identity, **_kwargs): return job if model is ReverseJob else session
+        async def scalar(self, query):
+            if query.target is Run.id: return self.latest_run_id
+            if query.target is Run: return implementation
+            raise AssertionError(query.target)
+        def add(self, value): self.added.append(value)
+        async def flush(self):
+            for value in self.added:
+                if isinstance(value, (Run, ChatSession)) and value.id is None: value.id = uuid4()
+                if isinstance(value, Run) and value.last_seq is None: value.last_seq = 0
+
+    bad = {"ready": True, "verdict": "passed", "source_files": ["src/main.py"],
+        "observations": [{"finding": "observed", "evidence": "log"}], "execution_ready": True,
+        "checks": [{"command": "pytest", "exit_code": 0, "log": "check.log"}], "problems": [],
+        "comparisons": [{"result": "mismatch"}],
+        "direct_comparison": {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0},
+        "visual_comparison": {"status": "mismatch", "count": 1, "matched": 0, "mismatched": 1, "unverified": 0}}
+    good = {**bad, "summary": "verifier", "comparisons": [{"result": "match"}],
+        "direct_comparison": {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0},
+        "visual_comparison": {"status": "match", "count": 1, "matched": 1, "mismatched": 0, "unverified": 0}}
+    reports = {str(implementation.id): bad}
+    monkeypatch.setattr(tasks, "select", Query)
+    monkeypatch.setattr(tasks, "read_report", lambda _root, run_id, **_kwargs: reports[run_id])
+    db = FakeDb()
+
+    await tasks.on_finished(db, implementation)
+    repair = next(item for item in db.added if isinstance(item, Run))
+    assert tasks._metadata(job.result)["job"]["repair_attempts"] == 1
+    before_duplicate, rows_before_duplicate = job.result.copy(), len(db.added)
+    await tasks.on_finished(db, implementation)
+    assert job.result == before_duplicate
+    assert len(db.added) == rows_before_duplicate
+    repair.status = RunStatus.succeeded
+    repair.usage = {"reverse": {"job_id": str(job.id), "role": "repair"}}
+    db.latest_run_id = repair.id
+    reports[str(repair.id)] = bad
+    await tasks.on_finished(db, repair)
+    verifier = next(item for item in db.added if isinstance(item, Run) and item.usage["reverse"]["role"] == "verify")
+    verifier.status = RunStatus.succeeded
+    verifier.error = None
+    db.latest_run_id = verifier.id
+    reports[str(verifier.id)] = good
+    await tasks.on_finished(db, verifier)
+    assert job.status == "partial", job.error
+    assert tasks._metadata(job.result)["job"]["repair_attempts"] == 1
+    assert "visual_comparison" in repair.prompt
+    assert "implementation_problems" in repair.prompt
+    assert "implementation_report" in repair.prompt
+    before, status_before, row_count = job.result.copy(), job.status, len(db.added)
+    await tasks.on_finished(db, verifier)
+    assert job.result == before
+    assert job.status == status_before
+    assert len(db.added) == row_count
+
+
+@pytest.mark.asyncio
+async def test_analyze_mode_completes_without_reconstruction_gate(monkeypatch):
+    from ttakkari.models import RunStatus
+
+    job_id, session_id, run_id = uuid4(), uuid4(), uuid4()
+    run = SimpleNamespace(id=run_id, session_id=session_id, status=RunStatus.succeeded, error=None,
+        usage={"reverse": {"job_id": str(job_id), "role": "implement"}})
+    job = SimpleNamespace(id=job_id, kind=tasks.KIND, target="analyze target", session_id=session_id, verifier_session_id=None,
+        status="running", error=None, updated_at=None, output_path=".",
+        result={"schema_version": 2, "job": {"mode": "analyze", "target_type": "cli",
+                "repair_attempts": 0, "max_repair_attempts": 0}, "latest": None, "history": []})
+
+    class Query:
+        def __init__(self, target): self.target = target
+        def where(self, *_args): return self
+        def order_by(self, *_args): return self
+        def limit(self, *_args): return self
+
+    class FakeDb:
+        async def get(self, _model, _identity, **_kwargs): return job
+        async def scalar(self, _query): return run.id
+
+    analysis = {"ready": False, "analysis_ready": True, "verdict": "passed", "summary": "analysis",
+        "source_files": [], "observations": [{"finding": "observed", "evidence": "source"}],
+        "checks": [], "problems": [], "comparisons": [],
+        "direct_comparison": {"status": "unverified", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0},
+        "visual_comparison": {"status": "not_required", "count": 0, "matched": 0, "mismatched": 0, "unverified": 0}}
+    monkeypatch.setattr(tasks, "select", Query)
+    monkeypatch.setattr(tasks, "read_report", lambda *_args, **_kwargs: analysis)
+
+    await tasks.on_finished(FakeDb(), run)
+
+    assert job.status == "done"
+    metadata = tasks._metadata(job.result)
+    assert metadata["latest"]["independent_verification"]["status"] == "not_required"
+    assert metadata["latest"]["implementation_status"] == "not_required"
+    assert metadata["history"] == []
 
 
 def test_zip_contains_sources_but_excludes_target_and_secrets(tmp_path):

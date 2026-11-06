@@ -143,3 +143,57 @@ exit 0
 - ZIP 회귀는 실제 ZIP을 열어 역할 manifest·비교 JSON·raw JSON·PNG를 확인하고, PNG SHA/바이트 및 디코딩, 역할별 로그, 경로·민감·크기·변조·symlink·잘못된 Run 반례를 확인했다. 1 MiB 초과 PNG는 별도 12 MiB 한도에서 포함되고 12 MiB 초과 PNG는 거부됐다.
 - `ruff format --check`는 기존 두 파일 전체를 재포맷해야 한다고 출력해 적용하지 않았다(이 파일의 기존 포맷까지 대량 변경하면 범위 밖). 변경 영향 파일의 `ruff check`는 통과했다.
 - 이전 기록의 Codex command sandbox `initdb → shmget ... Operation not permitted` 제한을 따라 DB/API 저장 및 dispatch 검증은 이번에도 실행하지 않았고 미검증으로 둔다. 실제 configured-browser 원본/복제 관찰과 실제 ReverseJob E2E도 이번 단위 범위 밖이라 미실행이다. push·배포하지 않았다.
+
+## 구현자 실패가 verifier match로 가려지는 완료 판정 교정 (2026-11-07)
+
+### 실행 신원·기준
+
+- 저장소 접근 전 실행 중 Run의 profile은 `회사 코덱스 ai2 (ai2@hyperez.io)`였다. 같은 이름의 유일한 계정은 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`다. 계정 전환·폴백·위임은 하지 않았다.
+- 시작 HEAD `efd15f9224024768203018f5cce1c1dac2354feb`, worktree clean. 이전 웹 프롬프트·ZIP 안내 변경 `f554f667f4c27f2692eb73fc9234999ff1f89325`와 그 파일은 유지했다.
+- 수정 범위는 `src/ttakkari/reverse_tasks.py`, `unit_tests/test_reverse_tasks.py`, 이 계약 및 통합 기록뿐이다. 감사 worktree·고정 probe·원본 core fixture·main·프론트는 수정하지 않았다.
+
+### 원인과 교정
+
+- 현재 callback의 입력은 verifier Run ID/role이고 `read_report()`가 그 verifier 전용 `.reverse/<run>.json`을 다시 검사한다. verifier 쪽 direct/visual 요약·raw report는 `verification_*`로 저장되지만 기존 `verifier_passed`는 verifier report만 검사했다. 따라서 저장돼 있던 구현자의 `direct_comparison`/`visual_comparison`이 mismatch 또는 unverified여도 verifier match가 job을 `done`으로 만들었다.
+- 이 경로는 고정 9fb 감사 probe를 현재 `efd15f9` 통합 코드에서 실행해 재현했다. 기능 match+시각 mismatch, 구현 comparison unverified, repair 뒤 mismatch 유지의 세 callback 모두 이전에는 `done`이었다. 독립 감사 probe 자체는 revision `9fb233bdb2f58c67ac4aee19c97d209e46b331cb`를 출력한다. 이는 probe 기준 revision이지 현재 코드 revision 증거가 아니다.
+- 최종 gate가 최신 구현/repair 회차의 `report.ready`, 검증된 source/execution, 직접 비교 1건 이상 전체 match, web 시각 비교 전체 match와 verifier 자신의 준비/필수 검사/직접 비교/시각 결과를 모두 요구하도록 했다. `independent_verification`은 verifier 자신의 verdict를 보존한다. 따라서 verifier가 자체 기준을 통과해 `passed`여도 구현 gate가 실패하면 job은 `partial`이다.
+- 각 역할의 raw report·summary·checks·problems·비교 요약을 별도 필드로 보존한다. repair 입력은 최신 구현자와 verifier의 결함 자료를 함께 포함하며 기존 구현 세션 및 pool, `max_repair_attempts` 한도를 유지한다. 한도 소진 뒤 실패는 `partial`; 동일 구현/repair/verifier callback은 history·row·repair 횟수를 늘리지 않는다. analyze mode는 독립 검증 없이 분석 완료로 남는다.
+
+### 회귀와 실행 결과
+
+변경 전 callback 회귀에서 5개 완료 gate 반례가 `partial` 대신 `done`을 반환해 실패했다. 초기 실행 중 repair fixture 준비 오류 1건은 fixture를 보완한 후 구현 검증을 진행했다.
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_web_core_integration.py
+..............................................                           [100%]
+48 passed in 0.76s
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_static.py
+........................                                                 [100%]
+24 passed in 0.27s
+$ ../back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py unit_tests/test_reverse_tasks.py
+All checks passed!
+$ git diff --check
+(출력 없음, exit 0)
+$ ../back/.venv/bin/python -m py_compile src/ttakkari/reverse_tasks.py
+exit 0
+```
+
+callback 회귀에는 웹 구현 기능 match/시각 mismatch, 구현 unverified, repair 후 mismatch 지속, 두 역할 모두 match, CLI/API direct mismatch와 direct 비교 0건, analyze mode, 구현·verifier 중복 callback을 포함한다. callback은 fake DB 경계이며 실제 transaction/API/dispatch 증거가 아니다.
+
+고정 독립 probe를 재실행했다:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-webcore-audit-20261107/docs/reverse-platform/audit-webcore-9fb233bd/probe_webcore.py
+revision: 9fb233bdb2f58c67ac4aee19c97d209e46b331cb
+implementation_visual_mismatch: partial expected=partial; implementation_visual_unverified: partial expected=partial
+implementation_visual_mismatch_after_repair: partial expected=partial; attempts=1; fresh verifier started
+database_api_dispatch: unverified: fake DB, no API/DB or generation dispatch
+```
+
+그 probe의 `duplicate_callback.status_unchanged` 값은 `job.status == "done"`으로 고정된 오래된 기대값이라 이제 `partial`에서 false로 표시된다. `result_unchanged=true` 및 `no_rows_added=true`는 유지되고, 소유 callback 회귀가 실제 이전 상태와 비교해 status/history/rows/repair 횟수의 불변을 확인한다.
+
+### 정적 검사·미검증·다음 범위
+
+- Ruff 첫 실행에서 새 테스트 fixture의 미사용 import와 mutable class list 4건이 나와 fixture를 고쳤다. 변경 영향 Ruff, `git diff --check`, `py_compile`은 위 출력처럼 통과했다.
+- PostgreSQL/API 저장·dispatch는 기존 `initdb → shmget ... Operation not permitted` 제한 때문에 재시도하지 않았다. 실제 ReverseJob E2E·브라우저 provenance·generation dispatch는 미검증이다. worker f61의 고정 efd15f92 ZIP/배포 경로 감사 가설은 범위 밖이며 수정하지 않았다.
+- 다음 단계는 독립 재감사다. 이번 단위에서는 push, deploy, 실제 ReverseJob E2E를 하지 않았다.

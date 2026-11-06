@@ -265,10 +265,24 @@ def _web_quality_failed(target_type: str | None, direct: dict[str, Any], visual:
     return direct.get("status") != "match" or visual.get("status") != "match"
 
 
+def _implementation_quality_failed(latest: dict[str, Any], target_type: str | None) -> bool:
+    """Implementation evidence is a separate completion gate from verifier evidence."""
+    report = latest.get("report") or {}
+    direct = latest.get("direct_comparison") or _comparison_summary([])
+    visual = latest.get("visual_comparison") or _visual_comparison_summary(
+        [], required=target_type == "web")
+    return (not report.get("ready")
+            or latest.get("source", {}).get("status") != "verified"
+            or latest.get("execution", {}).get("status") != "verified"
+            or direct.get("count", 0) <= 0 or direct.get("status") != "match"
+            or _web_quality_failed(target_type, direct, visual))
+
+
 def _should_repair_comparison(role: str, target_type: str | None, direct: dict[str, Any],
                               visual: dict[str, Any], *, attempts: int, limit: int,
                               has_source: bool, has_observations: bool) -> bool:
-    failed = direct.get("status") == "mismatch" or _web_quality_failed(target_type, direct, visual)
+    failed = (direct.get("count", 0) <= 0 or direct.get("status") != "match"
+              or _web_quality_failed(target_type, direct, visual))
     return (role != "verify" and failed and attempts < limit and has_source and has_observations)
 
 
@@ -1046,12 +1060,14 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         return None
     if role != "verify" and job.session_id != run.session_id:
         return None
+    current_result = _metadata(job.result).get("latest") or {}
     if role == "verify":
-        latest_result = _metadata(job.result).get("latest") or {}
-        verification = latest_result.get("independent_verification") or {}
-        if (latest_result.get("verification_run_id") == str(run.id)
+        verification = current_result.get("independent_verification") or {}
+        if (current_result.get("verification_run_id") == str(run.id)
                 and verification.get("status") in {"passed", "failed", "cancelled"}):
             return None
+    elif current_result.get("run_id") == str(run.id) and current_result.get("role") == role:
+        return None
     job.updated_at = utcnow()
     if run.status != RunStatus.succeeded:
         stopped = run.status in {RunStatus.cancelled, RunStatus.interrupted}
@@ -1078,12 +1094,18 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
                      "visual_comparison": result.get("visual_comparison",
                          _visual_comparison_summary([], required=config.get("target_type") == "web")),
                      "independent_verification": {"status": "pending", "run_id": None, "verdict": None},
-                     "comparisons": result.get("comparisons", []), "report": result}
+                     "comparisons": result.get("comparisons", []), "report": result,
+                     "implementation_summary": result.get("summary", ""),
+                     "implementation_checks": result.get("checks", []),
+                     "implementation_problems": result.get("problems", [])}
     if role == "verify":
         latest_result = dict(_metadata(job.result).get("latest") or latest_result)
         latest_result["verification_report"] = result
         latest_result["verification_run_id"] = str(run.id)
     else:
+        latest_result["implementation_status"] = (
+            "not_required" if mode == "analyze" and result.get("analysis_ready") else
+            "passed" if not _implementation_quality_failed(latest_result, config.get("target_type")) else "failed")
         _store_latest(job, latest_result)
     direct = latest_result["direct_comparison"]
     attempts = int(config.get("repair_attempts", 0))
@@ -1099,19 +1121,35 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         latest_result["verification_direct_comparison"] = verifier_direct
         latest_result["verification_visual_comparison"] = verifier_visual
         latest_result["verification_report"] = result
+        latest_result["verification_summary"] = result.get("summary", "")
+        latest_result["verification_source"] = {
+            "status": "verified" if result.get("source_files") else "unverified",
+            "files": result.get("source_files", [])}
+        latest_result["verification_execution"] = {
+            "status": "verified" if result.get("execution_ready") else "unverified",
+            "checks": result.get("checks", [])}
+        latest_result["verification_checks"] = result.get("checks", [])
+        latest_result["verification_problems"] = result.get("problems", [])
         latest_result["verification_run_id"] = str(run.id)
+        implementation_passed = not _implementation_quality_failed(latest_result, config.get("target_type"))
+        latest_result["implementation_status"] = "passed" if implementation_passed else "failed"
+        completion_passed = verifier_passed and implementation_passed
         latest_result["independent_verification"] = {
             "status": "passed" if verifier_passed else "failed",
             "run_id": str(run.id), "verdict": result.get("verdict")}
         _replace_latest(job, latest_result)
-        if not verifier_passed and attempts < limit and _prepare_repair(
+        if (not verifier_passed or not implementation_passed) and attempts < limit and _prepare_repair(
                 job, latest_result, config, attempts, limit):
             session = await db.get(ChatSession, job.session_id)
             repair = Run(session_id=session.id, workspace_id=session.workspace_id, prompt="", engine="auto",
                          usage={"reverse": {"job_id": str(job.id), "role": "repair", "attempt": attempts + 1}})
             db.add(repair)
             await db.flush()
-            defects = {"verification_comparisons": result.get("comparisons", []),
+            defects = {"implementation_report": latest_result.get("report"),
+                       "implementation_direct_comparison": latest_result.get("direct_comparison"),
+                       "implementation_visual_comparison": latest_result.get("visual_comparison"),
+                       "implementation_problems": latest_result.get("implementation_problems", []),
+                       "verification_comparisons": result.get("comparisons", []),
                        "verification_visual_comparison": verifier_visual,
                        "verification_checks": result.get("checks", []),
                        "problems": result.get("problems", []), "attempt": attempts + 1, "limit": limit}
@@ -1124,13 +1162,13 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
                 await generation.wake(db, repair.id)
             job.status, job.error = "running", None
             return session.id
-        job.status = "done" if verifier_passed else "partial"
-        job.error = None if verifier_passed else (
-            "독립 검증의 비교·필수 검사 증거가 통과하지 못했습니다. 결과와 차이를 확인해 주세요.")
+        job.status = "done" if completion_passed else "partial"
+        job.error = None if completion_passed else (
+            "구현자와 독립 검증자의 필수 증거가 모두 통과하지 못했습니다. 역할별 결과와 차이를 확인해 주세요.")
         impl = await db.scalar(select(Run).where(Run.session_id == job.session_id)
                                .order_by(Run.created_at.desc()).limit(1))
         if impl:
-            impl.usage = {**(impl.usage or {}), "verification_status": "passed" if verifier_passed else "failed",
+            impl.usage = {**(impl.usage or {}), "verification_status": "passed" if completion_passed else "failed",
                           "verification_verifier_id": str(run.session_id)}
         return None
     if result["verdict"] == "needs_input":
@@ -1138,10 +1176,9 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         return None
     visual = latest_result.get("visual_comparison",
         _visual_comparison_summary([], required=config.get("target_type") == "web"))
-    if _should_repair_comparison(role, config.get("target_type"), direct, visual,
-                                 attempts=attempts, limit=limit,
-                                 has_source=bool(result.get("source_files")),
-                                 has_observations=bool(result.get("observations"))):
+    if (role != "verify" and mode != "analyze" and result.get("verdict") != "needs_input"
+            and attempts < limit and result.get("source_files") and result.get("observations")
+            and _implementation_quality_failed(latest_result, config.get("target_type"))):
         config["repair_attempts"] = attempts + 1
         metadata = _metadata(job.result)
         metadata["job"] = config
@@ -1152,7 +1189,11 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         db.add(repair)
         await db.flush()
         repair.prompt = _prompt(job, repair) + "\n[결함 중심 수정 요청]\n" + json.dumps(
-            {"comparisons": latest_result["comparisons"], "visual_comparison": visual,
+            {"implementation_report": result,
+             "implementation_direct_comparison": direct,
+             "implementation_visual_comparison": visual,
+             "implementation_checks": result.get("checks", []),
+             "implementation_problems": result.get("problems", []),
              "attempt": attempts + 1, "limit": limit}, ensure_ascii=False)
         from ttakkari import generation
         from ttakkari.runs import events
@@ -1166,7 +1207,7 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         if result.get("analysis_ready") and mode == "analyze":
             latest_result["independent_verification"] = {"status": "not_required", "run_id": None,
                                                           "verdict": None}
-            _store_latest(job, latest_result)
+            _replace_latest(job, latest_result)
             job.status, job.error = "done", None
         else:
             if role == "verify":

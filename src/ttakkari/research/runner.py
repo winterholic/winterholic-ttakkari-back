@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import shutil
 import uuid
@@ -205,6 +207,12 @@ async def execute_run_instance(
             run.environment_snapshot = _run_environment_snapshot(
                 owner, adapter_res.environment_snapshot, run.environment_snapshot,
             )
+            if adapter_res.status != "succeeded" or adapter_res.error_code or adapter_res.error_message:
+                run.environment_snapshot = {**run.environment_snapshot, "research_adapter_receipt": {
+                    "status": adapter_res.status, "error_code": adapter_res.error_code,
+                    "error_message": adapter_res.error_message,
+                    "raw_output": adapter_res.raw_output or {},
+                }}
             if memory_guard is not None:
                 run.environment_snapshot = {**run.environment_snapshot,
                     "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
@@ -212,12 +220,16 @@ async def execute_run_instance(
                 run.error_code = adapter_res.error_code
                 run.error_message = adapter_res.error_message
                 if budget_exhausted:
-                    # Some adapters return their cleanup evidence after handling
-                    # CancelledError. Expiry must still prevent a success result.
-                    cancel_event.set()
-                    run.status = "cancelled"
-                    run.error_code = "budget_exceeded"
-                    run.error_message = "Experiment max_total_seconds exhausted"
+                    run.environment_snapshot = {**run.environment_snapshot, "research_budget_receipt": {
+                        "expired": True, "deadline": deadline,
+                    }}
+                    # A successful result after the deadline is unsafe. A failed
+                    # adapter result keeps its primary error while the batch stops below.
+                    if adapter_res.status == "succeeded":
+                        cancel_event.set()
+                        run.status = "cancelled"
+                        run.error_code = "budget_exceeded"
+                        run.error_message = "Experiment max_total_seconds exhausted"
                 elif memory_guard is not None and memory_guard.error_code:
                     run.status = "cancelled"
                     run.error_code = memory_guard.error_code
@@ -402,6 +414,9 @@ async def execute_run_instance(
                 run.environment_snapshot = _run_environment_snapshot(
                     owner, adapter_res.environment_snapshot, run.environment_snapshot,
                 )
+            run.environment_snapshot = {**(run.environment_snapshot or {}), "research_adapter_receipt": {
+                "status": "failed", "error_type": type(e).__name__, "error_message": str(e),
+            }}
             if memory_guard is not None:
                 run.environment_snapshot = {**run.environment_snapshot,
                     "research_memory_guard": {**memory_guard.snapshot(), "owner_token": owner.metadata["token"]}}
@@ -436,13 +451,27 @@ async def execute_run_instance(
 
 
 async def _finish_experiment_if_terminal(db, experiment_id: uuid.UUID) -> bool:
-    """Publish a terminal batch result only after every child Run is terminal."""
+    """Publish a terminal batch result only after every active child Run is terminal.
+
+    Runs that have been retried (superseded by a retry Run with retry_of_run_id)
+    do not keep an experiment in a failed state when the retry succeeded.
+    """
     exp = await db.get(Experiment, experiment_id, with_for_update=True)
     if exp is None:
         return False
-    statuses = (await db.scalars(select(Run.status).where(Run.experiment_id == experiment_id))).all()
-    if not statuses:
+    runs = list((await db.scalars(select(Run).where(Run.experiment_id == experiment_id))).all())
+    if not runs:
         return False
+
+    retried_ids = {
+        (r.environment_snapshot.get("research_retry") or {}).get("retry_of_run_id")
+        for r in runs
+        if isinstance(r.environment_snapshot, dict)
+    }
+    retried_ids = {rid for rid in retried_ids if rid}
+    active_runs = [r for r in runs if str(r.id) not in retried_ids] or runs
+    statuses = [r.status for r in active_runs]
+
     if any(status not in ("succeeded", "failed", "cancelled") for status in statuses):
         exp.state = "queued" if all(status == "queued" for status in statuses) else "running"
         exp.finished_at = None
@@ -563,13 +592,17 @@ async def _run_owned_batch(experiment_id, run_ids, adapter_registry, owner) -> N
                     # steal its remaining configurations or publish partial analysis.
                     return
                 if run.status == "cancelled":
-                    logger.info("Batch stopped due to run %s cancellation", rid)
-                    budget_expired = run.error_code == "budget_exceeded"
+                    logger.info("Run %s cancelled (code=%s)", rid, run.error_code)
+                    code = run.error_code or "unknown_cancellation"
                     await _cancel_unstarted_batch(
-                        sm, experiment_id, run_ids,
-                        "budget_exceeded" if budget_expired else "batch_cancelled",
-                        "Experiment max_total_seconds exhausted" if budget_expired
-                        else "Batch stopped after a run was cancelled",
+                        sm, experiment_id, run_ids, code,
+                        f"Batch stopped after cancellation ({code}); operator review is required",
+                    )
+                    break
+                if (run.environment_snapshot or {}).get("research_budget_receipt", {}).get("expired"):
+                    await _cancel_unstarted_batch(
+                        sm, experiment_id, run_ids, "budget_exceeded",
+                        "Batch stopped after experiment deadline expiration",
                     )
                     break
             except Exception:
@@ -599,8 +632,27 @@ async def start_experiment_runs(
     configuration_ids: list[uuid.UUID] | None = None,
     background: bool = True,
     adapter_registry: Any = None,
+    idempotency_key: str | None = None,
 ) -> list[Run]:
     """Create run records for configurations and dispatch execution."""
+    # Serialize replay detection on the experiment row, including after terminal runs.
+    exp = await db.get(Experiment, experiment_id, with_for_update=True)
+    if not exp:
+        raise ValueError(f"Experiment {experiment_id} not found")
+    request_fingerprint = hashlib.sha256(json.dumps(
+        sorted(str(item) for item in configuration_ids) if configuration_ids else None,
+        separators=(",", ":"),
+    ).encode()).hexdigest()
+    if idempotency_key:
+        prior_runs = list((await db.scalars(select(Run).where(
+            Run.experiment_id == experiment_id,
+        ))).all())
+        matching = [r for r in prior_runs if (r.environment_snapshot or {}).get("research_request", {}).get("key") == idempotency_key]
+        if matching:
+            if any((r.environment_snapshot or {}).get("research_request", {}).get("fingerprint") != request_fingerprint for r in matching):
+                raise HTTPException(409, "research_idempotency_key_reused_with_different_arguments")
+            return matching
+
     exp = await _lock_experiment_admission(
         db, experiment_id, missing_error=ValueError(f"Experiment {experiment_id} not found"),
     )
@@ -645,8 +697,10 @@ async def start_experiment_runs(
                 seed=42 + (r_idx - 1),
                 status="queued",
                 progress=None,
-                environment_snapshot={},
                 raw_output={},
+                environment_snapshot={"research_request": {
+                    "key": idempotency_key, "fingerprint": request_fingerprint,
+                }} if idempotency_key else {},
                 created_at=utcnow(),
             )
             db.add(run_row)

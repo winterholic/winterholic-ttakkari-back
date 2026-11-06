@@ -394,6 +394,111 @@ async def test_agent_scope_and_new_session_resume(client, auth, make_dir):
         ).status_code == 422
 
 
+async def test_agent_run_alias_scope_and_archived_session_guards(client, auth, make_dir, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import select
+
+    import ttakkari.api.research as api_research
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import ChatSession, utcnow
+    from ttakkari.orchestrator.runtime import issue_token
+    from ttakkari.research.models import Configuration, Experiment, Run
+
+    async def agent(pool):
+        workspace = await client.post("/api/workspaces", headers=auth,
+                                      json={"name": "research-dispatch", "root_path": str(make_dir())})
+        assert workspace.status_code == 201, workspace.text
+        session = await client.post("/api/sessions", headers=auth,
+                                    json={"workspace_id": workspace.json()["id"], "pool": pool})
+        assert session.status_code == 201, session.text
+        return uuid.UUID(session.json()["id"]), {"Authorization": "Bearer " + issue_token(uuid.UUID(session.json()["id"]))}
+
+    personal_id, personal = await agent("personal")
+    _, work = await agent("work")
+    created = await client.post("/api/agent/research", headers=personal,
+                                json={"operation": "create", "data": {"title": "Agent dispatch", "goal": "Test aliases"}})
+    assert created.status_code == 200, created.text
+    study_id = created.json()["id"]
+    experiment = await client.post(f"/api/research/studies/{study_id}/experiments", headers=auth,
+                                   json={"title": "Dispatch target", "strategy": "single"})
+    assert experiment.status_code == 201, experiment.text
+    exp_id = experiment.json()["id"]
+
+    dispatcher = AsyncMock(return_value={"dispatch": "accepted"})
+    monkeypatch.setattr(api_research, "run_experiment", dispatcher)
+    for op in ("run_start", "run"):
+        response = await client.post("/api/agent/research", headers=personal,
+                                     json={"operation": op, "experiment_id": exp_id,
+                                           "data": {"idempotency_key": f"agent-replay-{op}"}})
+        assert response.status_code == 200, response.text
+        assert response.json() == {"dispatch": "accepted"}
+    assert dispatcher.await_count == 2
+
+    external_dispatch = AsyncMock(return_value={"external_report": "recorded"})
+    retry_dispatch = AsyncMock(return_value={"retry": "created"})
+    monkeypatch.setattr(api_research, "record_external_report", external_dispatch)
+    monkeypatch.setattr(api_research, "retry_run", retry_dispatch)
+    external_response = await client.post(
+        "/api/agent/research", headers=personal,
+        json={"operation": "external_report", "experiment_id": exp_id,
+              "data": {"provenance": "external_benchmark", "metrics": [{"metric_key": "x", "value": 1.0}]}},
+    )
+    assert external_response.status_code == 200, external_response.text
+    assert external_response.json() == {"external_report": "recorded"}
+    async with sessionmaker()() as db:
+        exp = await db.get(Experiment, uuid.UUID(exp_id))
+        cfg = (await db.execute(select(Configuration).where(Configuration.experiment_id == exp.id))).scalars().first()
+        failed = Run(experiment_id=exp.id, study_id=exp.study_id, configuration_id=cfg.id,
+                     adapter_id=exp.adapter_id, execution_origin="local_measured", status="failed",
+                     error_code="synthetic_failure", environment_snapshot={}, raw_output={}, created_at=utcnow())
+        db.add(failed)
+        await db.commit()
+        failed_id = str(failed.id)
+    retry_response = await client.post("/api/agent/research", headers=personal,
+                                       json={"operation": "run_retry", "run_id": failed_id})
+    assert retry_response.status_code == 200, retry_response.text
+    assert retry_response.json() == {"retry": "created"}
+    assert external_dispatch.await_count == retry_dispatch.await_count == 1
+
+    cross_scope = await client.post("/api/agent/research", headers=work,
+                                    json={"operation": "run", "experiment_id": exp_id})
+    assert cross_scope.status_code == 403
+    assert "research_scope_mismatch" in cross_scope.text
+
+    async with sessionmaker()() as db:
+        session_row = await db.get(ChatSession, personal_id)
+        session_row.archived_at = utcnow()
+        await db.commit()
+    archived = await client.post("/api/agent/research", headers=personal, json={"operation": "list"})
+    assert archived.status_code == 403
+    assert "archived_session" in archived.text
+
+
+async def test_resume_configuration_total_matches_current_experiment_page(client, auth):
+    study_id = await study(client, auth)
+    experiment_ids = []
+    for title in ("Page one", "Page two"):
+        response = await client.post(
+            f"/api/research/studies/{study_id}/experiments", headers=auth,
+            json={"title": title, "strategy": "single"},
+        )
+        assert response.status_code == 201, response.text
+        experiment_ids.append(response.json()["id"])
+
+    snapshot = await client.get(
+        f"/api/research/studies/{study_id}/resume?offset=1&limit=1", headers=auth,
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    payload = snapshot.json()
+    assert [row["id"] for row in payload["experiments"]] == [experiment_ids[1]]
+    assert len(payload["configurations"]) == 1
+    assert payload["pagination"]["totals"]["configurations"] == 1
+    assert payload["pagination"]["configurations_scope"].startswith(
+        "configurations belonging to experiments on this page"
+    )
+
+
 async def test_exact_source_whitespace_is_preserved(client, auth):
     from ttakkari.config import get_settings
     from ttakkari.kb_store import object_relpath

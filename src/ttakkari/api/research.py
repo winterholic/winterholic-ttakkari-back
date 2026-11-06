@@ -235,6 +235,7 @@ class ExperimentValidateIn(Strict):
 
 class ExperimentRunIn(Strict):
     configuration_ids: list[uuid.UUID] | None = None
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
 
 
 class RunCancelIn(Strict):
@@ -1168,6 +1169,7 @@ async def run_experiment(
         db,
         experiment_id=experiment_id,
         configuration_ids=body.configuration_ids if body else None,
+        idempotency_key=body.idempotency_key if body else None,
         background=True,
     )
     await db.commit()
@@ -1589,6 +1591,10 @@ class AgentIn(Strict):
         "compare_series",
         "adopt_best_result",
         "export_report",
+        "run_retry",
+        "run_start",
+        "run",
+        "external_report",
     ]
     study_id: uuid.UUID | None = None
     experiment_id: uuid.UUID | None = None
@@ -1601,16 +1607,17 @@ class AgentIn(Strict):
         v2_global_ops = (
             "list", "create", "discover", "dashboard", "catalog_search",
             "method_get", "method_register", "method_promote",
-            "experiment_validate", "run_status", "run_cancel"
+            "experiment_validate", "run_status", "run_cancel",
+            "run_retry",
         )
         if (
-            self.operation in ("execute", "report", "control", "compare_series")
+            self.operation in ("execute", "report", "control", "compare_series", "run_start", "run", "external_report")
             and not self.experiment_id
         ):
             raise ValueError("experiment_id_required")
         if (
             self.operation not in v2_global_ops
-            and self.operation not in ("execute", "report", "control", "compare_series")
+            and self.operation not in ("execute", "report", "control", "compare_series", "run_start", "run", "external_report")
             and not self.study_id
         ):
             raise ValueError("study_id_required")
@@ -1687,17 +1694,47 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
         rid = body.run_id or (uuid.UUID(str(body.data["run_id"])) if "run_id" in body.data else None)
         if not rid:
             raise HTTPException(422, "run_id_required")
+        run_row = await db.get(Run, rid)
+        if run_row is None:
+            raise HTTPException(404, "research_run_not_found")
+        run_study = await svc.get_study(db, run_row.study_id, "all")
+        if run_study.scope != scope:
+            raise HTTPException(403, "research_scope_mismatch")
         return await get_run_details(rid, actor, db)
     if op == "run_cancel":
         rid = body.run_id or (uuid.UUID(str(body.data["run_id"])) if "run_id" in body.data else None)
         if not rid:
             raise HTTPException(422, "run_id_required")
+        run_row = await db.get(Run, rid)
+        if run_row is None:
+            raise HTTPException(404, "research_run_not_found")
+        run_study = await svc.get_study(db, run_row.study_id, "all")
+        if run_study.scope != scope:
+            raise HTTPException(403, "research_scope_mismatch")
         return await cancel_run_endpoint(rid, validate(RunCancelIn, body.data), actor, db)
+    if op == "run_retry":
+        rid = body.run_id or (uuid.UUID(str(body.data["run_id"])) if "run_id" in body.data else None)
+        if not rid:
+            raise HTTPException(422, "run_id_required")
+        run_row = await db.get(Run, rid)
+        if run_row is None:
+            raise HTTPException(404, "research_run_not_found")
+        run_study = await svc.get_study(db, run_row.study_id, "all")
+        if run_study.scope != scope:
+            raise HTTPException(403, "research_scope_mismatch")
+        return await retry_run(rid, actor, db)
 
     # Operations requiring experiment_id
-    if op in ("execute", "report", "control", "compare_series"):
+    if op in ("execute", "report", "control", "compare_series", "run_start", "run", "external_report"):
         exp = await get_experiment(db, body.experiment_id)
-        await svc.get_study(db, exp.study_id, "all")
+        exp_study = await svc.get_study(db, exp.study_id, "all")
+        if exp_study.scope != scope:
+            raise HTTPException(403, "research_scope_mismatch")
+        if op in ("run_start", "run"):
+            run_in = validate(ExperimentRunIn, body.data) if body.data else None
+            return await run_experiment(exp.id, actor, db, run_in)
+        if op == "external_report":
+            return await record_external_report(exp.id, validate(ExternalReportIn, body.data), actor, db)
         if op == "execute":
             return await execute(exp.id, actor, db)
         if op == "compare_series":

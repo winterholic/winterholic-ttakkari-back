@@ -1,19 +1,16 @@
 """Core backend tests for Research Lab v2: methods, relations, validation, runner, measurements, analyzer, promote, immutability, and scope isolation."""
 
 import uuid
+
 import pytest
 from sqlalchemy import text
 
 from ttakkari.db import sessionmaker
-from ttakkari.research import planner
 from ttakkari.research.models import (
-    BestResult,
     Configuration,
     Experiment,
     Measurement,
-    Method,
     Run,
-    Study,
 )
 
 
@@ -423,9 +420,61 @@ async def test_adopt_best_result_and_method_promote(client, auth):
     assert method_after["lifecycle_status"] in ("candidate", "validated")
 
 
+async def test_best_result_requires_finite_measurement_and_matching_trial(client, auth):
+    study_id = await create_test_study(client, auth)
+    exp_response = await client.post(
+        f"/api/research/studies/{study_id}/experiments", headers=auth,
+        json={"title": "Metric gate", "strategy": "single", "primary_metric": "recall_at_k"},
+    )
+    assert exp_response.status_code == 201, exp_response.text
+    exp = exp_response.json()
+    cfg_id = uuid.UUID(exp["configurations"][0]["id"])
+    report_response = await client.post(
+        f"/api/research/experiments/{exp['id']}/external-report", headers=auth,
+        json={"provenance": "external_benchmark", "source_title": "Metric gate fixture",
+              "source_url": "https://example.invalid/research/metric-gate",
+              "metrics": [{"metric_key": "recall_at_k", "value": 0.75}]},
+    )
+    assert report_response.status_code == 201, report_response.text
+    run_id = report_response.json()["id"]
+    payload = {"experiment_id": exp["id"], "configuration_id": str(cfg_id), "run_id": run_id,
+               "objective": "maximize recall", "primary_metric": "recall_at_k", "rationale": "measured"}
+
+    unmeasured = await client.post(f"/api/research/studies/{study_id}/best-results", headers=auth,
+                                   json={**payload, "primary_metric": "latency_ms"})
+    assert unmeasured.status_code == 422
+    assert "best_result_metric_not_measured_on_selected_run" in unmeasured.text
+
+    mismatch_cfg = Configuration(experiment_id=uuid.UUID(exp["id"]), label="other config",
+                                 config_hash=uuid.uuid4().hex, parameters={})
+    async with sessionmaker()() as db:
+        db.add(mismatch_cfg)
+        await db.commit()
+    mismatch = await client.post(f"/api/research/studies/{study_id}/best-results", headers=auth,
+                                 json={**payload, "configuration_id": str(mismatch_cfg.id)})
+    assert mismatch.status_code == 400
+    assert "inconsistent_component_membership" in mismatch.text
+
+    invalid_run = Run(id=uuid.uuid4(), experiment_id=uuid.UUID(exp["id"]), study_id=uuid.UUID(study_id),
+                      configuration_id=cfg_id, adapter_id="external_report", execution_origin="external_report",
+                      status="succeeded", environment_snapshot={}, raw_output={})
+    async with sessionmaker()() as db:
+        db.add(invalid_run)
+        await db.flush()
+        db.add(Measurement(run_id=invalid_run.id, experiment_id=invalid_run.experiment_id,
+                           configuration_id=cfg_id, metric_key="recall_at_k", metric_label="Recall",
+                           value=float("inf"), unit="", direction="higher_is_better", is_proxy=False,
+                           aggregator="single", slice_key="overall", meta={}))
+        await db.commit()
+    nonfinite = await client.post(f"/api/research/studies/{study_id}/best-results", headers=auth,
+                                  json={**payload, "run_id": str(invalid_run.id)})
+    assert nonfinite.status_code == 422
+    assert "best_result_metric_not_measured_on_selected_run" in nonfinite.text
+
+
 async def test_scope_isolation_and_system_catalog_sharing(client, auth):
     # Personal study
-    s_personal = await create_test_study(client, auth, scope="personal")
+    await create_test_study(client, auth, scope="personal")
 
     # Sync catalog to ensure system methods exist
     await client.post("/api/research/catalog/sync", headers=auth)
@@ -466,8 +515,9 @@ async def test_scope_isolation_and_system_catalog_sharing(client, auth):
 
 async def test_regression_runner_gate_rejection(client, auth):
     """Defect 1: runner must not execute runs when generation accepted-work gate yields False."""
-    from unittest.mock import patch
     from contextlib import asynccontextmanager
+    from unittest.mock import patch
+
     from ttakkari.research import runner
 
     study_id = await create_test_study(client, auth)

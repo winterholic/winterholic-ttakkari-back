@@ -79,7 +79,8 @@ async def manage_research(operation: Literal['list', 'create', 'resume', 'update
                                             'select', 'experiment', 'execute', 'report', 'control', 'discover',
                                             'dashboard', 'catalog_search', 'method_get', 'method_register',
                                             'method_promote', 'experiment_validate', 'experiment_create',
-                                            'run_status', 'run_cancel', 'compare_series', 'adopt_best_result',
+                                            'run_start', 'run', 'run_retry', 'run_status', 'run_cancel',
+                                            'compare_series', 'adopt_best_result', 'external_report',
                                             'export_report'],
                           study_id: str | None = None, experiment_id: str | None = None,
                           run_id: str | None = None, method_id: str | None = None,
@@ -97,7 +98,10 @@ async def manage_research(operation: Literal['list', 'create', 'resume', 'update
     method_get(id/slug); method_register(...); method_promote(run_id,decision_note,target_status);
     experiment_validate(study_id,method_id,strategy,search_space,fixed_inputs,budget);
     experiment_create(title,hypothesis,strategy,search_space,fixed_inputs,budget,auto_start);
-    run_status(run_id); run_cancel(run_id,reason); compare_series(baseline_config_id,primary_metric);
+    run_start(configuration_ids?,idempotency_key); run(configuration_ids?,idempotency_key) is an alias;
+    retry with the same key returns the original Runs (changed arguments conflict); use a fresh key for an intentional new batch.
+    run_retry(run_id) always creates a new Run with the original configuration, repetition and seed; run_status(run_id); run_cancel(run_id,reason);
+    external_report(provenance,source_title?,source_url?,metrics={...}); compare_series(baseline_config_id,primary_metric);
     adopt_best_result(experiment_id,configuration_id,run_id,objective,primary_metric,constraints,rationale,promote_method);
     export_report(experiment_ids,promote_to_library). Node kind and relation predicates are extensible. Claims/findings
     need exact source quotes; observations can only be minted by server execution. External reports remain unverified.

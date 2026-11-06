@@ -826,6 +826,7 @@ class HostGpu:
                     "prompt_tokens": t.get("prompt_n"), "prompt_tokens_per_second": t.get("prompt_per_second"),
                     "generated_tokens": t.get("predicted_n"),
                     "generation_tokens_per_second": t.get("predicted_per_second"),
+                    "content": str(body.get("content", "")),
                     "output_preview": str(body.get("content", ""))[:200],
                 })
             speeds = [r["generation_tokens_per_second"] for r in rows if r.get("generation_tokens_per_second")]
@@ -833,7 +834,7 @@ class HostGpu:
             status = self.status()
             return {
                 "execution_path": "host_gpu", "measured_on": MEASURED_ON, "note": MEASURED_NOTE,
-                "request": state.get("request"), "n_predict": n_predict, "runs": rows,
+                "prompt": prompt, "request": state.get("request"), "n_predict": n_predict, "runs": rows,
                 "median_generation_tokens_per_second": statistics.median(speeds) if speeds else None,
                 "median_prompt_tokens_per_second": statistics.median(prefill) if prefill else None,
                 "swap": status.get("swap"), "device_evidence": status.get("device_evidence"),

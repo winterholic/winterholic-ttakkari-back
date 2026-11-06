@@ -265,3 +265,38 @@ $ git diff --check
 - 최초 Ruff 실행은 import 정렬과 미사용 import로 exit 1이었고 이를 고친 뒤 위 Ruff 명령 exit 0을 확인했다. 검증은 직렬 실행했으며 security suite, host_operations, 환경 probe는 실행하지 않았다.
 - source/test 경로 지정 commit=`ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc` (`fix(collector): translate subscription errors at runtime boundary`), parent=`8a0b289c3d0d432180de0a70bc3304170d6e57c6`; 커밋 파일은 source 2개와 테스트 2개뿐이다. 현재 release checkout은 해당 source commit 포함 `origin/main`보다 2 commits ahead다. push, 배포 예약/조회, runtime polling, 서비스 변경은 하지 않았다.
 - 독립 검토 전 미완료: DB 사용 선행 조건의 최초 guard 순서 예외는 남는다. 독립 source review, push, release controller 전체 gate, 배포/운영 확인도 수행하지 않았다.
+
+## 후속 검토 지적 — precise runtime 복원 및 이전 DB 증거 정정 (2026-11-07)
+
+### 검토 지적과 test-only 교정
+
+- 이전 기록의 run-test marker `run_id=b0136b76-78c6-443b-95bd-0ce95c173f2f`는 Lead가 확인한 해당 이전 Run API ID `b0136b76-78c6-443b-95bd-0ce95d32f6f2`와 다르다. **이전 marker의 소유 증거는 수용하지 않는다.** 과거 Run DB, marker 파일, outbox는 다시 읽지 않았다. 올바른 API ID를 marker의 정답으로 추정 치환하지 않았으며, 과거 DB 선행 순서 문제도 소급 해결됐다고 보지 않는다.
+- `test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt`는 `collector_precise_runtime.install()`이 교체한 `precise_eval._runtime`을 남겼다. 테스트가 시작할 때의 객체를 `monkeypatch.context()`에 snapshot하고, install·세 transport cases를 context 안에서 실행한 뒤 context 종료 후 객체 identity 복원을 assertion한다. 기존 `test_collector_manage.py`의 monkeypatch 기반 복원 방식을 사용했다. product source `ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc`는 수정하지 않았다.
+
+### 현재 Run의 선행 DB 증명 및 테스트 순서
+
+- Run API 명령 `/Users/winterholic/bin/ttk get "/api/runs/$TTAKKARI_RUN_ID" | jq '{id,status,engine,model,effort,profile}'` → exit 0, `f27154ad-ad7d-4076-9280-34ef32af3b17 / running / codex / gpt-6-luna / high / 회사 코덱스 ai2 (ai2@hyperez.io)`.
+- 첫 pytest 전에 실행한 현재 Run DB 확인은 async SQLAlchemy engine으로 `SET TRANSACTION READ ONLY` 후 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')`를 수행했다. DB URL 원문은 출력하지 않았다. 출력: `url_identity 127.0.0.1 ttakkari_test 62042 ttk_test`; `sql_identity ttakkari_test ttk_test 62042 /tmp/ttakkari-run-test-99596-eb71e520/data`.
+- SQL이 반환한 data_directory의 정확한 부모 `/tmp/ttakkari-run-test-99596-eb71e520/run-test-cluster.marker`만 읽었다. marker는 `run_id=f27154ad-ad7d-4076-9280-34ef32af3b17`, `port=62042`, `owner_pid=99596`, `folder=ttakkari-run-test-99596-eb71e520`를 반환했고 URL/SQL DB·user·port도 일치했다. 이 증명은 현재 Run 테스트에만 해당하며 이전 mismatch를 대체하지 않는다.
+- 수정 전 red 명령은 위 proof 완료 뒤 실행했다:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest 'tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt' -q --timeout=120 -p no:cacheprovider
+FFF — 세 parameter 모두 마지막 runtime identity assertion 실패; 각 사례 뒤 finalizer가 원래 runtime 복구
+3 failed in 1.20s; db reset 3 selective; exit 1
+```
+
+- 수정 후 green:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest 'tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt' -q --timeout=120 -p no:cacheprovider
+... [100%]
+db reset: 3 selective (avg 10.3/132 tables), 0 forced full, 0 fell back to full
+3 passed in 1.23s; exit 0
+```
+
+### 보존 상태
+
+- test-only 경로 지정 commit=`80b3116ec4e132f5cf668463c6479e1c5ffc5815` (`test(collector): restore precise runtime after transport cases`); 그 commit의 부모 product/document tip=`6aed062f650b7e832d2b8f100f547c7990d3ed03`. 제품 source full SHA는 변경 없이 `ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc`다.
+- 이 정정 단락은 별도 경로 지정 문서 commit으로 기록한다. 이번 범위에서 실행한 pytest는 위 세 parameter뿐이다. 기존 suite/보안 gate, 환경 probe, push, 배포, 운영 조회는 하지 않았다.
+- tool catalog 검색에서 `fresh_context`와 `reset_my_context` 도구가 노출되지 않았다. 이 기록을 마친 뒤 현재 turn을 종료해 다음 단계가 별도 fresh verifier로 시작할 수 있게 한다.

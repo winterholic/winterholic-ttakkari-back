@@ -312,7 +312,7 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
     eval_started = asyncio.Event()
     unhold_done = asyncio.Event()
 
-    async def fake_evaluator(*, goal, title, text, request_key, job_id):
+    async def fake_evaluator(*, goal, title, text, request_key, job_id, scope="personal"):
         eval_started.set()  # Session 2: production claim 완료 후 txn 밖 평가 진입
         await asyncio.wait_for(unhold_done.wait(), timeout=TIMEOUT)  # Session 1: unhold commit까지 유한 대기
         return {
@@ -503,7 +503,7 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
 
     monkeypatch.setattr(precise_eval, "sessionmaker", probed_sessionmaker)
 
-    async def fake_evaluator(*, goal, title, text, request_key, job_id):
+    async def fake_evaluator(*, goal, title, text, request_key, job_id, scope="personal"):
         return {
             "topic_relevance": 0.92,
             "relevance_explanation": "분산합의 팍소스 트랜잭션 설계 목표와 부합함",
@@ -975,12 +975,10 @@ async def test_precise_result_survives_worker_crash_after_budget_settlement(
 
     from sqlalchemy import select
 
-    from ttakkari import collector_precise_runtime
-    from ttakkari.collector import budget, pipeline, precise_eval
+    from ttakkari.collector import pipeline, precise_eval
     from ttakkari.collector.budget_models import CollectorBudgetReservation
     from ttakkari.collector_models import CollectorItem
     from ttakkari.config import get_settings
-    from ttakkari.runs import qwen_slot
 
     class SimulatedProcessCrash(BaseException):
         pass
@@ -1012,7 +1010,7 @@ async def test_precise_result_survives_worker_crash_after_budget_settlement(
         return SimpleNamespace(action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals)
 
     monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
-    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", True)
+    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", False)
     engine = {"status": "unavailable", "detail": "fixture unavailable"}
     monkeypatch.setattr(precise_eval, "engine_status", lambda: engine)
     verdict = {
@@ -1037,22 +1035,18 @@ async def test_precise_result_survives_worker_crash_after_budget_settlement(
         assert mission_view.status_code == 200
         provider_entered.set()
         await release_provider.wait()
-        return verdict, budget.CallUsage(tokens=7, micro_usd=0, receipt={"provider": "fixture"})
+        return verdict, {"engine": "codex", "account": "fixture", "pool": "personal", "requested_model": "fixture"}
 
-    monkeypatch.setattr(precise_eval, "_call_qwen_api", provider_response)
-    monkeypatch.setattr(qwen_slot, "acquire_process_lock", lambda: 101)
-    monkeypatch.setattr(qwen_slot, "release_process_lock", lambda fd: None)
-    monkeypatch.setattr(precise_eval, "_runtime", None)
-    collector_precise_runtime.install()
+    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(status=lambda: engine, evaluate=provider_response))
     original_apply = precise_eval.apply_precise_result
     crash_once = True
 
-    def crash_after_settlement(item, result):
+    def crash_after_settlement(item, result, **kwargs):
         nonlocal crash_once
         if crash_once:
             crash_once = False
             raise SimulatedProcessCrash()
-        return original_apply(item, result)
+        return original_apply(item, result, **kwargs)
 
     monkeypatch.setattr(precise_eval, "apply_precise_result", crash_after_settlement)
     assert await runner.consume_once(limit=1, managed_only=True) == 1
@@ -1093,15 +1087,12 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
 ):
     from types import SimpleNamespace
 
-    import httpx
     from sqlalchemy import select
 
-    from ttakkari import collector_precise_runtime
     from ttakkari.collector import pipeline, precise_eval, runner
     from ttakkari.collector.budget_models import CollectorBudgetReservation
     from ttakkari.collector_models import CollectorItem
     from ttakkari.config import get_settings
-    from ttakkari.runs import qwen_slot
 
     url = env.server.url("/precise-unknown")
     env.server.page("/precise-unknown", article_html("직렬화", [prose("ko", 40, 12)]))
@@ -1122,21 +1113,25 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
         return SimpleNamespace(action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals)
 
     monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
-    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", True)
-    monkeypatch.setattr(precise_eval, "engine_status", lambda: {
-        "status": "ready", "model": "fixture", "endpoint": "http://127.0.0.1:19300"
-    })
-    monkeypatch.setattr(qwen_slot, "acquire_process_lock", lambda: 101)
-    monkeypatch.setattr(qwen_slot, "release_process_lock", lambda fd: None)
-    monkeypatch.setattr(precise_eval, "_runtime", None)
-    collector_precise_runtime.install()
+    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", False)
+    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
+        status=lambda: {"status": "ready", "engine": "subscription_cli", "model": "fixture"},
+        evaluate=lambda **kwargs: None,
+    ))
     calls = []
 
-    async def unknown_response(*args, **kwargs):
+    async def unknown_response(**kwargs):
         calls.append(True)
-        raise httpx.ReadTimeout("fixture timeout")
+        from ttakkari.kb_pipeline.subscription_transport import (
+            DIAG_TIMEOUT,
+            L2TransportError,
+        )
+        raise L2TransportError(DIAG_TIMEOUT, "fixture timeout", consumed=True)
 
-    monkeypatch.setattr(precise_eval, "_call_qwen_api", unknown_response)
+    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
+        status=lambda: {"status": "ready", "engine": "subscription_cli", "model": "fixture"},
+        evaluate=unknown_response,
+    ))
     assert await runner.consume_once(limit=1, managed_only=True) == 1
     assert await runner.consume_once(limit=1, managed_only=True) == 0
     assert len(calls) == 1
@@ -1148,6 +1143,53 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
         assert item.signals["triage"]["precise_eval"]["state"] == "unresolved"
         assert reservation.state == "unknown"
         assert reservation.charged_tokens == reservation.reserved_tokens
+
+
+async def test_precise_day_budget_denial_leaves_item_pending_until_reset(client, auth, env, monkeypatch):  # noqa: F811
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from ttakkari.collector import pipeline, precise_eval, runner
+    from ttakkari.collector.budget import BudgetDenied
+    from ttakkari.collector_models import CollectorItem
+
+    url = env.server.url("/precise-budget-wait")
+    env.server.page("/precise-budget-wait", article_html("직렬화", [prose("ko", 40, 12)]))
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(
+        allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0
+    )
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = await client.post(BASE + "/missions", headers=auth, json={"goal": "컴파일러 최적화", "urls": [url]})
+    assert made.status_code == 202, made.text
+
+    original_triage = pipeline.triage.evaluate_triage
+
+    def pending_hold(**kwargs):
+        outcome = original_triage(**kwargs)
+        signals = dict(outcome.signals)
+        signals["precise_eval"] = {"needed": True, "state": "pending", "reasons": ["fixture"]}
+        return SimpleNamespace(action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals)
+
+    async def day_budget_denied(**_kwargs):
+        raise BudgetDenied("day_budget")
+
+    monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
+    monkeypatch.setattr(precise_eval, "engine_status", lambda: {
+        "status": "ready", "provider_engine": "codex", "model": "fixture"
+    })
+    monkeypatch.setattr(precise_eval, "evaluate_document_guarded", day_budget_denied)
+    await runner.consume_once(limit=1, managed_only=True)
+
+    async with sessionmaker()() as db:
+        item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
+        precise = item.signals["triage"]["precise_eval"]
+        assert precise["state"] == "pending"
+        assert precise["engine"]["status"] == "budget_wait"
+        assert precise["retry_after"] > datetime.now(UTC).timestamp()
+        assert not precise_eval._claimable(precise, datetime.now(UTC))
 
 
 async def test_unreviewed_public_source_gets_a_recorded_auto_policy_that_is_not_a_license_claim(client, auth):

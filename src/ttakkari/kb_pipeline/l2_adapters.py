@@ -31,7 +31,7 @@ from ttakkari.kb_pipeline.subscription_transport import (
     L2TransportError,
     ScopeCapacityUnavailableError,
     SubscriptionCallConfig,
-    execute_subscription_l2_call,
+    execute_subscription_json_call,
     resolve_target_pool,
     restrict_to_pool,
 )
@@ -179,6 +179,20 @@ class SubscriptionCliL2Adapter:
         return False, "scope_capacity_unavailable"
 
     async def __call__(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        from ttakkari.kb_pipeline.extract_l2 import L2_SYSTEM_PROMPT
+        from ttakkari.kb_pipeline.subscription_transport import (
+            validate_l2_extraction_schema,
+        )
+
+        result, _ = await self.call_json(
+            prompt, schema, system_prompt=L2_SYSTEM_PROMPT,
+            validator=validate_l2_extraction_schema, max_response_bytes=1_000_000,
+        )
+        return result
+
+    async def call_json(self, prompt: str, schema: dict[str, Any], *, system_prompt: str,
+                        validator, max_response_bytes: int = 128_000) -> tuple[dict[str, Any], dict[str, str]]:
+        """Run a bounded structured subscription call and return selected account metadata."""
         if self.target_pool is None:
             raise ScopeCapacityUnavailableError("document provenance is not permitted for subscription cloud")
         semaphore = self._gate.semaphore()
@@ -199,16 +213,29 @@ class SubscriptionCliL2Adapter:
                 run_id = uuid.uuid4()
                 profile = await profiles.choose_async(candidates, run_id)
             try:
-                return await execute_subscription_l2_call(
+                result = await execute_subscription_json_call(
                     profile,
                     prompt,
                     schema,
                     SubscriptionCallConfig(self.engine, self.model, self.effort, self.timeout),
+                    system_prompt=system_prompt,
+                    validator=validator,
+                    max_response_bytes=max_response_bytes,
                     run_id=run_id,
                 )
+                return result, {
+                    "engine": profile.engine,
+                    "account": profile.name,
+                    "pool": profile.pool,
+                    "requested_model": self.model or "profile default",
+                }
             except Exception as exc:
                 if getattr(exc, "diagnosis", None) == "usage_limit":
                     self.retry_after = getattr(exc, "retry_after", None)
+                if isinstance(exc, L2TransportError):
+                    exc.engine = profile.engine
+                    exc.account = profile.name
+                    exc.model = self.model or "profile default"
                 raise
             finally:
                 profiles.release(run_id)

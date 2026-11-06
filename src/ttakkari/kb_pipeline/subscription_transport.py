@@ -89,11 +89,15 @@ class L2TransportError(RuntimeError):
     """Base error for L2 transport failures with structured diagnosis."""
 
     def __init__(self, diagnosis: str, message: str, retry_after: float | None = None,
-                 *, consumed: bool = True) -> None:
+                 *, consumed: bool = True, engine: str | None = None,
+                 account: str | None = None, model: str | None = None) -> None:
         super().__init__(f"[{diagnosis}] {message}")
         self.diagnosis = diagnosis
         self.retry_after = retry_after
         self.consumed = consumed
+        self.engine = engine
+        self.account = account
+        self.model = model
 
 
 class ScopeCapacityUnavailableError(L2TransportError):
@@ -272,6 +276,24 @@ async def execute_subscription_l2_call(
     *,
     run_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    return await execute_subscription_json_call(
+        prof, prompt, schema, config, system_prompt=L2_SYSTEM_PROMPT,
+        validator=validate_l2_extraction_schema, max_response_bytes=1_000_000, run_id=run_id,
+    )
+
+
+async def execute_subscription_json_call(
+    prof: Profile,
+    prompt: str,
+    schema: dict[str, Any],
+    config: SubscriptionCallConfig,
+    *,
+    system_prompt: str,
+    validator,
+    max_response_bytes: int = 128_000,
+    run_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """Execute a bounded, tool-free subscription JSON call with caller-owned schema validation."""
     """Execute a single subscription CLI call with isolated ephemeral cwd and strict schema.
 
     Enforces load accounting in profiles._in_use during execution.
@@ -300,7 +322,7 @@ async def execute_subscription_l2_call(
             )
             attempt = await desk._ask(
                 prof,
-                system=L2_SYSTEM_PROMPT,
+                system=system_prompt,
                 prompt=prompt,
                 cfg_override=cfg_override or None,
                 timeout_seconds=config.timeout_seconds,
@@ -322,12 +344,19 @@ async def execute_subscription_l2_call(
         log.warning("Subscription L2 CLI execution failed: diagnosis=%s, elapsed_ms=%d", diag, attempt.elapsed_ms)
         # desk._ask reports a missing binary before any process starts: nothing was sent, so refund the slot.
         never_started = "실행 파일을 찾을 수 없습니다" in (attempt.error or "")
-        raise L2TransportError(diag, "subscription CLI call failed", retry_after, consumed=not never_started)
+        # Provider quota rejection means no inference result was produced; callers may retry the same work
+        # against the next account after profile cooldown. Other errors remain conservatively consumed.
+        raise L2TransportError(
+            diag, "subscription CLI call failed", retry_after,
+            consumed=not never_started and diag != DIAG_USAGE_LIMIT,
+        )
 
+    if len(attempt.text.encode("utf-8")) > max_response_bytes:
+        raise L2TransportError(DIAG_SCHEMA_VIOLATION, "subscription JSON response exceeds size limit")
     try:
         raw_obj = json.loads(attempt.text)
     except json.JSONDecodeError as exc:
         log.warning("Subscription L2 produced non-JSON output (length=%d)", len(attempt.text))
         raise L2TransportError(DIAG_INVALID_JSON, "subscription CLI returned invalid JSON") from exc
 
-    return validate_l2_extraction_schema(raw_obj)
+    return validator(raw_obj)

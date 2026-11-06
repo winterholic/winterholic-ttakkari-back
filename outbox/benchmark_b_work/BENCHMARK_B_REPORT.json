@@ -1,0 +1,111 @@
+{
+  "benchmark_id": "benchmark_b_2d_frame_animation",
+  "target_duration_seconds": 10.0,
+  "measured_duration_seconds": 10.0,
+  "aspect_ratio": "16:9",
+  "resolution": "1280x720",
+  "fps_config": {
+    "production_fps": 12,
+    "playback_fps": 24,
+    "interpolation_mode": "hold",
+    "interpolation_reason": "2D 셀 애니메이션 고유의 스냅과 리듬감을 온전히 보존하고, Optical Flow/AI 프레임 보간 시 발생하는 캐릭터 외곽선 번짐(ghosting) 및 젤리 왜곡을 방지하기 위해 hold 선택"
+  },
+  "character_assets": {
+    "source_layers": [
+      "torso",
+      "head_base",
+      "face_normal",
+      "face_smile",
+      "face_wink",
+      "arm_left",
+      "arm_right",
+      "leg_left",
+      "leg_right"
+    ],
+    "same_source_layer_assets_reused": true,
+    "identity_comparison": "not_performed"
+  },
+  "motion_eval": {
+    "same_source_layer_assets_reused": true,
+    "identity_comparison": "not_performed",
+    "motion_continuity_score": null,
+    "motion_continuity_rating": "not_evaluated",
+    "average_displacement_per_prod_frame": 4.82,
+    "max_displacement_per_prod_frame": 115.01,
+    "total_production_frames_calculated": 120,
+    "teleport_threshold_px": 120.0,
+    "teleport_glitch_detected": false,
+    "evaluation_verdict": "NOT_RATED: 변위 통계만 계산했으며 지각 품질 평가는 수행하지 않음"
+  },
+  "motion_breakdown": [
+    {
+      "time_range": "0.0s - 4.0s",
+      "action": "걷기 동작 (Walk cycle, 사지 교차 스윙, 수직 바운스, 수평 이동)"
+    },
+    {
+      "time_range": "4.0s - 7.0s",
+      "action": "인사 및 윙크 (Wave & Wink, 팔 흔들기, 표정 전환 Normal->Wink->Smile)"
+    },
+    {
+      "time_range": "7.0s - 10.0s",
+      "action": "점프와 환호 (Jump & Cheer, 웅크림->도약 솟구침->체공->안정 착지)"
+    }
+  ],
+  "qa_verdict": {
+    "passed": true,
+    "checks": [
+      {
+        "id": "video_track",
+        "passed": true,
+        "detail": "영상 트랙",
+        "measured": true
+      },
+      {
+        "id": "audio_track",
+        "passed": true,
+        "detail": "오디오 트랙",
+        "measured": true
+      },
+      {
+        "id": "resolution",
+        "passed": true,
+        "detail": "기대 1280x720",
+        "measured": "1280x720"
+      },
+      {
+        "id": "duration",
+        "passed": true,
+        "detail": "계획 10초 ±0.4초",
+        "measured": 10.0
+      },
+      {
+        "id": "not_black",
+        "passed": true,
+        "detail": "검은 화면 비율 90% 미만",
+        "measured": 0.0
+      },
+      {
+        "id": "audible",
+        "passed": true,
+        "detail": "오디오 최대 음량 -60 dB 초과",
+        "measured": {
+          "mean_db": -14.5,
+          "max_db": -1.7
+        }
+      }
+    ],
+    "probe": {
+      "duration": 10.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 24.0,
+      "has_video": true,
+      "has_audio": true
+    }
+  },
+  "remediation_summary": {
+    "issue_found_in_run1": "초기 프레임에서 어깨 연결부 틈새가 있다고 제작 기록에 보고됨(약 8px 추정). 픽셀 측정 자료는 보존되지 않아 수치 독립 검증은 안 됨.",
+    "fix_applied_in_run2": "어깨 조인트 Y 오프셋을 -36px에서 -24px로 변경. 수정 전후 픽셀 차이 측정은 미실행.",
+    "comparison": "파라미터를 변경했으며 수정 전후 간극의 픽셀 비교·독립 시각 판정은 미실행"
+  }
+}

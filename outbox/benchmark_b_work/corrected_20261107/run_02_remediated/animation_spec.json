@@ -1,0 +1,1617 @@
+{
+  "project_id": "benchmark_b_mascot_2d",
+  "title": "Benchmark-B Run 2 (Remediated Final)",
+  "aspect_ratio": "16:9",
+  "target_duration": 10.0,
+  "production_fps": 12,
+  "playback_fps": 24,
+  "interpolation_mode": "hold",
+  "interpolation_reason": "2D 셀 애니메이션 고유의 스냅과 리듬감을 온전히 보존하고, Optical Flow/AI 프레임 보간 시 발생하는 캐릭터 외곽선 번짐(ghosting) 및 젤리 왜곡을 방지하기 위해 hold 선택",
+  "scenes": [
+    {
+      "scene_id": "scene_01_walk",
+      "duration_seconds": 4.0,
+      "background_type": "color",
+      "background_value": "#2B2D42",
+      "keyframes": [
+        [
+          0.0,
+          {
+            "pose_id": "walk_0",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -160.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          1.0,
+          {
+            "pose_id": "walk_1",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 2.82842712474619,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -105.0,
+            "root_y": -14.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          2.0,
+          {
+            "pose_id": "walk_2",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -3.91886975727153e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 3.91886975727153e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 3.429011037612589e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -3.429011037612589e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 4.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -50.0,
+            "root_y": -1.7145055188062944e-15,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          3.0,
+          {
+            "pose_id": "walk_3",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 2.8284271247461903,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": 5.0,
+            "root_y": -14.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          4.0,
+          {
+            "pose_id": "walk_4",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 7.83773951454306e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -7.83773951454306e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -6.858022075225178e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 6.858022075225178e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 4.898587196589413e-16,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": 60.0,
+            "root_y": -3.429011037612589e-15,
+            "root_scale": 1.0
+          }
+        ]
+      ],
+      "camera_keyframes": [
+        {
+          "time_sec": 0.0,
+          "center_x": 0.46,
+          "center_y": 0.5,
+          "zoom": 1.0
+        },
+        {
+          "time_sec": 4.0,
+          "center_x": 0.5,
+          "center_y": 0.5,
+          "zoom": 1.05
+        }
+      ],
+      "subtitles": [
+        {
+          "start_sec": 0.3,
+          "end_sec": 3.7,
+          "text": "따까리 2D 캐릭터가 리듬감 있게 걸어옵니다.",
+          "style": "bottom_card"
+        }
+      ],
+      "transition_in": "none",
+      "transition_out": "none"
+    },
+    {
+      "scene_id": "scene_02_wave",
+      "duration_seconds": 3.0,
+      "background_type": "color",
+      "background_value": "#2B2D42",
+      "keyframes": [
+        [
+          0.0,
+          {
+            "pose_id": "wave_start",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -20.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 10.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          0.4,
+          {
+            "pose_id": "wave_up",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -140.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 15.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -6.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          0.833,
+          {
+            "pose_id": "wave_swing_1",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -115.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 15.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -1.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          1.267,
+          {
+            "pose_id": "wave_swing_2",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -140.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 10.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -5.999999999999999,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          1.7,
+          {
+            "pose_id": "wave_swing_3",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -165.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 5.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -11.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          2.133,
+          {
+            "pose_id": "wave_swing_4",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -140.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 9.999999999999998,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -6.000000000000001,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "wink"
+              }
+            },
+            "expression": "wink",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          2.567,
+          {
+            "pose_id": "wave_swing_5",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -115.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 15.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -1.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          3.0,
+          {
+            "pose_id": "wave_swing_6",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -140.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 10.000000000000002,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -5.999999999999998,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ]
+      ],
+      "camera_keyframes": [
+        {
+          "time_sec": 0.0,
+          "center_x": 0.5,
+          "center_y": 0.5,
+          "zoom": 1.05
+        },
+        {
+          "time_sec": 3.0,
+          "center_x": 0.52,
+          "center_y": 0.5,
+          "zoom": 1.18
+        }
+      ],
+      "subtitles": [
+        {
+          "start_sec": 0.2,
+          "end_sec": 2.8,
+          "text": "분리 레이어로 일관된 표정과 인사 제스처를 전달합니다.",
+          "style": "bottom_card"
+        }
+      ],
+      "transition_in": "none",
+      "transition_out": "none"
+    },
+    {
+      "scene_id": "scene_03_jump",
+      "duration_seconds": 3.0,
+      "background_type": "color",
+      "background_value": "#2B2D42",
+      "keyframes": [
+        [
+          0.0,
+          {
+            "pose_id": "jump_anticipation",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 35.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -35.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -15.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 15.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": 60.0,
+            "root_y": 25.0,
+            "root_scale": 0.95
+          }
+        ],
+        [
+          0.75,
+          {
+            "pose_id": "jump_peak",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -155.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 155.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -20.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 20.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": -90.0,
+            "root_scale": 1.05
+          }
+        ],
+        [
+          1.5,
+          {
+            "pose_id": "jump_float",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -165.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 165.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -10.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 10.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "wink"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": -70.0,
+            "root_scale": 1.02
+          }
+        ],
+        [
+          2.25,
+          {
+            "pose_id": "jump_landing",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -70.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 70.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -12.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 12.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 18.0,
+            "root_scale": 0.96
+          }
+        ],
+        [
+          3.0,
+          {
+            "pose_id": "jump_settle",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -20.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 20.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "smile"
+              }
+            },
+            "expression": "smile",
+            "root_x": 60.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ]
+      ],
+      "camera_keyframes": [
+        {
+          "time_sec": 0.0,
+          "center_x": 0.52,
+          "center_y": 0.5,
+          "zoom": 1.18
+        },
+        {
+          "time_sec": 1.5,
+          "center_x": 0.5,
+          "center_y": 0.5,
+          "zoom": 1.12
+        },
+        {
+          "time_sec": 3.0,
+          "center_x": 0.5,
+          "center_y": 0.5,
+          "zoom": 1.0
+        }
+      ],
+      "subtitles": [
+        {
+          "start_sec": 0.2,
+          "end_sec": 2.8,
+          "text": "도약과 착지, 표정 변화를 갖춘 2D 리깅 애니메이션 완성!",
+          "style": "bottom_card"
+        }
+      ],
+      "transition_in": "none",
+      "transition_out": "none"
+    }
+  ],
+  "audio_bgm": null,
+  "character_id": "ttakkari_mascot",
+  "metadata": {}
+}

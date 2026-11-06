@@ -86,7 +86,7 @@ index 83ceaede..5eed09a7 100644
          # 2. Direct promotion of system seed method must be rejected with 422
 ```
 
-## 배포 gate 결과
+## 이전 부분 커밋의 검사 기록 (최종 검사 아님)
 
 ```text
 $ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-0464247c ./scripts/verify_deploy_gate.sh --commit d6a270192cc8b0507b6c98929c9cd496c4be0656 --base fe90547e09136551a482457b18d88082298fd855
@@ -105,7 +105,7 @@ All checks passed!
 
 원본 `fe90547e`에서도 동일한 Ruff baseline이 확인됐다. 새 import 정렬만 교정했으며 기존 mock class의 `RUF012` 12건은 범위 밖이라 수정하지 않았다. 전체 gate는 Ruff 때문에 실패했으며 성공으로 기록하지 않는다.
 
-최종 대상은 커밋 `7050e6e472a8b356abe9d37e2c8cd726f53176d8`이다. 같은 코드 변경을 포함한 이 SHA에 다시 gate를 실행했다.
+이 단락의 `7050e6e472a8b356abe9d37e2c8cd726f53176d8`은 Ruff 교정/최신 main 통합 전의 중간 SHA다. 최종 커밋과 혼동하지 않는다.
 
 ```text
 $ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-0464247c ./scripts/verify_deploy_gate.sh --commit 7050e6e472a8b356abe9d37e2c8cd726f53176d8 --base fe90547e09136551a482457b18d88082298fd855
@@ -115,6 +115,16 @@ $ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-0464247c ./scripts/verify_deploy_g
 사전 검증 실패 1건: ruff (변경된 파이썬 1개)
 ```
 
+## 최신 main 통합 및 Ruff 교정 후속
+
+- 현재 Run `43cdcc43-f1bc-43ee-bd94-36674007bc84`의 `/api/runs/{UUID}` 결과 profile은 `회사 코덱스 ai2`, engine `codex`, model `gpt-6-luna`, effort `high`다.
+- `git fetch origin main` 뒤 통합 기준은 `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`. 원격의 fixture에는 아직 선택 측정값이 없고, service.py는 `best_result_metric_not_measured_on_selected_run` exact finite measurement 검증을 유지한다.
+- `git merge --no-edit origin/main`은 merge commit `b9f0179144f58c08421d8ee15fd2b8c52fe57fff`로 성공했다. 부모는 기존 source `8f04cb3ca6ce85674e07343e2aa609be6815363e`와 main `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`; 병합된 타 세션 파일은 보존했다.
+- 카탈로그 테스트의 여섯 mock adapter는 `supported_methods`와 `supported_parameters`를 실행 지원 capability로 읽는다. 이 테스트 파일에서 두 목록의 변경/mutation은 없다. 프로젝트 source와 tests가 `ClassVar[list[str]]`를 같은 class-level capability/list 선언에 쓰므로 여섯 mock의 12개 list 속성에 `ClassVar[list[str]]`를 명시했다. 값과 테스트 동작은 유지된다.
+- fixture `Measurement(metric_key="decode_tps", value=42.0)` 및 system seed 거부·user-scope promotion/sync assertion은 merge 뒤에도 남아 있다.
+- Ruff 정적 검사 `../back/.venv/bin/ruff check tests/test_catalog_seed_readiness_path.py`와 `git diff --check`는 통과했다.
+- 현재 Run의 `TTAKKARI_TEST_DB`는 URL의 `ttakkari_test`, `127.0.0.1:52972`와 실제 접속 `current_database=ttakkari_test`, `current_user=ttk_test`가 일치한다. 하지만 `/tmp/ttakkari-run-test-*/run-test-cluster.marker` 12개 중 현재 Run UUID 또는 port `52972`를 소유한 marker는 0개였다. 소유 증명 없는 DB에서 suite를 쓰지 않으므로 집중 DB 검사와 `verify_deploy_gate.sh`는 실행하지 않았다. 이전 `8f04cb3c` 시점 검사 결과를 현재 SHA의 통과로 재사용하지 않는다.
+
 ## 범위
 
-수정 파일은 테스트 fixture 하나와 이 evidence 기록이다. 서비스 검증, 운영 DB, 계정, 바이너리와 provider 실행은 변경하지 않았다.
+후속 변경은 테스트 fixture의 명시적 `ClassVar` 타입과 이 evidence 기록이다. 서비스 검증, 운영 DB, 계정, 바이너리와 provider 실행은 변경하지 않았다.

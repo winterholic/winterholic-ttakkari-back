@@ -23,10 +23,10 @@ GOAL = "검색 증강 생성의 비용과 정확도 비교"
 CONTEXT = "가상 문서 임베딩은 검색 증강 생성의 정확도를 높인다. 이 문장은 다른 자료와 겹치지 않는 완전히 별개의 사안이다."
 
 
-async def open_source(client, auth, env, hosts=("docs.test", "other.test"), key="research-fixture"):  # noqa: F811
-    body = source_body(source_key=key, seeds=[env.server.url("/seed", host=hosts[0])], max_pages=30)
+async def open_source(client, auth, env, hosts=("docs.test", "other.test"), key="research-fixture", max_depth=0):  # noqa: F811
+    body = source_body(source_key=key, seeds=[env.server.url("/seed", host=hosts[0])], max_pages=30, max_depth=max_depth)
     body["policy"].update(allowed_hosts=list(hosts), schemes=["http"], ports=[env.server.port], min_delay_seconds=0,
-                          max_pages_per_job=30)
+                          max_pages_per_job=30, max_depth=max_depth)
     assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
 
 
@@ -46,6 +46,41 @@ async def drain(monkeypatch, env, *, rounds=60):  # noqa: F811
 
 async def mission(client, auth, mid):
     return (await client.get(BASE + "/missions/" + mid, headers=auth)).json()
+
+
+@pytest.mark.parametrize("from_search", [True, False])
+async def test_search_article_does_not_expand_to_unrelated_host_posts(client, auth, env, monkeypatch, from_search):  # noqa: F811
+    await open_source(client, auth, env, max_depth=2)
+    url = env.server.url("/robotics")
+    nav = "<nav><a href='/'>home</a> <a href='/about'>about</a></nav>"
+    env.server.page("/robotics", article_html("Physical AI robotics", [prose("en", 380, 15)]).replace(nav, "")
+                    + '<a href="/unrelated">Ubuntu installation guide</a>')
+    env.server.page("/unrelated", article_html("Ubuntu installation guide", [prose("en", 381, 15)]).replace(nav, ""))
+
+    async def search(query, **kwargs):
+        return [candidate(url, query)]
+    monkeypatch.setattr(adapters, "search_web", search)
+    made = (await client.post(BASE + "/missions", headers=auth, json={
+        "goal": "Physical AI robotics", "urls": [] if from_search else [url], "max_pages": 3, "max_depth": 2,
+    })).json()
+    await drain(monkeypatch, env)
+    assert env.server.count("/robotics") == 1
+    assert env.server.count("/unrelated") == (0 if from_search else 1)
+    detail = await mission(client, auth, made["id"])
+    assert detail["counts"]["acquired"] == (1 if from_search else 2)
+    if not from_search:
+        # Recreate a pre-fix search source with a broad request and cached host pages.
+        # A rerun must not revive those pages through the incremental-refresh cursor.
+        from ttakkari.collector_models import CollectionMission
+
+        async with sessionmaker()() as db:
+            row = await db.scalar(select(CollectionMission).where(CollectionMission.id == made["id"]))
+            row.plan = {**row.plan, "sources": [{**s, "provenance": "web_search"} for s in row.plan["sources"]]}
+            await db.commit()
+        response = await client.post(f"{BASE}/missions/{made['id']}/rerun", headers=auth)
+        assert response.status_code == 200, response.text
+        await drain(monkeypatch, env)
+        assert env.server.count("/unrelated") == 1
 
 
 def site(env):  # noqa: F811
@@ -100,6 +135,34 @@ def fake_papers(urls):
                   "year": 2019, "venue": "Journal", "abstract": None, "doi": ref["identifier"], "pdf_url": None}
         return paper._finish(record, rights, "crossref")
     return resolve
+
+
+async def test_invalid_paper_policy_is_metadata_only_and_other_open_papers_continue(client, auth, env, monkeypatch):  # noqa: F811
+    urls = site(env)
+    original = fake_papers(urls)
+
+    async def resolve(ref, **kwargs):
+        record = await original({**ref, "identifier": "2005.11401"})
+        if ref["identifier"] == "2005.11402":
+            return {**record, "identifier": "2005.11402", "canonical_url": ref["canonical_url"],
+                    "pdf_url": env.server.url("/bad-license.pdf"),
+                    "license": {**record["license"], "url": "http://publisher.test/custom-grant"}}
+        return {**record, "license": {**record["license"], **paper.license_from_url(
+            "http://creativecommons.org/licenses/by/4.0/", source="arxiv_oai")}}
+
+    monkeypatch.setattr(paper, "resolve", resolve)
+    made = (await client.post(BASE + "/missions", headers=auth, json={
+        "goal": "RAG 논문 수집", "urls": ["https://arxiv.org/abs/2005.11402", "https://arxiv.org/abs/2005.11401"],
+    })).json()
+    await drain(monkeypatch, env)
+    detail = await mission(client, auth, made["id"])
+    assert not any(j["status"] == "failed" for j in detail["jobs"]), detail["jobs"]
+    papers = {p["identifier"]: p for p in detail["plan"]["papers"]}
+    assert papers["2005.11402"]["fulltext"] == "metadata_only"
+    assert papers["2005.11401"]["fulltext"] == "allowed"
+    assert any(g["reason"] == "paper_policy_invalid" for g in detail["gaps"])
+    assert env.server.count("/bad-license.pdf") == 0
+    assert detail["counts"]["imported"] == 1
 
 
 async def test_topic_without_urls_becomes_followup_research_with_real_coverage_papers_and_context_relations(client, auth, env, monkeypatch):  # noqa: F811

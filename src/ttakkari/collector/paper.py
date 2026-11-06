@@ -12,7 +12,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from lxml import etree
 
@@ -40,8 +40,11 @@ def license_from_url(url: str | None, *, source: str) -> dict:
     normalized = re.sub(r"^https?://(www\.)?", "", (url or "").strip().lower()).rstrip("/")
     normalized = re.sub(r"/(legalcode|deed)(\.\w+)?$", "", normalized)
     match = re.fullmatch(r"creativecommons\.org/(?:licenses|publicdomain)/(.+)", normalized)
-    spdx = _CC.get(match.group(1)) if match else None
-    return {"id": spdx, "url": url, "source": source,
+    spdx = _CC.get(match.group(1)) if match and urlsplit((url or "").strip()).scheme.lower() in {"http", "https"} else None
+    # Providers still report the HTTP spelling of CC grants. The source-policy
+    # contract requires HTTPS; upgrade only a recognized CC URL and keep the input.
+    policy_url = re.sub(r"^http://", "https://", url.strip(), flags=re.IGNORECASE) if spdx else url
+    return {"id": spdx, "url": policy_url, "reported_url": url, "source": source,
             "permission": "allowed" if spdx in adapters.PERMISSIVE_LICENSES else "unknown"}
 
 

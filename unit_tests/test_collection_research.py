@@ -188,6 +188,16 @@ def test_only_provider_reported_open_licenses_allow_full_text():
         assert paper.license_from_url(url, source="x")["permission"] == "unknown"
 
 
+def test_http_creative_commons_grant_uses_https_policy_and_keeps_reported_url():
+    observed = "http://creativecommons.org/licenses/by/4.0/"
+    rights = paper.license_from_url(observed, source="arxiv_oai")
+    assert rights["permission"] == "allowed"
+    assert rights["url"] == "https://creativecommons.org/licenses/by/4.0/"
+    assert rights["reported_url"] == observed
+    unknown = paper.license_from_url("http://publisher.test/custom-license", source="crossref")
+    assert unknown["permission"] == "unknown" and unknown["url"].startswith("http://")
+
+
 ATOM = b"""<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
 <entry><id>http://arxiv.org/abs/2005.11401v4</id><title>Retrieval-Augmented
  Generation</title><summary>Abstract text.</summary><published>2020-05-22T00:00:00Z</published>

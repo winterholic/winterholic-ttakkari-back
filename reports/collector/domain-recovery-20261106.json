@@ -1,0 +1,96 @@
+{
+  "active_revision": "3e40791c6a3890511ac8284c3858bc584c890089",
+  "missions": [
+    {
+      "kind": "robotics",
+      "old_id": "ec71b61e-19fa-4d46-a5f0-3ab468447c23",
+      "new_id": "c0307b64-0205-48a6-a10e-595ee2dd523a",
+      "request_key": "scope-repair:ec71b61e-19fa-4d46-a5f0-3ab468447c23",
+      "title": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서",
+      "status": "running",
+      "run_seq": 1,
+      "plan_queries": [
+        "로보틱스·피지컬 AI 개념 이론 정리",
+        "·physical AI theory fundamentals survey",
+        "로보틱스·피지컬 AI 비교 대안 차이",
+        "·physical AI comparison alternatives",
+        "로보틱스·피지컬 AI 확장성 운영 사례",
+        "·physical AI scalability production deployment",
+        "로보틱스·피지컬 AI 정확도 평가 벤치마크",
+        "·physical AI accuracy evaluation benchmark",
+        "로보틱스·피지컬 AI 논문",
+        "·physical AI research paper arxiv"
+      ],
+      "counts": {
+        "discovered": 0,
+        "acquired": 0,
+        "accepted": 0,
+        "held": 0,
+        "failed": 0,
+        "blocked": 0,
+        "duplicate": 0,
+        "imported": 0,
+        "pending_delivery": 0,
+        "not_imported": 0,
+        "review_needed": 0,
+        "auto_accepted": 0,
+        "auto_held": 0,
+        "precise_waiting": 0,
+        "precise_unresolved": 0
+      }
+    },
+    {
+      "kind": "harness",
+      "old_id": "64299d2f-a776-4437-921e-124a7b859ebd",
+      "new_id": "202305ec-a584-4998-87dd-c7e47cbc5384",
+      "request_key": "scope-repair:64299d2f-a776-4437-921e-124a7b859ebd",
+      "title": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+      "status": "running",
+      "run_seq": 1,
+      "plan_queries": [
+        "AI Harness Engineering 개념 이론 정리",
+        "AI Harness Engineering theory fundamentals survey",
+        "AI Harness Engineering 확장성 운영 사례",
+        "AI Harness Engineering scalability production deployment",
+        "AI Harness Engineering 정확도 평가 벤치마크",
+        "AI Harness Engineering accuracy evaluation benchmark",
+        "AI Harness Engineering 비용 효율",
+        "AI Harness Engineering cost efficiency",
+        "AI Harness Engineering 논문",
+        "AI Harness Engineering research paper arxiv"
+      ],
+      "counts": {
+        "discovered": 0,
+        "acquired": 0,
+        "accepted": 0,
+        "held": 0,
+        "failed": 0,
+        "blocked": 0,
+        "duplicate": 0,
+        "imported": 0,
+        "pending_delivery": 0,
+        "not_imported": 0,
+        "review_needed": 0,
+        "auto_accepted": 0,
+        "auto_held": 0,
+        "precise_waiting": 0,
+        "precise_unresolved": 0
+      }
+    }
+  ],
+  "stage": "initial_creation_receipt_2026-11-06T08:58Z",
+  "followup": {
+    "observed_at": "2026-11-06T09:11Z",
+    "verification": "failed",
+    "reasons": [
+      "paper_policy_http_url_preparation_failure",
+      "web_result_host_crawl_off_topic"
+    ],
+    "recovery_missions_cancelled": true,
+    "imported_preserved": {
+      "robotics": 33,
+      "harness": 0
+    },
+    "next_request_key_prefix": "scope-repair-v2:"
+  }
+}

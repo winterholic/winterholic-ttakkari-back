@@ -350,7 +350,11 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
 
         left_weight = sum(_source_weight(rest["entry"]) for rest in need_work[index:]) or 1
         fair_share = max(1, remaining * _source_weight(entry) // left_weight)
-        pages = min(policy.max_pages_per_job, fair_share)
+        # A search result names one page, not permission to explore its host's blog,
+        # tags and navigation. Wider collection still belongs to explicit/catalog roots.
+        page_only = entry.get("provenance") == "web_search" and entry["adapter"] == "website"
+        pages = 1 if page_only else min(policy.max_pages_per_job, fair_share)
+        depth = 0 if page_only else min(policy.max_depth, mission.plan["budget"]["depth"])
         mission_ext = {"id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
                        "reference": entry, "run_seq": run_seq}
 
@@ -361,16 +365,18 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             source, _ = await control.register_source(
                 db, ctx, source_key=item["key"], title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
                 interval_minutes=mission.plan.get("schedule", {}).get("interval_minutes"),
-                max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
+                max_pages=pages, max_depth=depth,
                 profile="general", auto_import=True)
             await db.flush()
+        elif page_only:
+            source.request = {**source.request, "max_depth": 0, "max_pages": 1}
 
         if item["kind"] == "new":
             try:
                 async with db.begin_nested():
                     job = await control.enqueue(
                         db, source, extensions={"collector:mission": mission_ext}, max_pages=pages,
-                        cursor=await refresh_cursor(db, source, latest_by_source.get(item["key"])))
+                        cursor=None if page_only else await refresh_cursor(db, source, latest_by_source.get(item["key"])))
             except JobStateError as exc:
                 gaps.append({"url": entry["url"], "reason": "daily_page_budget" if "daily" in str(exc) else "source_unavailable",
                              "message": "지금은 이 출처를 수집할 수 없습니다: " + str(exc)[:200]})

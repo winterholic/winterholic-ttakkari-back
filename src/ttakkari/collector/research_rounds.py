@@ -343,9 +343,20 @@ async def paper_phase(job, ctx, mission_id: uuid.UUID, done: list[str]):
                                "via": _entry.get("provenance"), "topics": _entry.get("topics") or []})
                 doc = paper.document_for(_record, _entry.get("topics"))
                 if doc is not None:
-                    if doc["url"] not in {s["url"] for s in sources}:
-                        sources.append(doc)
-                    await missions.register_document_license(db, current, doc)
+                    try:
+                        async with db.begin_nested():
+                            await missions.register_document_license(db, current, doc)
+                    except ValueError as exc:
+                        # One unusable provider grant must not roll back all paper
+                        # preparation. Keep its metadata and explicit gap, never fetch it.
+                        papers[-1] = {**papers[-1], "fulltext": "metadata_only", "rights_note": "전문 출처 정책 등록 실패"}
+                        papers[-1].pop("pdf_url", None)
+                        gaps.append({"url": _entry["url"], "identifier": _ref["identifier"], "reason": "paper_policy_invalid",
+                                     "message": "전문 출처 정책을 등록하지 못해 서지 정보만 보존했습니다.",
+                                     "error_type": type(exc).__name__})
+                    else:
+                        if doc["url"] not in {s["url"] for s in sources}:
+                            sources.append(doc)
                 else:
                     gaps.append({"url": _entry["url"], "identifier": _ref["identifier"], "reason": "paper_rights_unregistered",
                                  "message": _record["rights_note"]})

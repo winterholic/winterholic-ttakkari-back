@@ -60,7 +60,7 @@ async def test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_ev
     assert tri["axes"]["topic_relevance_semantic"]["validation"] == "validated"
     assert tri["axes"]["relevance_lexical"]["validation"] == "unvalidated"
     assert tri["axes"]["explanation_quality"]["status"] == "unmeasured"
-    assert tri["precise_eval"]["state"] == "pending" and tri["precise_eval"]["engine"]["status"] == "unavailable"
+    assert tri["precise_eval"]["state"] == "pending" and tri["precise_eval"]["engine"]["status"] == "unavailable", tri["precise_eval"]
     summary = detail["triage"]
     assert summary["precise_eval"]["pending"] == 1 and summary["precise_eval"]["skipped_cap"] == 0
     assert summary["precise_eval"]["processing"] == 0 and summary["precise_eval"]["unresolved"] == 0
@@ -81,6 +81,37 @@ async def test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_ev
         assert "validation=validated" in quality["relevance"]["evidence"]
         assert quality["education"]["status"] == "measured" and quality["education"]["scale"] == "ordinal"
         assert row.envelope["extensions"]["collector:triage"]["stage2"]["effects"] == ["rescued_from_lexical_hold"]
+
+
+async def test_ready_engine_with_unavailable_scope_stays_waiting(client, auth, env, monkeypatch):  # noqa: F811
+    import time
+
+    from ttakkari.collector import precise_eval
+
+    monkeypatch.setattr(triage_ml, "evaluate_documents", fake_ml())
+
+    async def unavailable_scope(*, scope):
+        assert scope == "personal"
+        return False, "scope_capacity_unavailable", time.time() + 60
+
+    async def forbidden_evaluate(**_kwargs):
+        raise AssertionError("evaluation must not run without scoped capacity")
+
+    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
+        status=lambda: {"status": "ready", "provider_engine": "codex", "model": "fixture"},
+        availability=unavailable_scope,
+        evaluate=forbidden_evaluate,
+    ))
+    mission = await register(client, auth, env)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+
+    detail = (await client.get(BASE + "/missions/" + mission["id"], headers=auth)).json()
+    precise = detail["results"][0]["triage"]["precise_eval"]
+    assert precise["state"] == "pending"
+    assert precise["engine"]["status"] == "waiting"
+    assert precise["engine"]["detail"] == "scope_capacity_unavailable"
+    assert precise["retry_after"] > time.time()
+    assert detail["triage"]["precise_eval"]["engine"] == "ready"
 
 
 async def test_precise_queue_cap_is_per_job_and_keeps_the_document(client, auth, env, monkeypatch):  # noqa: F811

@@ -465,8 +465,9 @@ async def consume_pending_once(
         except EvaluatorUnavailable as exc:
             configured = engine_status()
             engine_info = {k: configured[k] for k in ("provider_engine", "model") if configured.get(k)}
+            status = "waiting" if configured.get("status") == "ready" else "unavailable"
             await _finish_pending_claim(
-                claimed_id, claim_token, state="pending", detail=str(exc), status="waiting",
+                claimed_id, claim_token, state="pending", detail=str(exc), status=status,
                 retry_after=exc.retry_after, engine_info=engine_info,
             )
             break

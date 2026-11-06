@@ -13,7 +13,7 @@
 → status=running, profile=회사 코덱스 ai2 (ai2@hyperez.io)
 ```
 
-착수 d0 후보는 `d0f7a24430218f1d79c91b57407e91673dcb1f12`, 브랜치 `feat/creative-production-20261107`였다. 기존 후보 경로는 tracked 변경 없이 7개의 untracked render/benchmark 디렉터리·파일을 가지고 있었다. 이를 수정·정리하지 않았다. 기존 `-verify`와 `-static-verify`는 둘 다 d0 SHA의 detached clean worktree였다.
+착수 d0 후보는 `d0f7a24430218f1d79c91b57407e91673dcb1f12`, 브랜치 `feat/creative-production-20261107`였다. 기존 후보 경로는 tracked 변경 없이 7개의 untracked render/benchmark 디렉터리·파일을 가지고 있었다. 이를 수정·정리하지 않았다. 기존 `-verify`는 a398 SHA, `-static-verify`는 d0 SHA의 detached clean worktree였다.
 
 ## 원격 확인과 격리 통합
 

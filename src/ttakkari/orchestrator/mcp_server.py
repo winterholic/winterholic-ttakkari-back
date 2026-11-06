@@ -537,7 +537,9 @@ async def keep_artifact(path: str, quote: str) -> str:
 
 @server.tool()
 async def notify_user(title: str, body: str = "") -> str:
-    """Send a push notification to the user's phone. Only for things they must see now."""
+    """Send a notification when its type is enabled in the user's preferences. Only for things they must see now.
+    Main and child-agent notifications have separate settings; child-agent notifications default to off.
+    A disabled type is neither pushed nor added to the inbox. Device push delivery also requires a subscription."""
     return await _agent("POST", "/notify", {"title": title, "body": body})
 
 

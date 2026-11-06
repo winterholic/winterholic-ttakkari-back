@@ -1,4 +1,5 @@
-"""알림함 저장과 Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패, 사용자가 켠 일정 알림.
+"""알림함 저장과 Web Push. 유형별 수신 설정이 켜진 알림만 저장·발송한다.
+메인·하위 에이전트 알림을 구분하며 하위 알림은 기본 꺼짐이다.
 성공 완료·취소·서버 재시작 중단은 알리지 않는다. 실패해도 Run 기록에는 영향을 주지 않는다(호출한 manager 가 예외를 잡는다)."""
 
 from __future__ import annotations
@@ -137,7 +138,8 @@ async def notify(kind: PushKind, title: str, body: str = "", *, url: str = "/cha
                  target_id: Any = None, dedupe_key: str | None = None,
                  source_session_id: uuid.UUID | None = None) -> dict[str, int]:
     """푸시 발송의 유일한 진입점. 기능 쪽에서는 `await notify(PushKind.x, "제목", "본문", url=...)` 한 줄이면 된다.
-    구독 유무·전송 결과와 무관하게 알림함에 먼저 저장한다. 같은 `tag` 는 기기에서만 합쳐지고 알림함은 개별 기록을 남긴다.
+    수신 설정이 꺼진 유형은 새 알림함 저장과 푸시를 모두 생략한다. 켜진 유형만 구독 유무·전송 결과와 무관하게
+    알림함에 먼저 저장한다. 같은 `tag` 는 기기에서만 합쳐지고 알림함은 개별 기록을 남긴다.
     결과 집계는 감사 로그 `kind` 값으로 남는다."""
     from ttakkari.push.preferences import enabled
 

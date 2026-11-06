@@ -143,7 +143,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "host_operation_cancel", "group": "서버", "who": "모든 실행", "desc": "진행 중인 운영 작업을 취소한다(이미 만든 백업은 보존)"},
     {"name": "collection_mission_status", "group": "수집", "who": "모든 실행", "desc": "수집 임무의 실제 수집·적재 수, 현재 회차의 실패 종류와 출처 정책 누락을 확인한다"},
     {"name": "collection_mission_retry", "group": "수집", "who": "모든 실행", "desc": "실패 원인을 확인한 임무를 새 회차로 재시도한다. 회차가 달라졌거나 진행 중인 작업이 있으면 거절한다"},
-    {"name": "notify_user", "group": "알림", "who": "모든 실행", "desc": "폰으로 푸시 알림을 보낸다"},
+    {"name": "notify_user", "group": "알림", "who": "모든 실행", "desc": "켜진 유형만 알림함에 저장하고 구독 기기에 푸시한다. 하위 알림은 기본 꺼짐"},
     {"name": "list_sessions", "group": "대화", "who": "모든 실행", "desc": "최근 대화 목록"},
     {"name": "read_session", "group": "대화", "who": "모든 실행", "desc": "다른 대화의 최근 지시·결과"},
     {"name": "list_memo_categories", "group": "메모", "who": "모든 실행", "desc": "메모 카테고리 목록(순서대로)"},

@@ -10,9 +10,11 @@
 
 CLI 비교는 `python -m ttakkari.reverse_compare --workspace <workspace> --spec <json>`으로 실행한다. API 비교는 HTTP(S) allowlist를 사용하고 redirect를 따라가지 않으며 URL의 민감 쿼리와 비밀 헤더를 캡처에서 가린다. 비교기 및 실측 `/usr/bin/basename` 증거는 [harness.md](harness.md), [contract-v2.md](contract-v2.md), [evidence](evidence/basename-direct-run-20261107)에 있다.
 
-직접 불일치는 `max_repair_attempts`(최대 3) 횟수 안에서 기존 구현 세션에 결함 중심 Run을 큐에 넣는다. 매 회차와 독립 검증 Run은 rounds에 남고 이전 latest 보고서·실패는 history로 이동한다. 분석 모드는 소스 없이 관찰·가설·미확인으로 종료할 수 있다. 정확도 종합 점수는 제공하지 않는다.
+구현 또는 독립 검증의 직접 비교 불일치는 `max_repair_attempts`(최대 3) 횟수 안에서 기존 구현 세션에 결함 중심 Run을 큐에 넣고 매번 새 독립 검증을 만든다. verifier는 자신의 비교가 1건 이상이고 모두 match이며 필수 검사 증거가 유효해야 통과한다. verifier 비교·실패·검사 기록은 `latest.verification_*`과 `verification_report`에 구현 결과와 구분해 보존한다. 매 회차와 독립 검증 Run은 rounds에 남고 이전 latest 보고서·실패는 history로 이동한다. 중지된 Run은 부분 상태로 남아 retry할 수 있다. 분석 모드는 소스 없이 직접 관찰 또는 문서 근거와 분리된 가설·미확인으로 종료할 수 있다. 정확도 종합 점수는 제공하지 않는다.
 
-재현 보고서에 README, 환경, 의존성, 실행 명령, 테스트 명령이 있어야 하며 README·소스·테스트·실행 로그를 기존 다운로드 ZIP에 담는다. 파일 접근은 Workspace 경로 정책과 기존 API 계약을 따른다. 수정 결과마다 별도 실행 로그가 검증되어야 한다.
+관찰은 `level=direct|document|inferred|unverified`와 근거를 보존한다. level이 없는 구형 보고서는 `unverified`다. auto 모드는 “분석만/재현하지 말고” 의도를 분석 전용으로 추천하고, 제목이 없으면 대상 중심 짧은 제목을 제안한다. 상세 조회의 `result`는 v2 객체를 유지하며 최상위 `latest`, `history`, `result_state`는 그 객체와 같은 최신 상태를 가리킨다.
+
+재현 보고서에 README, 환경, 의존성, 실행 명령, 테스트 명령이 있어야 하며 README·소스·안전한 의존성 명세·테스트·실행 로그와 허용된 비교 manifest/raw capture를 기존 다운로드 ZIP에 담는다. 경로 탈출·심링크·민감 파일·의존성 파일 안의 비밀 문자열은 제외한다. 파일 접근은 Workspace 경로 정책과 기존 API 계약을 따른다. 수정 결과마다 별도 실행 로그가 검증되어야 한다.
 
 ## 실행과 한계
 

@@ -62,3 +62,39 @@ $ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/ba
 - work-history 원격 ref `feat/reverse-evidence-20261107`는 `git fetch`에서 `fatal: couldn't find remote ref`가 나 최신화하지 못했다. 시작 시 checkout 기준으로 작업했다.
 - 자동 repair는 최대 3회까지 구현 세션에 요청을 큐잉한다. 외부 모델이 실제 결함을 고치는지 여부는 fixture 기반 DB 통합 테스트 범위이며 운영 모델 작업은 실행하지 않았다.
 - 비교 raw capture는 최대 1 MiB JSON 및 지정 출력/timeout 한도 내에서만 검증한다. 해시와 파일 정합성은 사후 변조를 탐지하지만 원본 대상의 진실성 자체를 증명하지 않는다.
+
+## 후속 판정 교정 — 2026-11-07
+
+기존 5b65f345/5c45fc0b/c016b6e6/90bfefea와 위의 이전 실행 기록은 보존한다. 이번 후속은 CLI/API 완료 판정 및 응답 계약에 한정하며 웹 캡처·픽셀 판정은 확장하지 않았다.
+
+### 실행 결과
+
+먼저 지정 반례를 회귀로 고정했다. 새 테스트는 기존 코드에서 verifier가 비교 0건인데 `done`이 되는 것을 재현했다.
+
+```text
+$ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q tests/test_reverse_reconstruction.py::test_completion_requires_files_then_queues_independent_verification
+FAILED: AssertionError: assert 'done' == 'partial'
+```
+
+```text
+$ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py tests/test_reverse_compare_api.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py
+91 passed in 11.26s
+```
+
+같은 `test_reverse_compare` 기본 이름을 쓰던 API 테스트 파일을 `tests/test_reverse_compare_api.py`로 바꿔 단일 pytest 호출에서 충돌하지 않게 했다. 단일 호출은 독립 verifier 자체 비교 0건/mismatch, verifier 필수검사 실패, verifier mismatch repair→새 verification, callback 중복·늦은 callback, 중지 후 retry/history, 상세 v2 응답, 관찰 수준·분석 전용 추천, 안전한 ZIP 내보내기를 포함한다.
+
+```text
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/api/reverse.py tests/test_reverse_reconstruction.py tests/test_reverse_compare_api.py unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py
+All checks passed!
+$ git diff --check
+(출력 없음, exit 0)
+```
+
+### 판정 범위
+
+- 독립 verifier는 자신의 검증된 비교와 필수 검사 증거를 모두 통과해야 한다. 실패 비교·검사 보고는 구현자의 비교와 분리해 latest에 보존된다.
+- verifier mismatch 또는 불충분한 검사 증거는 설정된 repair 한도를 따르며, repair 뒤 새 verifier Run을 만든다. 취소/중단은 부분 상태로 남고 retry 시 직전 결과를 history에 보존한다.
+- 상세 API의 `result`는 v2 JSON을 유지한다. `latest`, `history`, `result_state`는 같은 저장 결과를 반영한다.
+- 관찰에 `direct|document|inferred|unverified` 수준을 보존하며 기존 수준 누락은 미확인이다. 분석 전용 요청 의도와 짧은 제목 추천을 추가했다.
+- ZIP은 안전한 의존성 파일, 테스트, 허용 비교 manifest/raw capture를 담고 경로탈출·symlink·민감 파일·감지한 비밀 문자열은 제외한다.
+- 실제 원본 시스템, 플랫폼 에이전트 E2E, 웹의 서버측 실제 증거 검증은 미실행/미검증이다. SHA-256은 캡처 사후 변조만 확인하며 원본 실행의 진실성을 입증하지 않는다.

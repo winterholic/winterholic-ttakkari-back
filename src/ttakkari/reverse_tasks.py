@@ -244,6 +244,25 @@ def _store_latest(job: ReverseJob, latest: dict[str, Any]) -> None:
     job.result = current
 
 
+def _replace_latest(job: ReverseJob, latest: dict[str, Any]) -> None:
+    current = _metadata(job.result)
+    current["latest"] = latest
+    job.result = current
+
+
+def _prepare_repair(job: ReverseJob, latest_result: dict[str, Any], config: dict[str, Any],
+                    attempts: int, limit: int) -> bool:
+    if attempts >= limit or not latest_result.get("source", {}).get("files") or not latest_result.get("report", {}).get("observations"):
+        return False
+    config["repair_attempts"] = attempts + 1
+    metadata = _metadata(job.result)
+    metadata["job"] = config
+    job.result = metadata
+    # This is the existing implementation session. The verifier is recreated after this repair.
+    job.verifier_session_id = None
+    return True
+
+
 def clean_description(raw: str) -> str:
     text = raw.strip()
     if not text or len(text) > 40_000:
@@ -253,6 +272,15 @@ def clean_description(raw: str) -> str:
     if any(ord(c) < 32 and c not in "\n\r\t" for c in text):
         raise ReverseError(422, "bad_description", "설명에 제어문자를 넣을 수 없습니다.")
     return text
+
+
+def _recommended_title(description: str) -> str:
+    title = description.splitlines()[0].strip()
+    title = re.sub(r"^(?:[\-*#]+\s*)", "", title)
+    title = re.split(r"(?<=[.!?。])\s+", title, maxsplit=1)[0]
+    title = re.sub(r"(?:을|를)?\s*(?:분석만\s*해줘|분석해줘|분석 전용|분석만|재현해\s*줘|재현해줘|재현해\s*주세요|만들어\s*줘|만들어줘)[.!?。]*$", "", title)
+    title = re.sub(r"\s+", " ", title).strip(" .!?。:：")
+    return title[:48] or description[:48]
 
 
 def fresh_stages() -> list[dict[str, Any]]:
@@ -294,6 +322,9 @@ def validate_report(root: Path, data: Any, *, mode: str | None = None,
         observations = []
     observations = [o for o in observations[:100] if isinstance(o, dict) and isinstance(o.get("finding"), str)
                     and o["finding"].strip() and isinstance(o.get("evidence"), str) and o["evidence"].strip()]
+    observations = [{**o, "level": o.get("level") if isinstance(o.get("level"), str) and o.get("level") in
+                     {"direct", "document", "inferred", "unverified"} else "unverified"}
+                    for o in observations]
     if not observations:
         problems.append("대상에서 관찰한 동작과 근거가 필요합니다.")
     checks = data.get("checks")
@@ -330,7 +361,7 @@ def validate_report(root: Path, data: Any, *, mode: str | None = None,
         if isinstance(data.get("hypotheses"), list) else []
     unknowns = [str(v)[:1000] for v in data.get("unknowns", [])[:100] if isinstance(v, (str, dict))] \
         if isinstance(data.get("unknowns"), list) else []
-    analysis_ready = bool(observations)
+    analysis_ready = any(o["level"] in {"direct", "document"} for o in observations)
     if analysis_mode:
         return {"ready": False, "analysis_ready": analysis_ready, "mode": "analyze",
                 "summary": str(data.get("summary", ""))[:4000], "source_files": valid_sources,
@@ -381,9 +412,28 @@ def progress_stages(root: Path, run_id: str | None = None) -> list[dict[str, Any
 
 
 def bundle(root: Path, outbox: Path, report: dict[str, Any]) -> Path:
-    """선언한 소스·검사 로그와 실행법·테스트만 내보낸다. 원본 실행물은 제외한다."""
+    """허용한 소스·검사·비교 증거와 안전한 실행 자료만 내보낸다."""
     names = set(report["source_files"]) | {c["log"] for c in report["checks"]}
     names.add("README.md")
+    safe_dependencies = {"requirements.txt", "pyproject.toml", "setup.cfg", "package.json",
+                         "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "go.sum",
+                         "Cargo.toml", "Cargo.lock", "Gemfile", "Gemfile.lock", "composer.json",
+                         "composer.lock", "Package.swift", "pubspec.yaml", "pubspec.lock"}
+    names.update(safe_dependencies)
+    comparison_manifest: list[dict[str, Any]] = []
+    for comparison in report.get("comparisons", []):
+        if not isinstance(comparison, dict):
+            continue
+        allowed_evidence = []
+        for evidence in comparison.get("evidence", []):
+            if not isinstance(evidence, dict) or evidence.get("kind") != "execution":
+                continue
+            name = evidence.get("path")
+            if isinstance(name, str) and name.startswith(".reverse/comparisons/") and _file(root, name):
+                names.add(name)
+                allowed_evidence.append({"path": name, "sha256": evidence.get("sha256")})
+        comparison_manifest.append({"id": comparison.get("id"), "result": comparison.get("result"),
+                                    "evidence": allowed_evidence})
     tests = root / "tests"
     if tests.is_dir() and not tests.is_symlink():
         for path in tests.rglob("*"):
@@ -396,8 +446,20 @@ def bundle(root: Path, outbox: Path, report: dict[str, Any]) -> Path:
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name in sorted(names):
             source = _file(root, name)
+            if name in safe_dependencies and source:
+                try:
+                    dependency_text = source.read_text("utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                if re.search(r"(?i)(?:password|token|secret|api[_-]?key)[\"']?\s*[:=]\s*[\"']?[^\s\"']+|"
+                             r"bearer\s+[A-Za-z0-9._~-]{12,}|https?://[^/@\s]+:[^/@\s]+@|"
+                             r"\b(?:ghp_|gho_|sk-)[A-Za-z0-9_-]{12,}", dependency_text):
+                    continue
             if source:
                 archive.write(source, name)
+        if comparison_manifest:
+            archive.writestr("reverse-comparison-manifest.json",
+                             json.dumps(comparison_manifest, ensure_ascii=False, indent=2))
     return dest
 
 
@@ -497,14 +559,16 @@ async def start(description: str, db, workspace_id: uuid.UUID | None = None, *, 
     description = clean_description(description)
     target_type = target_type if target_type in TARGET_TYPES else "auto"
     mode = mode if mode in MODES else "auto"
-    title = (title or description.splitlines()[0][:200]).strip()[:200]
+    recommended_title = _recommended_title(description)
+    title = (title or recommended_title).strip()[:200]
     references = [str(r)[:2000] for r in (references or [])[:30]]
     inferred_type = target_type if target_type != "auto" else (
         "cli" if re.search(r"\b(cli|command|terminal|argv|stdout|stderr)\b|명령|터미널", description, re.IGNORECASE) else
         "web" if re.search(r"\b(web|browser|page|screen)\b|웹|브라우저|화면", description, re.IGNORECASE) else
         "api" if re.search(r"\b(api|http|endpoint|request|response)\b|요청|응답", description, re.IGNORECASE) else "source")
-    inferred_mode = mode if mode != "auto" else "analyze_reconstruct"
-    recommendation = {"target_type": inferred_type, "mode": inferred_mode,
+    analysis_only = bool(re.search(r"분석만|분석 전용|재현(?:하지\s*말고|은?\s*말고)|analyze\s+only", description, re.IGNORECASE))
+    inferred_mode = mode if mode != "auto" else ("analyze" if analysis_only else "analyze_reconstruct")
+    recommendation = {"target_type": inferred_type, "mode": inferred_mode, "title": recommended_title,
                       "reasons": [f"설명 어휘 및 요청 입력에 근거한 기본 추천 ({inferred_type}/{inferred_mode})"]}
     plan = (["원본 관찰", "근거·가설·미확인 정리"] if inferred_mode == "analyze" else
             ["원본 관찰", "구현", "직접 비교", "독립 검증"] if inferred_mode == "analyze_reconstruct" else
@@ -626,7 +690,16 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         return None
     job.updated_at = utcnow()
     if run.status != RunStatus.succeeded:
-        job.status, job.error = "failed", run.error or "작업이 중단되었습니다. 이어서 다시 지시할 수 있습니다."
+        stopped = run.status in {RunStatus.cancelled, RunStatus.interrupted}
+        job.status = "partial" if stopped else "failed"
+        job.error = run.error or ("작업이 중지되어 결과가 보류되었습니다. 다시 시도하면 이어서 진행합니다."
+                                  if stopped else "작업에 실패했습니다. 이어서 다시 지시할 수 있습니다.")
+        if meta.get("role") == "verify":
+            latest_result = _metadata(job.result).get("latest") or {}
+            latest_result["independent_verification"] = {"status": "cancelled" if stopped else "failed",
+                "run_id": str(run.id), "verdict": None}
+            latest_result["verification_run_id"] = str(run.id)
+            _replace_latest(job, latest_result)
         return None
     config = (_metadata(job.result).get("job") or {})
     mode = config.get("mode", "auto")
@@ -645,12 +718,52 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         latest_result["verification_run_id"] = str(run.id)
     else:
         _store_latest(job, latest_result)
-    if result["verdict"] == "needs_input":
-        job.status, job.error = "needs_input", result["summary"] or "대상 접근이나 동작 설명이 더 필요합니다."
-        return None
     direct = latest_result["direct_comparison"]
     attempts = int(config.get("repair_attempts", 0))
     limit = int(config.get("max_repair_attempts", 0))
+    if role == "verify":
+        verifier_direct = result.get("direct_comparison", _comparison_summary([]))
+        verifier_passed = (result["ready"] and result["verdict"] == "passed"
+                           and verifier_direct["count"] > 0 and verifier_direct["status"] == "match")
+        latest_result["verification_comparisons"] = result.get("comparisons", [])
+        latest_result["verification_direct_comparison"] = verifier_direct
+        latest_result["verification_report"] = result
+        latest_result["verification_run_id"] = str(run.id)
+        latest_result["independent_verification"] = {
+            "status": "passed" if verifier_passed else "failed",
+            "run_id": str(run.id), "verdict": result.get("verdict")}
+        _replace_latest(job, latest_result)
+        if not verifier_passed and attempts < limit and _prepare_repair(
+                job, latest_result, config, attempts, limit):
+            session = await db.get(ChatSession, job.session_id)
+            repair = Run(session_id=session.id, workspace_id=session.workspace_id, prompt="", engine="auto",
+                         usage={"reverse": {"job_id": str(job.id), "role": "repair", "attempt": attempts + 1}})
+            db.add(repair)
+            await db.flush()
+            defects = {"verification_comparisons": result.get("comparisons", []),
+                       "verification_checks": result.get("checks", []),
+                       "problems": result.get("problems", []), "attempt": attempts + 1, "limit": limit}
+            repair.prompt = _prompt(job, repair) + "\n[독립 검증 결함 중심 수정 요청]\n" + json.dumps(defects, ensure_ascii=False)
+            from ttakkari import generation
+            from ttakkari.runs import events
+            events.append(db, repair, "run.status", {"status": "queued"})
+            if generation.current:
+                await generation.fence_pending(db)
+                await generation.wake(db, repair.id)
+            job.status, job.error = "running", None
+            return session.id
+        job.status = "done" if verifier_passed else "partial"
+        job.error = None if verifier_passed else (
+            "독립 검증의 비교·필수 검사 증거가 통과하지 못했습니다. 결과와 차이를 확인해 주세요.")
+        impl = await db.scalar(select(Run).where(Run.session_id == job.session_id)
+                               .order_by(Run.created_at.desc()).limit(1))
+        if impl:
+            impl.usage = {**(impl.usage or {}), "verification_status": "passed" if verifier_passed else "failed",
+                          "verification_verifier_id": str(run.session_id)}
+        return None
+    if result["verdict"] == "needs_input":
+        job.status, job.error = "needs_input", result["summary"] or "대상 접근이나 동작 설명이 더 필요합니다."
+        return None
     if (role != "verify" and direct["status"] == "mismatch" and attempts < limit
             and result.get("source_files") and result.get("observations")):
         config["repair_attempts"] = attempts + 1
@@ -686,24 +799,6 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
                 original_latest["verification_report"] = result
                 _store_latest(job, original_latest)
             job.status, job.error = "partial", " ".join(result["problems"])
-        return None
-    if role == "verify":
-        passed = result["verdict"] == "passed"
-        original_latest = _metadata(job.result).get("latest") or {}
-        direct = original_latest.get("direct_comparison", _comparison_summary([]))
-        passed = passed and direct["count"] > 0 and direct["status"] == "match"
-        job.status = "done" if passed else "partial"
-        original_latest["independent_verification"] = {"status": "passed" if passed else "failed",
-            "run_id": str(run.id), "verdict": result.get("verdict")}
-        original_latest["verification_report"] = result
-        original_latest["verification_run_id"] = str(run.id)
-        _store_latest(job, original_latest)
-        job.error = None if passed else "독립 검증에서 재현 여부를 확인하지 못했습니다. 결과와 차이를 확인해 주세요."
-        # 기존 라우팅 정책에도 독립 검증 결과를 기록한다.
-        impl = await db.scalar(select(Run).where(Run.session_id == job.session_id).order_by(Run.created_at.desc()).limit(1))
-        if impl:
-            impl.usage = {**(impl.usage or {}), "verification_status": "passed" if passed else "failed",
-                          "verification_verifier_id": str(run.session_id)}
         return None
     if job.verifier_session_id:
         return None
@@ -747,7 +842,8 @@ async def public(db, job: ReverseJob, *, detail: bool = False) -> dict[str, Any]
     review = bool(latest and (latest.usage or {}).get("reverse", {}).get("role") == "verify")
     current = "deliver" if status == "done" else "verify" if review else "implement" if latest and latest.started_at else "request"
     metadata = _metadata(job.result)
-    latest_result = metadata.get("latest") or {}
+    public_latest = metadata.get("latest")
+    latest_result = public_latest or {}
     config = metadata.get("job") or {}
     if status == "done" and config.get("mode") == "analyze":
         current = "infer"
@@ -771,12 +867,14 @@ async def public(db, job: ReverseJob, *, detail: bool = False) -> dict[str, Any]
         report = latest_result.get("report") or {}
         if report.get("ready") or report.get("analysis_ready"):
             for s in stages:
-                if s["key"] == "observe" and report.get("observations"):
+                if s["key"] == "observe" and any(o.get("level") in {"direct", "document"}
+                                                    for o in report.get("observations", [])):
                     s["status"] = "done"
-                    s["evidence"] = [o["evidence"] for o in report.get("observations", [])]
-                if s["key"] == "infer" and (report.get("hypotheses") or report.get("observations")):
+                    s["evidence"] = [{"finding": o["finding"], "level": o["level"], "evidence": o["evidence"]}
+                                     for o in report.get("observations", []) if o.get("level") in {"direct", "document"}]
+                if s["key"] == "infer" and report.get("hypotheses"):
                     s["status"] = "done"
-                    s["evidence"] = report.get("hypotheses") or ["관찰 근거에서 가설을 분리함"]
+                    s["evidence"] = report["hypotheses"]
                 if s["key"] == "implement" and report.get("source_files"):
                     s["status"] = "done"
                     s["evidence"] = report["source_files"]
@@ -790,8 +888,8 @@ async def public(db, job: ReverseJob, *, detail: bool = False) -> dict[str, Any]
         for s in stages:
             if s["key"] == current and active:
                 s["status"] = "waiting" if waiting_reason else "running"
-        out.update(stages=stages, result=None, reconstruction=latest_result.get("report"),
-                   latest=latest_result, history=metadata.get("history", []),
+        out.update(stages=stages, result=metadata, reconstruction=latest_result.get("report"),
+                   latest=public_latest, history=metadata.get("history", []),
                    rounds=[{"id": str(r.id), "session_id": str(r.session_id), "status": r.status,
                             "role": (r.usage or {}).get("reverse", {}).get("role", "implement"),
                             "result_text": (r.result_text or "")[:12000], "error": r.error,

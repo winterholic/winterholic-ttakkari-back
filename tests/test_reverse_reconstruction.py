@@ -37,7 +37,9 @@ async def test_description_creates_tool_capable_general_worker(client, auth, mon
         assert job.output_path.startswith((await db.get(Workspace, job.workspace_id)).root_path)
     detail = (await client.get('/api/reverse/' + data['id'], headers=auth)).json()
     assert detail['session_id'] == str(sess.id)
-    assert detail['result'] is None
+    assert detail['result']['schema_version'] == 2
+    assert detail['result']['latest'] == detail['latest'] is None
+    assert detail['result']['history'] == detail['history'] == []
     assert [s['key'] for s in detail['stages']] == ['request', 'observe', 'infer', 'implement', 'verify', 'deliver']
 
 
@@ -63,7 +65,7 @@ async def test_analysis_mode_and_analyze_to_reconstruct_reuses_observations(clie
         root = __import__('pathlib').Path(job.output_path)
         (root / '.reverse').mkdir(parents=True)
         (root / '.reverse' / f'{run.id}.json').write_text(json.dumps({'mode': 'analyze', 'summary': '상태 전이 관찰',
-            'observations': [{'finding': '새로고침 후 상태 유지', 'evidence': 'evidence/state.txt'}],
+            'observations': [{'finding': '새로고침 후 상태 유지', 'evidence': 'evidence/state.txt', 'level': 'direct'}],
             'hypotheses': ['localStorage 복원'], 'unknowns': ['다른 기기 동기화 여부']}))
         await reverse_tasks.on_finished(db, run)
         assert job.status == 'done'
@@ -84,6 +86,20 @@ async def test_analysis_mode_and_analyze_to_reconstruct_reuses_observations(clie
         assert '새로고침 후 상태 유지' in queued.prompt
         assert '분석 모드의 기존 관찰·가설을 구현 입력으로 재사용' in queued.prompt
         assert job.result['history'][0]['report']['summary'] == '상태 전이 관찰'
+
+
+async def test_auto_mode_recommends_analysis_only_and_short_title(client, auth, monkeypatch):
+    async def dispatch(_):
+        pass
+    monkeypatch.setattr(manager, 'dispatch', dispatch)
+    response = await client.post('/api/reverse', headers=auth, json={
+        'description': '계산기 앱의 소수점 입력 동작을 분석만 해줘. 재현하지 말고 차이와 미확인을 정리해줘.'})
+    assert response.status_code == 202, response.text
+    data = response.json()
+    assert data['mode'] == 'analyze'
+    assert len(data['title']) <= 48
+    assert data['title'] == '계산기 앱의 소수점 입력 동작'
+    assert data['recommendation']['title'] == data['title']
 
 
 async def test_completion_requires_files_then_queues_independent_verification(client, auth, monkeypatch):
@@ -139,6 +155,12 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'partial'  # 독립 검증 파일 없는 성공은 불충분.
         add_match(report, review.id)
+        (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed', 'comparisons': []}))
+        await reverse_tasks.on_finished(db, review)
+        assert job.status == 'partial'  # 구현자의 직접 비교를 verifier 자신의 비교로 대체할 수 없다.
+        assert job.result['latest']['independent_verification']['status'] == 'failed'
+        assert job.result['latest']['verification_report']['comparisons'] == []
+        add_match(report, review.id)
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'done'
@@ -151,9 +173,16 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
         assert job.result['latest']['independent_verification']['status'] == 'failed'
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'comparisons': [], 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
-        assert job.status == 'done'  # 독립 Run의 실제 검사 로그와 구현 Run의 직접 비교 증거를 모두 확인한다.
+        assert job.status == 'partial'  # 검증자 비교 0건은 계속 완료를 막는다.
+        add_match(report, review.id)
+        (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
+        await reverse_tasks.on_finished(db, review)
+        assert job.status == 'done'
         await db.commit()
     data = (await client.get('/api/reverse/' + res.json()['id'], headers=auth)).json()
+    assert data['result']['latest'] == data['latest']
+    assert data['result']['history'] == data['history']
+    assert data['result_state']['direct_comparison']['count'] == 1
     assert data['result_state']['source']['files'] == ['src/main.py']
     assert data['result_state']['independent_verification']['status'] == 'passed'
     followup = await client.post('/api/reverse/' + res.json()['id'] + '/messages', headers=auth,
@@ -251,6 +280,120 @@ async def test_verifier_pass_without_direct_comparison_cannot_mark_done(client, 
         assert job.status == 'partial'
         assert job.result['latest']['direct_comparison']['count'] == 0
         assert job.result['latest']['independent_verification']['status'] == 'failed'
+
+
+async def test_verifier_mismatch_queues_bounded_repair_then_fresh_verification(client, auth, monkeypatch):
+    async def dispatch(_):
+        pass
+    monkeypatch.setattr(manager, 'dispatch', dispatch)
+    response = await client.post('/api/reverse', headers=auth, json={
+        'description': 'CLI 숫자 변환 동작을 재현해줘.', 'mode': 'reconstruct', 'target_type': 'cli',
+        'max_repair_attempts': 1})
+    async with sessionmaker()() as db:
+        job = await db.get(ReverseJob, uuid.UUID(response.json()['id']))
+        root = __import__('pathlib').Path(job.output_path)
+        (root / 'src').mkdir(parents=True)
+        (root / '.reverse').mkdir()
+        (root / 'src/main.py').write_text('print("4")\n')
+        (root / 'README.md').write_text('환경 Python, 의존성 없음, 실행 python src/main.py, 테스트 pytest -q')
+        (root / 'ok.log').write_text('passed\n')
+
+        def write_report(run, replica='4\n', verdict=None):
+            original = {'stdout': '4\n', 'stderr': '', 'exit_code': 0}
+            replica_output = {'stdout': replica, 'stderr': '', 'exit_code': 0}
+            raw = {'schema_version': 2, 'target_type': 'cli', 'run_id': str(run.id), 'complete': True,
+                   'input': {'argv': ['convert', '2']}, 'pre_state': {}, 'environment': {'os': 'test'},
+                   'original': original, 'replica': replica_output}
+            raw['execution_log'] = [{'side': side, **raw[key]} for side, key in
+                                    (('original', 'original'), ('replica', 'replica'))]
+            raw_path = root / f'.reverse/comparisons/{run.id}.json'
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            encoded = json.dumps(raw).encode()
+            raw_path.write_bytes(encoded)
+            report = {'summary': '숫자 변환', 'source_files': ['src/main.py'],
+                'observations': [{'finding': '2 입력은 4 출력', 'evidence': 'evidence/original.txt', 'level': 'direct'}],
+                'checks': [{'command': 'pytest -q', 'exit_code': 0, 'log': 'ok.log'}],
+                'comparisons': [{'id': 'convert-2', 'behavior': '2 변환', 'target_type': 'cli',
+                    'input': raw['input'], 'pre_state': {}, 'original': original, 'replica': replica_output,
+                    'environment': raw['environment'], 'evidence_level': 'direct',
+                    'evidence': [{'kind': 'execution', 'path': raw_path.relative_to(root).as_posix(),
+                                  'sha256': hashlib.sha256(encoded).hexdigest()}],
+                    'verified_at': '2026-11-07T00:00:00Z', 'run_id': str(run.id),
+                    'result': 'match', 'difference': None}], 'limitations': []}
+            if verdict:
+                report['verdict'] = verdict
+            (root / '.reverse' / f'{run.id}.json').write_text(json.dumps(report))
+
+        impl = await db.scalar(select(Run).where(Run.session_id == job.session_id))
+        impl.status = RunStatus.succeeded
+        write_report(impl)
+        await reverse_tasks.on_finished(db, impl)
+        verifier = await db.get(ChatSession, job.verifier_session_id)
+        review = await db.scalar(select(Run).where(Run.session_id == verifier.id))
+        review.status = RunStatus.succeeded
+        write_report(review, replica='5\n', verdict='failed')
+        repair_session_id = await reverse_tasks.on_finished(db, review)
+        assert repair_session_id == job.session_id
+        assert job.result['job']['repair_attempts'] == 1
+        assert job.result['latest']['verification_direct_comparison']['status'] == 'mismatch'
+        assert job.result['latest']['verification_comparisons'][0]['result'] == 'mismatch'
+        repair = await db.scalar(select(Run).where(Run.session_id == job.session_id).order_by(Run.created_at.desc()))
+        assert repair.usage['reverse']['role'] == 'repair'
+        assert '독립 검증 결함 중심 수정 요청' in repair.prompt
+        assert job.verifier_session_id is None
+        assert await reverse_tasks.on_finished(db, review) is None  # 늦은 verifier callback 무시
+
+        repair.status = RunStatus.succeeded
+        write_report(repair)
+        next_verifier_id = await reverse_tasks.on_finished(db, repair)
+        assert next_verifier_id is not None and next_verifier_id != verifier.id
+        verifier2 = await db.get(ChatSession, next_verifier_id)
+        review2 = await db.scalar(select(Run).where(Run.session_id == verifier2.id))
+        review2.status = RunStatus.succeeded
+        write_report(review2, verdict='passed')
+        await reverse_tasks.on_finished(db, review2)
+        assert job.status == 'done'
+        assert job.result['job']['repair_attempts'] == job.result['job']['max_repair_attempts'] == 1
+
+
+async def test_cancelled_verifier_is_partial_and_retry_resumes_with_history(client, auth, monkeypatch):
+    async def dispatch(_):
+        pass
+    monkeypatch.setattr(manager, 'dispatch', dispatch)
+    response = await client.post('/api/reverse', headers=auth, json={
+        'description': '정수 입력에 따른 CLI 출력 동작을 재현해줘.', 'mode': 'reconstruct'})
+    async with sessionmaker()() as db:
+        job = await db.get(ReverseJob, uuid.UUID(response.json()['id']))
+        root = __import__('pathlib').Path(job.output_path)
+        (root / 'src').mkdir(parents=True)
+        (root / 'src/main.py').write_text('print(4)\n')
+        (root / 'README.md').write_text('환경 Python, 의존성 없음, 실행 python src/main.py, 테스트 pytest -q')
+        (root / 'ok.log').write_text('passed\n')
+        impl = await db.scalar(select(Run).where(Run.session_id == job.session_id))
+        impl.status = RunStatus.succeeded
+        (root / '.reverse').mkdir(parents=True)
+        (root / '.reverse' / f'{impl.id}.json').write_text(json.dumps({
+            'summary': 'CLI 정수 출력', 'source_files': ['src/main.py'],
+            'observations': [{'finding': '입력 2에서 4 출력', 'evidence': 'evidence/case.txt', 'level': 'direct'}],
+            'checks': [{'command': 'pytest -q', 'exit_code': 0, 'log': 'ok.log'}]}))
+        await reverse_tasks.on_finished(db, impl)
+        verifier = await db.get(ChatSession, job.verifier_session_id)
+        review = await db.scalar(select(Run).where(Run.session_id == verifier.id))
+        review.status = RunStatus.cancelled
+        await reverse_tasks.on_finished(db, review)
+        assert job.status == 'partial'
+        assert job.result['latest']['independent_verification']['status'] == 'cancelled'
+        await db.commit()
+    retried = await client.post('/api/reverse/' + response.json()['id'] + '/retry', headers=auth)
+    assert retried.status_code == 202, retried.text
+    async with sessionmaker()() as db:
+        job = await db.get(ReverseJob, uuid.UUID(response.json()['id']))
+        assert job.result['latest'] is None
+        assert job.result['history'][-1]['run_id'] == str(impl.id)
+        resumed = await db.scalar(select(Run).where(Run.session_id == job.session_id).order_by(Run.created_at.desc()))
+        assert resumed.id != impl.id and resumed.status == RunStatus.queued
+        assert resumed.usage['reverse']['role'] == 'implement'
+        assert job.verifier_session_id is None
 
 
 async def test_workspace_validation_and_description_limit(client, auth, monkeypatch):

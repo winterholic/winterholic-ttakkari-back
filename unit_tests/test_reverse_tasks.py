@@ -81,6 +81,33 @@ def test_zip_contains_sources_but_excludes_target_and_secrets(tmp_path):
         assert set(archive.namelist()) == {'src/main.py', 'check.log', 'README.md'}
 
 
+def test_bundle_includes_comparison_manifest_raw_evidence_tests_and_safe_dependencies(tmp_path):
+    root = tmp_path / 'job'
+    root.mkdir()
+    data = report(root)
+    (root / 'requirements.txt').write_text('requests==2.0\n')
+    (root / 'setup.cfg').write_text('password=embedded-secret\n')
+    (root / 'tests').mkdir()
+    (root / 'tests/test_cli.py').write_text('def test_cli(): pass\n')
+    raw_path = root / '.reverse/comparisons/case.json'
+    raw_path.parent.mkdir(parents=True)
+    raw_path.write_text('{"schema_version":2}')
+    (root / '.reverse/comparisons/linked.json').symlink_to(root / 'setup.cfg')
+    data['comparisons'] = [{'id': 'case', 'result': 'match', 'evidence': [
+        {'kind': 'execution', 'path': '.reverse/comparisons/case.json', 'sha256': 'abc'},
+        {'kind': 'execution', 'path': '.reverse/comparisons/linked.json', 'sha256': 'def'},
+        {'kind': 'execution', 'path': '.reverse/comparisons/../../setup.cfg', 'sha256': 'ghi'}]}]
+    path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, data))
+    import zipfile
+    with zipfile.ZipFile(path) as archive:
+        assert {'README.md', 'requirements.txt', 'tests/test_cli.py',
+                '.reverse/comparisons/case.json', 'reverse-comparison-manifest.json'} <= set(archive.namelist())
+        assert '.reverse/comparisons/linked.json' not in archive.namelist()
+        assert 'setup.cfg' not in archive.namelist()
+        manifest = json.loads(archive.read('reverse-comparison-manifest.json'))
+        assert len(manifest[0]['evidence']) == 1
+
+
 def test_phase_notes_cannot_self_approve_independent_verification(tmp_path):
     folder = tmp_path / '.reverse'
     folder.mkdir()
@@ -157,8 +184,20 @@ def test_analysis_mode_accepts_observations_without_source_or_checks(tmp_path):
     checked = tasks.validate_report(tmp_path, {'mode': 'analyze', 'summary': '분석',
         'observations': [{'finding': '입력에 따라 출력이 달라짐', 'evidence': 'evidence/capture.txt'}],
         'hypotheses': ['옵션이 기본값을 바꿀 수 있음'], 'unknowns': ['오류 종료 코드']})
-    assert checked['analysis_ready'] is True
+    assert checked['analysis_ready'] is False  # 출처 수준이 없는 레거시 관찰은 미확인이다.
     assert checked['ready'] is False
+
+
+def test_observation_provenance_is_preserved_and_missing_level_is_unverified(tmp_path):
+    checked = tasks.validate_report(tmp_path, {'mode': 'analyze', 'summary': '분석',
+        'observations': [
+            {'finding': '화면에서 직접 확인', 'evidence': 'evidence/screen.txt', 'level': 'direct'},
+            {'finding': '문서에 기록됨', 'evidence': 'docs/spec.md', 'level': 'document'},
+            {'finding': '한 번의 관찰에서 추론', 'evidence': '직접 관찰 1', 'level': 'inferred'},
+            {'finding': '기존 보고서 형식', 'evidence': '사용자 설명'},
+        ], 'hypotheses': ['상태가 저장됨'], 'unknowns': ['다른 기기 동기화']})
+    assert [o['level'] for o in checked['observations']] == ['direct', 'document', 'inferred', 'unverified']
+    assert checked['analysis_ready'] is True
 
 
 def test_reconstruction_requires_readme_environment_dependencies_run_and_test_commands(tmp_path):

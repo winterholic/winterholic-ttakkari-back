@@ -285,11 +285,23 @@ $ git diff --check
 exit 0 (no output)
 ```
 
-이 검사들은 DB 비의존 단위 회귀다. 지정된 `tests/` DB/API 회귀와 운영 상태 검사는 수행하지 않았다. 원인은 기존 Codex command sandbox에서 `pg_sandbox.start_cluster() → initdb → shmget`이 `Operation not permitted`로 실패한 기록이며, 이 제한을 반복하거나 우회하지 않았다.
+단위 검사는 DB 비의존이다. pre-push 게이트에서는 변경된 DB/API 계약 검사도 격리 test DB로 실행됐다. production DB/API·generation dispatch·운영 상태 검사는 수행하지 않았다. 이전 임시 PostgreSQL 초기화의 `pg_sandbox.start_cluster() → initdb → shmget: Operation not permitted` 제한을 반복하거나 우회하지 않았다.
 
 ### 최종 푸시·배포 후속
 
-- 이 기록 반영 후 최종 SHA, 정상 push 결과, 원격 main SHA, `request_backend_deploy`의 예약 ID 및 반환 상태를 이어 기록한다. 배포 완료와 운영 동작은 예약 수락으로 간주하지 않는다. 실제 ReverseJob E2E와 운영 health 확인은 배포 후 별도 실행 단위다.
+- 제품 및 통합 커밋 SHA: `6dbc20ba70af9e32fa3806298d42f47dbe36589d`. 실행 명령·결과:
+
+```text
+$ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-189-integration GH_AS_USER=winterholic GH_AS_TOKEN="$(gh auth token --hostname github.com --user winterholic)" git -c credential.helper= -c 'credential.helper=!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f' push origin HEAD:main
+사전 검증 통과: contract 87 passed, changed tests 91 passed, Ruff 통과
+b56057c0..6dbc20ba  HEAD -> main
+$ git rev-parse HEAD && git rev-parse origin/main
+6dbc20ba70af9e32fa3806298d42f47dbe36589d
+6dbc20ba70af9e32fa3806298d42f47dbe36589d
+```
+
+- 같은 full SHA로 `request_backend_deploy`를 호출했다. 반환: reservation ID `27cb9619-68cc-42a5-b944-be72a1463b2b`, revision `6dbc20ba70af9e32fa3806298d42f47dbe36589d`, status `requested`, `skip_tests=false`, strategy `generations`. 수락은 배포 성공이 아니며 상태를 폴링하지 않았다.
+- 이번 푸시의 integration 문서 기록 커밋 및 원격 결과는 이 절 다음의 문서 전용 변경으로 남긴다. backend 배포 후보는 위 제품 SHA다. production DB/API·실제 ReverseJob agent E2E·운영 health는 배포 뒤 별도 실행 단위다.
 
 ### Push gate 진단·교정
 

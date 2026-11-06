@@ -322,7 +322,19 @@ $ git rev-parse HEAD && git rev-parse origin/main
 - 지원 `ops_deploy_log(0131e8cf-ebf6-4ee4-9b6c-a5a4f66deaf3, summary)`의 실제 release pytest RED는 후보 revision `72116f9fc75b2aa785651eae7aa8814bce60be88`에서 발생했다. `tests/test_collection_scope_merge.py::test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent`가 `scope_merge.operate()`의 `schema_not_ready`에서 실패했고 결과는 `1 failed, 1000 passed, 9 skipped, 6 subtests passed in 145.52s`였다.
 - 실패 후보의 `deploy/generation-contract.json`은 `schema_revision=0077_artcraft_account_pin`이고 같은 revision의 `_operation_generation()` 기본값은 `0076_kb_v3_collection_merge`였다. 테스트는 `operate()`까지 호출하고 제품은 alembic head가 `Releases.contract(...)["schema_revision"]`와 정확히 같아야만 진행한다. 따라서 성공 fixture가 구버전 값을 넣은 것이 직접 원인이며 제품 변경은 필요하지 않았다.
 - `_operation_generation()` 기본값과 draining/standby/offline executor/inactive 거부 사례를 모두 현재 revision `0077_artcraft_account_pin`으로 맞췄다. 실제 구버전 schema 거부 `0073_research_reuse_source`, `0075_collection_research_merge`는 유지했다. dry-run rollback, apply 재실행 멱등성, unresolved apply 전체 rollback, cutover control-row lock 및 기존 결과 검증 assertion은 삭제·완화하지 않았다.
-- 변경 전 RED는 위 예약의 실제 release 로그와 실패 후보의 고정 Git tree를 근거로 기록했다. 이 Codex command sandbox의 알려진 `tests/conftest.py → pg_sandbox.start_cluster() → initdb → shmget ... Operation not permitted` 경로는 재실행하지 않았다. 변경 후 검증은 아래 실행 영수증에 남긴다.
+- 변경 전 RED는 위 예약의 실제 release 로그와 실패 후보의 고정 Git tree를 근거로 기록했다. 이 Codex command sandbox의 알려진 `tests/conftest.py → pg_sandbox.start_cluster() → initdb → shmget ... Operation not permitted` 경로는 재실행하지 않았다.
+- fixture와 이 기록을 소유한 커밋은 `3c038cf757bcebb1bedad03afbe6bee2d2f786c1`이다. 실행한 표준 검증:
+
+```text
+$ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-scope-merge-20261107 ./scripts/verify_deploy_gate.sh --commit HEAD --base origin/main
+대상 커밋: 3c038cf757bc
+ruff (변경된 파이썬 1개): 통과
+계약 묶음: 87 passed, 6952 deselected in 16.33s; db reset 87 selective, forced full/fallback 0
+바뀐 테스트 파일: 13 passed in 1.10s; db reset 13 selective, forced full/fallback 0
+사전 검증 통과: 계약 묶음과 바뀐 테스트 파일 범위만 확인했습니다. 전체 통과를 뜻하지 않습니다.
+```
+
+- 이 검증은 Codex 표준 deploy gate의 계약 및 변경 파일 범위다. 예약의 release 전체 pytest, 운영 DB/health, 실제 배포 결과는 이 실행으로 검증하지 않았다.
 
 ### Push gate 진단·교정
 

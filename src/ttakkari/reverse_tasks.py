@@ -131,6 +131,34 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
                          difference={"reason": "비교 레코드 스키마가 계약과 다릅니다."})
             verified.append(entry)
             continue
+        if entry["target_type"] == "web":
+            web_items = [e for e in entry.get("evidence", [])
+                         if isinstance(e, dict) and e.get("kind") == "web_capture"]
+            if len(web_items) != 1:
+                entry.update(evidence_level="observed", result="unverified",
+                             difference={"reason": "검증 가능한 웹 캡처 증거가 정확히 하나 필요합니다."})
+                verified.append(entry)
+                continue
+            from ttakkari.reverse_web_evidence import verify_web_capture
+
+            checked = verify_web_capture(root, item, expected_run_id=expected_run_id)
+            visual_evidence = next((e for e in checked.get("evidence", [])
+                                    if isinstance(e, dict) and e.get("kind") == "web_capture"), {})
+            checked["functional_result"] = checked.get("result", "unverified")
+            checked["visual_result"] = visual_evidence.get("visual_result", "unverified")
+            integrity = visual_evidence.get("integrity") or {}
+            if integrity.get("status") == "verified":
+                checked["visual_assessment"] = visual_evidence.get("visual") or {}
+            else:
+                checked["visual_assessment"] = {
+                    "reason": integrity.get("reason") or "원시 웹 증거의 무결성이 확인되지 않았습니다."}
+                visual_evidence["visual"] = checked["visual_assessment"]
+            if checked["visual_result"] not in {"match", "mismatch", "unverified"}:
+                checked["visual_result"] = "unverified"
+            if checked.get("result") not in {"match", "mismatch", "unverified"}:
+                checked["result"] = "unverified"
+            verified.append(checked)
+            continue
         original = entry.get("original")
         replica = entry.get("replica")
         reason = None
@@ -183,8 +211,6 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
                     or logs["original"].get("method") != logs["replica"].get("method")
                     or logs["original"].get("request_headers") != logs["replica"].get("request_headers")):
                 reason = "원시 API 출력(status/body_bytes_b64)이 올바르지 않습니다."
-        elif entry.get("target_type") == "web":
-            reason = "웹 관찰 증거만으로는 독립적인 직접 비교 실행을 증명할 수 없습니다."
         elif (not isinstance(original, dict) or not isinstance(replica, dict)
               or any(type(output.get("exit_code")) is not int or
                      not isinstance(output.get("stdout"), str) or not isinstance(output.get("stderr"), str)
@@ -214,6 +240,33 @@ def _comparison_summary(comparisons: list[dict[str, Any]]) -> dict[str, Any]:
     status = "mismatch" if mismatched else "match" if comparisons and matched == len(comparisons) else "unverified"
     return {"status": status, "count": len(comparisons), "matched": matched,
             "mismatched": mismatched, "unverified": unverified}
+
+
+def _visual_comparison_summary(comparisons: list[dict[str, Any]], *, required: bool = False) -> dict[str, Any]:
+    web = [comparison for comparison in comparisons if comparison.get("target_type") == "web"]
+    results = [comparison.get("visual_result", "unverified") for comparison in web]
+    matched = sum(result == "match" for result in results)
+    mismatched = sum(result == "mismatch" for result in results)
+    unverified = len(results) - matched - mismatched
+    status = "mismatch" if mismatched else "match" if results and matched == len(results) else "unverified"
+    if not web and not required:
+        status = "not_required"
+    return {"status": status, "count": len(web), "matched": matched,
+            "mismatched": mismatched, "unverified": unverified}
+
+
+def _web_quality_failed(target_type: str | None, direct: dict[str, Any], visual: dict[str, Any]) -> bool:
+    """Web tasks require both server-recomputed function and pixel comparisons to match."""
+    if target_type != "web":
+        return False
+    return direct.get("status") != "match" or visual.get("status") != "match"
+
+
+def _should_repair_comparison(role: str, target_type: str | None, direct: dict[str, Any],
+                              visual: dict[str, Any], *, attempts: int, limit: int,
+                              has_source: bool, has_observations: bool) -> bool:
+    failed = direct.get("status") == "mismatch" or _web_quality_failed(target_type, direct, visual)
+    return (role != "verify" and failed and attempts < limit and has_source and has_observations)
 
 
 def _metadata(result: Any) -> dict[str, Any]:
@@ -306,7 +359,7 @@ def _file(root: Path, name: Any) -> Path | None:
 
 
 def validate_report(root: Path, data: Any, *, mode: str | None = None,
-                    expected_run_id: str | None = None) -> dict[str, Any]:
+                    expected_run_id: str | None = None, target_type: str | None = None) -> dict[str, Any]:
     """파일과 로그의 실재만 확인한다. 동작 일치 판단은 별도 검증 Run이 맡는다."""
     problems: list[str] = []
     if not isinstance(data, dict):
@@ -356,6 +409,7 @@ def validate_report(root: Path, data: Any, *, mode: str | None = None,
         problems.append("README.md에 환경·의존성·실행·테스트 명령이 모두 필요합니다.")
     comparisons = verify_comparisons(root, data.get("comparisons"), expected_run_id=expected_run_id)
     direct_comparison = _comparison_summary(comparisons)
+    visual_comparison = _visual_comparison_summary(comparisons, required=target_type == "web")
     analysis_mode = mode == "analyze" or data.get("mode") == "analyze"
     hypotheses = [str(v)[:1000] for v in data.get("hypotheses", [])[:100] if isinstance(v, (str, dict))] \
         if isinstance(data.get("hypotheses"), list) else []
@@ -370,6 +424,7 @@ def validate_report(root: Path, data: Any, *, mode: str | None = None,
                 [str(v)[:1000] for v in limits[:50]] if isinstance(limits, list) else [],
                 "problems": [] if analysis_ready else ["분석 모드는 관찰 근거가 필요합니다."],
                 "comparisons": comparisons, "direct_comparison": direct_comparison,
+                "visual_comparison": visual_comparison,
                 "execution_ready": False, "verification": "not_required",
                 "documentation": {"status": "not_required", "checks": docs_checks},
                 "verdict": verdict}
@@ -377,18 +432,20 @@ def validate_report(root: Path, data: Any, *, mode: str | None = None,
             "summary": str(data.get("summary", ""))[:4000], "source_files": valid_sources,
             "observations": observations, "checks": valid_checks, "limitations":
             [str(v)[:1000] for v in limits[:50]] if isinstance(limits, list) else [], "problems": problems,
-            "comparisons": comparisons, "direct_comparison": direct_comparison, "execution_ready": execution_ready,
+            "comparisons": comparisons, "direct_comparison": direct_comparison,
+            "visual_comparison": visual_comparison, "execution_ready": execution_ready,
             "documentation": {"status": "verified" if documentation_ready else "unverified", "checks": docs_checks},
             "verdict": verdict}
 
 
-def read_report(root: Path, run_id: str, *, mode: str | None = None) -> dict[str, Any]:
+def read_report(root: Path, run_id: str, *, mode: str | None = None,
+                target_type: str | None = None) -> dict[str, Any]:
     path = _file(root, f".reverse/{run_id}.json")
     try:
         data = json.loads(path.read_text("utf-8")) if path and path.stat().st_size <= MAX_REPORT else None
     except (OSError, ValueError):
         data = None
-    return validate_report(root, data, mode=mode, expected_run_id=run_id)
+    return validate_report(root, data, mode=mode, expected_run_id=run_id, target_type=target_type)
 
 
 def progress_stages(root: Path, run_id: str | None = None) -> list[dict[str, Any]]:
@@ -709,13 +766,16 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         return None
     config = (_metadata(job.result).get("job") or {})
     mode = config.get("mode", "auto")
-    result = read_report(Path(job.output_path), str(run.id), mode=mode)
+    result = read_report(Path(job.output_path), str(run.id), mode=mode,
+                         target_type=config.get("target_type"))
     latest_result = {"run_id": str(run.id), "role": role, "at": utcnow().isoformat(),
                      "source": {"status": "verified" if result.get("source_files") else "unverified",
                                 "files": result.get("source_files", [])},
                      "execution": {"status": "verified" if result.get("execution_ready") else "unverified",
                                    "checks": result.get("checks", [])},
                      "direct_comparison": result.get("direct_comparison", _comparison_summary([])),
+                     "visual_comparison": result.get("visual_comparison",
+                         _visual_comparison_summary([], required=config.get("target_type") == "web")),
                      "independent_verification": {"status": "pending", "run_id": None, "verdict": None},
                      "comparisons": result.get("comparisons", []), "report": result}
     if role == "verify":
@@ -729,10 +789,14 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
     limit = int(config.get("max_repair_attempts", 0))
     if role == "verify":
         verifier_direct = result.get("direct_comparison", _comparison_summary([]))
+        verifier_visual = result.get("visual_comparison",
+            _visual_comparison_summary([], required=config.get("target_type") == "web"))
         verifier_passed = (result["ready"] and result["verdict"] == "passed"
-                           and verifier_direct["count"] > 0 and verifier_direct["status"] == "match")
+                           and verifier_direct["count"] > 0 and verifier_direct["status"] == "match"
+                           and not _web_quality_failed(config.get("target_type"), verifier_direct, verifier_visual))
         latest_result["verification_comparisons"] = result.get("comparisons", [])
         latest_result["verification_direct_comparison"] = verifier_direct
+        latest_result["verification_visual_comparison"] = verifier_visual
         latest_result["verification_report"] = result
         latest_result["verification_run_id"] = str(run.id)
         latest_result["independent_verification"] = {
@@ -747,6 +811,7 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
             db.add(repair)
             await db.flush()
             defects = {"verification_comparisons": result.get("comparisons", []),
+                       "verification_visual_comparison": verifier_visual,
                        "verification_checks": result.get("checks", []),
                        "problems": result.get("problems", []), "attempt": attempts + 1, "limit": limit}
             repair.prompt = _prompt(job, repair) + "\n[독립 검증 결함 중심 수정 요청]\n" + json.dumps(defects, ensure_ascii=False)
@@ -770,8 +835,12 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
     if result["verdict"] == "needs_input":
         job.status, job.error = "needs_input", result["summary"] or "대상 접근이나 동작 설명이 더 필요합니다."
         return None
-    if (role != "verify" and direct["status"] == "mismatch" and attempts < limit
-            and result.get("source_files") and result.get("observations")):
+    visual = latest_result.get("visual_comparison",
+        _visual_comparison_summary([], required=config.get("target_type") == "web"))
+    if _should_repair_comparison(role, config.get("target_type"), direct, visual,
+                                 attempts=attempts, limit=limit,
+                                 has_source=bool(result.get("source_files")),
+                                 has_observations=bool(result.get("observations"))):
         config["repair_attempts"] = attempts + 1
         metadata = _metadata(job.result)
         metadata["job"] = config
@@ -782,7 +851,8 @@ async def on_finished(db, run: Run) -> uuid.UUID | None:
         db.add(repair)
         await db.flush()
         repair.prompt = _prompt(job, repair) + "\n[결함 중심 수정 요청]\n" + json.dumps(
-            {"comparisons": latest_result["comparisons"], "attempt": attempts + 1, "limit": limit}, ensure_ascii=False)
+            {"comparisons": latest_result["comparisons"], "visual_comparison": visual,
+             "attempt": attempts + 1, "limit": limit}, ensure_ascii=False)
         from ttakkari import generation
         from ttakkari.runs import events
         events.append(db, repair, "run.status", {"status": "queued"})
@@ -856,6 +926,8 @@ async def public(db, job: ReverseJob, *, detail: bool = False) -> dict[str, Any]
     result_state = {"source": latest_result.get("source", {"status": "unverified", "files": []}),
                     "execution": latest_result.get("execution", {"status": "unverified", "checks": []}),
                     "direct_comparison": latest_result.get("direct_comparison", _comparison_summary([])),
+                    "visual_comparison": latest_result.get("visual_comparison",
+                        _visual_comparison_summary([], required=config.get("target_type") == "web")),
                     "independent_verification": latest_result.get("independent_verification",
                         {"status": "pending" if status in ("queued", "running", "waiting") else "unverified",
                          "run_id": None, "verdict": None})}

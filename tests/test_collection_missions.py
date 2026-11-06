@@ -1082,18 +1082,30 @@ async def test_precise_result_survives_worker_crash_after_budget_settlement(
         assert item.signals["triage"]["precise_eval"]["state"] == "evaluated"
 
 
-@pytest.mark.parametrize("consumed", [True, False])
-async def test_precise_transport_error_preserves_retry_and_account_diagnostics(
-    client, auth, env, monkeypatch, consumed  # noqa: F811
+@pytest.mark.parametrize(
+    ("diagnosis", "consumed", "expected_state", "expected_status", "retryable"),
+    [
+        ("timeout", True, "unresolved", "waiting", False),
+        ("timeout", False, "pending", "waiting", True),
+        ("usage_limit", True, "pending", "limited", True),
+    ],
+)
+async def test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt(
+    client, auth, env, monkeypatch, diagnosis, consumed, expected_state, expected_status, retryable  # noqa: F811
 ):
+    import time
     from types import SimpleNamespace
 
     from sqlalchemy import select
 
+    from ttakkari import collector_precise_runtime
     from ttakkari.collector import pipeline, precise_eval, runner
     from ttakkari.collector.budget_models import CollectorBudgetReservation
     from ttakkari.collector_models import CollectorItem
     from ttakkari.config import get_settings
+    from ttakkari.kb_pipeline.subscription_transport import L2TransportError
+
+    previous_runtime = precise_eval._runtime
 
     url = env.server.url("/precise-unknown")
     env.server.page("/precise-unknown", article_html("직렬화", [prose("ko", 40, 12)]))
@@ -1115,28 +1127,29 @@ async def test_precise_transport_error_preserves_retry_and_account_diagnostics(
 
     monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
     monkeypatch.setattr(get_settings(), "collector_teacher_enabled", False)
-    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
-        status=lambda: {"status": "ready", "engine": "subscription_cli", "model": "fixture"},
-        evaluate=lambda **kwargs: None,
-    ))
+    retry_after = time.time() + 120
+    transport_error = L2TransportError(
+        diagnosis, "fixture transport error", retry_after=retry_after, consumed=consumed,
+        engine="codex", account="personal-ai2", model="gpt-6-luna",
+    )
     calls = []
 
-    retry_after = None if consumed else datetime.now(UTC).timestamp() + 120
+    class FailingAdapter:
+        retry_after = None
 
-    async def transport_error(**kwargs):
-        calls.append(True)
-        from ttakkari.subscription_contract import DIAG_TIMEOUT, L2TransportError
-        raise L2TransportError(
-            DIAG_TIMEOUT, "fixture timeout", retry_after=retry_after, consumed=consumed,
-            engine="codex", account="fixture-ai2", model="gpt-6-luna",
-        )
+        async def availability(self):
+            return True, None
 
-    monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
-        status=lambda: {"status": "ready", "engine": "subscription_cli", "model": "fixture"},
-        evaluate=transport_error,
-    ))
-    assert await runner.consume_once(limit=1, managed_only=True) == 1
-    assert await runner.consume_once(limit=1, managed_only=True) == 0
+        async def call_json(self, *_args, **_kwargs):
+            calls.append(True)
+            raise transport_error
+
+    with monkeypatch.context() as runtime_patch:
+        runtime_patch.setattr(precise_eval, "_runtime", previous_runtime)
+        runtime_patch.setattr(collector_precise_runtime, "_adapter", lambda _scope: FailingAdapter())
+        collector_precise_runtime.install()
+        assert await runner.consume_once(limit=1, managed_only=True) == 1
+        assert await runner.consume_once(limit=1, managed_only=True) == 0
     assert len(calls) == 1
     async with sessionmaker()() as db:
         item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
@@ -1144,19 +1157,20 @@ async def test_precise_transport_error_preserves_retry_and_account_diagnostics(
             CollectorBudgetReservation.request_key == f"precise:{item.id}:{item.job_id}"
         ))
         precise = item.signals["triage"]["precise_eval"]
-        assert precise["state"] == ("unresolved" if consumed else "pending")
-        assert precise["engine"] == {
-            "status": "waiting", "detail": "timeout", "engine": "codex",
-            "account": "fixture-ai2", "requested_model": "gpt-6-luna",
-        }
-        if consumed:
-            assert "retry_after" not in precise
-            assert precise.get("subscription_attempt", 0) == 0
-        else:
-            assert precise["retry_after"] == retry_after
+        assert precise["state"] == expected_state
+        assert precise["engine"]["status"] == expected_status
+        assert precise["engine"]["detail"] == diagnosis
+        assert precise["engine"]["engine"] == "codex"
+        assert precise["engine"]["account"] == "personal-ai2"
+        assert precise["engine"]["requested_model"] == "gpt-6-luna"
+        assert precise["retry_after"] == retry_after
+        if retryable:
             assert precise["subscription_attempt"] == 1
+        else:
+            assert precise.get("subscription_attempt", 0) == 0
         assert reservation.state == "unknown"
         assert reservation.charged_tokens == reservation.reserved_tokens
+    assert precise_eval._runtime is previous_runtime
 
 
 async def test_precise_day_budget_denial_leaves_item_pending_until_reset(client, auth, env, monkeypatch):  # noqa: F811

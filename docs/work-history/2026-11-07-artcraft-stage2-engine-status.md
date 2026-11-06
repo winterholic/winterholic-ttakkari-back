@@ -185,3 +185,118 @@ $ git diff --check
 - 보조 검사: `git diff --check` → 출력 없음, exit 0. `../back/.venv/bin/ruff check src/ttakkari/collector_precise_runtime.py tests/test_collector_manage.py` → `All checks passed!`. release archive의 `python -m pytest -q --timeout=120 -m contract` → `87 passed, 6953 deselected in 9.96s`. release archive의 `python -m pytest -q --timeout=120 tests/test_collector_manage.py` → `10 passed in 2.29s` (DB reset: 10 selective, forced full/fallback 0).
 - push는 실행하지 않았다. 미실행 명령 `git push origin HEAD:refs/heads/main`; 사유: controller 보안 gate 실패. 따라서 `git ls-remote` 원격 full SHA 비교도 하지 않았고 request_backend_deploy를 호출하지 않았다. 예약 ID/상태 없음. `skip_tests=false` 예약, 독립 controller test, active generation 전환 확인, 운영 제작 시험은 미실행이다. 원 목표 R1–R4 review도 계속 남아 있다.
 - source SHA=`548df81697be1bb4e87e6efb145f68a6fb03ee55`; 이 검사에 사용한 source/document checkout SHA=`2cef9c1ada00c3fe38b00744928b1a6aa22b2299` (gate 이후 별도 문서 수정 전). 이 기록은 gate 실패와 보류 이유를 보존하며 push/배포 승인을 의미하지 않는다.
+
+## 수용된 ArtCraft 수정 push 및 controller 배포 예약 (2026-11-07)
+
+- Run API `/api/runs/43980791-25d8-426d-8ceb-a44c95fd830a`: `running`, `engine=codex`, `model=gpt-6-luna`, `effort=high`, `profile=회사 코덱스 ai2 (ai2@hyperez.io)`. GitHub 계정 목록은 `winterholic` active, `daeseon-dev` inactive였다. 계정 변경은 하지 않았다.
+- 시작 checkout은 `release/artcraft-main-20261107`, clean, HEAD=`63e17f8485530f959c9fee5399199f70c76401b4`, `origin/main=f75ba35242deb22d755f54388b0a00c723315f28`, ahead 4였다. `git fetch origin main`은 `f75ba352…`를 가져왔고 `git merge --no-edit origin/main`은 `Already up to date.`였다. source `548df81697be1bb4e87e6efb145f68a6fb03ee55`와 pin/lookup/updater 누적 source를 보존했다. 직전 Codex Run의 보안 gate 실패 `10 failed, 913 passed`는 재실행하지 않았고 권한 probe도 반복하지 않았다.
+- 현재 Run 주입 DB를 read-only로 확인했다. SQL `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` 결과는 `ttakkari_test / ttk_test / 51097 / /tmp/ttakkari-run-test-99596-c7e72490/data`; database/user/port는 주입 URL identity와 일치했다. 정확한 부모 marker `/tmp/ttakkari-run-test-99596-c7e72490/run-test-cluster.marker`의 `run_id=43980791-25d8-426d-8ceb-a44c95fd830a`, `port=51097`, `folder=ttakkari-run-test-99596-c7e72490`, `owner_pid=99596`이 일치했다. DB URL은 출력하지 않았고 다른 Run DB/new initdb는 사용하지 않았다.
+- 정상 push 명령: `env -u TTK_SKIP_GATE UV_CACHE_DIR=/private/tmp/ttakkari-run-43980791-artcraft-push/uv-cache TMPDIR=/private/tmp/ttakkari-run-43980791-artcraft-push git push origin HEAD:refs/heads/main`. 현재 Run 전용 tmp cache를 사용했고 pre-push hook을 그대로 실행했다. hook은 대상 `63e17f848553`, 기준 `f75ba35242de`, 변경 파일 3개를 검사했다.
+
+```text
+ruff (변경된 파이썬 2개): 통과
+계약 묶음: 87 passed, 6953 deselected; DB reset 87 selective, forced full/fallback 0
+바뀐 테스트 파일 1개: 10 passed; DB reset 10 selective, forced full/fallback 0
+총 36초; 사전 검증 통과; push exit 0
+To https://github.com/winterholic/winterholic-ttakkari-back.git
+   f75ba352..63e17f84  HEAD -> main
+```
+
+- push 후 `git rev-parse HEAD`와 `git ls-remote origin refs/heads/main`은 모두 full SHA `63e17f8485530f959c9fee5399199f70c76401b4`였다. `git status --short --branch`는 clean/ahead-behind 없음, `git diff --check HEAD^ HEAD`는 출력 없이 exit 0이었다.
+- 지원 배포 API 요청 `request_backend_deploy(revision="63e17f8485530f959c9fee5399199f70c76401b4")`의 receipt는 `id=28000cc3-93f6-438e-a469-27646c4b082e`, `revision=63e17f8485530f959c9fee5399199f70c76401b4`, `skip_tests=false`, `status=requested`, `strategy=generations`, `error=null`이었다. 이 요청은 예약 접수다. 상태 polling이나 추가 상태 조회는 하지 않았다.
+- 범위 분리: 직전 Codex 로컬 full security gate 실패는 과거 기록 그대로 유지한다. 이번 정상 pre-push 검사는 계약 87건과 변경 collector 테스트 10건만 통과했고 전체 release suite 통과를 뜻하지 않는다. 호스트 controller의 필수 security gate 및 전체 테스트는 예약 controller가 수행할 미완료 단계다. 배포 active 확인과 실제 ArtCraft 제작·업데이트/rollback 운영 시험, R1–R4 review도 남아 있다. provider 호출·서비스 재시작은 하지 않았다.
+- source SHA=`548df81697be1bb4e87e6efb145f68a6fb03ee55`; main에 push한 SHA=`63e17f8485530f959c9fee5399199f70c76401b4`. 이 단락은 push/예약 후의 경로 지정 문서 증거이며, 아래 문서 전용 커밋은 제품 변경이 아니다.
+
+## Collector forbidden dependency 경계 교정 — 독립 검토 전 (2026-11-07)
+
+### 실행 신원·checkout·DB 증명
+
+- 현재 Run API `/Users/winterholic/bin/ttk get "/api/runs/$TTAKKARI_RUN_ID" | jq '{id,status,engine,model,effort,profile}'` → exit 0, `id=b0136b76-78c6-443b-95bd-0ce95d32f6f2`, `running / codex / gpt-6-luna / high / 회사 코덱스 ai2 (ai2@hyperez.io)`. 카드 기준과 일치했다.
+- checkout `release/artcraft-main-20261107`, 시작 clean, `origin/main`보다 1 commit ahead. `git pull --ff-only` → exit 0, `Already up to date.`. 기준 source HEAD=`8a0b289c3d0d432180de0a70bc3304170d6e57c6`, `origin/main=63e17f8485530f959c9fee5399199f70c76401b4`.
+- 실패 근거 `back-artcraft-audit-20261107/docs/artcraft/evidence/2026-11-07-lead-checkpoints/deploy-28000cc3-failure.json`은 supported host controller의 release pytest 실패를 기록한다. 원인은 `tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency`, `precise_eval.py imports ttakkari.kb_pipeline.subscription_transport`; 기존 전체 gate 요약은 `1 failed, 1277 passed, 9 skipped`다. 이는 배포 controller의 pytest 실패이며 운영 제작 실패나 호스트 장애로 확대하지 않았다.
+- 테스트 DB URL 원문은 출력하지 않았다. 첫 guard red 실행 때 테스트 hook이 `db reset: 1 selective`를 출력한 뒤 DB identity를 확인했다. 첫 SQL 확인은 asyncpg URL에 동기 engine을 사용해 `MissingGreenlet` exit 1이 났고 DB 변경 전에 중단됐다. 올바른 async engine으로 read-only SQL을 실행해 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` → `ttakkari_test / ttk_test / 50295 / /tmp/ttakkari-run-test-99596-3c347dd4/data`를 확인했고 URL identity도 `127.0.0.1 / ttakkari_test / 50295 / ttk_test`였다. SQL 반환 data_directory의 정확한 부모 marker에서 `run_id=b0136b76-78c6-443b-95bd-0ce95c173f2f`, `port=50295`, `owner_pid=99596`, `folder=ttakkari-run-test-99596-3c347dd4`를 확인했다. 다른 Run DB, 광역 경로 검색, 새 initdb는 쓰지 않았다.
+- **순서 예외:** 위 최초 red guard는 marker 증명 전에 실행되었고 hook에서 현재 테스트 DB의 selective reset이 수행됐다. 그 시점에 DB 소유 검증이 선행되지 않은 것을 뒤늦게 확인해 바로 read-only identity/marker를 검사했다. 이후 DB를 사용하는 통합 검증, green, 영향 범위 테스트는 모두 위 Run marker 확인 뒤에만 실행했다. 최초 reset의 선행 조건 미충족은 사후 확인으로 소급 충족되지 않는다.
+
+### 경계 교정
+
+- `docs/adr/collector-platform-20261020.md`의 bounded context 결정과 부모 `AGENTS.md`의 설계/소유 규칙을 대조했다. collector core가 knowledge adapter/transport 구체 타입을 알지 않도록 하고 composition/runtime에서 외부 예외를 도메인 어휘로 번역하는 경계가 맞다.
+- `src/ttakkari/collector/precise_eval.py`에 중립 `PreciseEvaluatorTransportError` 및 collector 진단 상수를 두었다. 허용 scope(personal/work)는 그대로 통과하고 다른 scope는 consumed=false의 중립 scope-capacity 오류로 거부한다. 예외 처리의 retryable, status, retry_after, engine/account/model receipt 규칙은 중립 예외 속성에 대해 기존 분류를 유지한다.
+- `src/ttakkari/collector_precise_runtime.py`가 실제 `L2TransportError`를 중립 collector 예외로 번역하고 진단, consumed, retry_after, engine, account, model을 복사한다. malformed/다른 예외는 원래 예외를 그대로 전파한다. collector package에 동적 import, guard allowlist/skip/약화는 추가하지 않았다.
+- 단위 테스트는 실제 `L2TransportError` 타입을 조립 경계에 전달해 변환 속성을 검사한다. mission 통합 테스트는 실제 `collector_precise_runtime.install()` 경로를 지나 timeout consumed=true → unresolved/no retry, timeout consumed=false → pending/waiting/retry, usage_limit consumed=true → pending/limited/retry를 확인한다. 모든 경우 retry_after와 account/model receipt를 검사하고 예약은 `unknown`으로 유지했다. 이는 provider 호출 성공 증거가 아니다.
+
+### Red / green / 음성·복구 및 영향 범위 증거
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency -q -x --timeout=120 -p no:cacheprovider
+F — AssertionError: precise_eval.py imports ttakkari.kb_pipeline.subscription_transport
+1 failed in 0.61s; exit 1 (hook: db reset 1 selective)
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_subscription.py::test_subscription_precise_scope_uses_existing_pool_policy unit_tests/test_collection_precise_subscription.py::test_runtime_translates_transport_error_at_composition_boundary -q -x --timeout=120 -p no:cacheprovider
+2 passed in 0.30s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt -q -x --timeout=120 -p no:cacheprovider
+3 passed in 1.17s; db reset 3 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency -q -x --timeout=120 -p no:cacheprovider
+. — 1 passed in 0.61s; db reset 1 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_eval.py -q -x --timeout=120 -p no:cacheprovider
+10 passed in 0.25s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_subscription.py -q -x --timeout=120 -p no:cacheprovider
+18 passed in 0.34s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_mission_stage2.py -q -x --timeout=120 -p no:cacheprovider
+5 passed in 1.39s; db reset 5 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py -q -x --timeout=120 -p no:cacheprovider
+29 passed in 3.55s; db reset 29 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_missions.py -q -x --timeout=120 -p no:cacheprovider
+45 passed in 7.22s; db reset 45 selective, forced full/fallback 0; exit 0
+
+$ ../back/.venv/bin/ruff check src/ttakkari/collector/precise_eval.py src/ttakkari/collector_precise_runtime.py tests/test_collection_missions.py unit_tests/test_collection_precise_subscription.py
+All checks passed!; exit 0
+
+$ git diff --check
+[no output]; exit 0
+```
+
+- 최초 Ruff 실행은 import 정렬과 미사용 import로 exit 1이었고 이를 고친 뒤 위 Ruff 명령 exit 0을 확인했다. 검증은 직렬 실행했으며 security suite, host_operations, 환경 probe는 실행하지 않았다.
+- source/test 경로 지정 commit=`ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc` (`fix(collector): translate subscription errors at runtime boundary`), parent=`8a0b289c3d0d432180de0a70bc3304170d6e57c6`; 커밋 파일은 source 2개와 테스트 2개뿐이다. 현재 release checkout은 해당 source commit 포함 `origin/main`보다 2 commits ahead다. push, 배포 예약/조회, runtime polling, 서비스 변경은 하지 않았다.
+- 독립 검토 전 미완료: DB 사용 선행 조건의 최초 guard 순서 예외는 남는다. 독립 source review, push, release controller 전체 gate, 배포/운영 확인도 수행하지 않았다.
+
+## 후속 검토 지적 — precise runtime 복원 및 이전 DB 증거 정정 (2026-11-07)
+
+### 검토 지적과 test-only 교정
+
+- 이전 기록의 run-test marker `run_id=b0136b76-78c6-443b-95bd-0ce95c173f2f`는 Lead가 확인한 해당 이전 Run API ID `b0136b76-78c6-443b-95bd-0ce95d32f6f2`와 다르다. **이전 marker의 소유 증거는 수용하지 않는다.** 과거 Run DB, marker 파일, outbox는 다시 읽지 않았다. 올바른 API ID를 marker의 정답으로 추정 치환하지 않았으며, 과거 DB 선행 순서 문제도 소급 해결됐다고 보지 않는다.
+- `test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt`는 `collector_precise_runtime.install()`이 교체한 `precise_eval._runtime`을 남겼다. 테스트가 시작할 때의 객체를 `monkeypatch.context()`에 snapshot하고, install·세 transport cases를 context 안에서 실행한 뒤 context 종료 후 객체 identity 복원을 assertion한다. 기존 `test_collector_manage.py`의 monkeypatch 기반 복원 방식을 사용했다. product source `ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc`는 수정하지 않았다.
+
+### 현재 Run의 선행 DB 증명 및 테스트 순서
+
+- Run API 명령 `/Users/winterholic/bin/ttk get "/api/runs/$TTAKKARI_RUN_ID" | jq '{id,status,engine,model,effort,profile}'` → exit 0, `f27154ad-ad7d-4076-9280-34ef32af3b17 / running / codex / gpt-6-luna / high / 회사 코덱스 ai2 (ai2@hyperez.io)`.
+- 첫 pytest 전에 실행한 현재 Run DB 확인은 async SQLAlchemy engine으로 `SET TRANSACTION READ ONLY` 후 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')`를 수행했다. DB URL 원문은 출력하지 않았다. 출력: `url_identity 127.0.0.1 ttakkari_test 62042 ttk_test`; `sql_identity ttakkari_test ttk_test 62042 /tmp/ttakkari-run-test-99596-eb71e520/data`.
+- SQL이 반환한 data_directory의 정확한 부모 `/tmp/ttakkari-run-test-99596-eb71e520/run-test-cluster.marker`만 읽었다. marker는 `run_id=f27154ad-ad7d-4076-9280-34ef32af3b17`, `port=62042`, `owner_pid=99596`, `folder=ttakkari-run-test-99596-eb71e520`를 반환했고 URL/SQL DB·user·port도 일치했다. 이 증명은 현재 Run 테스트에만 해당하며 이전 mismatch를 대체하지 않는다.
+- 수정 전 red 명령은 위 proof 완료 뒤 실행했다:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest 'tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt' -q --timeout=120 -p no:cacheprovider
+FFF — 세 parameter 모두 마지막 runtime identity assertion 실패; 각 사례 뒤 finalizer가 원래 runtime 복구
+3 failed in 1.20s; db reset 3 selective; exit 1
+```
+
+- 수정 후 green:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest 'tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt' -q --timeout=120 -p no:cacheprovider
+... [100%]
+db reset: 3 selective (avg 10.3/132 tables), 0 forced full, 0 fell back to full
+3 passed in 1.23s; exit 0
+```
+
+### 보존 상태
+
+- test-only 경로 지정 commit=`80b3116ec4e132f5cf668463c6479e1c5ffc5815` (`test(collector): restore precise runtime after transport cases`); 그 commit의 부모 product/document tip=`6aed062f650b7e832d2b8f100f547c7990d3ed03`. 제품 source full SHA는 변경 없이 `ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc`다.
+- 이 정정 단락은 별도 경로 지정 문서 commit으로 기록한다. 이번 범위에서 실행한 pytest는 위 세 parameter뿐이다. 기존 suite/보안 gate, 환경 probe, push, 배포, 운영 조회는 하지 않았다.
+- tool catalog 검색에서 `fresh_context`와 `reset_my_context` 도구가 노출되지 않았다. 이 기록을 마친 뒤 현재 turn을 종료해 다음 단계가 별도 fresh verifier로 시작할 수 있게 한다.

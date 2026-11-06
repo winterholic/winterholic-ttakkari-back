@@ -1,0 +1,99 @@
+{
+  "2026-Q3-dept-expense-settlement-v2.xlsx": {
+    "filename": "2026-Q3-dept-expense-settlement-v2.xlsx",
+    "size_bytes": 4797,
+    "sha256": "6db106ca563c2f2515f0130653f0fd1e780a77525246b3befda8d448fe95f632",
+    "type": "xlsx",
+    "formulas": [
+      "SUM(C2:D2)",
+      "SUM(C3:D3)",
+      "SUM(C4:D4)",
+      "SUM(C5:D5)",
+      "SUM(C6:D6)",
+      "SUM(B2:B6)",
+      "SUM(C2:C6)",
+      "SUM(D2:D6)",
+      "SUM(E2:E6)",
+      "AVERAGE(B2:B6)",
+      "AVERAGE(C2:C6)",
+      "AVERAGE(D2:D6)",
+      "AVERAGE(E2:E6)"
+    ],
+    "formula_count": 13
+  },
+  "ai-agent-strategy.pdf": {
+    "filename": "ai-agent-strategy.pdf",
+    "size_bytes": 574901,
+    "sha256": "f726aa89ba9f6bf70a19d93bd9fe7a19bc67e0f5ed7db2c1dee2d5ae9128ce89",
+    "type": "pdf"
+  },
+  "ai-agent-strategy.pptx": {
+    "filename": "ai-agent-strategy.pptx",
+    "size_bytes": 28038,
+    "sha256": "605f6e041f0093ca5fe79ced3ad5875c49d8b637e70ce53ce6108abf08c93806",
+    "type": "pptx",
+    "slide_count": 4
+  },
+  "bracket.dxf": {
+    "filename": "bracket.dxf",
+    "size_bytes": 41194,
+    "sha256": "4c355b1e2db49825a7fe49fcaed3e7d6869cf3bae29e50005ff0019c3f9fff13",
+    "type": "dxf",
+    "line_count": 6590,
+    "valid_dxf_header": true
+  },
+  "bracket.png": {
+    "filename": "bracket.png",
+    "size_bytes": 345216,
+    "sha256": "0ffc09477099246472d4bd56cfa8b7b5389bad2eb08c767d3aea6f4cb5b6cfd3",
+    "type": "png",
+    "width": 2400,
+    "height": 1600
+  },
+  "minimal-tech-logo.png": {
+    "filename": "minimal-tech-logo.png",
+    "size_bytes": 19386,
+    "sha256": "ed73c5fdbc037787cf5f428589e9cb7a19532340c101a8f97d09bc00967d9ca6",
+    "type": "png",
+    "width": 1200,
+    "height": 480
+  },
+  "minimal-tech-logo.svg": {
+    "filename": "minimal-tech-logo.svg",
+    "size_bytes": 1091,
+    "sha256": "49fe92502e15bd9e0517209fbd840c797dfaf723c8fa0ca74b6baaa8c5247a60",
+    "type": "svg",
+    "viewBox": "0 0 1200 480",
+    "width": "1200",
+    "height": "480"
+  },
+  "ttakkari-studio-2026-title-card.ecproj": {
+    "filename": "ttakkari-studio-2026-title-card.ecproj",
+    "size_bytes": 83565,
+    "sha256": "a93c23330ba02c5acfd1aedef4179f884dbd88303138af643f16cd9e0ab1d4d1",
+    "type": "ecproj"
+  },
+  "ttakkari-studio-2026-title-card.png": {
+    "filename": "ttakkari-studio-2026-title-card.png",
+    "size_bytes": 76777,
+    "sha256": "2c2ba689dd1c96b05ec7746e4664d26a9bc9f05eccff39c247bc95076c6e20af",
+    "type": "png",
+    "width": 1920,
+    "height": 1080
+  },
+  "weekly-engineering-report-v2.docx": {
+    "filename": "weekly-engineering-report-v2.docx",
+    "size_bytes": 9106,
+    "sha256": "47b37a57f26279c2caa3bec55d1ba9ab48a31800aedc0f260a85c7682676d4a6",
+    "type": "docx",
+    "text_elements_count": 39,
+    "sample_text": "주간 엔지니어링 보고서 (v2) 보고 기간: 2026년 11월 2일 ~ 11월 6일 · 작성일: 2026년 11월 6일 1. 개요 이번 주는 서비스 안정성 개선과 신규 기능 개발을 병행했습니다. 주요 장애 없이 운영되었고, 배포 파이프라인 개선과 성능 최적화에 집중했습니다. 아래 수치와 항목은 양식 확인용 예시이며, 실제 내용으로 교체해서 사용합니다. 항목 이번 주 비고 배포 횟수 5회 롤백 없음",
+    "has_korean": true
+  },
+  "weekly-engineering-report-v2.pdf": {
+    "filename": "weekly-engineering-report-v2.pdf",
+    "size_bytes": 54882,
+    "sha256": "d928813e999460583687486218cca5478073627c076487619861593ed9027156",
+    "type": "pdf"
+  }
+}

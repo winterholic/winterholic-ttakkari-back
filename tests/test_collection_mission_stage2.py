@@ -17,6 +17,19 @@ pytestmark = pytest.mark.security
 GOAL = "프로그래밍 언어 컴파일러 최적화"
 
 
+@pytest.fixture(autouse=True)
+def isolated_precise_eval_runtime():
+    """Keep the process-global evaluator registration out of mission-view assertions."""
+    from ttakkari.collector import precise_eval
+
+    previous = precise_eval._runtime
+    precise_eval.register_runtime(None)
+    try:
+        yield
+    finally:
+        precise_eval.register_runtime(previous)
+
+
 async def register(client, auth, env):  # noqa: F811
     env.server.page("/document", article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
     url = env.server.url("/document")
@@ -60,7 +73,10 @@ async def test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_ev
     assert tri["axes"]["topic_relevance_semantic"]["validation"] == "validated"
     assert tri["axes"]["relevance_lexical"]["validation"] == "unvalidated"
     assert tri["axes"]["explanation_quality"]["status"] == "unmeasured"
-    assert tri["precise_eval"]["state"] == "pending" and tri["precise_eval"]["engine"]["status"] == "unavailable"
+    assert tri["precise_eval"]["state"] == "pending"
+    assert tri["precise_eval"]["engine"] == {
+        "status": "waiting", "detail": "subscription evaluator runtime was not registered",
+    }
     summary = detail["triage"]
     assert summary["precise_eval"]["pending"] == 1 and summary["precise_eval"]["skipped_cap"] == 0
     assert summary["precise_eval"]["processing"] == 0 and summary["precise_eval"]["unresolved"] == 0
@@ -139,8 +155,6 @@ async def test_mission_view_never_touches_the_harness_qwen_slot(client, auth, en
         engine = response.json()["triage"]["precise_eval"]
         assert engine["engine"] == "ready" and "127.0.0.1" not in str(engine)  # readiness only, endpoint hidden
     finally:
-        from ttakkari.collector import precise_eval
         holder.stdin.write(b"\n")
         await holder.stdin.drain()
         await asyncio.wait_for(holder.wait(), 10)
-        precise_eval.register_runtime(None)

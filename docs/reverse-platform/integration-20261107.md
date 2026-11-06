@@ -108,3 +108,38 @@ $ git diff --check
 - 실제 API 상세 응답·DB에 저장된 구현자/검증자 별도 라운드와 callback repair enqueue는 이 실행에서 미검증이다. DB 비의존 검사와 코드 경로 검토만 수행했다.
 - 구현자/verifier 프롬프트와 캡처 작성자 안내, ZIP에 검증 웹 raw JSON·PNG·비교 manifest를 포함하는 확장은 이번 단위에서 하지 않았다. 기획의 결과 검토 후 별도 후속으로 연결한다.
 - 원본 core의 unstaged `unit_tests/test_reverse_compare.py`는 수정하지 않았다. 필요한 웹 서버 재계산·별도 시각 판정 반례는 통합 준비본의 `unit_tests/test_reverse_web_core_integration.py`에 소유 테스트로 추가했다.
+
+## 웹 캡처 안내와 안전한 ZIP 연결 (2026-11-07)
+
+### 실행 신원·기준
+
+- 저장소 접근 전 `ttk get /api/sessions/7e594972-a53a-4a52-aedc-aba29faeb219/runs` 결과를 `status=running`으로 필터링해 현재 Run `626a2fe1-9b63-4e0d-88df-7c1cd3061e74`와 프로필 `회사 코덱스 ai2 (ai2@hyperez.io)`를 확인했다. `/api/accounts`에서 같은 이름의 단일 계정 ID는 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`였다. 다른 계정 전환은 하지 않았다.
+- 시작 HEAD `9fb233bdb2f58c67ac4aee19c97d209e46b331cb`, 초기 worktree clean을 확인했다. 이전 61개 회귀와 모듈 8개는 반복하지 않았다.
+- 구현 및 안내 변경 커밋: `f554f667f4c27f2692eb73fc9234999ff1f89325` (`reverse_tasks.py`, 소유 단위 테스트, reverse-platform harness/web-evidence 문서).
+
+### 프롬프트·수집·아카이브
+
+- 웹 구현/검증 프롬프트가 설정된 `ttakkari_browser`로 동일 입력·사전 상태·viewport·환경을 관찰하도록 안내한다. 검증자는 구현자 증거를 재사용하지 않고 자기 Run ID로 새 관찰·비교를 만든다. 직접 관찰·수기 전사·2차 조회·추론을 구분하고, 원본 부재/브라우저 오류는 `unverified`와 필요한 `needs_input`으로 남긴다.
+- 프롬프트 명령은 실제 job 폴더와 준비본의 `back/.venv/bin/python`, checkout `src` 및 절대 CLI 스크립트 경로를 사용한다. job 경로와 인자는 `shlex.quote`로 인용한다. venv 심볼릭 링크를 풀면 Pillow 의존성을 잃는 것이 임시 CLI에서 확인되어, 프롬프트는 venv 링크 경로 자체를 보존한다.
+- `collect_outputs`는 현재 Run과 저장된 최신 구현자/검증자 report를 모으고 각 역할의 Run/session ID를 `bundle`로 전달한다. ZIP에는 검증 후 재계산한 웹 비교 JSON, 그 raw capture, 원본·복제 PNG와 별도 `reverse-web-evidence-manifest.json`을 담는다. 원시 JSON의 상대 PNG 경로는 ZIP에서도 유지한다. 체크 로그는 `evidence/roles/{implementation,verifier}/checks/`에 역할별로 둔다. 비교 기능/시각 결과, 요약, 무결성, provenance 및 거부 사유를 구분한다.
+- 아카이브 시 root 내부 경로를 descriptor 기반 `O_NOFOLLOW`로 열고 정규 파일·바이트 수·SHA-256을 재검사한다. 웹 raw JSON은 1 MiB, PNG만 별도 12 MiB이며 일반 파일 상한은 올리지 않았다. 경로 탈출·절대경로·symlink·민감·과대·SHA/크기 불일치·Run 불일치 및 캡처 후 변조는 포함하지 않고 manifest에 사유를 남긴다. ZIP 자체도 중복/비정상 경로·CRC·symlink를 다시 검사한다. 기존 14키 비교 입력과 실행/의존성/소스/테스트/CLI/API 자료는 보존한다.
+
+### 확인한 결과와 경계
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py -k 'web_prompt_gives or bundle_rechecks_and_archives_role or bundle_refuses_web_evidence or bundle_manifest_records or bundle_refuses_symlink_as_zip or bundle_keeps_verified_png or bundle_does_not_include_web_capture or bundle_rejects_png or collect_outputs_bundles or test_zip_contains_sources or bundle_includes_comparison_manifest'
+11 passed, 21 deselected in 0.61s
+$ ../back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py unit_tests/test_reverse_tasks.py
+All checks passed!
+$ ../back/.venv/bin/python -m py_compile src/ttakkari/reverse_tasks.py
+exit 0
+$ ../back/.venv/bin/python /Users/winterholic/.claude/dev-experts-skills/dev-python/scripts/pitfall_scan.py src/ttakkari/reverse_tasks.py
+total: 0 finding(s)
+$ git diff --check
+exit 0
+```
+
+- 프롬프트의 capture/verify 명령을 `/private/tmp/Reverse Web Job smoke 20261107`에서 직접 실행했다. capture CLI는 `.reverse/comparisons/cli-smoke-case-cli-smoke-run.web.json`을 만들었고 verify CLI는 기능 `match`, 시각 `mismatch`(192/192 pixels), integrity `verified`, provenance `unverified`를 출력했다. 입력 PNG와 관찰은 synthetic module fixture이며 설정 브라우저 관찰이나 ReverseJob E2E가 아니다.
+- ZIP 회귀는 실제 ZIP을 열어 역할 manifest·비교 JSON·raw JSON·PNG를 확인하고, PNG SHA/바이트 및 디코딩, 역할별 로그, 경로·민감·크기·변조·symlink·잘못된 Run 반례를 확인했다. 1 MiB 초과 PNG는 별도 12 MiB 한도에서 포함되고 12 MiB 초과 PNG는 거부됐다.
+- `ruff format --check`는 기존 두 파일 전체를 재포맷해야 한다고 출력해 적용하지 않았다(이 파일의 기존 포맷까지 대량 변경하면 범위 밖). 변경 영향 파일의 `ruff check`는 통과했다.
+- 이전 기록의 Codex command sandbox `initdb → shmget ... Operation not permitted` 제한을 따라 DB/API 저장 및 dispatch 검증은 이번에도 실행하지 않았고 미검증으로 둔다. 실제 configured-browser 원본/복제 관찰과 실제 ReverseJob E2E도 이번 단위 범위 밖이라 미실행이다. push·배포하지 않았다.

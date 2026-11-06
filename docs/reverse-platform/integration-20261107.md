@@ -68,6 +68,43 @@ pool 전달 교정은 단위 회귀를 먼저 추가해 RED를 확인했다 (`po
 
 ## 남은 통합
 
-- 웹 worker `20ce553e` 결과를 받은 뒤 웹 신규 파일과 기존 비교기 연결을 별도 통합·검증한다.
-- DB/API 회귀와 `docs/reverse-platform/audit-core-7266a2a1/probes/test_core_audit.py`는 권한 있는 임시 PostgreSQL 실행 환경에서 다시 검증한다.
 - 이 통합 준비 브랜치는 push·배포하지 않았다. 배포 revision, 운영 동작, 실제 플랫폼 agent E2E는 미확인이다.
+
+## 웹 증거 서버 연결 후속 (2026-11-07)
+
+### 프로필 및 입력 커밋
+
+- 저장소 접근 전에 `ttk get /api/sessions/7e594972-a53a-4a52-aedc-aba29faeb219/runs`에서 이번 실행 중인 Run `f16394e1-c8cb-4128-9ebe-c7fdc9ec140e`의 `profile`이 `회사 코덱스 ai2 (ai2@hyperez.io)`임을 확인했다. `ttk get /api/accounts`의 같은 이름은 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`, `enabled=true`였다.
+- 시작 HEAD `7b68e586136aa8fcbd58619f3e19d797c6d237e1`은 clean이었다. 준비 과정을 반복하지 않았다.
+- 웹 원본 `e80062ea066c6265262f21068c67808920e73daf` → 통합 `373c6fe0`; 모듈·캡처·증거·검사 21파일을 그대로 보존했다.
+- 감사 원본 `3287181780f25cdf6ec3f8a746b6894f541d5273` → 통합 `4911c14e`; 감사 전용 두 파일만 보존했다.
+- 이 후속의 core 코드·회귀 테스트 커밋은 `cb7a2ad3f1ad1ee514da4d7049554df89695caf4`다. 이 기록 반영은 별도 문서 커밋이다.
+
+### 서버 연결과 계약
+
+- `reverse_tasks.verify_comparisons`는 정확히 14개 입력 키를 받는 기존 계약을 유지하고, `target_type=web`의 단일 `web_capture`만 `verify_web_capture`로 재열어 재계산한다. 캡처 누락·중복, 다른 Run, 원시 JSON 또는 스크린샷 변경은 `unverified`에 머문다. 입력의 `result`와 시각 선언은 verdict에 사용하지 않는다.
+- 서버 출력 comparison에 `functional_result`, `visual_result`, `visual_assessment`를 제공하고, capture ref·무결성·provenance를 evidence에 보존한다. 무결성이 확인되지 않은 시각 상세 선언은 결과에서 제거한다. 기능 `direct_comparison`과 별도 `visual_comparison`의 수치는 합산하지 않는다.
+- 웹 작업은 기능과 시각 결과 모두 `match`여야 독립 검증을 통과한다. 시각 mismatch/unverified 및 기능 실패는 기존 구현 세션의 repair predicate로 가며 `attempts < max_repair_attempts`, source, observation 조건을 지킨다. verifier 비교·시각 요약은 구현자 결과와 별도 저장한다.
+- 새 연결 반례는 구현 전에 실패했다: core 미연결 재계산 검사 `2 failed, 1 passed`; bounded visual repair 계약은 helper 부재로 `1 failed`. 구현 뒤 동일 연결 묶음과 검사 전체가 통과했다.
+
+### 실행한 DB 비의존 검증
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_web_core_integration.py
+7 passed
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py unit_tests/test_reverse_static.py unit_tests/test_reverse_web_core_integration.py
+61 passed in 1.56s
+$ ../back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/reverse_web_evidence.py unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py unit_tests/test_reverse_static.py unit_tests/test_reverse_web_core_integration.py
+All checks passed!
+$ git diff --check
+(출력 없음, exit 0)
+```
+
+저장된 캡처 두 건을 실제 통합 경로로 재검산했다. 둘 다 기능 mismatch·시각 mismatch였으며, 첫 사례는 15,169픽셀, 경계 사례는 15,295픽셀이 달랐다. 두 건 모두 integrity `verified`, provenance `unverified`였다. 개발자 데모는 ReverseJob 에이전트 E2E로 승격하지 않았다. 이전 웹 모듈 단위 8개는 변경 없이 반복하지 않았다.
+
+### 미검증 및 후속 범위
+
+- DB/API 및 manager 회귀와 `docs/reverse-platform/audit-core-7266a2a1/probes/test_core_audit.py`는 미검증이다. 이 Codex command sandbox의 기존 기록에서 `tests/conftest.py → pg_sandbox.start_cluster() → initdb` 단계가 `shmget ... Operation not permitted`로 실패했다. 지시에 따라 같은 초기화나 다른 엔진으로 재시도하지 않았다. 운영 DB 상태의 증거가 아니다.
+- 실제 API 상세 응답·DB에 저장된 구현자/검증자 별도 라운드와 callback repair enqueue는 이 실행에서 미검증이다. DB 비의존 검사와 코드 경로 검토만 수행했다.
+- 구현자/verifier 프롬프트와 캡처 작성자 안내, ZIP에 검증 웹 raw JSON·PNG·비교 manifest를 포함하는 확장은 이번 단위에서 하지 않았다. 기획의 결과 검토 후 별도 후속으로 연결한다.
+- 원본 core의 unstaged `unit_tests/test_reverse_compare.py`는 수정하지 않았다. 필요한 웹 서버 재계산·별도 시각 판정 반례는 통합 준비본의 `unit_tests/test_reverse_web_core_integration.py`에 소유 테스트로 추가했다.

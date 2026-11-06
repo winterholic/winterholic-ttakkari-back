@@ -322,8 +322,8 @@ async def test_generation_runtime_schedules_the_weather_scan(monkeypatch):
     assert calls == ["scan"]
 
 
-@pytest.mark.parametrize("hour,minute,expected", [(6, 30, 0), (11, 59, 0), (12, 0, 1), (12, 1, 1)])
-async def test_scheduled_scan_starts_at_noon_kst(monkeypatch, hour, minute, expected):
+@pytest.mark.parametrize("hour,minute,expected", [(0, 0, 1), (0, 1, 1), (11, 59, 1), (23, 59, 1)])
+async def test_scheduled_scan_starts_at_midnight_kst(monkeypatch, hour, minute, expected):
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -338,9 +338,9 @@ async def test_scheduled_scan_starts_at_noon_kst(monkeypatch, hour, minute, expe
         start.assert_awaited_once_with(date(2026, 10, 20), "scheduled")
 
 
-async def test_scheduled_briefing_records_noon_and_deduplicates(monkeypatch):
+async def test_scheduled_briefing_records_midnight_and_deduplicates(monkeypatch):
     monkeypatch.setattr(service, "advance", AsyncMock())
     row = await service.start_for_day(DAY, "scheduled")
-    assert row.scheduled_at == datetime(2026, 10, 16, 3, 0, tzinfo=UTC)
+    assert row.scheduled_at == datetime(2026, 10, 15, 15, 0, tzinfo=UTC)
     again = await service.start_for_day(DAY, "scheduled")
     assert again.id == row.id

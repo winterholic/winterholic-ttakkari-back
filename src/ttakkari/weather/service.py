@@ -28,7 +28,7 @@ from ttakkari.weather.open_meteo import normalize_forecast
 
 log = logging.getLogger("ttakkari.weather")
 KST = ZoneInfo("Asia/Seoul")
-BRIEFING_TIME = time(12, 0)
+BRIEFING_TIME = time(0, 0)
 # 기본 경로: engine=auto 세션. 가용 계정 여유로 Codex(Luna)·Claude(model_counterparts 의 sonnet)를 매니저가 고른다.
 MODEL = "gpt-6-luna"
 EFFORT = "low"

@@ -672,3 +672,10 @@ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-rselect-20261107 ./scripts/verify_de
 - 회귀는 기존 transport 경로의 상수·클래스 identity, 오류 메시지/속성/상속, 중립 모듈의 금지 의존 부재를 확인한다. 실제 collector mission 회귀는 중립 오류를 던져 consumed=True가 unresolved, consumed=False가 retry_after 및 account/engine/requested_model을 보존한 pending으로 기록되는지 확인한다. 양쪽 모두 budget reservation은 기존처럼 unknown/full-reserved로 유지한다.
 - Selection receipt 회귀는 owner와 adapter 각각에서 `declared_environment={}` 및 `{'research_execution_owner': 'explicit-condition'}`를 교차 확인한다. 네 조합 모두 `unknown`, `affects_selection=True`, 원본 snapshot 불변을 검증한다.
 - 초기 targeted RED: 공유 모듈 추가 전 identity/precise import 2건이 `ImportError: cannot import name 'subscription_contract'`로 실패했고 selection 4건은 통과했다. 수정 후 기존 구조 AST 검사와 관련 회귀를 명시 실행해 `9 passed`를 확인했다. 기본 gate 결과는 고정 커밋 뒤 별도 기록한다.
+
+## f587 고정 gate 및 최신 main 통합 준비 (2026-11-07)
+
+- 착수 전 지원 Run API의 현재 실행 Run은 `회사 코덱스 ai2 (ai2@hyperez.io)` 프로필이었고 `/api/accounts`의 같은 이름 enabled 계정은 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a` 하나였다. 시작 branch `integ/reverse-release-integration-20261107`의 clean HEAD는 `f587fb207e77148b578651e3f6d0c6e37e3f01c6`이었다.
+- 고정 f587 gate는 지원 Run `74fae959-80de-45e5-9501-efde7aa79ee2` events 115/116에서 재확인했다. 실행 명령은 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-reverse-b05-20261107 ./scripts/verify_deploy_gate.sh --commit f587fb207e77148b578651e3f6d0c6e37e3f01c6 --base 1a7d0f48d3312cf26cea18e4436ce155ec90f670`이다. 결과: Ruff 변경 Python 7개 통과, 계약 `87 passed` (17.13초), 변경 테스트 `110 passed` (9.83초), 합계 39초, exit 0. 이 기본 사전검사는 전체 릴리스 테스트가 아니다.
+- 정상 `git fetch origin` 결과 `origin/main=63e17f8485530f959c9fee5399199f70c76401b4`; 준비 HEAD와의 분기는 ahead 8 / behind 11이었다. 이번 단계에서 `git merge --no-edit origin/main`으로 보존 통합했으며 merge commit은 별도 gate 결과와 구분한다.
+- 병합 보존 대조: `548df816`의 `sessionmaker()` factory 전달과 `tests/test_collector_manage.py` 회귀, `88a79c4c`의 ready evaluator/runtime 불가 시 `waiting` 유지 및 미등록 runtime `unavailable` 상태와 `tests/test_collection_mission_stage2.py` 회귀를 최종 merge diff에 확인했다. 기존 중립 `subscription_contract.py` import, 오류·진단, scope fail-closed 및 pending/unresolved 계약도 그대로 남는다.

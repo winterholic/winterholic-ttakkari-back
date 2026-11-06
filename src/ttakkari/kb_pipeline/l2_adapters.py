@@ -210,8 +210,10 @@ class SubscriptionCliL2Adapter:
                     retry_after = min((until for _, until in blocked), default=None)
                     self.retry_after = retry_after
                     raise ScopeCapacityUnavailableError("no enabled subscription profile for document scope", retry_after)
+                override = await profiles.get_override(db, self.target_pool)
+                priority_ids = override["ids"] if override else None
                 run_id = uuid.uuid4()
-                profile = await profiles.choose_async(candidates, run_id)
+                profile = await profiles.choose_async(candidates, run_id, priority_ids=priority_ids)
             try:
                 result = await execute_subscription_json_call(
                     profile,

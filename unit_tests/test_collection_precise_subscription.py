@@ -149,7 +149,7 @@ async def test_subscription_adapter_preserves_profile_order_and_filters_to_docum
     from ttakkari.kb_pipeline import l2_adapters
     from ttakkari.runs import profiles
 
-    work_first = profiles.Profile(id=__import__("uuid").uuid4(), name="work-first", engine="codex", pool="work")
+    work_first = profiles.Profile(id=__import__("uuid").uuid4(), name="ai2", engine="codex", pool="work")
     personal_next = profiles.Profile(id=__import__("uuid").uuid4(), name="personal-next", engine="codex", pool="personal")
     selected = []
 
@@ -162,7 +162,11 @@ async def test_subscription_adapter_preserves_profile_order_and_filters_to_docum
     async def available(*_args, **_kwargs):
         return [work_first, personal_next], []
 
-    async def choose(candidates, _run_id):
+    async def override(_db, pool):
+        assert pool == "personal"
+        return {"ids": [str(work_first.id)]}
+
+    async def choose(candidates, _run_id, **_kwargs):
         selected.append(candidates[0].name)
         return candidates[0]
 
@@ -170,6 +174,7 @@ async def test_subscription_adapter_preserves_profile_order_and_filters_to_docum
         return verdict()
 
     monkeypatch.setattr(profiles, "availability", available)
+    monkeypatch.setattr(profiles, "get_override", override)
     monkeypatch.setattr(profiles, "choose_async", choose)
     monkeypatch.setattr(profiles, "release", lambda _run_id: None)
     monkeypatch.setattr(l2_adapters, "execute_subscription_json_call", execute)
@@ -182,6 +187,96 @@ async def test_subscription_adapter_preserves_profile_order_and_filters_to_docum
     assert result["recommendation"] == "accept"
     assert selected == ["personal-next"]
     assert account == {"engine": "codex", "account": "personal-next", "pool": "personal", "requested_model": "gpt-6-luna"}
+
+
+@pytest.mark.asyncio
+async def test_subscription_adapter_keeps_busy_temporary_choice_ahead_of_idle_account(monkeypatch):
+    from uuid import uuid4
+
+    from ttakkari.kb_pipeline import l2_adapters
+    from ttakkari.runs import profiles
+
+    preferred = profiles.Profile(id=uuid4(), name="temporary-first", engine="codex", pool="personal")
+    idle = profiles.Profile(id=uuid4(), name="idle-second", engine="codex", pool="personal")
+    already_running = uuid4()
+    selected = []
+
+    class Session:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+
+    async def available(*_args, **_kwargs):
+        return [preferred, idle], []
+
+    async def override(_db, pool):
+        assert pool == "personal"
+        return {"ids": [str(preferred.id)]}
+
+    async def execute(profile, _prompt, _schema, _config, **_kwargs):
+        selected.append(profile.name)
+        return verdict()
+
+    monkeypatch.setattr(profiles, "availability", available)
+    monkeypatch.setattr(profiles, "get_override", override)
+    monkeypatch.setattr(l2_adapters, "execute_subscription_json_call", execute)
+    profiles._in_use[already_running] = preferred.id
+    adapter = l2_adapters.SubscriptionCliL2Adapter(
+        lambda: Session(), engine="codex", model="gpt-6-luna", origin_scope="personal", visibility="global"
+    )
+    try:
+        result, _account = await adapter.call_json(
+            "bounded prompt", {}, system_prompt="evaluate only", validator=precise_eval.validate_evaluator_result
+        )
+    finally:
+        profiles.release(already_running)
+
+    assert result["recommendation"] == "accept"
+    assert selected == ["temporary-first"]
+
+
+@pytest.mark.asyncio
+async def test_subscription_adapter_falls_back_when_temporary_account_is_exhausted(monkeypatch):
+    from uuid import uuid4
+
+    from ttakkari.kb_pipeline import l2_adapters
+    from ttakkari.runs import profiles
+
+    preferred = profiles.Profile(id=uuid4(), name="work-first", engine="codex", pool="work")
+    fallback = profiles.Profile(id=uuid4(), name="work-second", engine="codex", pool="work")
+    selected = []
+
+    class Session:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+
+    async def available(*_args, **_kwargs):
+        return [fallback], [(preferred, 123.0)]
+
+    async def override(_db, pool):
+        assert pool == "work"
+        return {"ids": [str(preferred.id)]}
+
+    async def execute(profile, _prompt, _schema, _config, **_kwargs):
+        selected.append(profile.name)
+        return verdict()
+
+    monkeypatch.setattr(profiles, "availability", available)
+    monkeypatch.setattr(profiles, "get_override", override)
+    monkeypatch.setattr(l2_adapters, "execute_subscription_json_call", execute)
+    adapter = l2_adapters.SubscriptionCliL2Adapter(
+        lambda: Session(), engine="codex", model="gpt-6-luna", origin_scope="work", visibility="work_only"
+    )
+    result, account = await adapter.call_json(
+        "bounded prompt", {}, system_prompt="evaluate only", validator=precise_eval.validate_evaluator_result
+    )
+
+    assert result["recommendation"] == "accept"
+    assert selected == ["work-second"]
+    assert account["pool"] == "work"
 
 
 @pytest.mark.asyncio

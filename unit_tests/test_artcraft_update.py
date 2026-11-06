@@ -501,7 +501,8 @@ async def test_start_update_job_actual_path_self_exclusion(
     fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
 ):
     """실제 start_update_job -> _start -> runner -> apply_update -> check_busy 경로에서 자기 자신을 제외하여 성공해야 함."""
-    from ttakkari import artcraft_tasks, background_consumers, db as db_module
+    from ttakkari import artcraft_tasks, background_consumers
+    from ttakkari import db as db_module
     from ttakkari.artcraft_update import start_rollback_job, start_update_job
 
     consumers = background_consumers.consumers

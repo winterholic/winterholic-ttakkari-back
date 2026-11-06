@@ -1,7 +1,7 @@
 """ArtCraft 앱별 업데이트 백엔드.
 
 공식 Storytold 릴리스의 확인, SHA256 검증, 안전한 압축 해제, 원자적 스왑,
-사후 검증(--version/MCP), 실패 시 자동 원복(롤백), 수동 롤백 및 상태 관리를 담당한다.
+사후 검증(--version 및 MCP initialize), 실패 시 자동 원복(롤백), 수동 롤백 및 상태 관리를 담당한다.
 """
 from __future__ import annotations
 
@@ -121,13 +121,18 @@ def safe_extract_zip(zip_bytes: bytes, dest_dir: Path) -> list[str]:
 
 # ---------------------------------------------------------------- Busy Guard
 
-async def check_busy(app: str) -> None:
-    """앱 GUI 실행 여부 및 Job 활성 상태를 점검하여 충돌 방지."""
+async def check_busy(app: str, exclude_job_id: str | None = None) -> None:
+    """앱 GUI 실행 여부 및 Job 활성 상태를 점검하여 충돌 방지.
+    
+    현재 실행 중인 자기 자신의 job_id는 검사에서 제외한다.
+    """
     validate_app(app)
 
     # 1. 진행 중인 Job 검사 (스모크, GUI 조작, 타 업데이트)
     for job in artcraft.JOBS.values():
         if not job.active:
+            continue
+        if exclude_job_id and job.id == exclude_job_id:
             continue
         # 전체 스모크가 돌고 있으면 모든 앱 잠금
         if job.kind == "smoke" and job.mode == "full":
@@ -225,16 +230,18 @@ async def fetch_release_assets(app: str, tag: str | None = None) -> dict[str, An
             "sha256_sums": sums_text,
             "version": version,
             "tag": release_info.get("tag_name", f"v{version}"),
+            "published_at": release_info.get("published_at"),
         }
 
 
 # ---------------------------------------------------------------- 설치 후 사후 검증
 
 async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
-    """설치 후 --version 및 기본 동작 검증."""
+    """설치 후 --version 및 MCP initialize 핸드셰이크 사후 검증."""
     if not bin_path.is_file() or not os.access(bin_path, os.X_OK):
         return False, f"바이너리 실행 권한이 없습니다: {bin_path}"
 
+    # 1. --version 검증
     try:
         proc = await asyncio.create_subprocess_exec(
             str(bin_path), "--version",
@@ -246,11 +253,77 @@ async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
         output = stdout.decode("utf-8", "replace").strip()
         if proc.returncode != 0:
             return False, f"CLI --version 종료 코드 오류 (rc={proc.returncode}): {output}"
-        return True, output
     except TimeoutError:
         return False, f"--version 실행 시간 초과 ({int(VERIFY_TIMEOUT)}초)"
     except Exception as exc:  # noqa: BLE001
         return False, f"--version 실행 중 예외: {exc}"
+
+    # 2. MCP stdio initialize 핸드셰이크 검증
+    try:
+        mcp_proc = await asyncio.create_subprocess_exec(
+            str(bin_path), "mcp",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=artcraft._env(),
+        )
+        init_req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "ttakkari-verify", "version": "1.0"},
+            },
+        }) + "\n"
+
+        async def _handshake() -> tuple[bool, str | None]:
+            assert mcp_proc.stdin is not None
+            assert mcp_proc.stdout is not None
+            try:
+                mcp_proc.stdin.write(init_req.encode("utf-8"))
+                await mcp_proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                return False, "MCP 파이프가 즉시 닫혔습니다."
+
+            while True:
+                line = await mcp_proc.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode("utf-8", "replace").strip()
+                if not line_str:
+                    continue
+                try:
+                    data = json.loads(line_str)
+                    if data.get("id") == 1 and ("result" in data or "error" not in data):
+                        return True, None
+                    if "error" in data:
+                        return False, f"MCP 에러 응답: {data['error']}"
+                except json.JSONDecodeError:
+                    continue
+            return False, "MCP 서버가 initialize 응답 없이 종료되었습니다."
+
+        try:
+            mcp_ok, mcp_err = await asyncio.wait_for(_handshake(), timeout=VERIFY_TIMEOUT)
+            if not mcp_ok:
+                return False, f"MCP 핸드셰이크 실패: {mcp_err}"
+        finally:
+            if mcp_proc.returncode is None:
+                try:
+                    if mcp_proc.stdin and not mcp_proc.stdin.is_closing():
+                        mcp_proc.stdin.close()
+                    mcp_proc.terminate()
+                    await asyncio.wait_for(mcp_proc.wait(), timeout=2.0)
+                except (TimeoutError, ProcessLookupError, Exception):
+                    try:
+                        mcp_proc.kill()
+                    except Exception:
+                        pass
+    except Exception as exc:  # noqa: BLE001
+        return False, f"MCP 핸드셰이크 예외: {exc}"
+
+    return True, output
 
 
 # ---------------------------------------------------------------- 원자적 교체 및 롤백
@@ -269,13 +342,18 @@ def _get_backup_meta(app: str) -> dict[str, Any] | None:
     return None
 
 
-async def apply_update(app: str, tag: str | None = None, confirm: bool = False) -> dict[str, Any]:
-    """앱별 업데이트 적용: Busy 검사 -> 다운로드 -> 해제 -> 백업 -> 원자적 스왑 -> 사후 검증 -> 실패 시 자동 원복."""
+async def apply_update(
+    app: str,
+    tag: str | None = None,
+    confirm: bool = False,
+    current_job_id: str | None = None,
+) -> dict[str, Any]:
+    """앱별 업데이트 적용: Busy 검사 -> 다운로드 -> 해제 -> 백업 보존 -> 원자적 스왑 -> 사후 검증 -> 실패 시 자동 원복."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
 
-    await check_busy(app)
+    await check_busy(app, exclude_job_id=current_job_id)
 
     release_data = await fetch_release_assets(app, tag)
     new_version = release_data["version"]
@@ -287,7 +365,7 @@ async def apply_update(app: str, tag: str | None = None, confirm: bool = False) 
     symlink_path = root / "bin" / f"{app}-cli"
 
     previous_version = None
-    previous_target = None
+    previous_target: Path | None = None
     if symlink_path.is_symlink():
         try:
             previous_target = symlink_path.resolve()
@@ -297,10 +375,35 @@ async def apply_update(app: str, tag: str | None = None, confirm: bool = False) 
         except OSError:
             pass
 
-    # 1. Staging 디렉터리에 압축 해제
+    # 1. 이전 바이너리 영구 백업 보존 (동일 버전 재설치나 경로 덮어쓰기 시 삭제 방지)
+    backup_dir = _get_backup_dir(app)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    preserved_backup_bin: Path | None = None
+
+    if previous_target and previous_target.is_file():
+        backup_name = f"{app}-cli-{previous_version}" if previous_version else f"{app}-cli-backup"
+        preserved_backup_bin = backup_dir / backup_name
+        try:
+            shutil.copy2(previous_target, preserved_backup_bin)
+            preserved_backup_bin.chmod(preserved_backup_bin.stat().st_mode | 0o755)
+            meta = {
+                "app": app,
+                "version": previous_version,
+                "target_binary": str(preserved_backup_bin),
+                "original_target": str(previous_target),
+                "backed_up_at": _now(),
+            }
+            (backup_dir / "backup_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("백업 바이너리 복사 실패: %s", exc)
+
+    # 2. Staging 디렉터리에 압축 해제
     job_uuid = uuid.uuid4().hex[:8]
     staging_dir = app_dist_dir / f".staging-{job_uuid}"
     staging_dir.mkdir(parents=True, exist_ok=True)
+
+    final_dest: Path | None = None
+    backup_old_dest: Path | None = None
 
     try:
         safe_extract_zip(zip_bytes, staging_dir)
@@ -323,26 +426,16 @@ async def apply_update(app: str, tag: str | None = None, confirm: bool = False) 
 
         target_binary.chmod(target_binary.stat().st_mode | 0o755)
 
-        # 2. 백업 디렉터리 준비
-        backup_dir = _get_backup_dir(app)
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        if previous_target and previous_target.exists():
-            meta = {
-                "app": app,
-                "version": previous_version,
-                "target_binary": str(previous_target),
-                "backed_up_at": _now(),
-            }
-            (backup_dir / "backup_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
-        # 3. Staging -> 정규 dist/cli/<app>/... 이동
+        # 3. Staging -> 정규 dist/cli/<app>/... 이동 준비
         final_dir_name = extracted_dir.name
         if final_dir_name == staging_dir.name:
             final_dir_name = f"{app}-cli-{new_version}-macos-universal"
         final_dest = app_dist_dir / final_dir_name
+
+        # 동일 버전 재설치 방어: final_dest가 이미 존재하면 즉시 지우지 않고 임시로 보존 이동
         if final_dest.exists():
-            shutil.rmtree(final_dest)
+            backup_old_dest = app_dist_dir / f".prev-{final_dir_name}-{job_uuid}"
+            shutil.move(str(final_dest), str(backup_old_dest))
 
         if extracted_dir != staging_dir:
             shutil.move(str(extracted_dir), str(final_dest))
@@ -367,35 +460,59 @@ async def apply_update(app: str, tag: str | None = None, confirm: bool = False) 
         tmp_symlink.symlink_to(new_binary_path)
         os.replace(tmp_symlink, symlink_path)
 
-        # 5. 사후 검증 (--version)
+        # 5. 사후 검증 (--version & MCP 핸드셰이크)
         ok, verify_msg = await verify_installation(app, symlink_path)
         if not ok:
             logger.error("사후 검증 실패로 즉시 원복을 시도합니다: %s", verify_msg)
-            if previous_target and previous_target.exists():
+            # 심링크 즉시 복구 (원래 이전 타깃 우선, 없으면 백업 바이너리)
+            restore_target = previous_target if (previous_target and previous_target.exists()) else preserved_backup_bin
+            if restore_target and restore_target.exists():
                 tmp_rb = root / "bin" / f".tmp-rb-{app}-{job_uuid}"
-                tmp_rb.symlink_to(previous_target)
+                if tmp_rb.exists() or tmp_rb.is_symlink():
+                    tmp_rb.unlink()
+                tmp_rb.symlink_to(restore_target)
                 os.replace(tmp_rb, symlink_path)
+
+            # 디렉터리 복원
+            if final_dest.exists():
+                shutil.rmtree(final_dest, ignore_errors=True)
+            if backup_old_dest and backup_old_dest.exists():
+                shutil.move(str(backup_old_dest), str(final_dest))
+                backup_old_dest = None
+
             raise ArtcraftError(500, "verification_failed", f"설치 후 검증 실패로 원복되었습니다: {verify_msg}")
 
-        def mutate(state: dict[str, Any]) -> None:
+        # 검증 통과 완료 시 임시 보존해둔 이전 디렉터리 정리
+        if backup_old_dest and backup_old_dest.exists():
+            shutil.rmtree(backup_old_dest, ignore_errors=True)
+            backup_old_dest = None
+
+        # 상태 영속화 (성공)
+        record = {
+            "job_id": current_job_id or job_uuid,
+            "action": "update-apply",
+            "from_version": previous_version,
+            "to_version": new_version,
+            "version": new_version,
+            "status": "succeeded",
+            "error": None,
+            "at": _now(),
+        }
+
+        def mutate_success(state: dict[str, Any]) -> None:
             updates = state.setdefault("updates", {})
             history = updates.setdefault(app, {}).setdefault("history", [])
-            record = {
-                "action": "update-apply",
-                "version": new_version,
-                "previous_version": previous_version,
-                "status": "succeeded",
-                "at": _now(),
-            }
             history.append(record)
             updates[app].update({
                 "state": "idle",
                 "current_version": new_version,
                 "previous_version": previous_version,
+                "last_status": record,
                 "last_update": record,
+                "current_job_id": None,
             })
 
-        artcraft.update_state(mutate)
+        artcraft.update_state(mutate_success)
         artcraft.reset_caches()
 
         return {
@@ -406,26 +523,80 @@ async def apply_update(app: str, tag: str | None = None, confirm: bool = False) 
             "verified_output": verify_msg,
         }
 
+    except Exception as exc:
+        # 실패 시 기존 설치 보존 복구
+        if backup_old_dest and backup_old_dest.exists():
+            if final_dest and final_dest.exists():
+                shutil.rmtree(final_dest, ignore_errors=True)
+            shutil.move(str(backup_old_dest), str(final_dest))
+
+        restore_target = previous_target if (previous_target and previous_target.exists()) else preserved_backup_bin
+        if restore_target and restore_target.exists():
+            tmp_rb = root / "bin" / f".tmp-rb-{app}-{job_uuid}"
+            if tmp_rb.exists() or tmp_rb.is_symlink():
+                tmp_rb.unlink()
+            tmp_rb.symlink_to(restore_target)
+            os.replace(tmp_rb, symlink_path)
+
+        fail_msg = exc.message if isinstance(exc, ArtcraftError) else str(exc)
+        fail_record = {
+            "job_id": current_job_id or job_uuid,
+            "action": "update-apply",
+            "from_version": previous_version,
+            "to_version": new_version if 'new_version' in locals() else None,
+            "status": "failed",
+            "error": fail_msg,
+            "at": _now(),
+        }
+
+        def mutate_failure(state: dict[str, Any]) -> None:
+            updates = state.setdefault("updates", {})
+            history = updates.setdefault(app, {}).setdefault("history", [])
+            history.append(fail_record)
+            updates[app].update({
+                "state": "idle",
+                "last_status": fail_record,
+                "last_update": fail_record,
+                "current_job_id": None,
+            })
+
+        with artcraft.contextlib.suppress(Exception):
+            artcraft.update_state(mutate_failure)
+
+        raise
+
     finally:
         if staging_dir.exists():
             shutil.rmtree(staging_dir, ignore_errors=True)
+        if backup_old_dest and backup_old_dest.exists():
+            shutil.rmtree(backup_old_dest, ignore_errors=True)
 
 
-async def rollback_update(app: str, confirm: bool = False) -> dict[str, Any]:
+async def rollback_update(
+    app: str,
+    confirm: bool = False,
+    current_job_id: str | None = None,
+) -> dict[str, Any]:
     """보존된 이전 버전으로 수동 롤백."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
 
-    await check_busy(app)
+    await check_busy(app, exclude_job_id=current_job_id)
 
     backup_meta = _get_backup_meta(app)
     if not backup_meta or not backup_meta.get("target_binary"):
         raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
 
-    target_binary = Path(backup_meta["target_binary"])
-    if not target_binary.is_file():
-        raise ArtcraftError(404, "no_backup_available", f"백업된 바이너리가 존재하지 않습니다: {target_binary}")
+    target_binary = None
+    orig = backup_meta.get("original_target")
+    if orig and Path(orig).is_file():
+        target_binary = Path(orig)
+    elif backup_meta.get("target_binary") and Path(backup_meta["target_binary"]).is_file():
+        target_binary = Path(backup_meta["target_binary"])
+
+    if not target_binary:
+        raise ArtcraftError(404, "no_backup_available", "백업된 바이너리가 존재하지 않습니다.")
 
     root = artcraft.root()
     symlink_path = root / "bin" / f"{app}-cli"
@@ -442,24 +613,29 @@ async def rollback_update(app: str, confirm: bool = False) -> dict[str, Any]:
         raise ArtcraftError(500, "verification_failed", f"롤백 후 검증 실패: {verify_msg}")
 
     restored_version = backup_meta.get("version")
+    record = {
+        "job_id": current_job_id or job_uuid,
+        "action": "update-rollback",
+        "to_version": restored_version,
+        "restored_version": restored_version,
+        "status": "succeeded",
+        "error": None,
+        "at": _now(),
+    }
 
-    def mutate(state: dict[str, Any]) -> None:
+    def mutate_rollback_success(state: dict[str, Any]) -> None:
         updates = state.setdefault("updates", {})
         history = updates.setdefault(app, {}).setdefault("history", [])
-        record = {
-            "action": "update-rollback",
-            "restored_version": restored_version,
-            "status": "succeeded",
-            "at": _now(),
-        }
         history.append(record)
         updates[app].update({
             "state": "idle",
             "current_version": restored_version,
+            "last_status": record,
             "last_update": record,
+            "current_job_id": None,
         })
 
-    artcraft.update_state(mutate)
+    artcraft.update_state(mutate_rollback_success)
     artcraft.reset_caches()
 
     return {
@@ -472,33 +648,41 @@ async def rollback_update(app: str, confirm: bool = False) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- 상태 조회 및 거짓 성공 방지
 
-def get_update_state(app: str) -> dict[str, Any]:
-    """앱별 업데이트 영속 상태 조회."""
-    validate_app(app)
-    return artcraft.load_state().get("updates", {}).get(app) or {}
-
-
 def reconcile_stale_updates() -> None:
     """서버 재시작 시 비정상 종료된 작업을 감지하여 'interrupted'로 정정 (거짓 성공 방지)."""
     def mutate(state: dict[str, Any]) -> None:
         updates = state.get("updates") or {}
-        for app_state in updates.values():
+        for app_name, app_state in updates.items():
             if isinstance(app_state, dict) and app_state.get("state") in ("running", "queued"):
-                app_state["state"] = "interrupted"
-                app_state["error"] = "서버 재시작으로 작업이 중단되었습니다."
-                app_state["finished_at"] = _now()
+                job_id = app_state.get("current_job_id")
+                # active JOBS에 해당 job_id가 없으면 서버 재시작으로 유실된 것으로 판단
+                if not job_id or job_id not in artcraft.JOBS or not artcraft.JOBS[job_id].active:
+                    rec = {
+                        "job_id": job_id,
+                        "action": app_state.get("action", "update"),
+                        "status": "interrupted",
+                        "error": "서버 재시작으로 작업이 중단되었습니다.",
+                        "at": _now(),
+                    }
+                    history = app_state.setdefault("history", [])
+                    history.append(rec)
+                    app_state["state"] = "interrupted"
+                    app_state["error"] = "서버 재시작으로 작업이 중단되었습니다."
+                    app_state["last_status"] = rec
+                    app_state["last_update"] = rec
+                    app_state["current_job_id"] = None
+                    app_state["finished_at"] = _now()
 
     artcraft.update_state(mutate)
 
 
-def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
-    """앱별 업데이트 미리보기 정보 반환."""
+def get_update_state(app: str) -> dict[str, Any]:
+    """앱별 업데이트 영속 상태 조회 (API 계약 준수)."""
     validate_app(app)
-    reg = artcraft.registry().get(app, {})
+    reconcile_stale_updates()
+
     state = artcraft.load_state()
-    remote = state.get("remote") or {}
-    latest_info = (remote.get("apps") or {}).get(app) or {}
-    tag = latest_info.get("tag")
+    app_data = state.get("updates", {}).get(app) or {}
 
     symlink_path = artcraft.root() / "bin" / f"{app}-cli"
     installed_ver = None
@@ -510,8 +694,68 @@ def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
                 installed_ver = match.group(0)
         except OSError:
             pass
+
+    last_st = app_data.get("last_status") or app_data.get("last_update")
+    return {
+        "app": app,
+        "current_version": app_data.get("current_version") or installed_ver,
+        "previous_version": app_data.get("previous_version"),
+        "state": app_data.get("state", "idle"),
+        "error": app_data.get("error"),
+        "last_status": last_st,
+        "history": app_data.get("history", []),
+    }
+
+
+async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
+    """앱별 업데이트 미리보기 정보 반환.
+    
+    refresh=True 시 원격 최신 릴리스 조회를 즉시 갱신하고 GUI 실행 여부를 정밀 검사한다.
+    """
+    validate_app(app)
+    reconcile_stale_updates()
+
+    reg = artcraft.registry().get(app, {})
+
+    # refresh=True 시 원격 릴리스 정보 갱신
+    if refresh:
+        try:
+            latest_asset = await fetch_release_assets(app)
+            new_tag = latest_asset.get("tag")
+
+            def mutate_remote(s: dict[str, Any]) -> None:
+                remote_data = s.setdefault("remote", {})
+                remote_data["checked_at"] = _now()
+                apps_remote = remote_data.setdefault("apps", {})
+                apps_remote[app] = {
+                    "tag": new_tag,
+                    "published_at": latest_asset.get("published_at"),
+                }
+
+            artcraft.update_state(mutate_remote)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("%s 최신 릴리스 갱신 실패 (기존 캐시 사용): %s", app, exc)
+
+    state = artcraft.load_state()
+    remote = state.get("remote") or {}
+    latest_info = (remote.get("apps") or {}).get(app) or {}
+    tag = latest_info.get("tag")
+
+    symlink_path = artcraft.root() / "bin" / f"{app}-cli"
+    installed_ver = None
+    cli_version_line = None
+    if symlink_path.is_symlink():
+        try:
+            target = symlink_path.resolve()
+            match = re.search(r"\d+\.\d+\.\d+", str(target))
+            if match:
+                installed_ver = match.group(0)
+                cli_version_line = f"{app}-cli {installed_ver}"
+        except OSError:
+            pass
     if not installed_ver:
         installed_ver = reg.get("ver")
+        cli_version_line = f"{app}-cli {installed_ver}" if installed_ver else None
 
     backup_meta = _get_backup_meta(app)
     can_rollback = bool(backup_meta and backup_meta.get("target_binary"))
@@ -519,11 +763,27 @@ def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
 
     is_busy = False
     busy_reason = None
+
+    # 1. 활성 Job 검사
     for job in artcraft.JOBS.values():
         if job.active and (app in job.apps or (job.kind == "smoke" and job.mode == "full")):
             is_busy = True
             busy_reason = f"작업 진행 중: {job.action}"
             break
+
+    # 2. GUI 실행 중 검사 (raw_status 확인)
+    if not is_busy:
+        try:
+            status, _, _ = await artcraft.raw_status(force=bool(refresh))
+            for a in status:
+                if a.get("app") == app:
+                    gui = a.get("gui") or {}
+                    if gui.get("running") or gui.get("listening"):
+                        is_busy = True
+                        busy_reason = f"{app} 앱이 현재 실행 중입니다."
+                        break
+        except Exception:
+            pass
 
     target_ver = validate_version(tag) if tag else None
     update_avail = artcraft.update_available(installed_ver, target_ver) if target_ver else False
@@ -537,11 +797,11 @@ def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
         "app": app,
         "title": reg.get("title", app),
         "installed_version": installed_ver,
-        "cli_version_line": f"{app}-cli {installed_ver}",
+        "cli_version_line": cli_version_line,
         "latest_release": {
             "tag": tag,
             "version": target_ver,
-            "published_at": None,
+            "published_at": latest_info.get("published_at"),
             "asset_name": f"{app}-cli-{target_ver}-macos-universal.zip" if target_ver else None,
         } if tag else None,
         "update_available": update_avail,
@@ -566,8 +826,22 @@ def start_update_job(app: str, tag: str | None, confirm: bool) -> artcraft.Job:
         raise ArtcraftError(409, "busy", "다른 작업이 진행 중입니다.")
 
     async def runner(job: artcraft.Job) -> None:
+        # 상태 파일에 running 영속화
+        def mark_running(state: dict[str, Any]) -> None:
+            updates = state.setdefault("updates", {})
+            app_entry = updates.setdefault(app, {})
+            app_entry.update({
+                "state": "running",
+                "current_job_id": job.id,
+                "action": job.action,
+                "target_version": tag,
+                "started_at": _now(),
+            })
+
+        artcraft.update_state(mark_running)
+
         try:
-            res = await apply_update(app, tag=tag, confirm=True)
+            res = await apply_update(app, tag=tag, confirm=True, current_job_id=job.id)
             job.state = "succeeded"
             job.summary = f"{app} {res['version']} 업데이트 성공"
             job.output = res.get("verified_output", "")
@@ -576,8 +850,29 @@ def start_update_job(app: str, tag: str | None, confirm: bool) -> artcraft.Job:
             job.summary = exc.message
             job.output = exc.message
             raise
+        except Exception as exc:
+            job.state = "failed"
+            job.summary = str(exc)
+            job.output = str(exc)
+            raise
 
-    return artcraft._start("update", "update-apply", [app], "apply", runner)
+    job = artcraft._start("update", "update-apply", [app], "apply", runner)
+
+    # Job 등록 직후에도 queued 상태 영속화
+    def mark_queued(state: dict[str, Any]) -> None:
+        updates = state.setdefault("updates", {})
+        app_entry = updates.setdefault(app, {})
+        if app_entry.get("state") != "running":
+            app_entry.update({
+                "state": "queued",
+                "current_job_id": job.id,
+                "action": job.action,
+                "target_version": tag,
+                "created_at": _now(),
+            })
+
+    artcraft.update_state(mark_queued)
+    return job
 
 
 def start_rollback_job(app: str, confirm: bool) -> artcraft.Job:
@@ -586,12 +881,24 @@ def start_rollback_job(app: str, confirm: bool) -> artcraft.Job:
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
 
-    if any(j.active and (app in j.apps or (j.kind == "smoke" and j.mode == "full")) for j in artcraft.JOBS.values()):
+    if any(j.active and (app in j.apps or (j.kind == "smoke" and job.mode == "full")) for j in artcraft.JOBS.values()):
         raise ArtcraftError(409, "busy", "다른 작업이 진행 중입니다.")
 
     async def runner(job: artcraft.Job) -> None:
+        def mark_running(state: dict[str, Any]) -> None:
+            updates = state.setdefault("updates", {})
+            app_entry = updates.setdefault(app, {})
+            app_entry.update({
+                "state": "running",
+                "current_job_id": job.id,
+                "action": job.action,
+                "started_at": _now(),
+            })
+
+        artcraft.update_state(mark_running)
+
         try:
-            res = await rollback_update(app, confirm=True)
+            res = await rollback_update(app, confirm=True, current_job_id=job.id)
             job.state = "succeeded"
             job.summary = f"{app} {res['restored_version']} 롤백 성공"
             job.output = res.get("verified_output", "")
@@ -600,5 +907,24 @@ def start_rollback_job(app: str, confirm: bool) -> artcraft.Job:
             job.summary = exc.message
             job.output = exc.message
             raise
+        except Exception as exc:
+            job.state = "failed"
+            job.summary = str(exc)
+            job.output = str(exc)
+            raise
 
-    return artcraft._start("update", "update-rollback", [app], "rollback", runner)
+    job = artcraft._start("update", "update-rollback", [app], "rollback", runner)
+
+    def mark_queued(state: dict[str, Any]) -> None:
+        updates = state.setdefault("updates", {})
+        app_entry = updates.setdefault(app, {})
+        if app_entry.get("state") != "running":
+            app_entry.update({
+                "state": "queued",
+                "current_job_id": job.id,
+                "action": job.action,
+                "created_at": _now(),
+            })
+
+    artcraft.update_state(mark_queued)
+    return job

@@ -13,8 +13,8 @@
 ### 불변 조건 및 안전 원칙
 1. **공식 Storytold 자산 한정**: 임의 URL, 비공식 저장소, 임의 셸 입력은 차단하며 오직 `storytold/<app>` 공식 릴리스의 macOS Universal/ARM64 CLI 자산 및 `SHA256SUMS.txt`만 다운로드·검증합니다.
 2. **Busy Guard**: 대상 앱의 GUI가 켜져 있거나(`running` 또는 `listening`), 관련 Job(스모크, GUI 조작, 타 업데이트)이 진행 중일 때는 409 Conflict로 안전하게 거절합니다.
-3. **원자적 스왑 & 백업 보존**: 스테이징 디렉터리에서 압축 해제 및 무결성 검증을 마친 후 `dist/cli/<app>` 및 `bin/<app>-cli` 심링크를 원자적으로 교체하며, 직전 버전을 항상 보존합니다.
-4. **사후 검증 및 자동 롤백**: 교체 직후 `--version` 및 MCP 핸드셰이크를 검증하며, 실패 시 사용자 개입 없이 즉시 이전 버전으로 자동 롤백합니다.
+3. **원자적 스왑 & 백업 보존**: 스테이징 디렉터리에서 압축 해제 및 무결성 검증을 마친 후 `dist/cli/<app>` 및 `bin/<app>-cli` 심링크를 원자적으로 교체하며, 직전 버전을 항상 보존합니다. 동일 버전 재설치 시에도 기존 디렉터리를 즉시 삭제하지 않고 임시 보존 이동 후 사후 검증 성공 시 정리합니다.
+4. **사후 검증 및 자동 롤백**: 교체 직후 CLI `--version` 및 stdio MCP `initialize` JSON-RPC 2.0 핸드셰이크를 검증하며, 실패 시 사용자 개입 없이 즉시 이전 버전으로 자동 롤백하고 기존 설치를 완벽히 복원합니다.
 5. **거짓 성공 금지**: 서버 재시작이나 프로세스 중단 발생 시 비정상 종료된 작업이 성공으로 표시되지 않도록 상태 파일(`state.json`)에서 세대 불일치/미완료를 감지하여 `interrupted`/`failed`로 마킹합니다.
 
 ---
@@ -39,7 +39,7 @@
 
 #### 요청
 - 경로 파라미터: `app` (string, `registry.json`에 정의된 13개 앱 이름)
-- 쿼리 파라미터: `refresh` (boolean, optional, 기본값 `false`) — 최신 릴리스 캐시 무시 여부
+- 쿼리 파라미터: `refresh` (boolean, optional, 기본값 `false`) — `true` 지정 시 캐시를 무시하고 GitHub 최신 릴리스 및 실시간 앱 상태를 즉시 재조회
 
 #### 응답 (`200 OK`)
 ```json
@@ -47,7 +47,7 @@
   "app": "photocraft",
   "title": "PhotoCraft",
   "installed_version": "0.10.0",
-  "cli_version_line": "photocraft-cli 0.10.0 (c699e3cda, 2026-10-18)",
+  "cli_version_line": "photocraft-cli 0.10.0",
   "latest_release": {
     "tag": "v0.10.0",
     "version": "0.10.0",
@@ -73,7 +73,9 @@
 }
 ```
 
-- `can_update`: `true`일 때 업데이트 버튼 활성화. `busy`가 `true`이거나 최신 릴리스 정보가 없으면 `false`.
+- `can_update`: `true`일 때 업데이트 버튼 활성화. `busy`가 `true`(GUI 실행 중이거나 작업 진행 중)이거나 최신 릴리스 정보가 없으면 `false`.
+- `busy`: 앱 GUI가 켜져 있거나(`running` / `listening`), 다른 Job(스모크/업데이트)이 진행 중이면 `true`.
+- `busy_reason`: busy 상태의 구체적 사유(예: `"photocraft 앱이 현재 실행 중입니다."` 또는 `"작업 진행 중: smoke-full"`).
 - `can_rollback`: `true`일 때 롤백 버튼 활성화. 이전 백업 디렉터리가 존재할 때만 `true`.
 
 ---
@@ -164,6 +166,7 @@
   "current_version": "0.10.0",
   "previous_version": "0.9.0",
   "state": "idle",
+  "error": null,
   "last_status": {
     "job_id": "job-upd-1234",
     "action": "update-apply",
@@ -186,6 +189,8 @@
   ]
 }
 ```
+- `state`: `"idle"`, `"running"`, `"queued"`, 또는 `"interrupted"` (서버 비정상 종료 시 재시작 직후 정정됨).
+- `error`: 최신 작업 실패/중단 시 오류 메시지.
 
 ---
 

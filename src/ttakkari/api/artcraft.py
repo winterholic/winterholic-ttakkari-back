@@ -145,7 +145,7 @@ class RollbackIn(BaseModel):
 async def app_update(app: str, _: User, response: Response, refresh: bool = False) -> dict:
     response.headers["Cache-Control"] = "no-store"
     try:
-        return artcraft_update.get_app_update_info(app, refresh=refresh)
+        return await artcraft_update.get_app_update_info(app, refresh=refresh)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
 

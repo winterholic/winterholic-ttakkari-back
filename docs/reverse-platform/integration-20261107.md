@@ -316,6 +316,14 @@ $ git rev-parse HEAD && git rev-parse origin/main
 - `request_backend_deploy(revision="97f6f34de23bb47c6d58a1db4b325705a2168c24")` 수락 응답은 reservation `e00ecfd5-76ac-45e6-9678-5b445b50f043`, `skip_tests=false`, strategy `generations`, status `requested`다. 예약 상태를 기다리거나 폴링하지 않았으므로 배포 성공은 확인하지 않았다.
 - 이전 Codex 직접 pytest/conftest/initdb 실행은 반복하지 않았다. 표준 pre-push의 변경 파일 DB 테스트는 위와 같이 통과했지만 운영 DB, 운영 health, 실제 CLI/API/웹 ReverseJob E2E는 미검증이다. fixture 원인은 여전히 코드 대조에 따른 추정이며 컨트롤러 release GREEN이 확인되기 전까지 확정하지 않는다.
 
+## Scope merge release fixture 후속 (2026-11-07)
+
+- 작업 전 현재 실행 Run profile `회사 코덱스 ai2 (ai2@hyperez.io)`와 동일 이름의 유일 enabled 계정 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`를 확인했다. 시작 HEAD와 `origin/main`은 clean `eafb7176fe748110791ad9770f28744f3c71b089`였다.
+- 지원 `ops_deploy_log(0131e8cf-ebf6-4ee4-9b6c-a5a4f66deaf3, summary)`의 실제 release pytest RED는 후보 revision `72116f9fc75b2aa785651eae7aa8814bce60be88`에서 발생했다. `tests/test_collection_scope_merge.py::test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent`가 `scope_merge.operate()`의 `schema_not_ready`에서 실패했고 결과는 `1 failed, 1000 passed, 9 skipped, 6 subtests passed in 145.52s`였다.
+- 실패 후보의 `deploy/generation-contract.json`은 `schema_revision=0077_artcraft_account_pin`이고 같은 revision의 `_operation_generation()` 기본값은 `0076_kb_v3_collection_merge`였다. 테스트는 `operate()`까지 호출하고 제품은 alembic head가 `Releases.contract(...)["schema_revision"]`와 정확히 같아야만 진행한다. 따라서 성공 fixture가 구버전 값을 넣은 것이 직접 원인이며 제품 변경은 필요하지 않았다.
+- `_operation_generation()` 기본값과 draining/standby/offline executor/inactive 거부 사례를 모두 현재 revision `0077_artcraft_account_pin`으로 맞췄다. 실제 구버전 schema 거부 `0073_research_reuse_source`, `0075_collection_research_merge`는 유지했다. dry-run rollback, apply 재실행 멱등성, unresolved apply 전체 rollback, cutover control-row lock 및 기존 결과 검증 assertion은 삭제·완화하지 않았다.
+- 변경 전 RED는 위 예약의 실제 release 로그와 실패 후보의 고정 Git tree를 근거로 기록했다. 이 Codex command sandbox의 알려진 `tests/conftest.py → pg_sandbox.start_cluster() → initdb → shmget ... Operation not permitted` 경로는 재실행하지 않았다. 변경 후 검증은 아래 실행 영수증에 남긴다.
+
 ### Push gate 진단·교정
 
 - 첫 일반 push에서 pre-push 게이트가 `/Users/winterholic/.cache/uv` 초기화를 `Operation not permitted`로 거부했다. 게이트를 생략하지 않고 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-189-integration`으로 허용된 cache 경로를 지정해 다시 실행했다.

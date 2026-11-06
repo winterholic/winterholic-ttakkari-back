@@ -30,11 +30,6 @@ from ttakkari.collector.control_models import CollectorReview
 from ttakkari.collector_models import CollectorItem, CollectorOutbox
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.subscription_contract import (
-    DIAG_SCOPE_CAPACITY_UNAVAILABLE,
-    DIAG_USAGE_LIMIT,
-    L2TransportError,
-)
 
 log = logging.getLogger(__name__)
 

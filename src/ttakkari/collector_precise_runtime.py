@@ -61,6 +61,8 @@ async def availability(*, scope: str) -> tuple[bool, str | None, float | None]:
         adapter = _adapter(scope)
         available, reason = await adapter.availability()
         return available, reason, adapter.retry_after
+    except precise_eval.PreciseEvaluatorTransportError as exc:
+        return False, exc.diagnosis, exc.retry_after
     except Exception as exc:
         translated = _translate_transport_error(exc)
         if translated is None:

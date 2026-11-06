@@ -473,13 +473,27 @@ def first_stage(candidates: list[profiles.Profile], task_type: str,
             (engine, model.rsplit("-", 1)[0] if engine == "antigravity" else model)
             for stage in ROUTES[task_type] for engine, model in stage if _routable(engine)
         }
-        by_id = {str(p.id): p for p in candidates
-                 if (p.engine, p.model.rsplit("-", 1)[0] if p.engine == "antigravity" else p.model) in supported
-                 and not (p.engine == "muse" and profiles.muse_probe_unconfirmed(p) and p.id not in probe_ids)}
+        by_id: dict[str, list[profiles.Profile]] = {}
+        for profile in candidates:
+            route = (profile.engine, profile.model.rsplit("-", 1)[0]
+                     if profile.engine == "antigravity" else profile.model)
+            if (route in supported
+                    and not (profile.engine == "muse" and profiles.muse_probe_unconfirmed(profile)
+                             and profile.id not in probe_ids)):
+                by_id.setdefault(str(profile.id), []).append(profile)
         for account_id in priority_ids:
-            if account_id in by_id:
-                # A valid temporary account order is an explicit choice ahead of stage and load ranking.
-                return [by_id[account_id]]
+            account_candidates = by_id.get(account_id, [])
+            for stage in ROUTES[task_type]:
+                engines_and_families = {
+                    (engine, model.rsplit("-", 1)[0] if engine == "antigravity" else model)
+                    for engine, model in stage
+                }
+                match = [profile for profile in account_candidates
+                         if (profile.engine, profile.model.rsplit("-", 1)[0]
+                             if profile.engine == "antigravity" else profile.model) in engines_and_families]
+                if match:
+                    # Temporary order selects the account; route order still selects its model stage.
+                    return match
 
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
     # The one exception is a Muse exploration the caller already reserved in the DB (profiles.claim_muse_probe):

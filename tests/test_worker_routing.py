@@ -358,6 +358,36 @@ def test_temporary_priority_can_select_supported_account_ahead_of_task_stage():
     assert routing.first_stage([flash, codex], "general", priority_ids=[str(codex.id)]) == [codex]
 
 
+@pytest.mark.parametrize("reverse_candidates", [False, True])
+def test_temporary_priority_preserves_general_model_stage_with_same_account(reverse_candidates):
+    from ttakkari.runs import worker_routing as routing
+
+    account_id = uuid.uuid4()
+    sonnet = profiles.Profile(account_id, "agy", "antigravity", model=SONNET)
+    flash = profiles.Profile(account_id, "agy", "antigravity", model=FLASH)
+    candidates = [flash, sonnet] if reverse_candidates else [sonnet, flash]
+
+    assert routing.first_stage(candidates, "general", priority_ids=[str(account_id)]) == [sonnet]
+
+
+async def test_temporary_priority_same_account_keeps_general_sonnet_in_manager(
+    client, auth, make_dir, accounts, synthetic,
+):
+    agy = next(account for account in accounts if account["engine"] == "antigravity")
+    response = await client.put(
+        "/api/accounts/override",
+        json={"ids": [agy["id"]], "until": (utcnow() + timedelta(hours=1)).isoformat()},
+        headers=auth,
+    )
+    assert response.status_code == 200, response.text
+
+    created, _ = await spawn(client, auth, make_dir, task_type="general")
+    run = await result(client, auth, created)
+
+    assert run["status"] == "succeeded", run
+    assert run["engine"] == "antigravity" and run["model"] == SONNET
+
+
 def test_temporary_priority_skips_model_outside_task_policy():
     from ttakkari.runs import worker_routing as routing
 

@@ -30,6 +30,11 @@ from ttakkari.collector.control_models import CollectorReview
 from ttakkari.collector_models import CollectorItem, CollectorOutbox
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
+from ttakkari.subscription_contract import (
+    DIAG_SCOPE_CAPACITY_UNAVAILABLE,
+    DIAG_USAGE_LIMIT,
+    L2TransportError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -278,10 +283,6 @@ def precise_eval_pool(scope: str) -> str:
     """Map stored document scope to an existing subscription account pool without widening access."""
     if scope in ("personal", "work"):
         return scope
-    from ttakkari.kb_pipeline.subscription_transport import (
-        DIAG_SCOPE_CAPACITY_UNAVAILABLE,
-        L2TransportError,
-    )
     raise L2TransportError(DIAG_SCOPE_CAPACITY_UNAVAILABLE, "document provenance has no allowed account pool", consumed=False)
 
 
@@ -484,11 +485,6 @@ async def consume_pending_once(
             )
             continue
         except Exception as exc:
-            from ttakkari.kb_pipeline.subscription_transport import (
-                DIAG_SCOPE_CAPACITY_UNAVAILABLE,
-                DIAG_USAGE_LIMIT,
-                L2TransportError,
-            )
             if isinstance(exc, L2TransportError):
                 retryable = exc.diagnosis in (DIAG_SCOPE_CAPACITY_UNAVAILABLE, DIAG_USAGE_LIMIT) or not exc.consumed
                 state = "pending" if retryable else "unresolved"

@@ -1082,8 +1082,9 @@ async def test_precise_result_survives_worker_crash_after_budget_settlement(
         assert item.signals["triage"]["precise_eval"]["state"] == "evaluated"
 
 
-async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
-    client, auth, env, monkeypatch  # noqa: F811
+@pytest.mark.parametrize("consumed", [True, False])
+async def test_precise_transport_error_preserves_retry_and_account_diagnostics(
+    client, auth, env, monkeypatch, consumed  # noqa: F811
 ):
     from types import SimpleNamespace
 
@@ -1120,17 +1121,19 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
     ))
     calls = []
 
-    async def unknown_response(**kwargs):
+    retry_after = None if consumed else datetime.now(UTC).timestamp() + 120
+
+    async def transport_error(**kwargs):
         calls.append(True)
-        from ttakkari.kb_pipeline.subscription_transport import (
-            DIAG_TIMEOUT,
-            L2TransportError,
+        from ttakkari.subscription_contract import DIAG_TIMEOUT, L2TransportError
+        raise L2TransportError(
+            DIAG_TIMEOUT, "fixture timeout", retry_after=retry_after, consumed=consumed,
+            engine="codex", account="fixture-ai2", model="gpt-6-luna",
         )
-        raise L2TransportError(DIAG_TIMEOUT, "fixture timeout", consumed=True)
 
     monkeypatch.setattr(precise_eval, "_runtime", precise_eval.EvaluatorRuntime(
         status=lambda: {"status": "ready", "engine": "subscription_cli", "model": "fixture"},
-        evaluate=unknown_response,
+        evaluate=transport_error,
     ))
     assert await runner.consume_once(limit=1, managed_only=True) == 1
     assert await runner.consume_once(limit=1, managed_only=True) == 0
@@ -1140,7 +1143,18 @@ async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
         reservation = await db.scalar(select(CollectorBudgetReservation).where(
             CollectorBudgetReservation.request_key == f"precise:{item.id}:{item.job_id}"
         ))
-        assert item.signals["triage"]["precise_eval"]["state"] == "unresolved"
+        precise = item.signals["triage"]["precise_eval"]
+        assert precise["state"] == ("unresolved" if consumed else "pending")
+        assert precise["engine"] == {
+            "status": "waiting", "detail": "timeout", "engine": "codex",
+            "account": "fixture-ai2", "requested_model": "gpt-6-luna",
+        }
+        if consumed:
+            assert "retry_after" not in precise
+            assert precise.get("subscription_attempt", 0) == 0
+        else:
+            assert precise["retry_after"] == retry_after
+            assert precise["subscription_attempt"] == 1
         assert reservation.state == "unknown"
         assert reservation.charged_tokens == reservation.reserved_tokens
 

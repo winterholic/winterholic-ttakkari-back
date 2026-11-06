@@ -41,6 +41,50 @@ from ttakkari.runs import profiles
 
 EMPTY = {"entities": [], "assertions": [], "relations": []}
 BODY_MARKER = "SECRET-PASSAGE-BODY-7731"
+
+
+def test_transport_reexports_shared_error_contract_objects_and_legacy_constructor():
+    import ast
+    from pathlib import Path
+
+    from ttakkari import subscription_contract
+    from ttakkari.kb_pipeline import subscription_transport
+
+    tree = ast.parse(Path(subscription_contract.__file__).read_text(encoding="utf-8"))
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imports.append(node.module or "")
+        elif isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+    assert not any(name and name.startswith(("ttakkari.kb", "ttakkari.runs", "ttakkari.orchestrator"))
+                   for name in imports)
+
+    names = (
+        "DIAG_NONZERO_EXIT", "DIAG_TIMEOUT", "DIAG_USAGE_LIMIT", "DIAG_INVALID_JSON",
+        "DIAG_SCHEMA_VIOLATION", "DIAG_SCOPE_CAPACITY_UNAVAILABLE",
+    )
+    for name in names:
+        assert getattr(subscription_transport, name) is getattr(subscription_contract, name)
+    assert subscription_transport.L2TransportError is subscription_contract.L2TransportError
+    assert subscription_transport.ScopeCapacityUnavailableError is subscription_contract.ScopeCapacityUnavailableError
+
+    error = subscription_transport.L2TransportError(
+        DIAG_USAGE_LIMIT, "quota reached", 123, consumed=False,
+        engine="codex", account="fixture-account", model="fixture-model",
+    )
+    assert str(error) == "[usage_limit] quota reached"
+    assert (error.diagnosis, error.retry_after, error.consumed) == (DIAG_USAGE_LIMIT, 123, False)
+    assert (error.engine, error.account, error.model) == ("codex", "fixture-account", "fixture-model")
+
+    scope_error = subscription_transport.ScopeCapacityUnavailableError("no scoped profile", retry_after=456)
+    assert isinstance(scope_error, subscription_contract.L2TransportError)
+    assert str(scope_error) == "[scope_capacity_unavailable] no scoped profile"
+    assert (scope_error.diagnosis, scope_error.retry_after, scope_error.consumed) == (
+        subscription_contract.DIAG_SCOPE_CAPACITY_UNAVAILABLE, 456, False
+    )
+
+
 FAKE_CODEX = r'''#!{python}
 import json, os, sys, time
 

@@ -24,6 +24,16 @@ def verdict(**overrides):
     }
 
 
+def test_precise_eval_imports_the_shared_transport_contract():
+    from ttakkari import subscription_contract
+
+    assert precise_eval.L2TransportError is subscription_contract.L2TransportError
+    assert precise_eval.DIAG_SCOPE_CAPACITY_UNAVAILABLE is subscription_contract.DIAG_SCOPE_CAPACITY_UNAVAILABLE
+    with pytest.raises(subscription_contract.L2TransportError, match="scope_capacity_unavailable") as excinfo:
+        precise_eval.precise_eval_pool("unknown")
+    assert excinfo.value.consumed is False
+
+
 def test_subscription_precise_output_keeps_the_existing_verdict_schema():
     assert precise_eval.validate_evaluator_result(verdict()) == verdict()
 

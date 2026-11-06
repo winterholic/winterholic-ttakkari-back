@@ -238,15 +238,20 @@ def test_failure_selection_retains_unrecognized_observation_conditions(observed)
         }),
     ],
 )
-def test_execution_receipts_alone_do_not_establish_failure_conditions(receipt_field, receipt):
+@pytest.mark.parametrize(
+    "declared",
+    [{}, {"research_execution_owner": "explicit-condition"}],
+)
+def test_execution_receipts_alone_do_not_establish_failure_conditions(receipt_field, receipt, declared):
     observed = {receipt_field: receipt}
-    declared = {}
     failure_input = {'declared_environment': declared, 'observed_environment': observed}
     method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
               'research_context': {'failures': [failure_input]}}
+    method_before = deepcopy(method)
     failure = rank_methods([method], {'backend': 'cpu'}, 60)[0]['reason']['research_context']['failures'][0]
     assert failure['applicability']['status'] == 'unknown'
     assert failure['affects_selection'] is True
     assert failure['execution_metadata_fields'] == [receipt_field]
     assert failure['declared_environment'] == declared
     assert failure['observed_environment'] == observed
+    assert method == method_before

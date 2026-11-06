@@ -7,6 +7,7 @@
 import asyncio
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -19,6 +20,13 @@ from test_retire_clovanote_migration import migration_database  # noqa: F401
 pytestmark = pytest.mark.contract
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_alembic_executable_comes_from_the_active_python_environment(monkeypatch, tmp_path):
+    python = tmp_path / ".venv" / "bin" / "python"
+    monkeypatch.setattr(sys, "executable", str(python))
+
+    assert _alembic_executable() == str(python.with_name("alembic"))
 
 
 def test_alembic_has_exactly_one_head():
@@ -39,11 +47,15 @@ def test_delivery_models_are_registered_in_alembic_metadata():
     assert Base.metadata.tables[ChangeSet.__tablename__] is ChangeSet.__table__
 
 
+def _alembic_executable() -> str:
+    return str(Path(sys.executable).with_name("alembic"))
+
+
 def _alembic(database: str, *args: str) -> None:
     import pg_sandbox
 
     result = subprocess.run(
-        [str(ROOT.parent / "back/.venv/bin/alembic"), *args], cwd=ROOT,
+        [_alembic_executable(), *args], cwd=ROOT,
         env={**os.environ, "TTAKKARI_NO_ENV_FILE": "1",
              "TTAKKARI_DATABASE_URL": pg_sandbox.localhost_database_url(database)},
         capture_output=True, text=True, check=False,

@@ -486,6 +486,7 @@ async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved
             adapter_id="llm_inference",
             method_id=sys_method.id,
             strategy="grid",
+            primary_metric="decode_tps",
             search_space={},
             fixed_inputs={},
             created_at=utcnow(),
@@ -526,6 +527,23 @@ async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved
             metric_label="Decode tokens/s",
             value=42.0,
             unit="tokens/s",
+        ))
+        await db.flush()
+
+        # Adoption requires a finite measurement linked to this exact run, experiment, configuration, and metric.
+        db.add(Measurement(
+            run_id=succ_run.id,
+            experiment_id=exp.id,
+            configuration_id=cfg.id,
+            metric_key=exp.primary_metric,
+            metric_label="Decode throughput",
+            value=42.0,
+            unit="tokens/s",
+            direction="higher_is_better",
+            is_proxy=False,
+            aggregator="single",
+            slice_key="overall",
+            meta={"source": "catalog seed promotion fixture"},
         ))
         await db.flush()
 

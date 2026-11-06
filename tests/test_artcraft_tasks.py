@@ -351,3 +351,17 @@ def test_catalog_cli_recipes_are_all_fully_qualified():
                 if any(cmd_strip.startswith(p) for p in ("run ", "commands", "info ", "convert ", "render ", "cat ", "eval ", "sample ", "combine ", "extract ", "split ", "edit ")):
                     pytest.fail(f"카테고리 {cat.id}에 단독 명령어 파편 존재: `{cmd_strip}` in {line}")
 
+
+def test_check_app_not_updating_rejects_active_updating_job(monkeypatch):
+    """활성 업데이트/롤백 Job 이 있는 앱은 작업 생성 시 409 app_updating 으로 차단된다."""
+    from ttakkari import artcraft, artcraft_tasks
+    from ttakkari.artcraft import Job
+
+    job = Job(id="up1", kind="update", action="update photocraft", apps=["photocraft"], state="running")
+    monkeypatch.setattr(artcraft, "JOBS", {"up1": job})
+
+    with pytest.raises(artcraft.ArtcraftError) as exc_info:
+        artcraft_tasks.check_app_not_updating(["photocraft"])
+    assert exc_info.value.status == 409 and exc_info.value.code == "app_updating"
+
+

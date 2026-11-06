@@ -138,6 +138,39 @@ def _title(prompt: str, tpl: catalog.Template | None) -> str:
     return (line[:TITLE_CHARS] or "ArtCraft 작업")
 
 
+# ---------------------------------------------------------------- 작업·업데이트 상호 배타성 계약
+
+def check_app_not_updating(apps: list[str]) -> None:
+    """해당 앱이 현재 업데이트/교체 중인지 검사하여 동시 실행 충돌을 방지한다."""
+    from ttakkari import artcraft
+
+    jobs = getattr(artcraft, "JOBS", {})
+    if not isinstance(jobs, dict):
+        return
+    for job in jobs.values():
+        if not getattr(job, "active", False):
+            continue
+        if getattr(job, "kind", None) in ("update", "rollback"):
+            job_apps = getattr(job, "apps", [])
+            for app in apps:
+                if app in job_apps:
+                    raise _err(409, "app_updating", f"'{app}' 앱 업데이트/교체가 진행 중입니다. 잠시 후 다시 시도해 주세요.")
+
+
+async def active_task_apps(db: AsyncSession) -> set[str]:
+    """현재 대기(queued) 또는 실행(running) 중인 제작 작업이 사용 중인 앱 ID 집합.
+
+    업데이트 백엔드(artcraft_update.check_busy)가 앱 교체 전 활성 제작 작업과의 충돌을 검사할 때 호출한다.
+    """
+    active_session_ids = select(Run.session_id).where(Run.status.in_(ACTIVE))
+    tasks = list(await db.scalars(select(ArtcraftTask).where(ArtcraftTask.session_id.in_(active_session_ids))))
+    busy: set[str] = set()
+    for t in tasks:
+        busy.update(t.apps or [])
+    return busy
+
+
+
 # ---------------------------------------------------------------- 작업 생성·라운드
 
 async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt: str, input_ids: list[uuid.UUID],
@@ -161,6 +194,7 @@ async def create_task(db: AsyncSession, *, category_id: str, prompt: str, templa
     chosen = list(dict.fromkeys(apps)) if apps else list(tpl.apps if tpl and tpl.apps else catalog.app_ids(cat))
     if not chosen or any(a not in catalog.app_ids(cat) for a in chosen):
         raise _err(422, "unknown_app", "이 범주에서 쓸 수 없는 앱이 포함돼 있어요.")
+    check_app_not_updating(chosen)
     clean = clean_options(tpl, options)
     await _load_inputs(db, cat, input_ids, tpl.min_files if tpl else 0)
     ws = await ensure_workspace(db)
@@ -187,6 +221,7 @@ async def add_round(db: AsyncSession, task: ArtcraftTask, *, prompt: str, input_
                     options: dict[str, str] | None, speed: str, ip: str | None) -> Run:
     if task.archived_at is not None:
         raise _err(409, "archived", "보관한 작업에는 이어서 지시할 수 없어요.")
+    check_app_not_updating(list(task.apps or []))
     cat = _category(task.category)
     await _load_inputs(db, cat, input_ids)
     sess = await db.get(ChatSession, task.session_id)

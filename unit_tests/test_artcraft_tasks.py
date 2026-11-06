@@ -209,3 +209,33 @@ def test_summaries_flags_succeeded_run_with_no_outputs():
     assert items[0]["error"] == "결과 파일 없음 (산출물이 생성되지 않았습니다)"
 
 
+def test_active_task_apps_returns_apps_of_active_runs():
+    """active_task_apps 는 queued/running 상태인 활성 작업의 앱 목록만 반환해야 한다."""
+    from ttakkari.models import ArtcraftTask
+
+    db = AsyncMock()
+    t1 = ArtcraftTask(id=uuid.uuid4(), session_id=uuid.uuid4(), apps=["photocraft", "lightcraft"])
+    t2 = ArtcraftTask(id=uuid.uuid4(), session_id=uuid.uuid4(), apps=["vectorcraft"])
+
+    # db.scalars mock
+    db.scalars = AsyncMock(return_value=[t1, t2])
+
+    busy = asyncio.run(artcraft_tasks.active_task_apps(db))
+    assert busy == {"photocraft", "lightcraft", "vectorcraft"}
+
+
+def test_create_task_rejects_updating_apps(monkeypatch):
+    """현재 업데이트 중인 앱으로 작업을 생성하려 하면 409 app_updating 오류로 차단해야 한다."""
+    from ttakkari import artcraft
+    from ttakkari.artcraft import Job
+
+    updating_job = Job(id="up1", kind="update", action="update photocraft", apps=["photocraft"], state="running")
+    monkeypatch.setattr(artcraft, "JOBS", {"up1": updating_job})
+
+    with pytest.raises(artcraft.ArtcraftError) as exc_info:
+        artcraft_tasks.check_app_not_updating(["photocraft"])
+    assert exc_info.value.status == 409
+    assert exc_info.value.code == "app_updating"
+
+
+

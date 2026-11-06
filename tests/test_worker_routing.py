@@ -13,7 +13,7 @@ from test_orchestrator import _orch, _session
 
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.db import sessionmaker
-from ttakkari.models import ChatSession, Run, RunEvent, RuntimeLease, utcnow
+from ttakkari.models import AppSetting, ChatSession, Run, RunEvent, RuntimeLease, utcnow
 from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.runs import profiles, usage
 
@@ -291,6 +291,79 @@ async def test_design_does_not_starve_when_every_claude_route_is_unavailable(cli
     assert {(p.engine, p.model) for p in ready} == {("codex", "gpt-6-luna"), ("antigravity", "gemini-4-argon-high")}
     # 뒤 단계 중에서도 Luna 가 Argon 보다 먼저다.
     assert {(p.engine, p.model) for p in routing.first_stage(ready, "design")} == {("codex", "gpt-6-luna")}
+
+
+@pytest.mark.parametrize("case,expected_engine", [
+    ("active", "codex"),
+    ("exhausted", "antigravity"),
+    ("expired", "antigravity"),
+    ("wrong_scope", "antigravity"),
+    ("unsupported", "antigravity"),
+    ("pinned", "codex"),
+])
+async def test_worker_applies_only_active_available_supported_temporary_priority(
+        client, auth, make_dir, accounts, synthetic, monkeypatch, case, expected_engine):
+    from ttakkari.config import get_settings
+    from ttakkari.runs import profiles as profiles_mod
+
+    codex = next(a for a in accounts if a["engine"] == "codex")
+    codex_id = uuid.UUID(codex["id"])
+    until = (utcnow() + timedelta(hours=1)).isoformat()
+    key = profiles_mod.OVERRIDE_KEY
+    override_ids = [codex["id"]]
+    session_engine = "auto"
+    if case == "active":
+        response = await client.put("/api/accounts/override", json={"ids": [codex["id"]], "until": until}, headers=auth)
+        assert response.status_code == 200
+    elif case == "exhausted":
+        usage.seed(codex_id, usage.Usage(windows=[usage.Window("five_hour", "5h", 100,
+                                                               int(time.time() + 3600))],
+                                         updated_at=time.time()), refresh=True)
+        async with sessionmaker()() as db:
+            db.add(AppSetting(key=key, value={"ids": [codex["id"]], "until": until}))
+            await db.commit()
+    elif case == "expired":
+        async with sessionmaker()() as db:
+            db.add(AppSetting(key=key, value={"ids": [codex["id"]],
+                                               "until": (utcnow() - timedelta(hours=1)).isoformat()}))
+            await db.commit()
+    elif case == "wrong_scope":
+        async with sessionmaker()() as db:
+            db.add(AppSetting(key=key + ":work", value={"ids": [codex["id"]], "until": until}))
+            await db.commit()
+    else:
+        if case == "unsupported":
+            settings = get_settings()
+            monkeypatch.setattr(settings, "engine_models", {**settings.engine_models, "codex": ["gpt-6.1-sol"]})
+        elif case == "pinned":
+            agy = next(a for a in accounts if a["engine"] == "antigravity")
+            override_ids = [agy["id"]]
+            session_engine = "codex"
+        async with sessionmaker()() as db:
+            db.add(AppSetting(key=key, value={"ids": override_ids, "until": until}))
+            await db.commit()
+
+    response, _ = await spawn(client, auth, make_dir, engine=session_engine, model="gpt-6-luna" if session_engine == "codex" else None,
+                              task_type="general")
+    run = await result(client, auth, response)
+    assert run["engine"] == expected_engine
+
+
+def test_temporary_priority_can_select_supported_account_ahead_of_task_stage():
+    from ttakkari.runs import worker_routing as routing
+
+    flash = profiles.Profile(uuid.uuid4(), "flash", "antigravity", model=FLASH)
+    codex = profiles.Profile(uuid.uuid4(), "ai2", "codex", model="gpt-6-luna")
+    assert routing.first_stage([flash, codex], "general") == [flash]
+    assert routing.first_stage([flash, codex], "general", priority_ids=[str(codex.id)]) == [codex]
+
+
+def test_temporary_priority_skips_model_outside_task_policy():
+    from ttakkari.runs import worker_routing as routing
+
+    flash = profiles.Profile(uuid.uuid4(), "flash", "antigravity", model=FLASH)
+    unsupported = profiles.Profile(uuid.uuid4(), "codex", "codex", model="gpt-6.1-sol")
+    assert routing.first_stage([flash, unsupported], "general", priority_ids=[str(unsupported.id)]) == [flash]
 
 
 async def test_unsupported_configured_model_is_not_launched(client, auth, accounts, monkeypatch):

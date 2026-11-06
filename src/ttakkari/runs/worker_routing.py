@@ -466,7 +466,21 @@ def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind
 
 def first_stage(candidates: list[profiles.Profile], task_type: str,
                 probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset(),
-                *, allow_unstaged: bool = False) -> list[profiles.Profile]:
+                *, allow_unstaged: bool = False,
+                priority_ids: list[str] | tuple[str, ...] | None = None) -> list[profiles.Profile]:
+    if priority_ids:
+        supported = {
+            (engine, model.rsplit("-", 1)[0] if engine == "antigravity" else model)
+            for stage in ROUTES[task_type] for engine, model in stage if _routable(engine)
+        }
+        by_id = {str(p.id): p for p in candidates
+                 if (p.engine, p.model.rsplit("-", 1)[0] if p.engine == "antigravity" else p.model) in supported
+                 and not (p.engine == "muse" and profiles.muse_probe_unconfirmed(p) and p.id not in probe_ids)}
+        for account_id in priority_ids:
+            if account_id in by_id:
+                # A valid temporary account order is an explicit choice ahead of stage and load ranking.
+                return [by_id[account_id]]
+
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
     # The one exception is a Muse exploration the caller already reserved in the DB (profiles.claim_muse_probe):
     # without it an unobserved Muse is never chosen, so no stream observation can ever end the unknown state.

@@ -463,10 +463,11 @@ async def claim_muse_probe(candidates: list[Profile], now: float | None = None) 
 
 def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None,
            balance_usage: bool = False, counts_override: dict[uuid.UUID, int] | None = None,
-           probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset()) -> Profile:
+           probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset(),
+           priority_ids: list[str] | tuple[str, ...] | None = None) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
-    balance_usage이면 (probe_ids 로 예약된 Muse 의 탐색 배정) > 신선한 측정이 있는 후보 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
+    priority_ids 가 있으면 해당 임시 순서 후보가 먼저다. 그 외에는 balance_usage 시 (probe_ids 로 예약된 Muse 탐색 배정) > 신선한 측정 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 기본 우선순위.
     Run 당 여유 = 상한 여유 / (다른 실행 수 + 1). 실제 소모량 예측이 아닌 배정 점수다.
     stale/null 후보끼리는 모델·유휴·우선순위로 고른다. 고정 엔진·회사 범위는 호출자가 pool로 제한한다.
     고르는 일과 적는 일 사이에 await 가 없다."""
@@ -477,6 +478,7 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
     if counts_override is not None:
         counts = counts_override
     headroom = {(p.id, p.model): _usage_headroom(p) for p in pool} if balance_usage else {}
+    temporary_rank = {aid: index for index, aid in enumerate(priority_ids or ())}
     # probe_ids: claim_muse_probe 가 DB 에서 예약에 성공한 Muse 계정. 예약 없이는 탐색하지 않는다.
     probes = {(p.id, p.model) for p in pool
               if balance_usage and p.engine == "muse" and p.id in probe_ids and headroom.get((p.id, p.model)) is None}
@@ -484,6 +486,8 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
         index, profile = ip
         room = headroom.get((profile.id, profile.model))
         return (
+            (str(profile.id) not in temporary_rank,
+             temporary_rank.get(str(profile.id), len(temporary_rank))) if priority_ids is not None else (False, 0),
             (profile.id, profile.model) not in probes,
             balance_usage and room is None,
             -room[0] / (counts.get(profile.id, 0) + 1) if room is not None else 0,

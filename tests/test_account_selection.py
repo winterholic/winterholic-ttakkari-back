@@ -225,6 +225,21 @@ def test_auto_choose_usage_precedes_model_engine_preference():
         profiles.release(rid)
 
 
+def test_temporary_priority_precedes_usage_balance():
+    preferred, roomier = _p("temporary-first", "codex"), _p("roomier", "codex")
+    now = int(time.time())
+    usage_mod.remember_stream(preferred.id, [usage_mod.Window("five_hour", "5h", 80, now + 3600)])
+    usage_mod.remember_stream(roomier.id, [usage_mod.Window("five_hour", "5h", 10, now + 3600)])
+    rid = uuid.uuid4()
+    try:
+        assert profiles.choose([roomier, preferred], rid, balance_usage=True) is roomier
+        profiles.release(rid)
+        assert profiles.choose([roomier, preferred], rid, balance_usage=True,
+                              priority_ids=[str(preferred.id)]) is preferred
+    finally:
+        profiles.release(rid)
+
+
 @pytest.mark.parametrize("kind", ["worker", "orchestrator"])
 async def test_auto_runs_switch_engines_by_usage_and_keep_model_grade(client, auth, make_dir, kind):
     accounts = {a["name"]: a for a in (await client.get("/api/accounts", headers=auth)).json()}

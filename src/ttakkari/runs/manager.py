@@ -1177,6 +1177,8 @@ class RunManager:
         async def choose(candidates, run_id, **kwargs):
             if run.status == RunStatus.running:  # 첫 선택은 시작 슬롯이 보호한다. 폴백 재선택만 여기서 연결을 푼다.
                 await self._release_connection(db, run)
+            override = await profiles_mod.get_override(db, sess.pool)
+            priority_ids = override["ids"] if override else None
             if is_meeting:
                 candidates = meeting_routing.first_stage(candidates)
             elif task_type:
@@ -1187,11 +1189,14 @@ class RunManager:
                 # 않는다(Qwen은 auto 단계가 없다, 반례 2). maybe는 muse만 해당이라
                 # 전부-Qwen이면 비어 있어 아래 probe 분기도 돌지 않는다.
                 if not all(p.engine == "qwen-local" for p in candidates):
-                    candidates = worker_routing.first_stage(candidates, task_type, maybe, allow_unstaged=stranded_run)
+                    candidates = worker_routing.first_stage(candidates, task_type, maybe,
+                                                            allow_unstaged=stranded_run, priority_ids=priority_ids)
                 if maybe:
                     won = await profiles_mod.claim_muse_probe([p for p in candidates if p.id in maybe])
                     if maybe - won:
-                        candidates = worker_routing.first_stage(all_candidates, task_type, won, allow_unstaged=stranded_run)
+                        candidates = worker_routing.first_stage(all_candidates, task_type, won,
+                                                                allow_unstaged=stranded_run,
+                                                                priority_ids=priority_ids)
                     kwargs = {**kwargs, "probe_ids": won}
                 counts = await profiles_mod.running_counts_async()
                 # Selection excludes this Run's own claim; receipts use the same denominator.
@@ -1221,7 +1226,7 @@ class RunManager:
                 native = [p for p in candidates if p.engine in {'claude', 'codex'}]
                 if native:
                     candidates = native
-            selected = await choose_account(candidates, run_id, **kwargs)
+            selected = await choose_account(candidates, run_id, priority_ids=priority_ids, **kwargs)
             is_pinned_switched = bool(
                 pinned_fallback and primary_pair and (
                     selected.engine != primary_pair[0]

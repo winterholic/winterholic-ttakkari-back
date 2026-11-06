@@ -112,7 +112,8 @@ async def _lease_process_mappings(db: AsyncSession) -> tuple[list[dict], bool]:
         RuntimeLease.account_id,
         EngineAccount.name.label("account_name"),
         Run.status.label("run_status"),
-        ChatSession.archived_at.is_not(None).label("session_archived"),
+        case((ChatSession.id.is_not(None), ChatSession.archived_at.is_not(None)), else_=None)
+        .label("session_archived"),
         RuntimeProcessGroup.id.is_not(None).label("lease_matches_process_group"),
     ).select_from(RuntimeLease)
         .outerjoin(Run, Run.id == RuntimeLease.run_id)
@@ -135,7 +136,8 @@ async def _lease_process_mappings(db: AsyncSession) -> tuple[list[dict], bool]:
         literal(None).label("account_id"),
         literal(None).label("account_name"),
         Run.status.label("run_status"),
-        ChatSession.archived_at.is_not(None).label("session_archived"),
+        case((ChatSession.id.is_not(None), ChatSession.archived_at.is_not(None)), else_=None)
+        .label("session_archived"),
         literal(False).label("lease_matches_process_group"),
     ).select_from(RuntimeProcessGroup)
         .outerjoin(Run, Run.id == RuntimeProcessGroup.run_id)

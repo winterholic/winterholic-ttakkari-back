@@ -142,3 +142,52 @@ Review the final commit on branch `codex/account-routing-lease-diagnostics-20261
 Run rows remain visible, output stays capped at 100 with truncation reported, stale/mismatched leases do not
 inherit the current account, and the new mapping contains no process identity, token, prompt, or result fields.
 Do not push or deploy as part of this verification stage.
+
+## Missing-session flag correction (2026-11-07)
+
+The independent review found that `archived_at IS NOT NULL` alone serializes a missing outer-joined
+`ChatSession` as `false`. Both lease and orphan-process-group mappings now test whether the joined session
+row exists first; `session_archived` is `null` when it does not, and remains `false`/`true` for existing
+active/archived sessions. `run_status="missing"` remains unchanged for a missing Run.
+
+The new `runtime-mapping-missing-session-probe.py` is a correction-specific independent probe. It runs
+`_lease_process_mappings` against an in-memory SQLite schema with synthetic rows and checks both SQL
+mapping branches for active, archived, missing-session, and missing-Run/missing-session cases. It is not
+a production database check or a live runtime report; it does not establish deployment behavior.
+
+RED (before the source fix):
+
+```text
+argv: UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen python runtime-mapping-missing-session-probe.py
+output:
+AssertionError: ('lease_only', 'absent_session', False)
+exit: 1 (expected failure: missing joined session was incorrectly false)
+```
+
+GREEN (after the source fix):
+
+```text
+argv: UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen python runtime-mapping-missing-session-probe.py
+output:
+lease SQL: active=false, archived=true, missing session=unknown; missing Run/session=unknown: PASS
+orphan-group SQL: active=false, archived=true, missing session=unknown; missing Run/session=unknown: PASS
+exit: 0
+```
+
+Focused verification after the correction:
+
+```text
+argv: UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen pytest -q unit_tests/test_collection_runtime_report.py
+output: ...... [100%]; 6 passed in 0.34s
+
+argv: UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen ruff check src/ttakkari/operations/inline.py runtime-mapping-missing-session-probe.py
+output: All checks passed!
+
+argv: git diff --check
+output: exit 0; no output
+```
+
+No claim2/identity10, account/L2, or precision-evaluation regressions were rerun because this nullable
+serialization fix does not alter those paths. Existing owner-smoke OSError and GPU process-enumeration
+failure were not retried. No operating DB, cleanup/reconcile, process action, service restart, push, or
+deploy was performed.

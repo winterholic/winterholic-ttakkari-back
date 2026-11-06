@@ -32,6 +32,7 @@ E AssertionError: ('pending' == 'pending' and 'waiting' == 'unavailable')
 - `runner.consume_once()`는 job 처리 직후 `precise_eval.consume_pending_once(limit=1)`을 호출한다. `evaluate_document_guarded()`는 미등록 evaluator에서 `EvaluatorUnavailable("subscription evaluator runtime was not registered")`를 던진다.
 - `consume_pending_once()`의 예외 처리 전에는 모든 `EvaluatorUnavailable`를 같은 `status="waiting"`으로 기록했다. 그래서 미등록 엔진의 admission-time `unavailable` 값이 덮였다. 이는 test-order/global-state 원인이 아니라 오류 분류의 제품 결함이다.
 - 기존 [collection mission work-history](2026-10-25-collection-missions-progress.md)는 엔진 미연결 시 0 소비와 pending 보존, 그리고 busy/unavailable 호출을 pending 재시도 대기와 구분해 기록한다.
+- 당시 reverse integration work-history는 이 호출 경로를 확인한 뒤, 미등록 evaluator 호출 결과는 per-item `waiting`, mission summary는 `unavailable`로 남기는 기존 동작을 기록하고 assertion을 `waiting`으로 바꾸는 별도 해결을 수용했다. 이번 작업 카드는 해당 assertion 완화를 명시적으로 금지했으므로, pending retry와 summary 상태는 유지하면서 미등록/비-ready 엔진의 per-item 상태를 `unavailable`로 보존하도록 좁혀 변경했다. ready 상태의 scope-capacity 대기는 음성 반례에서 계속 `waiting`이다.
 - 새 원격 `origin/main=eafb7176fe748110791ad9770f28744f3c71b089`에는 stage2 파일의 process-global runtime 격리 fixture가 추가되어 있었다. 이를 merge에 보존했다. 원격 변경 중 실패 assertion을 `waiting`으로 바꾸는 부분은 작업 카드의 금지 조건과 충돌하므로 수용하지 않았고, 현재 수정이 보장하는 unavailable 기대를 명시했다.
 
 ## 수정 및 반례

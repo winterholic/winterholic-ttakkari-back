@@ -41,3 +41,15 @@
 - 영향 검사: 준비·영어조회 unit 4개 → `4 passed in 0.42s`; task create/add-round 우선 경합 API 2개 → `2 passed in 2.40s`, DB reset `2 selective`, `0 forced full`, `0 fell back to full`. 두 동일 basename test 모듈을 한 pytest 호출로 수집하려던 첫 명령은 `import file mismatch`로 수집 단계에서 실패해 테스트가 실행되지 않았다. 파일군별 명령으로 분리 실행해 위 결과를 얻었다.
 - practical worktree는 확인 시 QA evidence 두 파일(`EVIDENCE.md`, `quality_inspection.json`)만 미커밋 상태였고, 이들은 통합하지 않았다. d0의 독립 검증 worker `55fa65f8-2cb8-4f8d-8717-33d5a9e8ec98`가 검증을 시작했다는 것은 사용자 보고다. 현재 Run에서 `get_worker`와 기재된 세션의 `read_session`은 각각 404라 결과는 미확인으로 남긴다.
 - 이전 전체 dfdb 병합은 무관한 alembic/deployment/runtime/test 충돌 때문에 abort했다. 그 시점부터 ArtCraft 실행 로직은 기존 `60bfa705` 통합본에 동등 반영돼 있었고, 이번에는 확정 d0 단일 커밋만 적용했다. push·배포는 이번 요청 범위에서 수행하지 않았다.
+
+## 최신 main 통합·배포 후보 (2026-11-07)
+
+- 새 격리 후보 worktree: `back-artcraft-release-20261107`, branch `release/artcraft-main-20261107`. 최종 통합 소스 커밋 `c11f2d6b294b64648978dcf7f86c69aa490c7def`는 최신 fetch `origin/main=98bea2f253cc8642d884602ebf0da082942f9ea1`을 포함한다. 직전 fetch의 `4d09c79f` 뒤 원격 변경은 research integration 기록 문서 1개뿐이었고, ArtCraft 코드·테스트·계약 파일은 바뀌지 않았다.
+- 원격과의 직접 ArtCraft 파일 대조에서 upstream 추가 변경은 없었다. 932d7102 독립 검증 후 ArtCraft 코드 차이는 `src/ttakkari/artcraft_tasks.py`에 한정되며 이는 검증된 d0a1 readiness 및 영어 정보 조회 동작이다. 8d794115는 worker ID, 소스 커밋은 `d0a1c09297892d5e25810ce9b03bd6a97db89e54`로 정정되어 있다. 기존 shared lock/API/updater 코드는 독립 932d7102 검증 이후 변경되지 않았다.
+- `docs/artcraft/update-api.md`의 Busy Guard를 앱별 shared lock의 DB commit 및 updater 전체 수명 경계에 맞췄고, 상태 목록에 `failed`를 추가했다. update/rollback 응답이 `{job: ...}` wrapper 없이 `job.public()`을 반환하고 `ArtcraftJob` 필드 형식에 `kind=update`, `mode=apply|rollback`을 쓰는 점도 기록했다. 현재 별도 프론트 `ArtcraftJob` 타입은 update 변형을 표현하지 않으므로 프론트 변경은 owner 범위로 남겼다.
+- 후보 영향 회귀:
+  - `PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_artcraft_tasks.py -q -p no:cacheprovider -k 'resolve_task_engine or english_information_lookup'` → `4 passed, 21 deselected in 0.61s`.
+  - `PYTHONPATH=src ../back/.venv/bin/pytest tests/test_artcraft_tasks.py::test_task_runs_end_to_end_with_mcp_note_and_outputs -q -p no:cacheprovider` → `1 passed in 0.90s`; DB reset `1 selective`, `0 forced full`, `0 fell back to full`.
+  - 공유 잠금/API 경쟁 6개와 updater 4개는 immutable 932d7102 독립 snapshot에서 각각 `6 passed` 및 `4 passed`; 이후 통합 브랜치 집중 경쟁 회귀는 앞선 기록의 `8 passed` 결과를 재사용했다. 해당 코드 경로는 이번 원격 통합에서 바뀌지 않아 반복하지 않았다.
+- 후보 검사: `git diff --check HEAD^ HEAD` 출력 없음, exit 0. worktree는 `c11f2d6b` 시점에 clean이고 `origin/main`보다 ahead 14였다. 이 문서의 후속 증거 commit은 기록만 추가한다.
+- 배포 전 상태: push와 backend deploy reservation은 아직 실행하지 않았다. 최종 pushed SHA 및 reservation ID/state는 배포 후 실행 기록에 추가한다.

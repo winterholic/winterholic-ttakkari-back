@@ -113,6 +113,14 @@ def subject_of(goal: str) -> tuple[str, list[str]]:
             continue
         kept.append(word.strip(".,!?"))
     subject = " ".join(word for word in kept if word).strip() or " ".join(_clean_word(word) for word in words)[:120]
+    # A long research directive has a title followed by instructions. Instructions are
+    # retained as the goal, but must not become the search subject ("프로젝트 목적...").
+    lines = [line.strip().lstrip("# ") for line in goal.strip().splitlines() if line.strip()]
+    if len(lines) > 1 and len(goal) > 300:
+        title = re.sub(r"\s+(?:종합\s+)?(?:기술\s+)?백과사전\b.*$", "", lines[0])
+        title = re.sub(r"\s+(?:구축\s+)?(?:연구\s+)?지시서\s*$", "", title)
+        if title and len(title) <= 120:
+            subject = title
     return subject[:120], aspects
 
 

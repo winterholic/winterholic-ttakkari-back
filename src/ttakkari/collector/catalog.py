@@ -118,8 +118,9 @@ def _mentioned(haystack: str, alias: str) -> bool:
 def targets_in(text: str) -> list[Target]:
     """Targets the text names, in catalog order. Bare generic words (spectrum, garden, base) need a design context."""
     haystack = _norm(text)
-    generic = {"spectrum", "garden", "primer", "redwood", "lightning", "polaris", "clarity", "blueprint", "eui", "atlassian"}
-    design_context = any(word in haystack for word in ("design system", "디자인 시스템", "ui/ux", "design", "디자인"))
+    generic = {"spectrum", "garden", "primer", "redwood", "lightning", "polaris", "clarity", "blueprint", "eui", "atlassian",
+               "bootstrap", "카본", "토스", "네이버", "카카오", "배민", "우아한형제들", "baemin", "tds", "nds", "salesforce"}
+    design_context = has_ui_context(text)
     found = []
     for target in TARGETS:
         for alias in target.aliases:
@@ -132,7 +133,24 @@ def targets_in(text: str) -> list[Target]:
 def topics_in(text: str) -> list[dict[str, Any]]:
     """Topics the goal names. Text that names none gets no topic: the caller keeps its generic research dimensions."""
     haystack = _norm(text)
-    return [topic for topic in TOPICS if any(word in haystack for word in topic["words"])]
+    return [topic for topic in TOPICS if any(
+        _mentioned(haystack, word) or (word.isascii() and _mentioned(haystack, word + "s"))
+        or (word == "accessib" and any(_mentioned(haystack, value) for value in ("accessibility", "accessible")))
+        for word in topic["words"]
+    )]
+
+
+def has_ui_context(text: str) -> bool:
+    """Shared technical words are not evidence that the user requested UI research.
+
+    Motion, feedback, tokens and hierarchy also occur in robotics and agent engineering.
+    A domain-specific catalog needs an explicit UI/design signal, independently of topic count.
+    """
+    return bool(re.search(
+        r"디자인\s*시스템|타이포|패딩|여백|사용자\s*인터페이스|"
+        r"\b(?:ui|ux|typography|design\s+systems?|user\s+interface|interaction\s+design|web\s+design)\b",
+        _norm(text),
+    ))
 
 
 def target_for_host(host: str) -> Target | None:

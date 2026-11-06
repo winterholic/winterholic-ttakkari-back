@@ -36,6 +36,28 @@ def test_short_aliases_need_word_boundaries_and_a_design_context():
     assert [t.key for t in catalog.targets_in("Material Design 과 Apple HIG 비교")] == ["material", "hig"]
 
 
+async def test_rerun_rejects_a_saved_misrouted_plan_without_changing_history(client, auth):
+    from sqlalchemy import select
+
+    from ttakkari.collector_models import CollectionMission
+    from ttakkari.db import sessionmaker
+
+    goal = (Path(__file__).parent / "fixtures" / "collect_robotics_goal.md").read_text()
+    made = await client.post(f"{BASE}/missions", headers=auth, json={"goal": goal})
+    mid = made.json()["id"]
+    async with sessionmaker()() as db:
+        row = await db.scalar(select(CollectionMission).where(CollectionMission.id == mid))
+        # Recreate the stored pre-fix plan; do not ask the corrected planner to reproduce its old bug.
+        wrong = catalog.plan_parts(goal, [], [t for t in catalog.TOPICS if t["key"] in {"interaction", "components", "enterprise"}])
+        row.plan = {**row.plan, **wrong}
+        await db.commit()
+    response = await client.post(f"{BASE}/missions/{mid}/rerun", headers=auth)
+    assert response.status_code == 422 and "조사 범위" in response.text
+    detail = (await client.get(f"{BASE}/missions/{mid}", headers=auth)).json()
+    assert detail["run_seq"] == 1 and len(detail["runs"]) == 1
+    assert {t["key"] for t in detail["plan"]["topics"]} == {"interaction", "components", "enterprise"}
+
+
 async def test_trace_reports_goal_requirements_and_failures(client, auth):
     made = await client.post(BASE.replace("/collect", "/collect") + "/missions", headers=auth, json={"goal": GOAL, "max_pages": 50, "max_depth": 1})
     assert made.status_code == 202, made.text

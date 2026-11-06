@@ -136,7 +136,9 @@ def plan(goal: str, *, context: str = "", urls: list[str] | None = None,
     research = not sources
     named = catalog.targets_in(f"{goal}\n{context}")
     named_topics = catalog.topics_in(goal)
-    catalog_parts = catalog.plan_parts(goal, named, named_topics) if (named or len(named_topics) >= 3) else None
+    catalog_parts = catalog.plan_parts(goal, named, named_topics) if (
+        named or (catalog.has_ui_context(goal) and len(named_topics) >= 3)
+    ) else None
     if catalog_parts:
         # The composer's default of 200 pages would leave six pages for each of thirty named targets.
         max_pages = min(100_000, max(max_pages, 100 * max(1, len(named))))
@@ -1031,6 +1033,15 @@ async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Colle
     ).with_for_update())
     if mission is None:
         raise ValueError("수집 임무를 찾을 수 없습니다.")
+    # Older plans may have been routed by ambiguous words such as motion/form/erp.
+    # Reusing their discovered sources would continue the wrong collection even after
+    # fixing the planner. Preserve their evidence; the owner can start a fresh mission.
+    strategy = mission.plan
+    catalog_keys = {t["key"] for t in catalog.TOPICS}
+    catalog_topics = any(t.get("key") in catalog_keys and not t.get("subject") for t in strategy.get("topics", []))
+    context = (strategy.get("context") or {}).get("text", "")
+    if catalog_topics and not catalog.has_ui_context(mission.goal) and not catalog.targets_in(f"{mission.goal}\n{context}"):
+        raise ValueError("저장된 조사 범위가 원 지시문과 다릅니다. 기존 이력을 보존하고 원 지시문으로 새 수집을 시작해 주세요.")
     linked = list(await db.scalars(select(CollectorJob).join(
         CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id
     ).where(CollectionMissionJob.mission_id == mission.id)))

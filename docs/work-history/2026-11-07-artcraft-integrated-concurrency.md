@@ -6,7 +6,7 @@
 - 통합 시작점: fetch로 확인한 `origin/main` = `529022861120e86f80400ffaec53dd3f3f7f81c6`.
 - 원본 `back/main`과 독립 검증·제작·업데이트 worktree는 수정하지 않았다. 원본 `back`에는 기존 사용자 변경이 남아 있고, 독립 검증 worktree는 clean이었다.
 - 선택한 committed source revisions(순서대로, 중복 없음): `143146c775b3eef0b558a73bc07107a5ce4142ab`, `423a1b597b0734e5246c24f6f64c50ad7808d775`, `dda8563f0ca42d640869f1a0071e24d2ae269ced`, `dfdb5cc11d6fcfe300bfca08958cca57dff60452`(task engine/output 후속), `3ee76dc59f89061a2c07e85b16ebc382ff07b546`, `3cd4ae314f96fbd9182ac2854347092ae5a7f6ce`, `cff09c5c61c4a4ed4a1e94f324cf5e2b28eb76f0`, `2df5d9c8b0bcb957895aeaaa7f80b5ea1ed7ce1a`(재시작 복구 후속).
-- 요청된 실행 보강 후보 `8d794115`는 이 저장소 객체 DB에서 `git cat-file -t 8d794115` 결과 `fatal: Not a valid object name 8d794115`; source worktree의 미커밋 변경을 복사하지 않았다. 이 SHA가 요청한 다음 누락본이다.
+- 정정(2026-11-07): `8d794115`는 Git SHA가 아니라 작업자 ID다. 실행 보강의 실제 소스 커밋은 `d0a1c09297892d5e25810ce9b03bd6a97db89e54`이며, 앞서 `8d794115`를 객체 DB에서 찾지 못해 누락 소스로 적은 기록은 잘못된 식별이었다.
 
 ## 구현
 

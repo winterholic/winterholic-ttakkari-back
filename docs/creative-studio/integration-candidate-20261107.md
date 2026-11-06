@@ -92,3 +92,95 @@ git rev-parse HEAD
 - 독립 검증, push, 배포, 서비스 재시작.
 
 독립 검증은 이 후보의 전체 SHA 및 clean worktree에서 수행한다. 이 문서는 후보 준비를 기록하며 관리 중인 원목표의 완료 상태를 변경하지 않는다.
+
+## 후속 정적 교정 — Run 52954c90
+
+### 영수증과 시작 상태
+
+제품 파일을 열기 전에 지원 CLI로 현재 Run을 조회했다. 상세 영수증은 다음을 반환했다.
+
+```text
+/Users/winterholic/bin/ttk get /api/sessions/d93c9153-076c-4479-9a65-3b61de244221/runs
+→ status=running, id=52954c90-333e-4b33-971c-a500facc755d
+/Users/winterholic/bin/ttk get /api/runs/52954c90-333e-4b33-971c-a500facc755d
+→ status=running, profile=회사 코덱스 ai2 (ai2@hyperez.io), last_seq=15
+```
+
+착수 HEAD는 기준 `a3980e6b043df9c74a279f6717fc2e2ad9670e72`와 일치했다. branch는 `feat/creative-production-20261107` (`origin/main` 대비 ahead 3, behind 44)였고 tracked 변경은 없었다. 기존 untracked render/benchmark 자료 1,017경로는 그대로 보존했으며 착수 뒤 porcelain의 untracked 행 SHA-256은 `6026800ec3e3295d16cc69748d3eb841b0a76e8be13563df9fc43b0bcdad66fc`다. 후속 커밋에는 경로 지정으로 승인한 소스·테스트·스크립트·문서만 넣는다.
+
+### Ruff와 소스 교정
+
+기준 후보 Python 중 `src/`, `unit_tests/`, `tests/`, `scripts/`의 변경 경로만 Ruff에 넣었다. 기존 71건은 unused import, import 정렬, 미사용 값, EXE001 실행 비트, 불필요한 int/list 변환, `PLR0402` import 형식, BLE001 broad catch, TRY004 validation 예외 타입 경고였다. 안전한 import/정렬/불필요 변환과 미사용 이름을 제거하고 shebang 스크립트 두 개에 실행 비트를 설정했다. 광역 자동 수정이나 전역 규칙 변경은 하지 않았다.
+
+예외 경계는 호출 계약에 맞춰 유지했다. `FrameAnimationAdapter`, `HyperFramesAdapter`, `Scene3DAdapter`의 preflight는 도구·권한·프로세스 실패를 `Preflight.missing` 또는 IPC `unknown`으로 반환하므로 해당 경계 catch에는 줄 단위 `BLE001` 예외와 설명을 붙였다. `scene_3d` audit의 JSON 파싱은 `JSONDecodeError`, 심볼릭 링크 생성은 `OSError`, 자막 폰트 fallback은 `OSError`만 잡도록 좁혔다. Kafka `_style_dna_contract`와 `_prepare_spec_project`의 다섯 입력 검사는 기존 `ValueError` 외부 계약(예: `unit_tests/test_hyperframes.py`의 ValueError 반례)을 보존하고 해당 다섯 줄에만 `TRY004` 예외를 명시했다. 예외 종류나 catch 폭을 바꾸는 회귀는 `47 passed`에 포함된다.
+
+검사 명령과 결과:
+
+```text
+git diff --name-only 439472b3bc4665edc04ad1d7fa8ad1a9684a47b4 da0b83d0176d8bfe1352204014bcc5ddab69482d -- src/ unit_tests/ tests/ scripts/ | xargs env UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run ruff check --output-format concise
+→ All checks passed!
+git diff --name-only a3980e6b043df9c74a279f6717fc2e2ad9670e72 -- '*.py' | xargs -n 1 python3 -c 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), filename=sys.argv[1])'
+→ AST parse passed
+```
+
+첫 기본 `uv run`은 Codex 명령 샌드박스가 `/Users/winterholic/.cache/uv` 접근을 거부해 초기화 단계에서 끝났다 (`Operation not permitted`). 앞선 후보 검증과 같은 허용된 `/private/tmp/codex-uv-cache`로만 후속 실행했다. npm 로그 EPERM 검사는 재실행하지 않았고 기존 Codex 샌드박스 결과를 그대로 남긴다.
+
+### 테스트 경로와 재사용
+
+`pyproject.toml`은 pytest `testpaths = ["tests", "benchmark_tests", "unit_tests"]`를 사용한다. `tests/conftest.py`는 `import pg_sandbox` 절대 import를 하며 `tests/pg_sandbox.py`는 기준 commit에 tracked로 존재한다. 이 세션의 좁은 실행은 표준 경로를 명시해 통과했다.
+
+```text
+PYTHONPATH=src:tests:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest --import-mode=prepend unit_tests/test_scene_3d.py unit_tests/test_creative_v2_frame_animation.py unit_tests/test_hyperframes.py -k 'not hyperframes_preflight_live and not hyperframes_lint_on_fixture' -q
+→ 47 passed, 2 deselected in 2.86s
+```
+
+앞선 전체 통합 회귀 `244 passed, 1 failed, 4 deselected`는 이 정적 변경 전 `a3980e6...`에서 실행됐으므로 반복하지 않았다. 이번에 지문이 바뀐 frame animation/HyperFrames/3D 소스와 직접 회귀 테스트는 위 47개에서 재실행했다. 변경하지 않은 Stage2·Stage3·dispatch·interpolation 및 나머지 기존 bundle은 해당 후보의 기존 통과 결과를 재사용한다. 244 전체를 새 소스 해시 기준 통과했다고 주장하지 않는다.
+
+`tests/test_scene_3d.py`는 `PYTHONPATH=src:tests:.`와 `--import-mode=prepend`로 별도 실행했으며 4개 통과, 1개 실패했다. 유일 실패는 실제 preflight에서 기존 Blender `ArchWarn: ARCH_CACHE_LINE_SIZE != Arch_...` 진단으로 필수 bpy 확인이 실패한 것이다. 이는 C 환경 차단의 재관측이며 이 명령 이후 같은 preflight/bpy를 다시 실행하지 않았다. unit 3D 계약 21개는 위 47개에 포함되며, 실제 C 렌더 성공을 뜻하지 않는다. `HyperFrames live preflight`와 npm lint 테스트는 재시도하지 않았다.
+
+### 공백 결과와 원문 예외
+
+이번에 편집한 Python·HTML·Markdown·JSON diff는 `git diff --check`로 통과했다. 전체 후보를 기준 `439472b3...`와 비교하면 공백 검사에는 여전히 원문 로그·patch와 vendor만 남는다. 따라서 전역 whitespace 통과로 보고하지 않는다. 아래 SHA-256은 변경 없이 보존한 기준 후보 commit `da0b83d...`의 원본 bytes 지문이며, 로그/patch는 실행 증거 원문, vendor는 외부 GSAP 복사본이므로 제외했다.
+
+| 보존 경로 | 기준 원본 SHA-256 | 제외 이유 |
+|---|---|---|
+| `benchmark_tests/test_hf_minimal/vendor/gsap.min.js` | `92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb` | vendor 원본 |
+| `templates/hyperframes/kafka_message_flow/vendor/gsap.min.js` | `92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb` | vendor 원본 |
+| `docs/creative-studio/core-integration-evidence-20261107/inherited-asset-changes.patch` | `6f920fddd0cb604728fa4b6cac9beb1e566b136cf1785f3982be65b6bf77b56d` | 기록용 patch 원문 |
+| `docs/creative-studio/core-integration-evidence-20261107/regression-final.log` | `b43111760ca9d00d7d153d2b691ce44cd898a8ab87bf51ce1cd0526708bbbc7b` | 테스트 원문 로그 |
+| `docs/creative-studio/core-interpolation-evidence-20261107/frame_animation.py.patch` | `8336b2f075ef9c9b0949c6c584d5aca5be7220411405e1a736b95e002147bdc5` | 기록용 patch 원문 |
+| `docs/creative-studio/core-interpolation-evidence-20261107/planner.py.patch` | `334649496bc0c1aeeb728647e6ad14504c8664b5ed49c88eccdd0b43dbcd9f9e` | 기록용 patch 원문 |
+| `docs/creative-studio/core-interpolation-evidence-20261107/red.log` | `1bcbb2acd2872dfe5fd46b519daf069ee91b2743261a429e728568f2cb421e46` | 테스트 원문 로그 |
+| `docs/creative-studio/core-stage2-evidence-20261107/a-style-bridge/core-style-bridge.patch` | `92a6945f7c59ff5157cf8a3838a8e6cb50672b7227069cd7db319ddb466dda66` | 기록용 patch 원문 |
+| `docs/creative-studio/core-stage2-evidence-20261107/a-style-bridge/red.log` | `202c2bd153dc2ac65ae264b9b3dd980b3873831191e77517d7ef5d6303aa7bc1` | 테스트 원문 로그 |
+| `docs/creative-studio/core-stage2-evidence-20261107/red-fixed-producer.log` | `c78df2d40dcd3cebe2839cee0f923ec252c468445ecee63dce18a1c125729cda` | 제작/검사 원문 로그 |
+| `docs/creative-studio/core-stage2-evidence-20261107/red-hyperframes.log` | `e0887ae2a5481db2bc610709fe78f60abbb834bc4fd51a85d6264e04ecf0ea76` | 테스트 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/green-initial.log` | `9b50850407aca839a8fd350fe74ba9b8496acc6174b4f93249a079ee568cef2d` | 테스트 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/red-asset-file.log` | `108def67c8bdd6f590dcc431eac49328436d13a05c7fc66ced568b4bb4f8b336` | 실패 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/red-remote-api.log` | `0321a5b6ea1c29739ef20e06b80245f2257c3fddb1700c0463a2ec1781175aad` | 실패 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/red-timeout.log` | `079e870f483f18e8cbe1389b8d8c179393efb5f84d8d7a98586a41e172154a35` | 실패 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/regression-bundle.log` | `24f764c86cd3bbccb2eef0084fa9c59ad1eee2cc7b434e42476b957bcee4531f` | 테스트 원문 로그 |
+| `docs/creative-studio/core-stage3-evidence-20261107/stage3-core.patch` | `c0c0916a0c6b22261e17e707ebad9cdc810bf7db9a35cbf641de7fd778569214` | 기록용 patch 원문 |
+
+남은 공백 진단 경로는 위 17개뿐이다. evidence 경로 안에 Python 테스트 파일명을 인용한 로그 행이 있어도 원문은 수정하지 않았다.
+
+### 후속 후보와 미완
+
+정적 코드·테스트·스크립트·보조 문서의 경로 지정 commit은 `181d12e1d9ce03a3cfff79da3cef492d0d71c18a`다. 기준 `a3980e6...`부터 이 코드 commit까지의 binary diff SHA-256은 `eea39dc3a5d749b006c7cd54f7b17e2863de8b04a5b9eb28ca404788506199d4`다. 파일별 재사용 구분은 다음과 같다. `base`는 기준 후보 bytes, `new`는 정적 교정 commit bytes의 SHA-256이다.
+
+| 경로 | base SHA-256 | new SHA-256 | 이번 회귀/재사용 |
+|---|---|---|---|
+| `scripts/render_3d_benchmark.py` | `980b5e050bdad7678bb9ad017f5a4414e84cf020a2156bfe2e602b04e9b51134` | `e022c445ba4c2dea2c8cda321a7070de6f09e8b5f90e52eb3491aa42e89bb54a` | 실행 안 함; lint 및 AST만 |
+| `scripts/render_hyperframes_benchmark.py` | `691ff693d6cf5622c8249cea75c560ec9cc0404007159ab0a211ac6f0a7d633a` | `691ff693d6cf5622c8249cea75c560ec9cc0404007159ab0a211ac6f0a7d633a` | 내용 동일, shebang 실행 비트만; lint 및 AST |
+| `scripts/run_frame_animation_benchmark.py` | `223b4038a3153bd9ff369242e45a111f07f4a075ec128d9261e0592be856f0d2` | `324657a2fa83df8d8f1e0833106508855f1bdff608f57b31d49258a2ab3c2e5c` | 실행 안 함; lint 및 AST |
+| `src/ttakkari/creative/v2/frame_animation.py` | `dca9dbb1ecdbfba45ac23b3580b2ae087c86ed492f7d2c7892910ecbe027d5a7` | `e53f59ae99e537bbfbbfd7e99880f20c17a2273372a7a8c64ce42a2533012200` | frame animation 회귀 포함 |
+| `src/ttakkari/creative/v2/hyperframes.py` | `4bd5579ef68379e75c98d84fe1f2827b593c30745c2e5872ce2506dde6d1c520` | `8dcdeb3f06abb972121faafa4e566a950c1619a0986308b09ad89f507302faa0` | HyperFrames 회귀 포함; live/npm 제외 |
+| `src/ttakkari/creative/v2/scene_3d.py` | `b3787d2509d7dcf26e7b4745cb74802ba5ff31c93d96bd4a95ec3905644a9a85` | `715b36dde7673c1bbce832650081a62a2a590a75fb3a38a7cbe336aed5994851` | unit 3D 회귀 포함 |
+| `tests/test_scene_3d.py` | `e77be7389898fdcf3ee21edada392975ba1705b4ca0b90c99434d6a9611cca90` | `54bd197555e9875c644352cde9830b7f5834730da08585e42ce3f600dac85219` | 4 pass, 1 known bpy preflight failure |
+| `unit_tests/test_creative_v2_frame_animation.py` | `449c7cc5b7f338b1dbfe61212ef6b0c6948ed405e1cd2e4d285a658ced416f86` | `7eafcffdc66c909d0ee7e1293a85b102e578215a04ffb00478b7f0f2902a3140` | 47-test bundle에 포함 |
+| `unit_tests/test_hyperframes.py` | `d05abe6384d0b59c8c06a776309b2f9f8d64bd059ea5aeac04cf323b3e89f366` | `b38815abd681a0e1b6ea2de8fffea54c8a977d1513158930f34e0055cf2a6447` | 47-test bundle; live/npm 2개 제외 |
+| `unit_tests/test_scene_3d.py` | `e466055668ab682c5a95da3cc1f0ea60ea2795e595ca172a3a31ce42f6e5e690` | `d45fb66833413b2cd8fc7388a79da60bf327f130792294db231f3d974998f7b8` | 47-test bundle에 포함 |
+
+최종 통합 문서를 포함한 full SHA는 다음 경로 지정 문서 commit에서 확정한다. 별도 신규 clean 검증 worktree는 원 `/back-creative-production-20261107-verify`를 보존하기 위해 `/back-creative-production-20261107-static-verify`에 제공한다.
+
+미완: npm lint의 기존 샌드박스 `.npm/_logs` EPERM은 재시도/우회 없이 미검증으로 유지한다. A browser preflight, C bpy 렌더, 유음 조립, 의미·시청·청취 평가, 실제 UI, 독립 품질 검증, push와 배포는 이 정적 교정 작업에서 수행하지 않았다. 기존 무음 QA 실패 및 의미·시청·청취 `unknown` 상태는 그대로다.

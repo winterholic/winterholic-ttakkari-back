@@ -255,6 +255,8 @@ async def test_runtime_report_exposes_supervisor_queue_and_slot_ownership_withou
             result([(gen_draining, 2)]),
             scalar_result(1),
             result([]),
+            result([]),  # bounded lease/process mappings
+            result([]),  # orphan process groups without a matching lease
             result([]),  # collection_report
         ])
 
@@ -384,6 +386,8 @@ async def test_diagnostics_redact_raw_errors_and_block_synthetic_secret_path_can
         result([]),
         scalar_result(0),
         result([]),
+        result([]),  # leases and matching process groups
+        result([]),  # orphan process groups without a matching lease
         result([]),
     ])
     rt_report = await inline.runtime_report(db)
@@ -401,3 +405,146 @@ async def test_diagnostics_redact_raw_errors_and_block_synthetic_secret_path_can
     assert fg["error_code"] == "draining_generation_unreachable"
     assert fg["error_stage"] == "unknown"
     assert fg["has_error"] is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_report_maps_bounded_process_groups_to_run_session_and_account_without_identity_secrets(
+    tmp_path, monkeypatch
+):
+    import json
+
+    from ttakkari import deployment
+
+    home = tmp_path / "home"
+    deploy_root = home / "deploy"
+    deploy_root.mkdir(parents=True)
+    monkeypatch.setattr(inline.get_settings(), "home", home)
+    monkeypatch.setattr(deployment, "state_dir", lambda: deploy_root)
+    monkeypatch.setattr(deployment, "strategy", lambda: "generations")
+    monkeypatch.setattr(deployment, "supervisor_diagnostics", lambda *_: {})
+    monkeypatch.setattr(deployment, "queue_diagnostics", lambda *_: {})
+    monkeypatch.setattr(deployment, "slot_ownership_diagnostics", lambda *_args, **_kwargs: [])
+
+    async def empty_collection_report(_db):
+        return {}
+
+    monkeypatch.setattr(inline, "collection_report", empty_collection_report)
+
+    generation_id = uuid.uuid4()
+    account_id = uuid.uuid4()
+    rows = [
+        SimpleNamespace(
+            entry_kind="lease_process_group",
+            process_group_id=uuid.uuid4(), generation_id=generation_id, attempt=1,
+            run_id=uuid.uuid4(), session_id=uuid.uuid4(), account_id=account_id,
+            account_name="회사 코덱스 ai2 (ai2@hyperez.io)", run_status="succeeded",
+            session_archived=False, lease_matches_process_group=True,
+        ),
+        SimpleNamespace(
+            entry_kind="lease_only",
+            process_group_id=None, generation_id=generation_id, attempt=None,
+            run_id=uuid.uuid4(), session_id=uuid.uuid4(), account_id=None,
+            account_name=None, run_status="cancelled", session_archived=True,
+            lease_matches_process_group=False,
+        ),
+        SimpleNamespace(
+            entry_kind="lease_only",
+            process_group_id=None, generation_id=generation_id, attempt=None,
+            run_id=uuid.uuid4(), session_id=None, account_id=None, account_name=None,
+            run_status=None, session_archived=None, lease_matches_process_group=False,
+        ),
+        SimpleNamespace(
+            entry_kind="lease_process_group",
+            process_group_id=uuid.uuid4(), generation_id=generation_id, attempt=1,
+            run_id=uuid.uuid4(), session_id=uuid.uuid4(), account_id=account_id,
+            account_name="회사 코덱스 ai2 (ai2@hyperez.io)", run_status="running",
+            session_archived=False, lease_matches_process_group=True,
+        ),
+    ]
+    rows.extend(
+        SimpleNamespace(
+            entry_kind="lease_only",
+            process_group_id=None, generation_id=generation_id, attempt=None,
+            run_id=uuid.uuid4(), session_id=uuid.uuid4(), account_id=None,
+            account_name=None, run_status="interrupted", session_archived=False,
+            lease_matches_process_group=False,
+        )
+        for _ in range(95)
+    )
+    orphan_rows = [
+        SimpleNamespace(
+            entry_kind="orphan_process_group", process_group_id=uuid.uuid4(),
+            generation_id=generation_id, attempt=1, run_id=uuid.uuid4(), session_id=None,
+            account_id=None, account_name=None, run_status="failed", session_archived=None,
+            lease_matches_process_group=False,
+        ),
+        SimpleNamespace(
+            entry_kind="orphan_process_group", process_group_id=uuid.uuid4(),
+            generation_id=generation_id, attempt=2, run_id=uuid.uuid4(), session_id=uuid.uuid4(),
+            account_id=None, account_name=None, run_status="interrupted", session_archived=True,
+            lease_matches_process_group=False,
+        ),
+    ]
+    control = SimpleNamespace(active_generation=None, executor_generation=None, epoch=153)
+
+    def scalars_result(items):
+        m = MagicMock()
+        s = MagicMock()
+        s.first.return_value = items[0] if items else None
+        s.all.return_value = items
+        m.scalars.return_value = s
+        return m
+
+    def scalar_result(value):
+        m = MagicMock()
+        m.scalar.return_value = value
+        return m
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        scalars_result([control]), scalars_result([]), result([]), result([]), scalar_result(1),
+        result([]), result(rows), result(orphan_rows),
+    ])
+
+    report = await inline.runtime_report(db)
+
+    assert report["lease_processes_limit"] == 100
+    assert report["lease_processes_truncated"] is True
+    mappings = report["lease_processes"]
+    assert len(mappings) == 100
+    assert mappings[0]["run_status"] == "succeeded"
+    assert mappings[0]["entry_kind"] == "lease_process_group"
+    assert mappings[0]["account_name"] == "회사 코덱스 ai2 (ai2@hyperez.io)"
+    assert mappings[0]["lease_matches_process_group"] is True
+    assert mappings[1]["run_status"] == "cancelled"
+    assert mappings[1]["session_archived"] is True
+    assert mappings[2]["run_status"] == "missing"
+    assert mappings[2]["session_id"] is None
+    assert mappings[3]["run_status"] == "running"
+    assert mappings[4]["entry_kind"] == "lease_only"
+    assert mappings[4]["process_group_id"] is None
+    assert mappings[99]["entry_kind"] == "orphan_process_group"
+    assert mappings[99]["account_id"] is None
+    assert mappings[99]["lease_matches_process_group"] is False
+    payload = json.dumps(mappings)
+    for forbidden in ("lease_token", "token", "pid", "pgid", "process_started_at", "prompt", "result_text"):
+        assert forbidden not in payload
+    db.commit.assert_not_called()
+    db.flush.assert_not_called()
+    mapping_sql = str(db.execute.call_args_list[6].args[0].compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
+    orphan_sql = str(db.execute.call_args_list[7].args[0].compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
+    for sql in (mapping_sql, orphan_sql):
+        assert "LIMIT 101" in sql
+        assert "runtime_process_groups.pid" not in sql
+        assert "runtime_process_groups.pgid" not in sql
+        assert "runtime_process_groups.process_started_at" not in sql
+    assert "CASE WHEN" in mapping_sql
+    selected_columns = set(db.execute.call_args_list[6].args[0].selected_columns.keys())
+    assert selected_columns == {
+        "entry_kind", "process_group_id", "generation_id", "attempt", "run_id", "session_id",
+        "account_id", "account_name", "run_status", "session_archived", "lease_matches_process_group",
+    }

@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0076_kb_v3_collection_merge",
+  "schema_revision": "0077_artcraft_account_pin",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -56,7 +56,8 @@
     "0073_kb_l2_budget_ledger",
     "0074_collection_single_library",
     "0074_kb_v3_research_merge",
-    "0075_collection_research_merge"
+    "0075_collection_research_merge",
+    "0076_kb_v3_collection_merge"
   ],
   "schema_aliases": {
     "0059_kb_immutability_truncate": "0059_collector_intake"

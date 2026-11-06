@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -281,6 +282,9 @@ class ChatSession(Base):
     kind: Mapped[str] = mapped_column(String(16), default=SessionKind.chat, index=True)
     # 이 대화가 쓸 수 있는 계정 범위(personal=전체 목록, work=회사 그룹만). 작업 세션은 오케스트레이터 것을 물려받는다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
+    # Exact provider account pinned by ArtCraft. No FK: deleting/disabling the
+    # account must leave the pin intact so a resumed Run fails closed.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), index=True
     )

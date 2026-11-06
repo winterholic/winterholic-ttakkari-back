@@ -1,0 +1,952 @@
+{
+  "checked": [
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "일반 파일명",
+      "replica": {
+        "stdout": "report.txt\n",
+        "stderr": "",
+        "stdout_bytes_b64": "cmVwb3J0LnR4dAo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "report.txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "report.txt"
+        ],
+        "vector_id": "plain"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.467249+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-plain-basename-repaired-after-20261107T105500.json",
+          "sha256": "ad35076078c2fa261cbf80f8edafc56b4a6d060f5f8cfe91a8a4b986fba8dae5"
+        }
+      ],
+      "result": "match",
+      "id": "basename-plain",
+      "original": {
+        "stdout": "report.txt\n",
+        "stderr": "",
+        "stdout_bytes_b64": "cmVwb3J0LnR4dAo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "report.txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "한글·공백·suffix",
+      "replica": {
+        "stdout": "한글 파일\n",
+        "stderr": "",
+        "stdout_bytes_b64": "7ZWc6riAIO2MjOydvAo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "폴더 이름/한글 파일.txt",
+          ".txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "폴더 이름/한글 파일.txt",
+          ".txt"
+        ],
+        "vector_id": "spaces-unicode"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.485299+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-spaces-unicode-basename-repaired-after-20261107T105500.json",
+          "sha256": "ba6c2e8b2def2074643aa868803f8500c0a1cb4aa26e553f4120ce258454a705"
+        }
+      ],
+      "result": "match",
+      "id": "basename-spaces-unicode",
+      "original": {
+        "stdout": "한글 파일\n",
+        "stderr": "",
+        "stdout_bytes_b64": "7ZWc6riAIO2MjOydvAo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "폴더 이름/한글 파일.txt",
+          ".txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "후행 슬래시 경계",
+      "replica": {
+        "stdout": "folder\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Zm9sZGVyCg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "folder///"
+        ]
+      },
+      "input": {
+        "argv": [
+          "folder///"
+        ],
+        "vector_id": "trailing-slashes"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.504048+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-trailing-slashes-basename-repaired-after-20261107T105500.json",
+          "sha256": "19476289c4dab24c2e161983a60cb6149696f064532d6aa244e575d876c2e800"
+        }
+      ],
+      "result": "match",
+      "id": "basename-trailing-slashes",
+      "original": {
+        "stdout": "folder\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Zm9sZGVyCg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "folder///"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "반복 슬래시 루트",
+      "replica": {
+        "stdout": "/\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Lwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "////"
+        ]
+      },
+      "input": {
+        "argv": [
+          "////"
+        ],
+        "vector_id": "repeated-slash-root"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.522732+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-repeated-slash-root-basename-repaired-after-20261107T105500.json",
+          "sha256": "3bdfede2d9b027ea031805cc9301b2b065ab2b5ecf6c44d1dfb68013c9e43c03"
+        }
+      ],
+      "result": "match",
+      "id": "basename-repeated-slash-root",
+      "original": {
+        "stdout": "/\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Lwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "////"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "루트 경계",
+      "replica": {
+        "stdout": "/\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Lwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "/"
+        ]
+      },
+      "input": {
+        "argv": [
+          "/"
+        ],
+        "vector_id": "root"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.542473+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-root-basename-repaired-after-20261107T105500.json",
+          "sha256": "424bb86d4727ed5df02cb24836969e471a219cc7f8be3efae1230acfd5876829"
+        }
+      ],
+      "result": "match",
+      "id": "basename-root",
+      "original": {
+        "stdout": "/\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Lwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "/"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "빈 문자열 경계",
+      "replica": {
+        "stdout": "\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Cg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          ""
+        ]
+      },
+      "input": {
+        "argv": [
+          ""
+        ],
+        "vector_id": "empty-string"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.559885+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-empty-string-basename-repaired-after-20261107T105500.json",
+          "sha256": "998a76e40da6cabc3126cd48d8ee39465609fe4e37730829fff0b67ada0b016f"
+        }
+      ],
+      "result": "match",
+      "id": "basename-empty-string",
+      "original": {
+        "stdout": "\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Cg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          ""
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "-s 옵션",
+      "replica": {
+        "stdout": "hello world\n",
+        "stderr": "",
+        "stdout_bytes_b64": "aGVsbG8gd29ybGQK",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-s",
+          ".txt",
+          "hello world.txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-s",
+          ".txt",
+          "hello world.txt"
+        ],
+        "vector_id": "suffix-option"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.576388+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-suffix-option-basename-repaired-after-20261107T105500.json",
+          "sha256": "ab0b74cbc572b2345d18d777aeec16cbc4ff6b7c71b520b2c5430444f288a363"
+        }
+      ],
+      "result": "match",
+      "id": "basename-suffix-option",
+      "original": {
+        "stdout": "hello world\n",
+        "stderr": "",
+        "stdout_bytes_b64": "aGVsbG8gd29ybGQK",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-s",
+          ".txt",
+          "hello world.txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "대시 파일명",
+      "replica": {
+        "stdout": "-\n",
+        "stderr": "",
+        "stdout_bytes_b64": "LQo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-"
+        ],
+        "vector_id": "literal-dash"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.593336+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-literal-dash-basename-repaired-after-20261107T105500.json",
+          "sha256": "0049280f82ac3ef0fb50f79d3b08681a3d9af36cac45ea71153b23c66b5fb45f"
+        }
+      ],
+      "result": "match",
+      "id": "basename-literal-dash",
+      "original": {
+        "stdout": "-\n",
+        "stderr": "",
+        "stdout_bytes_b64": "LQo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "옵션 종료 뒤 대시 파일명",
+      "replica": {
+        "stdout": "--\n",
+        "stderr": "",
+        "stdout_bytes_b64": "LS0K",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "--",
+          "--"
+        ]
+      },
+      "input": {
+        "argv": [
+          "--",
+          "--"
+        ],
+        "vector_id": "option-end-marker"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.610698+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-option-end-marker-basename-repaired-after-20261107T105500.json",
+          "sha256": "0bd3bd0dfed95e28cd506a8bff348137478f970eb4924be79a526ece1ab2b128"
+        }
+      ],
+      "result": "match",
+      "id": "basename-option-end-marker",
+      "original": {
+        "stdout": "--\n",
+        "stderr": "",
+        "stdout_bytes_b64": "LS0K",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "--",
+          "--"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "결합 옵션",
+      "replica": {
+        "stdout": "file\n",
+        "stderr": "",
+        "stdout_bytes_b64": "ZmlsZQo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-as",
+          ".txt",
+          "file.txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-as",
+          ".txt",
+          "file.txt"
+        ],
+        "vector_id": "combined-options"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.627665+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-combined-options-basename-repaired-after-20261107T105500.json",
+          "sha256": "b8dee97243e49ceeb0a0e5b20266d7fb1ceb336ab7bb040fc84b4614d483f140"
+        }
+      ],
+      "result": "match",
+      "id": "basename-combined-options",
+      "original": {
+        "stdout": "file\n",
+        "stderr": "",
+        "stdout_bytes_b64": "ZmlsZQo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-as",
+          ".txt",
+          "file.txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "-s 인자 누락",
+      "replica": {
+        "stdout": "",
+        "stderr": "/usr/bin/basename: option requires an argument -- s\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "L3Vzci9iaW4vYmFzZW5hbWU6IG9wdGlvbiByZXF1aXJlcyBhbiBhcmd1bWVudCAtLSBzCnVzYWdlOiBiYXNlbmFtZSBzdHJpbmcgW3N1ZmZpeF0KICAgICAgIGJhc2VuYW1lIFstYV0gWy1zIHN1ZmZpeF0gc3RyaW5nIFsuLi5dCg==",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-s"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-s"
+        ],
+        "vector_id": "missing-suffix-argument"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.644896+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-missing-suffix-argument-basename-repaired-after-20261107T105500.json",
+          "sha256": "ec1dd7485efcdff7cf87bff2ea0882e7ec8df90fe5ccaa8caa0971eb44813508"
+        }
+      ],
+      "result": "match",
+      "id": "basename-missing-suffix-argument",
+      "original": {
+        "stdout": "",
+        "stderr": "/usr/bin/basename: option requires an argument -- s\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "L3Vzci9iaW4vYmFzZW5hbWU6IG9wdGlvbiByZXF1aXJlcyBhbiBhcmd1bWVudCAtLSBzCnVzYWdlOiBiYXNlbmFtZSBzdHJpbmcgW3N1ZmZpeF0KICAgICAgIGJhc2VuYW1lIFstYV0gWy1zIHN1ZmZpeF0gc3RyaW5nIFsuLi5dCg==",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-s"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "접미사와 전체 이름 일치",
+      "replica": {
+        "stdout": "foo\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Zm9vCg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-s",
+          "foo",
+          "foo"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-s",
+          "foo",
+          "foo"
+        ],
+        "vector_id": "suffix-whole-name"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.661952+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-suffix-whole-name-basename-repaired-after-20261107T105500.json",
+          "sha256": "60ea9083322046e96a2985e83d4eb6878fb4193e275ca588ba3ff0550508c2c3"
+        }
+      ],
+      "result": "match",
+      "id": "basename-suffix-whole-name",
+      "original": {
+        "stdout": "foo\n",
+        "stderr": "",
+        "stdout_bytes_b64": "Zm9vCg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-s",
+          "foo",
+          "foo"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "-s 복수 인자",
+      "replica": {
+        "stdout": "one\ntwo\n",
+        "stderr": "",
+        "stdout_bytes_b64": "b25lCnR3bwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-s",
+          ".txt",
+          "one.txt",
+          "two.txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-s",
+          ".txt",
+          "one.txt",
+          "two.txt"
+        ],
+        "vector_id": "suffix-multiple-arguments"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.678748+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-suffix-multiple-arguments-basename-repaired-after-20261107T105500.json",
+          "sha256": "0a554c400506ea56a83f6b6505ae3f3bfd44b7d5f9d9db6385c3a92871d9bc16"
+        }
+      ],
+      "result": "match",
+      "id": "basename-suffix-multiple-arguments",
+      "original": {
+        "stdout": "one\ntwo\n",
+        "stderr": "",
+        "stdout_bytes_b64": "b25lCnR3bwo=",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-s",
+          ".txt",
+          "one.txt",
+          "two.txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "-a 다중 인자 옵션",
+      "replica": {
+        "stdout": "one.txt\ntwo words.txt\n",
+        "stderr": "",
+        "stdout_bytes_b64": "b25lLnR4dAp0d28gd29yZHMudHh0Cg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-a",
+          "one.txt",
+          "two words.txt"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-a",
+          "one.txt",
+          "two words.txt"
+        ],
+        "vector_id": "all-option"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.695001+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-all-option-basename-repaired-after-20261107T105500.json",
+          "sha256": "d5d0c9faa2733fc0515443137a6c1de661b1d944016f0e955b13569ed88c05ee"
+        }
+      ],
+      "result": "match",
+      "id": "basename-all-option",
+      "original": {
+        "stdout": "one.txt\ntwo words.txt\n",
+        "stderr": "",
+        "stdout_bytes_b64": "b25lLnR4dAp0d28gd29yZHMudHh0Cg==",
+        "stderr_bytes_b64": "",
+        "exit_code": 0,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-a",
+          "one.txt",
+          "two words.txt"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "인자 누락 오류",
+      "replica": {
+        "stdout": "",
+        "stderr": "usage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "dXNhZ2U6IGJhc2VuYW1lIHN0cmluZyBbc3VmZml4XQogICAgICAgYmFzZW5hbWUgWy1hXSBbLXMgc3VmZml4XSBzdHJpbmcgWy4uLl0K",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py"
+        ]
+      },
+      "input": {
+        "argv": [],
+        "vector_id": "missing-argument"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.712085+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-missing-argument-basename-repaired-after-20261107T105500.json",
+          "sha256": "88eceb489f1689d4dee93ca5f2edb70979293cf2ef3495c38262ae217faa0d93"
+        }
+      ],
+      "result": "match",
+      "id": "basename-missing-argument",
+      "original": {
+        "stdout": "",
+        "stderr": "usage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "dXNhZ2U6IGJhc2VuYW1lIHN0cmluZyBbc3VmZml4XQogICAgICAgYmFzZW5hbWUgWy1hXSBbLXMgc3VmZml4XSBzdHJpbmcgWy4uLl0K",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename"
+        ]
+      }
+    },
+    {
+      "difference": null,
+      "run_id": "basename-repaired-after-20261107T105500",
+      "environment": {
+        "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+        "python": "3.13.15",
+        "original": "/usr/bin/basename"
+      },
+      "target_type": "cli",
+      "behavior": "알 수 없는 옵션 오류",
+      "replica": {
+        "stdout": "",
+        "stderr": "/usr/bin/basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "L3Vzci9iaW4vYmFzZW5hbWU6IGlsbGVnYWwgb3B0aW9uIC0tIHoKdXNhZ2U6IGJhc2VuYW1lIHN0cmluZyBbc3VmZml4XQogICAgICAgYmFzZW5hbWUgWy1hXSBbLXMgc3VmZml4XSBzdHJpbmcgWy4uLl0K",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/../back/.venv/bin/python",
+          "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500/reverse_compare_basename_replica.py",
+          "-z"
+        ]
+      },
+      "input": {
+        "argv": [
+          "-z"
+        ],
+        "vector_id": "invalid-option"
+      },
+      "evidence_level": "direct",
+      "pre_state": {
+        "cwd": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-evidence-20261107/docs/reverse-platform/evidence/basename-repaired-20261107/after-capture-20261107T105500",
+        "fixture_state": "no files required"
+      },
+      "verified_at": "2026-11-06T16:25:38.729374+00:00",
+      "evidence": [
+        {
+          "kind": "execution",
+          "path": ".reverse/comparisons/basename-invalid-option-basename-repaired-after-20261107T105500.json",
+          "sha256": "e435de9a97276b528c2fe05991f9568bf46127fb157ebde3a8d8bc21ea72af2c"
+        }
+      ],
+      "result": "match",
+      "id": "basename-invalid-option",
+      "original": {
+        "stdout": "",
+        "stderr": "/usr/bin/basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n",
+        "stdout_bytes_b64": "",
+        "stderr_bytes_b64": "L3Vzci9iaW4vYmFzZW5hbWU6IGlsbGVnYWwgb3B0aW9uIC0tIHoKdXNhZ2U6IGJhc2VuYW1lIHN0cmluZyBbc3VmZml4XQogICAgICAgYmFzZW5hbWUgWy1hXSBbLXMgc3VmZml4XSBzdHJpbmcgWy4uLl0K",
+        "exit_code": 1,
+        "timed_out": false,
+        "argv": [
+          "/usr/bin/basename",
+          "-z"
+        ]
+      }
+    }
+  ],
+  "count": 16
+}

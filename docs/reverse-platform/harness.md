@@ -1,0 +1,65 @@
+# Reverse comparison harness v2
+
+`ttakkari.reverse_compare` runs two argv commands with the same `input.argv`, UTF-8 stdin, working directory and inherited process environment; it never invokes a shell. CLI stdout and stderr are kept as readable text plus base64 of captured bytes. If a configured output limit truncates either stream, or a command is missing or times out, the comparison stays `unverified`. Raw execution captures are written under `.reverse/comparisons/<id>-<run_id>.json` with SHA-256 references. `verify_comparisons` reopens and hashes the capture before recomputing the result.
+
+The API path sends the same method, serialized request body and headers to both allowlisted HTTP(S) endpoints. The default allowlist is loopback (`localhost`, `127.0.0.1`, `::1`); callers may supply explicit hostnames. It records exact response body bytes, status, nonsecret response headers, optional state snapshots before/after the request, and request errors. Header values whose names indicate authorization, cookies, tokens, keys, secrets or passwords are replaced with `[REDACTED]` in logs. The demo runs only two disposable local servers.
+
+The web path accepts observations captured through the configured browser tools. It preserves events, DOM, state, network observations, screenshot references and a separate `visual_assessment` evidence item. A functional `match` does not imply visual `match`; absent a screenshot assessment, visual evidence is explicitly `unverified`. Browser snapshots and screenshots remain raw evidence. The demo fixture has a same-function red button so the pixel comparison produces an intentional visual mismatch.
+
+## Run the samples
+
+From the backend worktree, with the existing `back/.venv` Python and `PYTHONPATH=src`:
+
+```sh
+../back/.venv/bin/python scripts/reverse_compare_basename.py --output /tmp/reverse-basename --run-id basename-run-1
+../back/.venv/bin/python scripts/reverse_compare_api.py --output /tmp/reverse-api --run-id api-run-1
+../back/.venv/bin/python scripts/reverse_compare_recheck.py --workspace /tmp/reverse-basename --report /tmp/reverse-basename/comparisons.json --output /tmp/reverse-basename/recomputed.json --run-id basename-run-1
+```
+
+For web, run `PYTHONPATH=src ../back/.venv/bin/python scripts/reverse_compare_web_demo.py --output /tmp/reverse-web --serve`, observe `/original/` and `/replica/` using `ttakkari_browser`, then save the resulting observations and screenshots and call `scripts/reverse_compare_web_capture.py`. That script stores a functional comparison and keeps a separate visual result in `evidence[kind=visual_assessment]`.
+
+## ReverseJob web evidence handoff
+
+ReverseJob web prompts contain a concrete command pair for the actual job folder:
+the existing `.venv` interpreter, checkout `src` on `PYTHONPATH`, and absolute
+capture/verify script paths are shell-quoted. The commands run from the job folder
+and do not install dependencies or write into a deployment runtime. Use the
+canonical `reverse_web_evidence_capture.py` writer and then
+`reverse_web_evidence_verify.py` with that Run's ID. The instructions include the
+observations JSON shape and require the original and replica to share the same
+input, pre-state, viewport and browser environment.
+
+Both implementer and verifier must observe through the configured
+`ttakkari_browser`. The verifier repeats the browser actions in its own Run and
+stores its own comparison. Keep direct browser observations separate from manual
+transcription, secondary HTTP checks and inference. An unavailable original or
+browser failure remains `unverified` and may require `needs_input`. The writer and
+verifier check module-level files; they do not establish ReverseJob agent E2E or
+authenticated execution provenance. Provenance remains `unverified`.
+
+`collect_outputs` rechecks the run-specific raw JSON and both PNGs before adding
+them to `reconstruction-source.zip`. The ZIP keeps the paths referenced by raw
+JSON, records per-role Run and session IDs, comparison status, visual summary,
+checks/log hashes, integrity and provenance in
+`reverse-web-evidence-manifest.json`, and places each role's check logs under
+`evidence/roles/implementation/` or `evidence/roles/verifier/`. JSON and ordinary
+files retain the 1 MiB bound; PNGs have their separate 12 MiB bound. Rejected or
+missing evidence is listed with a reason and is not marked included.
+
+## Captured target run
+
+On 2026-11-07 KST, the harness directly ran the real `/usr/bin/basename` against the source fixture `scripts/reverse_compare_basename_replica.py`: nine vectors covered plain input, Korean and spaces, suffixes, trailing slashes, root and empty values, `-s`, `-a`, missing arguments and an invalid option. Eight matched; the invalid-option error remains a mismatch because the original and replica print different command prefixes. No output normalization was applied. This is a harness target run, not a platform agent E2E.
+
+The local API demo produced four comparisons: successful JSON/state transition, 422 validation, 404 route, and an 8 KiB response. All four matched and the server verifier recomputed all four from hashed raw captures. The configured browser demo recorded the same click, DOM state, and completion state on both pages. The pixel-exact 1280×720 screenshots differ at 2,146 pixels (button color); visual result is `mismatch`. Browser capture is isolated and local; this is not a production-site check.
+
+## Repaired basename sample run
+
+On 2026-11-07 KST, the basename sample was expanded to 16 argv vectors and its replica was repaired from direct `/usr/bin/basename` observations. The before capture recorded 12 matches and four mismatches: `-z` stderr prefix, repeated-slash root, combined `-as`, and missing `-s` argument. The after capture records 16 matches. Both reports were independently recomputed from their SHA-256 raw captures with `scripts/reverse_compare_recheck.py` / `verify_comparisons`; their verifier outputs are beside each report under `docs/reverse-platform/evidence/basename-repaired-20261107/`.
+
+The comparison ran on `macOS-27.0-arm64-arm-64bit-Mach-O`, Python 3.13.15, against `/usr/bin/basename`; the replica subprocess used the existing `back/.venv` Python. The raw captures retain stdout bytes, stderr bytes and exit code for both commands. No output normalization was applied. The test and evidence README are in that evidence directory. This is a direct target-harness comparison and server-side recomputation, not a platform agent E2E.
+
+## Contract note for platform owners
+
+The report contract has exactly the declared comparison keys, so this harness keeps visual judgement as a distinct `visual_assessment` evidence item inside the allowed `evidence` array rather than adding a top-level field. Consumers that render visual status should read that evidence kind separately from `result`.
+
+CLI byte equality uses `stdout_bytes_b64` and `stderr_bytes_b64`; the server comparator must prefer these when present, because two different invalid UTF-8 byte strings can decode to the same replacement text. API direct verification recomputes status/body-bytes/headers/state from captures. The web server path reopens the hashed raw capture and recomputes functional and pixel results while keeping provenance unverified because trusted RunEvent/tool-result linkage is not yet available.

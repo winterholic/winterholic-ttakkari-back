@@ -1,0 +1,108 @@
+{
+  "source": "configured ttakkari_browser tool in this Run",
+  "run_id": "browser-observation-20261107",
+  "tool_call_ids": "not exposed by tool result interface; provenance remains unverified",
+  "browser_tool_urls": [
+    "http://127.0.0.1:55945/",
+    "http://127.0.0.1:55980/"
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "scale": "css",
+    "device_scale_factor": "not exposed"
+  },
+  "steps": [
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:08:45.750Z",
+      "url": "http://127.0.0.1:55945/",
+      "result": "loaded; initial accessibility snapshot showed quantity 1, idle status, 0 requests, empty events"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:09:04.185Z",
+      "action": "fill #quantity=3 then click button",
+      "result": "status 준비 완료 · 3개 · 요청 1건; event list 요청 성공: 3개, 수량 변경: 3"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:09:04.392Z",
+      "action": "screenshot",
+      "artifact": "raw/original.png",
+      "result": "PNG 390x844"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:09:04Z",
+      "action": "browser_network_requests",
+      "result": "GET http://127.0.0.1:55945/ => 200; no console errors or warnings"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:09:11.062Z",
+      "url": "http://127.0.0.1:55980/",
+      "result": "loaded; same initial state and accessible controls"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:09:11.791Z",
+      "action": "fill #quantity=3 then click button",
+      "result": "status 준비 완료 · 3개 · 요청 1건; event list 요청 성공: 3개, 수량 변경: 3"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:09:11.829Z",
+      "action": "screenshot",
+      "artifact": "raw/replica.png",
+      "result": "PNG 390x844"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:09:11Z",
+      "action": "browser_network_requests",
+      "result": "GET http://127.0.0.1:55980/ => 200; no console errors or warnings"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:12:10.354Z",
+      "url": "http://127.0.0.1:55945/",
+      "result": "reloaded; initial state reset"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:12:11.090Z",
+      "action": "fill #quantity=6 then click button",
+      "result": "status stayed 대기 중 · 요청 0건; event list only 수량 변경: 6; no submit success event"
+    },
+    {
+      "page": "original",
+      "time_utc": "2026-11-06T17:12:11.242Z",
+      "action": "screenshot",
+      "artifact": "raw/original-boundary.png",
+      "result": "PNG 390x844"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:12:17.434Z",
+      "url": "http://127.0.0.1:55980/",
+      "result": "reloaded; initial state reset"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:12:18.135Z",
+      "action": "fill #quantity=6 then click button",
+      "result": "status stayed 대기 중 · 요청 0건; event list only 수량 변경: 6; no submit success event"
+    },
+    {
+      "page": "replica",
+      "time_utc": "2026-11-06T17:12:18.287Z",
+      "action": "screenshot",
+      "artifact": "raw/replica-boundary.png",
+      "result": "PNG 390x844"
+    }
+  ],
+  "network_hash_method": "Browser tool returned the GET status and URL. Body SHA-256 and content headers were collected with a separate direct loopback GET after browser observation; this is recorded as transcribed/secondary observation, not browser tool output.",
+  "screenshot_source": "browser_take_screenshot tool; PNG files copied byte-for-byte from this Run outbox/browser",
+  "authoring_note": "Replica was served by the dedicated reverse_web_evidence_demo.py script; this is a developer demo replica, not a ReverseJob agent implementation."
+}

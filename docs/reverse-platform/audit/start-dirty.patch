@@ -1,0 +1,372 @@
+diff --git a/docs/reverse-platform/README.md b/docs/reverse-platform/README.md
+index 0708fb74..6bc64a2f 100644
+--- a/docs/reverse-platform/README.md
++++ b/docs/reverse-platform/README.md
+@@ -8,6 +8,8 @@
+ 
+ `ReverseJob.result` JSONB 안에 설정, 추천 근거·계획, `latest`, `history`를 저장한다. 별도 DB 모델·마이그레이션은 없다. 서버는 소스·실행 검사·직접 비교·독립 검증 상태를 별도 공개한다. 직접 비교 JSON은 `.reverse/comparisons/` 내부의 SHA-256 증거를 읽어 입력·사전 상태·환경·원본/복제 출력을 대조하고 stdout, stderr, 종료코드 일치를 재계산한다. 원본 실행 실패는 null/unverified와 사유를 보존한다. 잘못된 레코드도 제거하지 않고 unverified로 보인다. 결과 문구나 `passed`만으로 완료를 승격하지 않는다.
+ 
++CLI 비교는 `python -m ttakkari.reverse_compare --workspace <workspace> --spec <json>`으로 실행한다. API 비교는 HTTP(S) allowlist를 사용하고 redirect를 따라가지 않으며 URL의 민감 쿼리와 비밀 헤더를 캡처에서 가린다. 비교기 및 실측 `/usr/bin/basename` 증거는 [harness.md](harness.md), [contract-v2.md](contract-v2.md), [evidence](evidence/basename-direct-run-20261107)에 있다.
++
+ 직접 불일치는 `max_repair_attempts`(최대 3) 횟수 안에서 기존 구현 세션에 결함 중심 Run을 큐에 넣는다. 매 회차와 독립 검증 Run은 rounds에 남고 이전 latest 보고서·실패는 history로 이동한다. 분석 모드는 소스 없이 관찰·가설·미확인으로 종료할 수 있다. 정확도 종합 점수는 제공하지 않는다.
+ 
+ 재현 보고서에 README, 환경, 의존성, 실행 명령, 테스트 명령이 있어야 하며 README·소스·테스트·실행 로그를 기존 다운로드 ZIP에 담는다. 파일 접근은 Workspace 경로 정책과 기존 API 계약을 따른다. 수정 결과마다 별도 실행 로그가 검증되어야 한다.
+@@ -15,8 +17,9 @@
+ ## 실행과 한계
+ 
+ ```bash
+-PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py tests/test_reverse_compare.py
+-/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/api/reverse.py src/ttakkari/reverse.py src/ttakkari/reverse_compare.py unit_tests/test_reverse_tasks.py tests/test_reverse_reconstruction.py tests/test_reverse_compare.py
++PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py
++PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q tests/test_reverse_compare.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py
++/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py src/ttakkari/api/reverse.py src/ttakkari/reverse.py src/ttakkari/reverse_compare.py unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py tests/test_reverse_reconstruction.py tests/test_reverse_compare.py
+ git diff --check
+ ```
+ 
+diff --git a/docs/reverse-platform/contract-v2.md b/docs/reverse-platform/contract-v2.md
+index e417fac5..e7a797e5 100644
+--- a/docs/reverse-platform/contract-v2.md
++++ b/docs/reverse-platform/contract-v2.md
+@@ -55,7 +55,7 @@ Content-Type: application/json
+ 
+ 원시 실행 증거 JSON은 `schema_version:2, target_type, input, pre_state, environment, original, replica, execution_log, verified_at, run_id, complete`를 담는다. CLI 실행은 `python -m ttakkari.reverse_compare --workspace <workspace> --spec <json>`로 캡처한다. API는 `run_api_comparison`으로 allowlist된 호스트만 호출하고 응답 본문·상태·상태 전후를 캡처한다. 웹 관찰은 별도 browser 도구의 원본·복제 관찰을 보존하되 실제 브라우저 실행 결과를 서버가 확인할 수 없으면 미검증이다. 명령 실행 timeout·원본 실행 불가 시 원본은 null, complete=false, execution_log.error에 이유를 둔다.
+ 
+-서버는 선언된 상대 경로의 정규화·심링크/탈출·민감 경로 차단, 일반 파일·크기 상한·SHA-256·JSON, `run_id`, `target_type`, 입력·사전 상태·환경·출력 필드의 상호 일치와 `complete`를 확인한다. CLI는 stdout/stderr/exit_code, API는 status/body/headers/state를 원시 캡처에서 재계산한다. 서버가 파일을 실제로 읽어 결과를 다시 만들어야 `direct`로 인정한다. 에이전트가 쓴 `result`, `passed`, 종료 문구는 판정 근거가 아니다. 비교가 없으면 직접 비교는 0건·unverified다. 독립 검증 상태는 별도 세션의 실재·검사 증거·verdict로만 갱신한다.
++서버는 선언된 상대 경로의 정규화·심링크/탈출·민감 경로 차단, 일반 파일·크기 상한·SHA-256·JSON, `run_id`, `target_type`, 입력·사전 상태·환경·출력 필드의 상호 일치와 `complete`를 확인한다. CLI는 stdout/stderr/exit_code, API는 status/body bytes/headers와 두 요청 로그의 method·URL·비밀값 마스킹을 원시 캡처에서 재검산한다. `input.state_path`가 있으면 각 응답의 상태 전/후 캡처가 모두 있어야 한다. HTTP redirect는 비교기가 따라가지 않는다. 서버가 파일을 실제로 읽어 결과를 다시 만들어야 `direct`로 인정한다. 에이전트가 쓴 `result`, `passed`, 종료 문구는 판정 근거가 아니다. 비교가 없으면 직접 비교는 0건·unverified다. 독립 검증 상태는 별도 세션의 실재·검사 증거·verdict로만 갱신한다.
+ 
+ ## 응답 예시
+ 
+diff --git a/docs/reverse-platform/verification.md b/docs/reverse-platform/verification.md
+index f4e63489..f4d46ec9 100644
+--- a/docs/reverse-platform/verification.md
++++ b/docs/reverse-platform/verification.md
+@@ -10,11 +10,11 @@ DB: `tests/conftest.py`가 생성한 프로세스별 임시 PostgreSQL 클러스
+ 
+ ```text
+ $ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py unit_tests/test_reverse_compare.py
+-......................                                                   [100%]
+-22 passed in 0.90s
++......................... [100%]
++25 passed in 1.52s
+ $ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q tests/test_reverse_compare.py tests/test_reverse_reconstruction.py tests/test_reverse.py unit_tests/test_reverse_static.py
+ ............................................................             [100%]
+-60 passed in 9.45s
++60 passed in 9.78s
+ ```
+ 
+ ```text
+@@ -27,20 +27,34 @@ $ git diff --check
+ (출력 없음, exit 0)
+ ```
+ 
+-총 `82 passed`다. pytest는 같은 기본 모듈명을 쓰는 두 비교 테스트 파일의 충돌을 피하려고 단위·API 호출을 분리했다. 마지막 코드 수정 뒤 실행한 결과다.
++총 `85 passed`다. pytest는 같은 기본 모듈명을 쓰는 두 비교 테스트 파일의 충돌을 피하려고 단위·API 호출을 분리했다. 아래에는 API 캡처 반례 추가 이후의 후속 결과를 추가한다.
+ 
+ ## 실제 검증 범위
+ 
+ - Unit: legacy report fallback, 직접 비교 파일·SHA-256·JSON·run_id·입력/환경/출력 정합성, 서버 측 match/mismatch 재계산, 원본 불가/timeout의 null·unverified, analyze-only 및 README 필수 항목.
+-- 비교 실행기: CLI argv/바이트 캡처·timeout·원본 누락·증거 파일 충돌·CLI 명령 인터페이스, API 응답·상태 비교와 민감 헤더 비저장, 웹 관찰의 미검증 승격 방지.
++- 비교 실행기: CLI argv/바이트 캡처·timeout·원본 누락·증거 파일 충돌·CLI 명령 인터페이스, API 응답·상태 비교·redirect 차단·URL 쿼리 비밀값 마스킹, 웹 관찰의 미검증 승격 방지.
+ - API/DB: 요청 필드·PATCH 검증, analyze→reconstruct 관찰 재사용, 후속 회차 이력, 별도 독립 검증 세션, mismatch 기반 제한 repair, `passed` 단독 승격 차단, 실제 Run manager와 ZIP 산출 회귀.
+ - 기존 reverse API·정적 리버스 테스트와 workspace/session 범위 검사.
+ 
++## 원본 직접 비교 증거
++
++```text
++$ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python scripts/reverse_compare_basename.py --output /private/tmp/reverse-basename-audit --run-id basename-audit-20261107
++{"run_id": "basename-audit-20261107", "cases": 9, "results": {"match": 8, "mismatch": 1, "unverified": 0}}
++```
++
++```text
++$ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python scripts/reverse_compare_recheck.py --workspace docs/reverse-platform/evidence/basename-direct-run-20261107 --report docs/reverse-platform/evidence/basename-direct-run-20261107/comparisons.json --output /private/tmp/basename-server-recheck.json --run-id basename-audit-20261107
++{"count": 9, "results": {"match": 8, "mismatch": 1, "unverified": 0}}
++```
++
++두 번째 명령은 서버 `verify_comparisons`로 각 case의 `.reverse/comparisons/*.json` SHA-256·run_id·실행 로그·출력을 다시 읽어 direct로 재계산했고, 8 match/1 mismatch/0 unverified를 assert했다. 원본은 실제 `/usr/bin/basename`, 복제는 fixture 소스다. 전체 보고서와 원시 캡처는 [evidence/basename-direct-run-20261107](evidence/basename-direct-run-20261107)에 보존했다. `-z` 오류 메시지의 명령 접두사 차이는 기대된 불일치로 유지했다.
++
+ ## 실행 중 발견해 수정한 테스트/검증 이슈
+ 
+-- 비교 테스트 두 파일의 모듈명이 같아 pytest import 충돌이 났다. Unit 테스트 파일을 `test_reverse_compare_unit.py`로 분리했다.
++- 비교 테스트 두 파일의 모듈명이 같아 pytest import 충돌이 났다. 단위 검사와 API 검사 명령을 별도로 실행했다.
+ - 기존 fake raw evidence가 v2 `schema_version/target_type/run_id/complete` 계약과 맞지 않아 새 서버 검증에서 미검증으로 분류됐다. 실제 v2 캡처 fixture로 갱신했고 최종 전체 검사가 통과했다.
+-- 초반 전체 실행에서 오래된 fixture 관련 4건 실패와 비교기 단위 3건 실패가 있었다. 실행기 timeout/null·사람이 읽는 difference와 test fixture를 맞춘 뒤 최종 지정 범위에서 80건 통과를 확인했다.
++- 독립 감사에서 API redirect allowlist 우회, URL 쿼리 비밀값 노출, 비정형 target_type TypeError, state_path 요청에서 상태 전/후 캡처 누락 승인을 확인했다. 이를 수정하고 반례 테스트를 추가했다.
+ 
+ ## 미실행 및 한계
+ 
+diff --git a/src/ttakkari/reverse_compare.py b/src/ttakkari/reverse_compare.py
+index dbd65662..99f28cd4 100644
+--- a/src/ttakkari/reverse_compare.py
++++ b/src/ttakkari/reverse_compare.py
+@@ -179,6 +179,24 @@ def run_comparison(
+ 
+ 
+ _SECRET_HEADER = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password", re.IGNORECASE)
++_SECRET_QUERY_KEY = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password|credential|session", re.IGNORECASE)
++
++
++def _safe_url(url: str) -> str:
++    parsed = urllib.parse.urlsplit(url)
++    host = parsed.hostname or ""
++    if ":" in host:
++        host = f"[{host}]"
++    try:
++        port = parsed.port
++    except ValueError:
++        port = None
++    netloc = f"{host}:{port}" if port else host
++    query = urllib.parse.urlencode([
++        (key, "[REDACTED]" if _SECRET_QUERY_KEY.search(key) else value)
++        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
++    ])
++    return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
+ 
+ 
+ def _store_structured(root: Path, comparison_id: str, run_id: str, capture: dict[str, Any]) -> dict[str, str]:
+@@ -209,17 +227,22 @@ def _structured_record(root: Path, *, comparison_id: str, behavior: str, target_
+ 
+ def _api_request(url: str, method: str, headers: dict[str, str], body: bytes | None,
+                  timeout: float) -> dict[str, Any]:
++    class NoRedirect(urllib.request.HTTPRedirectHandler):
++        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
++            return None
++
+     request = urllib.request.Request(url, data=body, headers=headers, method=method)
++    opener = urllib.request.build_opener(NoRedirect())
+     try:
+-        response = urllib.request.urlopen(request, timeout=timeout)
++        response = opener.open(request, timeout=timeout)
+     except urllib.error.HTTPError as exc:
+         response = exc
+     with response:
+         raw = response.read(1_048_577)
+         if len(raw) > 1_048_576:
+             raise ValueError("API response exceeds 1 MiB")
+-        safe_headers = {key.lower(): value for key, value in response.headers.items()
+-                        if not _SECRET_HEADER.search(key)}
++        safe_headers = {key.lower(): (_safe_url(value) if key.lower() == "location" else value)
++                        for key, value in response.headers.items() if not _SECRET_HEADER.search(key)}
+         return {"status": response.code, "body": raw.decode("utf-8", errors="replace"),
+                 "body_bytes_b64": base64.b64encode(raw).decode(), "headers": safe_headers}
+ 
+@@ -282,12 +305,11 @@ def run_api_comparison(workspace: Path, *, comparison_id: str, behavior: str,
+                                                     "replica": replica.get(field)}
+                 break
+     safe_headers = {k: "[REDACTED]" if _SECRET_HEADER.search(k) else v for k, v in request_headers.items()}
+-    log = {"method": method, "request_headers": safe_headers,
+-           "request_body_b64": base64.b64encode(body or b"").decode()}
++    log = {"method": method, "request_headers": safe_headers}
+     capture = {"schema_version": 2, "target_type": "api", "input": input_data, "pre_state": pre_state or {},
+         "original": original, "replica": replica,
+-        "execution_log": [{**log, "side": "original", "url": original_url, "output": original, "error": error_a},
+-                          {**log, "side": "replica", "url": replica_url, "output": replica, "error": error_b}],
++        "execution_log": [{**log, "side": "original", "url": _safe_url(original_url), "output": original, "error": error_a},
++                          {**log, "side": "replica", "url": _safe_url(replica_url), "output": replica, "error": error_b}],
+         "environment": environment or {"os": platform.platform()},
+         "verified_at": verified_at or datetime.now(UTC).isoformat(), "run_id": run_id,
+         "complete": original is not None and replica is not None}
+diff --git a/src/ttakkari/reverse_tasks.py b/src/ttakkari/reverse_tasks.py
+index e1c55479..d2f55572 100644
+--- a/src/ttakkari/reverse_tasks.py
++++ b/src/ttakkari/reverse_tasks.py
+@@ -5,6 +5,7 @@
+ """
+ from __future__ import annotations
+ 
++import base64
+ import copy
+ import hashlib
+ import json
+@@ -13,6 +14,7 @@ import uuid
+ import zipfile
+ from pathlib import Path
+ from typing import Any
++from urllib.parse import parse_qsl, urlsplit
+ 
+ from sqlalchemy import select
+ 
+@@ -45,6 +47,43 @@ MAX_REPORT = 1024 * 1024
+ MAX_REPAIR_ATTEMPTS = 3
+ TARGET_TYPES = {"auto", "cli", "web", "api", "source"}
+ MODES = {"auto", "analyze", "reconstruct", "analyze_reconstruct"}
++SENSITIVE_EVIDENCE_KEY = re.compile(r"authorization|cookie|token|secret|api[-_]?key|password|credential|session", re.IGNORECASE)
++
++
++def _valid_api_output(output: Any, *, require_state: bool) -> bool:
++    if not isinstance(output, dict) or type(output.get("status")) is not int:
++        return False
++    if not isinstance(output.get("headers"), dict) or any(
++            not isinstance(key, str) or not isinstance(value, str) or SENSITIVE_EVIDENCE_KEY.search(key)
++            for key, value in output["headers"].items()):
++        return False
++    if not isinstance(output.get("body"), str) or not isinstance(output.get("body_bytes_b64"), str):
++        return False
++    try:
++        body = base64.b64decode(output["body_bytes_b64"], validate=True)
++    except (ValueError, TypeError):
++        return False
++    if body.decode("utf-8", errors="replace") != output["body"]:
++        return False
++    if require_state:
++        for field in ("state_before", "state_after"):
++            state = output.get(field)
++            if not _valid_api_output(state, require_state=False):
++                return False
++    return True
++
++
++def _safe_captured_url(value: Any) -> bool:
++    if not isinstance(value, str):
++        return False
++    try:
++        parsed = urlsplit(value)
++        if parsed.username or parsed.password:
++            return False
++        return all(not SENSITIVE_EVIDENCE_KEY.search(key) or token == "[REDACTED]"
++                   for key, token in parse_qsl(parsed.query, keep_blank_values=True))
++    except ValueError:
++        return False
+ 
+ 
+ def _comparison_result(original: Any, replica: Any) -> tuple[str, dict[str, Any] | None]:
+@@ -68,15 +107,17 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
+     for index, item in enumerate(raw_comparisons[:100]):
+         if not isinstance(item, dict):
+             continue
++        target_type = item.get("target_type")
++        valid_target_type = isinstance(target_type, str) and target_type in TARGET_TYPES
+         schema_valid = (set(item) == fields and isinstance(item.get("id"), str) and bool(item["id"].strip())
+                         and isinstance(item.get("behavior"), str) and bool(item["behavior"].strip())
+-                        and item.get("target_type") in TARGET_TYPES and isinstance(item.get("input"), dict)
++                        and valid_target_type and isinstance(item.get("input"), dict)
+                         and isinstance(item.get("pre_state"), dict) and isinstance(item.get("environment"), dict)
+                         and isinstance(item.get("verified_at"), str) and isinstance(item.get("run_id"), str))
+         entry = {field: item.get(field) for field in fields}
+         entry["id"] = item.get("id") if isinstance(item.get("id"), str) and item["id"].strip() else f"invalid-{index}"
+         entry["behavior"] = item.get("behavior") if isinstance(item.get("behavior"), str) else ""
+-        entry["target_type"] = item.get("target_type") if item.get("target_type") in TARGET_TYPES else "auto"
++        entry["target_type"] = target_type if valid_target_type else "auto"
+         for key in ("input", "pre_state", "environment"):
+             entry[key] = item.get(key) if isinstance(item.get(key), dict) else {}
+         entry["original"] = item.get("original")
+@@ -123,11 +164,23 @@ def verify_comparisons(root: Path, raw_comparisons: Any, *, expected_run_id: str
+             reason = "원본 또는 복제 명령이 제한 시간·출력 범위 안에서 완전하게 실행되지 않았습니다."
+         elif entry.get("target_type") == "api":
+             logs = {log.get("side"): log for log in capture["execution_log"] if isinstance(log, dict)}
+-            if (any(not isinstance(output, dict) or type(output.get("status")) is not int
+-                    or not isinstance(output.get("body_bytes_b64"), str) for output in (original, replica))
++            state_path = entry["input"].get("state_path")
++            require_state = bool(state_path)
++            if (not _valid_api_output(original, require_state=require_state)
++                    or not _valid_api_output(replica, require_state=require_state)
++                    or (state_path is not None and
++                        (not isinstance(state_path, str) or not state_path.startswith("/")))
+                     or set(logs) != {"original", "replica"}
+-                    or any(logs[side].get("output") != output for side, output in
+-                           (("original", original), ("replica", replica)))):
++                    or any(not _safe_captured_url(logs[side].get("url"))
++                           or logs[side].get("method") not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
++                           or not isinstance(logs[side].get("request_headers"), dict)
++                           or any(not isinstance(key, str) or not isinstance(value, str)
++                                  or (SENSITIVE_EVIDENCE_KEY.search(key) and value != "[REDACTED]")
++                                  for key, value in logs[side]["request_headers"].items())
++                           or logs[side].get("output") != output
++                           for side, output in (("original", original), ("replica", replica)))
++                    or logs["original"].get("method") != logs["replica"].get("method")
++                    or logs["original"].get("request_headers") != logs["replica"].get("request_headers")):
+                 reason = "원시 API 출력(status/body_bytes_b64)이 올바르지 않습니다."
+         elif entry.get("target_type") == "web":
+             reason = "웹 관찰 증거만으로는 독립적인 직접 비교 실행을 증명할 수 없습니다."
+diff --git a/unit_tests/test_reverse_compare.py b/unit_tests/test_reverse_compare.py
+index 988552b1..091b9241 100644
+--- a/unit_tests/test_reverse_compare.py
++++ b/unit_tests/test_reverse_compare.py
+@@ -114,6 +114,45 @@ def test_api_comparison_rejects_unallowlisted_hosts(tmp_path):
+         )
+ 
+ 
++def test_api_comparison_blocks_redirect_escape_and_redacts_query_secrets(tmp_path):
++    import threading
++    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++
++    hits = {"redirect_target": 0}
++
++    class Handler(BaseHTTPRequestHandler):
++        def do_GET(self):
++            if self.path.startswith("/redirect-target"):
++                hits["redirect_target"] += 1
++                self.send_response(200)
++                self.end_headers()
++                self.wfile.write(b"followed")
++                return
++            self.send_response(302)
++            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/redirect-target?token=demo-secret")
++            self.end_headers()
++
++        def log_message(self, *_args):
++            pass
++
++    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
++    thread = threading.Thread(target=server.serve_forever, daemon=True)
++    thread.start()
++    url = f"http://localhost:{server.server_port}/redirect?access_token=demo-secret"
++    try:
++        result = run_api_comparison(
++            tmp_path, comparison_id="api-redirect", behavior="리다이렉트 차단", input_data={},
++            original_url=url, replica_url=url, run_id="run-redirect", allowed_hosts=("localhost",),
++        )
++    finally:
++        server.shutdown()
++        server.server_close()
++    raw_text = (tmp_path / result["evidence"][0]["path"]).read_text("utf-8")
++    assert result["original"]["status"] == 302
++    assert hits["redirect_target"] == 0
++    assert "demo-secret" not in raw_text
++
++
+ def test_web_functional_match_does_not_claim_visual_match(tmp_path):
+     observation = {"events": [{"type": "click", "selector": "button#go"}], "dom": {"text": "완료"},
+                    "state": {"done": True}, "network": [{"status": 200}]}
+diff --git a/unit_tests/test_reverse_tasks.py b/unit_tests/test_reverse_tasks.py
+index fbeff8fc..d74a720a 100644
+--- a/unit_tests/test_reverse_tasks.py
++++ b/unit_tests/test_reverse_tasks.py
+@@ -184,3 +184,38 @@ def test_pre_v2_result_remains_readable_without_inventing_direct_comparisons():
+     assert metadata['latest']['report']['summary'] == '기존 재현 결과'
+     assert metadata['latest']['direct_comparison'] == {'status': 'unverified', 'count': 0,
+         'matched': 0, 'mismatched': 0, 'unverified': 0}
++
++
++def test_unhashable_target_type_is_preserved_as_unverified(tmp_path):
++    data = report(tmp_path)
++    data['comparisons'] = [{'id': 'bad-type', 'behavior': 'invalid', 'target_type': [], 'input': {},
++        'pre_state': {}, 'original': None, 'replica': None, 'environment': {}, 'evidence_level': 'direct',
++        'evidence': [], 'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'run-1',
++        'result': 'match', 'difference': None}]
++    checked = tasks.validate_report(tmp_path, data)
++    assert checked['comparisons'][0]['result'] == 'unverified'
++    assert checked['comparisons'][0]['difference']['reason']
++
++
++def test_api_stateful_comparison_without_state_capture_is_unverified(tmp_path):
++    import base64
++
++    body = base64.b64encode(b'{"ok":true}').decode()
++    output = {'status': 200, 'body': '{"ok":true}', 'body_bytes_b64': body, 'headers': {'content-type': 'application/json'}}
++    raw = {'schema_version': 2, 'target_type': 'api', 'run_id': 'api-run', 'complete': True,
++        'input': {'state_path': '/state'}, 'pre_state': {}, 'environment': {},
++        'original': output, 'replica': output,
++        'execution_log': [{'side': side, 'method': 'GET', 'url': 'http://localhost/api',
++            'request_headers': {}, 'output': output} for side in ('original', 'replica')]}
++    path = tmp_path / '.reverse/comparisons/api.json'
++    path.parent.mkdir(parents=True)
++    encoded = json.dumps(raw).encode()
++    path.write_bytes(encoded)
++    comparison = {'id': 'api-case', 'behavior': '상태 변화', 'target_type': 'api', 'input': raw['input'],
++        'pre_state': {}, 'original': output, 'replica': output, 'environment': {}, 'evidence_level': 'direct',
++        'evidence': [{'kind': 'execution', 'path': '.reverse/comparisons/api.json',
++                      'sha256': hashlib.sha256(encoded).hexdigest()}],
++        'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'api-run', 'result': 'match', 'difference': None}
++    checked = tasks.verify_comparisons(tmp_path, [comparison], expected_run_id='api-run')[0]
++    assert checked['result'] == 'unverified'
++    assert checked['evidence_level'] == 'observed'

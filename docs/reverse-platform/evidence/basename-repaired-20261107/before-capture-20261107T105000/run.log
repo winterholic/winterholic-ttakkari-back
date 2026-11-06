@@ -1,0 +1,32 @@
+2026-11-07 01:25:07,785 INFO starting case=plain argv=['report.txt']
+2026-11-07 01:25:07,908 INFO finished case=plain result=match difference=None
+2026-11-07 01:25:07,909 INFO starting case=spaces-unicode argv=['폴더 이름/한글 파일.txt', '.txt']
+2026-11-07 01:25:07,949 INFO finished case=spaces-unicode result=match difference=None
+2026-11-07 01:25:07,949 INFO starting case=trailing-slashes argv=['folder///']
+2026-11-07 01:25:08,061 INFO finished case=trailing-slashes result=match difference=None
+2026-11-07 01:25:08,062 INFO starting case=repeated-slash-root argv=['////']
+2026-11-07 01:25:08,107 INFO finished case=repeated-slash-root result=mismatch difference={'field': 'stdout', 'original': '/\n', 'replica': '\n'}
+2026-11-07 01:25:08,107 INFO starting case=root argv=['/']
+2026-11-07 01:25:08,154 INFO finished case=root result=match difference=None
+2026-11-07 01:25:08,155 INFO starting case=empty-string argv=['']
+2026-11-07 01:25:08,235 INFO finished case=empty-string result=match difference=None
+2026-11-07 01:25:08,236 INFO starting case=suffix-option argv=['-s', '.txt', 'hello world.txt']
+2026-11-07 01:25:08,318 INFO finished case=suffix-option result=match difference=None
+2026-11-07 01:25:08,318 INFO starting case=literal-dash argv=['-']
+2026-11-07 01:25:08,374 INFO finished case=literal-dash result=match difference=None
+2026-11-07 01:25:08,376 INFO starting case=option-end-marker argv=['--', '--']
+2026-11-07 01:25:08,425 INFO finished case=option-end-marker result=match difference=None
+2026-11-07 01:25:08,426 INFO starting case=combined-options argv=['-as', '.txt', 'file.txt']
+2026-11-07 01:25:08,489 INFO finished case=combined-options result=mismatch difference={'field': 'stdout', 'original': 'file\n', 'replica': ''}
+2026-11-07 01:25:08,489 INFO starting case=missing-suffix-argument argv=['-s']
+2026-11-07 01:25:08,531 INFO finished case=missing-suffix-argument result=mismatch difference={'field': 'stderr', 'original': '/usr/bin/basename: option requires an argument -- s\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n', 'replica': 'basename: illegal option -- s\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n'}
+2026-11-07 01:25:08,532 INFO starting case=suffix-whole-name argv=['-s', 'foo', 'foo']
+2026-11-07 01:25:08,638 INFO finished case=suffix-whole-name result=match difference=None
+2026-11-07 01:25:08,639 INFO starting case=suffix-multiple-arguments argv=['-s', '.txt', 'one.txt', 'two.txt']
+2026-11-07 01:25:08,722 INFO finished case=suffix-multiple-arguments result=match difference=None
+2026-11-07 01:25:08,723 INFO starting case=all-option argv=['-a', 'one.txt', 'two words.txt']
+2026-11-07 01:25:08,805 INFO finished case=all-option result=match difference=None
+2026-11-07 01:25:08,808 INFO starting case=missing-argument argv=[]
+2026-11-07 01:25:08,848 INFO finished case=missing-argument result=match difference=None
+2026-11-07 01:25:08,848 INFO starting case=invalid-option argv=['-z']
+2026-11-07 01:25:08,902 INFO finished case=invalid-option result=mismatch difference={'field': 'stderr', 'original': '/usr/bin/basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n', 'replica': 'basename: illegal option -- z\nusage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n'}

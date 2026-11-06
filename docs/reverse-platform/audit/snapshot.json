@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-11-07",
+  "backend": {
+    "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-reverse-audit-independent-20261107",
+    "branch_at_capture": "feat/reverse-evidence-20261107",
+    "head": "90bfefea1eb78dd805b938ae538defa72d541736",
+    "head_chain": [
+      "90bfefea1eb78dd805b938ae538defa72d541736 Repair basename CLI sample parity",
+      "c016b6e6 Add reusable reverse comparison harness",
+      "5b65f345 feat(reverse): add evidence-backed reconstruction v2"
+    ],
+    "head_tree_plus_starting_dirty_patch": true,
+    "starting_dirty_patch": "start-dirty.patch",
+    "starting_dirty_patch_sha256": "80b6fba9d1681644b96511a70e8921e3bef9d708e06711a65d44d59490602a5e",
+    "starting_dirty_summary": "7 tracked files modified (+189/-23); one untracked evidence directory: docs/reverse-platform/evidence/basename-direct-run-20261107/ (not copied or audited).",
+    "source_sha256": {
+      "src/ttakkari/reverse_tasks.py": "f3f5a0bac3a8105ef06241419926031607736217731aecd07e457f06c9e0411d",
+      "src/ttakkari/reverse_compare.py": "0ae3057944e6c7d140033c9facc1f5cb563f687cdd6e9f55242b756728ed87d6",
+      "src/ttakkari/api/reverse.py": "70c8958720456531c39be71f8bff0079fa52c20b10680921cf6ed273b6d0d98c",
+      "tests/test_reverse_reconstruction.py": "257c58c676fabf35e7d5c88f096e560b8e95a9247ea498d9b996dcf21cdaaf17",
+      "docs/adr/0041-reverse-reconstruction.md": "6997a722f1ec472a3fdb22cef1c98e113fe61508983616108f10fe33777bc9b9",
+      "docs/reverse-platform/contract-v2.md": "809da5ad53bfa6cd0d24ae54598b1f0ca77c84738bcd4bd50534b80ab507ac3d",
+      "docs/reverse-platform/verification.md": "062d9da89b71ac0ef9c6b832b604b2c9bdf9f1d7fbff6a61054a3113938c6f20"
+    },
+    "deployed_revision_from_task_context": "5f5cbd99 (not the audited v2 snapshot)"
+  },
+  "frontend": {
+    "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/front-reverse-dashboard-20261107",
+    "head": "c2db66962782440c87e5aa060e5d12cc999f62e3",
+    "snapshot_method": "git show HEAD:<path>; committed files copied under fixtures/frontend-c2db/",
+    "src/features/reverse/Reconstruction.tsx_sha256": "6cf931699d9f1eeb7013461bf5595f7602e5292495af94502284775b909ce8f7",
+    "src/api/reverseTypes.ts_sha256": "dc62034fed7c81b3bd95ad643646dbe228c4a960a837f498276a02a5e146b117",
+    "working_tree_changes_at_capture": "The earlier status showed only src/pages/ReversePage.test.tsx modified; later live UI edits are excluded."
+  }
+}

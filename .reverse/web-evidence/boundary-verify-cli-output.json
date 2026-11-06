@@ -1,0 +1,296 @@
+{
+  "id": "web-boundary-20261107",
+  "behavior": "허용 상한 초과 수량 6 제출 시도",
+  "target_type": "web",
+  "input": {
+    "steps": [
+      {
+        "action": "fill",
+        "target": "#quantity",
+        "value": "6"
+      },
+      {
+        "action": "click",
+        "target": "button",
+        "name": "준비 요청"
+      }
+    ]
+  },
+  "pre_state": {
+    "quantity": "1",
+    "status": "대기 중 · 요청 0건",
+    "submitted_count": 0,
+    "events": []
+  },
+  "original": {
+    "run_id": "browser-observation-20261107",
+    "observed_at": "2026-11-06T17:12:11.242Z",
+    "url": "http://127.0.0.1:55945/",
+    "input": {
+      "steps": [
+        {
+          "action": "fill",
+          "target": "#quantity",
+          "value": "6"
+        },
+        {
+          "action": "click",
+          "target": "button",
+          "name": "준비 요청"
+        }
+      ]
+    },
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "device_scale_factor": 1
+    },
+    "pre_state": {
+      "quantity": "1",
+      "status": "대기 중 · 요청 0건",
+      "submitted_count": 0,
+      "events": []
+    },
+    "environment": {
+      "browser": "configured ttakkari_browser",
+      "color_scheme": "light",
+      "screenshot_scale": "css",
+      "device_scale_factor_note": "not exposed by configured tool; recorded as 1 for schema and remains unverified"
+    },
+    "events": [
+      {
+        "type": "change",
+        "target": "#quantity",
+        "value": "6",
+        "observed_text": "수량 변경: 6"
+      }
+    ],
+    "dom": [
+      {
+        "role": "heading",
+        "level": 1,
+        "name": "주문 준비"
+      },
+      {
+        "role": "spinbutton",
+        "name": "수량",
+        "value": "6",
+        "bounds": {
+          "min": "1",
+          "max": "5",
+          "step": "1"
+        }
+      },
+      {
+        "role": "button",
+        "name": "준비 요청"
+      },
+      {
+        "role": "status",
+        "text": "대기 중 · 요청 0건",
+        "aria_live": "polite"
+      },
+      {
+        "role": "list",
+        "name": "사용자 이벤트",
+        "items": [
+          "수량 변경: 6"
+        ]
+      }
+    ],
+    "state": {
+      "quantity": "6",
+      "status": "대기 중 · 요청 0건",
+      "submitted_count": 0,
+      "event_log": [
+        "수량 변경: 6"
+      ],
+      "submit_blocked_by_native_constraint": true
+    },
+    "network": [
+      {
+        "method": "GET",
+        "url": "http://127.0.0.1:55945/",
+        "status": 200,
+        "request_body": null,
+        "response_body_sha256": "76812ef48b471722ebfbb16ad373d2de6d45502f704a850d920afda69a574e34",
+        "response_headers": {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": "4201"
+        }
+      }
+    ],
+    "screenshot": {
+      "path": "raw/original-boundary.png",
+      "sha256": "f8802887c688f44fee048825807663c85ba68127f5e72892b55070f171bbcd53",
+      "size_bytes": 33501,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "device_scale_factor": 1
+      },
+      "format": "png"
+    },
+    "complete": true,
+    "capture_state": "complete"
+  },
+  "replica": {
+    "run_id": "browser-observation-20261107",
+    "observed_at": "2026-11-06T17:12:18.287Z",
+    "url": "http://127.0.0.1:55980/",
+    "input": {
+      "steps": [
+        {
+          "action": "fill",
+          "target": "#quantity",
+          "value": "6"
+        },
+        {
+          "action": "click",
+          "target": "button",
+          "name": "준비 요청"
+        }
+      ]
+    },
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "device_scale_factor": 1
+    },
+    "pre_state": {
+      "quantity": "1",
+      "status": "대기 중 · 요청 0건",
+      "submitted_count": 0,
+      "events": []
+    },
+    "environment": {
+      "browser": "configured ttakkari_browser",
+      "color_scheme": "light",
+      "screenshot_scale": "css",
+      "device_scale_factor_note": "not exposed by configured tool; recorded as 1 for schema and remains unverified"
+    },
+    "events": [
+      {
+        "type": "change",
+        "target": "#quantity",
+        "value": "6",
+        "observed_text": "수량 변경: 6"
+      }
+    ],
+    "dom": [
+      {
+        "role": "heading",
+        "level": 1,
+        "name": "주문 준비"
+      },
+      {
+        "role": "spinbutton",
+        "name": "수량",
+        "value": "6",
+        "bounds": {
+          "min": "1",
+          "max": "5",
+          "step": "1"
+        }
+      },
+      {
+        "role": "button",
+        "name": "준비 요청"
+      },
+      {
+        "role": "status",
+        "text": "대기 중 · 요청 0건",
+        "aria_live": "polite"
+      },
+      {
+        "role": "list",
+        "name": "사용자 이벤트",
+        "items": [
+          "수량 변경: 6"
+        ]
+      }
+    ],
+    "state": {
+      "quantity": "6",
+      "status": "대기 중 · 요청 0건",
+      "submitted_count": 0,
+      "event_log": [
+        "수량 변경: 6"
+      ],
+      "submit_blocked_by_native_constraint": true
+    },
+    "network": [
+      {
+        "method": "GET",
+        "url": "http://127.0.0.1:55980/",
+        "status": 200,
+        "request_body": null,
+        "response_body_sha256": "2e85dc5065202864762b1c33f9511be4f6ff88ea89892a8c94c167b21484fdd7",
+        "response_headers": {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": "3681"
+        }
+      }
+    ],
+    "screenshot": {
+      "path": "raw/replica-boundary.png",
+      "sha256": "80065c168df545187095ae2438fc39210d001e62d56a7b26beb712424432eaf7",
+      "size_bytes": 33509,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "device_scale_factor": 1
+      },
+      "format": "png"
+    },
+    "complete": true,
+    "capture_state": "complete"
+  },
+  "environment": {
+    "browser": "configured ttakkari_browser",
+    "color_scheme": "light",
+    "screenshot_scale": "css",
+    "device_scale_factor_note": "not exposed by configured tool; recorded as 1 for schema and remains unverified"
+  },
+  "evidence_level": "observed",
+  "verified_at": "2026-11-06T17:13:00Z",
+  "run_id": "browser-observation-20261107",
+  "evidence": [
+    {
+      "kind": "web_capture",
+      "schema_version": 1,
+      "capture": {
+        "path": ".reverse/web-captures/web-boundary-20261107-browser-observation-20261107.json",
+        "sha256": "c027ad43c90492e939ec19d4e514f5f7acbfd222021e4cfae4ac3c3efddda81a",
+        "size_bytes": 4330
+      },
+      "functional_result": "mismatch",
+      "visual_result": "mismatch",
+      "functional_differences": [
+        "network[0] meaningful request/response fields differ"
+      ],
+      "visual": {
+        "width": 390,
+        "height": 844,
+        "different_pixels": 15295,
+        "total_pixels": 329160,
+        "pixel_equality": "exact"
+      },
+      "integrity": {
+        "status": "verified",
+        "reasons": []
+      },
+      "provenance": {
+        "status": "unverified",
+        "reason": "hashed capture is self-asserted; no RunEvent/tool-result authentication is present"
+      }
+    }
+  ],
+  "result": "mismatch",
+  "difference": {
+    "field": "web_observation",
+    "reasons": [
+      "network[0] meaningful request/response fields differ"
+    ]
+  }
+}

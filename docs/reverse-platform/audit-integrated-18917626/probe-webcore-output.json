@@ -1,0 +1,536 @@
+{
+  "baseline_revision": "18917626934ab38302bddfee1c7f4b9ebe6dde73",
+  "audit_head": "1f4a0bf88f47ca3886f299a74d0ec7805b3b8df2",
+  "probe_kind": "independent synthetic files + real callbacks with fake DB boundary",
+  "captures": {
+    "feature_match_visual_mismatch": {
+      "functional_result": "match",
+      "visual_result": "mismatch",
+      "integrity": "verified",
+      "provenance": "unverified",
+      "result": "match",
+      "reason": null
+    },
+    "feature_mismatch_visual_match": {
+      "functional_result": "mismatch",
+      "visual_result": "match",
+      "integrity": "verified",
+      "provenance": "unverified",
+      "result": "mismatch",
+      "reason": {
+        "field": "web_observation",
+        "reasons": [
+          "events differs"
+        ]
+      }
+    },
+    "missing_observation": {
+      "functional_result": "unverified",
+      "visual_result": "unverified",
+      "integrity": "verified",
+      "provenance": "unverified",
+      "result": "unverified",
+      "reason": {
+        "reason": "original or replica observation is missing"
+      }
+    },
+    "different_run": {
+      "functional_result": "unverified",
+      "visual_result": "unverified",
+      "integrity": "unverified",
+      "provenance": "unverified",
+      "result": "unverified",
+      "reason": {
+        "reason": "run_id does not match expected_run_id"
+      }
+    },
+    "tampered_png": {
+      "functional_result": "unverified",
+      "visual_result": "unverified",
+      "integrity": "unverified",
+      "provenance": "unverified",
+      "result": "unverified",
+      "reason": {
+        "reason": "original: screenshot missing, truncated, or outside size bound"
+      }
+    },
+    "integrity_provenance_split": {
+      "functional_result": "match",
+      "visual_result": "match",
+      "integrity": "verified",
+      "provenance": "unverified",
+      "result": "match",
+      "reason": null
+    },
+    "target_type_policy": {
+      "auto_web_recommendation_source": "start() regex chooses web and stores inferred target_type in job config (static code check)",
+      "web_config_with_actual_web_record": {
+        "direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "visual": {
+          "status": "mismatch",
+          "count": 1,
+          "matched": 0,
+          "mismatched": 1,
+          "unverified": 0
+        }
+      },
+      "changed_cli_with_actual_web_record": {
+        "direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "visual": {
+          "status": "mismatch",
+          "count": 1,
+          "matched": 0,
+          "mismatched": 1,
+          "unverified": 0
+        }
+      },
+      "web_config_missing_web_record": {
+        "status": "unverified",
+        "count": 0,
+        "matched": 0,
+        "mismatched": 0,
+        "unverified": 0
+      },
+      "cli_config_missing_web_record": {
+        "status": "not_required",
+        "count": 0,
+        "matched": 0,
+        "mismatched": 0,
+        "unverified": 0
+      }
+    },
+    "callbacks": {
+      "implementation_visual_mismatch": {
+        "expected_status": "partial",
+        "actual": {
+          "job_status": "partial",
+          "implementation_direct": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "implementation_visual": {
+            "status": "mismatch",
+            "count": 1,
+            "matched": 0,
+            "mismatched": 1,
+            "unverified": 0
+          },
+          "verification_direct": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "verification_visual": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "independent_verification": {
+            "status": "passed",
+            "run_id": "2c155329-0a26-449b-9bd3-3d56c9683df2",
+            "verdict": "passed"
+          }
+        },
+        "finding": "PASS",
+        "repair_behavior": {
+          "limit": 0,
+          "attempts_after_initial_callback": 0,
+          "initial_status": "running",
+          "repair_queued": false
+        },
+        "implementation_callback_result": "6458f0c6-0674-48c4-9e91-16d9861eb519",
+        "duplicate_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true,
+          "no_rows_added": true
+        },
+        "late_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true
+        }
+      },
+      "implementation_visual_unverified": {
+        "expected_status": "partial",
+        "actual": {
+          "job_status": "partial",
+          "implementation_direct": {
+            "status": "unverified",
+            "count": 1,
+            "matched": 0,
+            "mismatched": 0,
+            "unverified": 1
+          },
+          "implementation_visual": {
+            "status": "unverified",
+            "count": 1,
+            "matched": 0,
+            "mismatched": 0,
+            "unverified": 1
+          },
+          "verification_direct": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "verification_visual": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "independent_verification": {
+            "status": "passed",
+            "run_id": "9aee8147-3692-4b52-bf11-13f6ffab1635",
+            "verdict": "passed"
+          }
+        },
+        "finding": "PASS",
+        "repair_behavior": {
+          "limit": 0,
+          "attempts_after_initial_callback": 0,
+          "initial_status": "running",
+          "repair_queued": false
+        },
+        "implementation_callback_result": "7a55a307-bee7-40ca-847c-dd7044c8d5ab",
+        "duplicate_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true,
+          "no_rows_added": true
+        },
+        "late_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true
+        }
+      },
+      "implementation_visual_mismatch_after_repair": {
+        "expected_status": "partial",
+        "actual": {
+          "job_status": "partial",
+          "implementation_direct": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "implementation_visual": {
+            "status": "mismatch",
+            "count": 1,
+            "matched": 0,
+            "mismatched": 1,
+            "unverified": 0
+          },
+          "verification_direct": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "verification_visual": {
+            "status": "match",
+            "count": 1,
+            "matched": 1,
+            "mismatched": 0,
+            "unverified": 0
+          },
+          "independent_verification": {
+            "status": "passed",
+            "run_id": "aa7ae282-3a88-44fc-b293-359c3e3765ae",
+            "verdict": "passed"
+          }
+        },
+        "finding": "PASS",
+        "repair_behavior": {
+          "limit": 1,
+          "attempts_after_initial_callback": 1,
+          "initial_status": "running",
+          "repair_queued": true,
+          "attempts_after_repair_callback": 1,
+          "verifier_started_after_repair": true,
+          "history_kept_initial_run": true
+        },
+        "implementation_callback_result": "1b5077e5-6d1c-4ee7-9e75-a2a3e62efdd9",
+        "duplicate_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true,
+          "no_rows_added": true
+        },
+        "late_callback": {
+          "result_unchanged": true,
+          "status_before": "partial",
+          "status_after": "partial",
+          "status_unchanged": true
+        }
+      },
+      "verifier_failure_repair": {
+        "initial_verifier_status": "failed",
+        "repair_attempts": 1,
+        "old_verifier_cleared": true,
+        "duplicate_failure_noop": true,
+        "repair_run_created": true,
+        "fresh_verifier_session_created": true,
+        "fresh_verifier_run_created": true,
+        "dispatch": "not executed; fake DB boundary and generation.current unentered"
+      },
+      "both_roles_match": {
+        "expected_status": "done",
+        "actual_status": "done",
+        "implementation_run_id": "0b45ea8c-1f78-4ad6-82aa-36cf8226a171",
+        "verifier_run_id": "34c0189d-a5dd-448a-9826-ed832f741893",
+        "implementation_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "implementation_visual": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "verification_visual": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "34c0189d-a5dd-448a-9826-ed832f741893",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true,
+        "verifier_raw_report_ready": null
+      },
+      "cli_implementation_mismatch": {
+        "target_type": "cli",
+        "expected_status": "partial",
+        "actual_status": "partial",
+        "implementation_direct": {
+          "status": "mismatch",
+          "count": 1,
+          "matched": 0,
+          "mismatched": 1,
+          "unverified": 0
+        },
+        "implementation_source": {
+          "status": "verified",
+          "files": [
+            "src/demo.py"
+          ]
+        },
+        "implementation_execution": {
+          "status": "verified",
+          "checks": []
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "52408739-68df-48b3-a247-08eac029cea7",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true
+      },
+      "api_implementation_mismatch": {
+        "target_type": "api",
+        "expected_status": "partial",
+        "actual_status": "partial",
+        "implementation_direct": {
+          "status": "mismatch",
+          "count": 1,
+          "matched": 0,
+          "mismatched": 1,
+          "unverified": 0
+        },
+        "implementation_source": {
+          "status": "verified",
+          "files": [
+            "src/demo.py"
+          ]
+        },
+        "implementation_execution": {
+          "status": "verified",
+          "checks": []
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "4a1b6196-e965-4dad-ab52-e76bd3e2d912",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true
+      },
+      "implementation_comparison_zero": {
+        "target_type": "cli",
+        "expected_status": "partial",
+        "actual_status": "partial",
+        "implementation_direct": {
+          "status": "unverified",
+          "count": 0,
+          "matched": 0,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "implementation_source": {
+          "status": "verified",
+          "files": [
+            "src/demo.py"
+          ]
+        },
+        "implementation_execution": {
+          "status": "verified",
+          "checks": []
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "53c45343-b4eb-44be-9ade-bf0f877ca280",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true
+      },
+      "implementation_source_missing": {
+        "target_type": "cli",
+        "expected_status": "partial",
+        "actual_status": "partial",
+        "implementation_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "implementation_source": {
+          "status": "unverified",
+          "files": []
+        },
+        "implementation_execution": {
+          "status": "verified",
+          "checks": []
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "aa804ebd-9bc8-47c4-8fd7-6de3109bb162",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true
+      },
+      "implementation_execution_missing": {
+        "target_type": "cli",
+        "expected_status": "partial",
+        "actual_status": "partial",
+        "implementation_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "implementation_source": {
+          "status": "verified",
+          "files": [
+            "src/demo.py"
+          ]
+        },
+        "implementation_execution": {
+          "status": "unverified",
+          "checks": []
+        },
+        "verification_direct": {
+          "status": "match",
+          "count": 1,
+          "matched": 1,
+          "mismatched": 0,
+          "unverified": 0
+        },
+        "independent_verification": {
+          "status": "passed",
+          "run_id": "cdbb51a0-35a9-430f-9039-8e6c527e485b",
+          "verdict": "passed"
+        },
+        "raw_reports_separate": true
+      },
+      "analyze_mode": {
+        "expected_status": "done",
+        "actual_status": "done",
+        "independent_verification": {
+          "status": "not_required",
+          "run_id": null,
+          "verdict": null
+        },
+        "history": []
+      }
+    }
+  },
+  "database_api_dispatch": "unverified: fake DB, no API/DB or generation dispatch",
+  "browser_provenance": "unverified: writer-authored synthetic observations"
+}

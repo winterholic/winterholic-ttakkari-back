@@ -1061,8 +1061,12 @@ async def start_update_job(
     tag: str | None,
     confirm: bool,
     db: Any | None = None,
+    coordination_locked: bool = False,
 ) -> artcraft.Job:
     """비동기 업데이트 작업 등록 및 실행."""
+    if not coordination_locked:
+        async with artcraft.coordination_lock([app]):
+            return await start_update_job(app, tag, confirm, db=db, coordination_locked=True)
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
@@ -1071,39 +1075,47 @@ async def start_update_job(
 
     # 사전 종합 충돌 검사 (DB 활성 작업, 영속 상태, 인메모리 Job, GUI 실행)
     await check_busy(app, db=db)
+    request_has_db = db is not None
 
     async def runner(job: artcraft.Job) -> None:
-        # 상태 파일에 running 영속화
-        def mark_running(state: dict[str, Any]) -> None:
-            updates = state.setdefault("updates", {})
-            app_entry = updates.setdefault(app, {})
-            app_entry.update({
-                "state": "running",
-                "current_job_id": job.id,
-                "action": job.action,
-                "target_version": tag,
-                "started_at": _now(),
-                "owner_pid": os.getpid(),
-                "owner_generation": PROCESS_GENERATION,
-            })
+        async with artcraft.coordination_lock([app]):
+            if request_has_db:
+                from ttakkari.db import sessionmaker
 
-        artcraft.update_state(mark_running)
+                async with sessionmaker()() as job_db:
+                    await check_busy(app, exclude_job_id=job.id, db=job_db)
+            else:
+                await check_busy(app, exclude_job_id=job.id)
 
-        try:
-            res = await apply_update(app, tag=tag, confirm=True, current_job_id=job.id, db=db)
-            job.state = "succeeded"
-            job.summary = f"{app} {res['version']} 업데이트 성공"
-            job.output = res.get("verified_output", "")
-        except ArtcraftError as exc:
-            job.state = "failed"
-            job.summary = exc.message
-            job.output = exc.message
-            raise
-        except Exception as exc:
-            job.state = "failed"
-            job.summary = str(exc)
-            job.output = str(exc)
-            raise
+            def mark_running(state: dict[str, Any]) -> None:
+                updates = state.setdefault("updates", {})
+                app_entry = updates.setdefault(app, {})
+                app_entry.update({
+                    "state": "running",
+                    "current_job_id": job.id,
+                    "action": job.action,
+                    "target_version": tag,
+                    "started_at": _now(),
+                    "owner_pid": os.getpid(),
+                    "owner_generation": PROCESS_GENERATION,
+                })
+
+            artcraft.update_state(mark_running)
+            try:
+                res = await apply_update(app, tag=tag, confirm=True, current_job_id=job.id)
+                job.state = "succeeded"
+                job.summary = f"{app} {res['version']} 업데이트 성공"
+                job.output = res.get("verified_output", "")
+            except ArtcraftError as exc:
+                job.state = "failed"
+                job.summary = exc.message
+                job.output = exc.message
+                raise
+            except Exception as exc:
+                job.state = "failed"
+                job.summary = str(exc)
+                job.output = str(exc)
+                raise
 
     job = artcraft._start("update", "update-apply", [app], "apply", runner)
 
@@ -1130,8 +1142,12 @@ async def start_rollback_job(
     app: str,
     confirm: bool,
     db: Any | None = None,
+    coordination_locked: bool = False,
 ) -> artcraft.Job:
     """비동기 롤백 작업 등록 및 실행."""
+    if not coordination_locked:
+        async with artcraft.coordination_lock([app]):
+            return await start_rollback_job(app, confirm, db=db, coordination_locked=True)
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
@@ -1139,37 +1155,46 @@ async def start_rollback_job(
     await check_busy(app, db=db)
     if _get_backup_target(app) is None:
         raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
+    request_has_db = db is not None
 
     async def runner(job: artcraft.Job) -> None:
-        def mark_running(state: dict[str, Any]) -> None:
-            updates = state.setdefault("updates", {})
-            app_entry = updates.setdefault(app, {})
-            app_entry.update({
-                "state": "running",
-                "current_job_id": job.id,
-                "action": job.action,
-                "started_at": _now(),
-                "owner_pid": os.getpid(),
-                "owner_generation": PROCESS_GENERATION,
-            })
+        async with artcraft.coordination_lock([app]):
+            if request_has_db:
+                from ttakkari.db import sessionmaker
 
-        artcraft.update_state(mark_running)
+                async with sessionmaker()() as job_db:
+                    await check_busy(app, exclude_job_id=job.id, db=job_db)
+            else:
+                await check_busy(app, exclude_job_id=job.id)
 
-        try:
-            res = await rollback_update(app, confirm=True, current_job_id=job.id, db=db)
-            job.state = "succeeded"
-            job.summary = f"{app} {res['restored_version']} 롤백 성공"
-            job.output = res.get("verified_output", "")
-        except ArtcraftError as exc:
-            job.state = "failed"
-            job.summary = exc.message
-            job.output = exc.message
-            raise
-        except Exception as exc:
-            job.state = "failed"
-            job.summary = str(exc)
-            job.output = str(exc)
-            raise
+            def mark_running(state: dict[str, Any]) -> None:
+                updates = state.setdefault("updates", {})
+                app_entry = updates.setdefault(app, {})
+                app_entry.update({
+                    "state": "running",
+                    "current_job_id": job.id,
+                    "action": job.action,
+                    "started_at": _now(),
+                    "owner_pid": os.getpid(),
+                    "owner_generation": PROCESS_GENERATION,
+                })
+
+            artcraft.update_state(mark_running)
+            try:
+                res = await rollback_update(app, confirm=True, current_job_id=job.id)
+                job.state = "succeeded"
+                job.summary = f"{app} {res['restored_version']} 롤백 성공"
+                job.output = res.get("verified_output", "")
+            except ArtcraftError as exc:
+                job.state = "failed"
+                job.summary = exc.message
+                job.output = exc.message
+                raise
+            except Exception as exc:
+                job.state = "failed"
+                job.summary = str(exc)
+                job.output = str(exc)
+                raise
 
     job = artcraft._start("update", "update-rollback", [app], "rollback", runner)
 

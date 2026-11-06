@@ -152,25 +152,27 @@ async def app_update(app: str, _: User, db: Db, response: Response, refresh: boo
 
 @router.post("/apps/{app}/update", status_code=202)
 async def update_apply(app: str, body: UpdateIn, request: Request, _: User, db: Db) -> dict:
-    try:
-        job = await artcraft_update.start_update_job(app, body.tag, body.confirm, db=db)
-    except artcraft.ArtcraftError as exc:
-        raise _http(exc) from exc
-    record(db, action="artcraft.update.apply", target_type="artcraft_app", detail={"app": app, "tag": body.tag},
-           ip=client_ip(request))
-    await db.commit()
+    async with artcraft.coordination_lock([app]):
+        try:
+            job = await artcraft_update.start_update_job(app, body.tag, body.confirm, db=db, coordination_locked=True)
+        except artcraft.ArtcraftError as exc:
+            raise _http(exc) from exc
+        record(db, action="artcraft.update.apply", target_type="artcraft_app", detail={"app": app, "tag": body.tag},
+               ip=client_ip(request))
+        await db.commit()
     return job.public()
 
 
 @router.post("/apps/{app}/update/rollback", status_code=202)
 async def update_rollback(app: str, body: RollbackIn, request: Request, _: User, db: Db) -> dict:
-    try:
-        job = await artcraft_update.start_rollback_job(app, body.confirm, db=db)
-    except artcraft.ArtcraftError as exc:
-        raise _http(exc) from exc
-    record(db, action="artcraft.update.rollback", target_type="artcraft_app", detail={"app": app},
-           ip=client_ip(request))
-    await db.commit()
+    async with artcraft.coordination_lock([app]):
+        try:
+            job = await artcraft_update.start_rollback_job(app, body.confirm, db=db, coordination_locked=True)
+        except artcraft.ArtcraftError as exc:
+            raise _http(exc) from exc
+        record(db, action="artcraft.update.rollback", target_type="artcraft_app", detail={"app": app},
+               ip=client_ip(request))
+        await db.commit()
     return job.public()
 
 
@@ -239,15 +241,20 @@ async def get_catalog(_: User, db: Db, response: Response) -> dict:
 @router.post("/tasks", status_code=201)
 async def create_task(body: TaskIn, request: Request, _: User, db: Db) -> dict:
     try:
-        task, run = await artcraft_tasks.create_task(
-            db, category_id=body.category, prompt=body.prompt, template_id=body.template_id,
-            input_ids=body.input_artifact_ids, apps=body.apps, options=body.options, speed=body.speed,
-            ip=client_ip(request))
+        apps = artcraft_tasks.selected_apps(body.category, body.template_id, body.apps)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
-    record(db, action="artcraft.task.create", target_type="artcraft_task", target_id=task.id,
-           detail={"category": task.category, "apps": task.apps, "run_id": str(run.id)}, ip=client_ip(request))
-    await db.commit()
+    try:
+        async with artcraft.task_admission_lock(apps):
+            task, run = await artcraft_tasks.create_task(
+                db, category_id=body.category, prompt=body.prompt, template_id=body.template_id,
+                input_ids=body.input_artifact_ids, apps=body.apps, options=body.options, speed=body.speed,
+                ip=client_ip(request))
+            record(db, action="artcraft.task.create", target_type="artcraft_task", target_id=task.id,
+                   detail={"category": task.category, "apps": task.apps, "run_id": str(run.id)}, ip=client_ip(request))
+            await db.commit()
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
     return await artcraft_tasks.task_detail(db, task)
 
 
@@ -271,15 +278,20 @@ async def get_task(task_id: uuid.UUID, _: User, db: Db, response: Response) -> d
 @router.post("/tasks/{task_id}/runs", status_code=202)
 async def add_round(task_id: uuid.UUID, body: RoundIn, request: Request, _: User, db: Db) -> dict:
     try:
-        task = await artcraft_tasks.get_task(db, task_id)
-        run = await artcraft_tasks.add_round(
-            db, task, prompt=body.prompt, input_ids=body.input_artifact_ids, use_previous=body.use_previous,
-            options=body.options, speed=body.speed, ip=client_ip(request))
+        existing_task = await artcraft_tasks.get_task(db, task_id)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
-    record(db, action="artcraft.task.round", target_type="artcraft_task", target_id=task.id,
-           detail={"run_id": str(run.id), "use_previous": body.use_previous}, ip=client_ip(request))
-    await db.commit()
+    try:
+        async with artcraft.task_admission_lock(list(existing_task.apps or [])):
+            task = await artcraft_tasks.get_task(db, task_id)
+            run = await artcraft_tasks.add_round(
+                db, task, prompt=body.prompt, input_ids=body.input_artifact_ids, use_previous=body.use_previous,
+                options=body.options, speed=body.speed, ip=client_ip(request))
+            record(db, action="artcraft.task.round", target_type="artcraft_task", target_id=task.id,
+                   detail={"run_id": str(run.id), "use_previous": body.use_previous}, ip=client_ip(request))
+            await db.commit()
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
     return await artcraft_tasks.task_detail(db, task)
 
 

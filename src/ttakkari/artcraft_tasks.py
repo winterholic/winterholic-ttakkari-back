@@ -140,11 +140,35 @@ def _title(prompt: str, tpl: catalog.Template | None) -> str:
     return (line[:TITLE_CHARS] or "ArtCraft 작업")
 
 
+def selected_apps(category_id: str, template_id: str | None, apps: list[str] | None) -> list[str]:
+    """Resolve and validate a task's app set before its admission lock is acquired."""
+    cat = _category(category_id)
+    tpl = catalog.template(cat, template_id)
+    if template_id and tpl is None:
+        raise _err(422, "bad_input", "알 수 없는 템플릿입니다.")
+    chosen = list(dict.fromkeys(apps)) if apps else list(tpl.apps if tpl and tpl.apps else catalog.app_ids(cat))
+    if not chosen or any(a not in catalog.app_ids(cat) for a in chosen):
+        raise _err(422, "unknown_app", "이 범주에서 쓸 수 없는 앱이 포함돼 있어요.")
+    return chosen
+
+
 # ---------------------------------------------------------------- 작업·업데이트 상호 배타성 계약
 
 def check_app_not_updating(apps: list[str]) -> None:
     """해당 앱이 현재 업데이트/교체 중인지 검사하여 동시 실행 충돌을 방지한다."""
     from ttakkari import artcraft
+
+    try:
+        updates = artcraft.load_state_strict().get("updates") or {}
+        if not isinstance(updates, dict):
+            raise ValueError("ArtCraft updates state must be an object")
+    except Exception as exc:  # noqa: BLE001
+        raise _err(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
+
+    for app in apps:
+        entry = updates.get(app)
+        if isinstance(entry, dict) and entry.get("state") in ("queued", "running"):
+            raise _err(409, "app_updating", f"'{app}' 앱 업데이트/교체가 진행 중입니다. 잠시 후 다시 시도해 주세요.")
 
     jobs = getattr(artcraft, "JOBS", {})
     if not isinstance(jobs, dict):
@@ -215,11 +239,7 @@ async def create_task(db: AsyncSession, *, category_id: str, prompt: str, templa
                       ip: str | None) -> tuple[ArtcraftTask, Run]:
     cat = _category(category_id)
     tpl = catalog.template(cat, template_id)
-    if template_id and tpl is None:
-        raise _err(422, "bad_input", "알 수 없는 템플릿입니다.")
-    chosen = list(dict.fromkeys(apps)) if apps else list(tpl.apps if tpl and tpl.apps else catalog.app_ids(cat))
-    if not chosen or any(a not in catalog.app_ids(cat) for a in chosen):
-        raise _err(422, "unknown_app", "이 범주에서 쓸 수 없는 앱이 포함돼 있어요.")
+    chosen = selected_apps(category_id, template_id, apps)
     check_app_not_updating(chosen)
     clean = clean_options(tpl, options)
     await _load_inputs(db, cat, input_ids, tpl.min_files if tpl else 0)
@@ -475,7 +495,7 @@ async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
 NOTE = """\
 [ArtCraft 작업 지침] 범주: {category}. 연결된 앱 MCP 서버: {servers}.
 - 작업 폴더: {base}  (in/ 입력 복사본, prev/ 이전 결과 복사본, work/ 중간 파일, out/ 최종 결과). 앱 도구는 이 폴더 안의 파일만 읽고 쓰게 설정돼 있다.
-- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 아래에 저장한 결과는 자동 수집되므로 결과 파일에 share_file 을 호출하지 않는다(중복 등록될 수 있음). share_file 은 대화에 파일을 공유할 때 쓰고, keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구다.
+- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 아래에 저장한 결과는 자동 수집되므로 share_file 을 호출하지 않는다(자동 수집과 중복 등록될 수 있음). share_file 은 대화에 파일을 공유할 때 쓰고, keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구다.
 - 앱 MCP 도구가 안 보이거나 오류가 나면 즉시 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
 - CLI 명령어 호출 시 shell 환경변수나 명령어 치환($VAR, $(cmd), eval)을 쓰지 않고 전체 리터럴 인자를 직접 실행한다. sudo, bypass 등 하네스 보안 가드를 우회하지 않는다.
 - 끝내기 전에 결과가 0바이트가 아닌지 확인하고 렌더·info·text 등으로 직접 열어 본다(이미지는 PNG 로 렌더). 확인한 내용을 답에 한두 줄로 적고, 요구한 결과 파일을 만들지 못했으면 실패 이유를 솔직히 적는다.

@@ -524,6 +524,21 @@ async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: P
 
     monkeypatch.setattr(artcraft_tasks, "active_task_apps", no_active_tasks, raising=False)
     db = object()
+    runner_sessions = []
+
+    class RunnerSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            self.closed = True
+
+    def make_runner_session():
+        session = RunnerSession()
+        runner_sessions.append(session)
+        return session
+
+    monkeypatch.setattr("ttakkari.db.sessionmaker", lambda: make_runner_session)
 
     # 1. 실제 start_update_job 실행 및 완료 대기
     job = await start_update_job("photocraft", tag="v0.10.0", confirm=True, db=db)
@@ -542,8 +557,31 @@ async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: P
 
     assert rb_job.state == "succeeded"
     assert "0.9.0" in rb_job.summary
-    assert len(db_calls) >= 4
-    assert all(call is db for call in db_calls)
+    assert len(db_calls) == 4
+    assert db_calls[0] is db and db_calls[2] is db
+    assert db_calls[1] is runner_sessions[0] and db_calls[3] is runner_sessions[1]
+    assert all(session.closed for session in runner_sessions)
+
+
+@pytest.mark.asyncio
+async def test_internal_update_job_without_request_db_does_not_open_or_capture_a_db_session(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import start_update_job
+
+    async def fake_apply(app, tag=None, confirm=False, current_job_id=None, db=None):
+        assert db is None
+        return {"version": "0.10.0", "verified_output": "verified"}
+
+    def forbidden_sessionmaker():
+        raise AssertionError("internal job without a request DB must not create a DB session")
+
+    monkeypatch.setattr("ttakkari.artcraft_update.apply_update", fake_apply)
+    monkeypatch.setattr("ttakkari.db.sessionmaker", forbidden_sessionmaker)
+    job = await start_update_job("photocraft", "v0.10.0", True)
+    await job.task
+
+    assert job.state == "succeeded"
 
 
 # ---------------------------------------------------------------- 완료 기준 2: 동일 버전 재설치 및 실패 시 기존 바이너리 보존
@@ -977,11 +1015,11 @@ async def test_update_apply_requires_confirm(app_with_routes: FastAPI):
 async def test_update_apply_and_rollback_api_success(app_with_routes: FastAPI, monkeypatch: pytest.MonkeyPatch):
     db_seen = []
 
-    async def fake_start_update(app: str, tag: str | None, confirm: bool, db=None):
+    async def fake_start_update(app: str, tag: str | None, confirm: bool, db=None, coordination_locked=False):
         db_seen.append(db)
         return artcraft.Job(id="fake-update", kind="update", action="update-apply", apps=[app], state="queued")
 
-    async def fake_start_rollback(app: str, confirm: bool, db=None):
+    async def fake_start_rollback(app: str, confirm: bool, db=None, coordination_locked=False):
         if not confirm:
             raise ArtcraftError(428, "confirm_required", "confirm required")
         db_seen.append(db)

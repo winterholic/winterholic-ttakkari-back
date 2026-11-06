@@ -53,3 +53,11 @@
   - 공유 잠금/API 경쟁 6개와 updater 4개는 immutable 932d7102 독립 snapshot에서 각각 `6 passed` 및 `4 passed`; 이후 통합 브랜치 집중 경쟁 회귀는 앞선 기록의 `8 passed` 결과를 재사용했다. 해당 코드 경로는 이번 원격 통합에서 바뀌지 않아 반복하지 않았다.
 - 후보 검사: `git diff --check HEAD^ HEAD` 출력 없음, exit 0. worktree는 `c11f2d6b` 시점에 clean이고 `origin/main`보다 ahead 14였다. 이 문서의 후속 증거 commit은 기록만 추가한다.
 - 배포 전 상태: push와 backend deploy reservation은 아직 실행하지 않았다. 최종 pushed SHA 및 reservation ID/state는 배포 후 실행 기록에 추가한다.
+
+### 배포 게이트 보완 검증
+
+- 첫 pre-push 시도는 uv 기본 캐시(`/Users/winterholic/.cache/uv`) 쓰기에서 command sandbox `Operation not permitted`로 중단됐다. 허용된 `/private/tmp/ttakkari-uv-cache-453208be`를 지정해 게이트를 다시 실행했다.
+- 게이트에서 Ruff 26개 lint 오류와 `tests/test_artcraft_tasks.py`/`unit_tests/test_artcraft_tasks.py` 동일 basename 수집 충돌이 드러났다. ArtCraft 범위에서 자동 import/style 정리와 의도된 기존 예외 처리 lint 명시만 적용했다. 락/업데이터 실행 동작은 바꾸지 않았다.
+- 세 pytest 명령을 동시에 돌린 첫 집중 실행에서는 7개 중 1개가 race cleanup의 `/api/runs/{id}/cancel` 뒤 SQLAlchemy `Could not refresh instance 'Run'`로 실패했다. 당시 `TTAKKARI_TEST_DB`가 명시 설정되어 있었고 `tests/conftest.py`는 명시 DB를 사용하며 테스트마다 dirty table reset을 수행한다. 따라서 병렬 프로세스의 reset 경합으로 서로 테스트 데이터를 지운 것이 원인이다. 동일 테스트 단독 재실행은 `1 passed`; 이후 같은 공유 DB 검사는 직렬 실행으로 모두 통과했다.
+- 직렬 최종 영향 회귀: 실제 DB/API 경쟁·세션·프로세스 잠금과 추가 라운드 포함 7개 → `7 passed in 3.81s`, reset `7 selective`, `0 forced full`, `0 fell back to full`; updater 4개 → `4 passed in 0.76s`; d0 readiness/영어 조회 unit 4개 → `4 passed, 21 deselected in 0.54s`; fake-engine API 1개 → `1 passed in 1.02s`, reset `1 selective`, `0 forced full`, `0 fell back to full`.
+- 최종 게이트는 임시 uv cache와 `PYTEST_ADDOPTS=--import-mode=importlib`를 사용해 재실행한다. 일반 pytest import mode에서 두 동명 테스트 파일을 한 호출에 수집하는 게이트 오류를 피하면서 테스트 파일을 모두 검사하기 위함이다.

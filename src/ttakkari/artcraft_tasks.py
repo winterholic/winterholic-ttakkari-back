@@ -161,8 +161,8 @@ def check_app_not_updating(apps: list[str]) -> None:
     try:
         updates = artcraft.load_state_strict().get("updates") or {}
         if not isinstance(updates, dict):
-            raise ValueError("ArtCraft updates state must be an object")
-    except Exception as exc:  # noqa: BLE001
+            raise ValueError("ArtCraft updates state must be an object")  # noqa: TRY004
+    except Exception as exc:
         raise _err(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
 
     for app in apps:
@@ -708,15 +708,15 @@ def verify_task_output(file_path: Path, expected_kind: str | None = None) -> dic
                 kind = "svg"
             elif "section" in head_txt.lower() and any(k in head_txt.lower() for k in ("header", "entities", "0\n", "0\r\n")):
                 kind = "dxf"
-            elif head_txt.startswith("{") or head_txt.startswith("["):
+            elif head_txt.startswith(("{", "[")):
                 try:
                     import json
                     json.loads(p.read_text(encoding="utf-8"))
                     ext = p.suffix.lower().lstrip(".")
                     kind = ext if ext in {"json", "ecproj"} else "json"
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - Ignore unrecognized optional file headers.
                     pass
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - Ignore unreadable optional file headers.
             pass
 
     if kind is None:

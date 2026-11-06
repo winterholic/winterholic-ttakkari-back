@@ -500,7 +500,7 @@ async def test_mcp_initialize_accepts_valid_success_result(fake_artcraft_root: P
 async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
     """실제 start_update_job -> _start -> runner -> apply_update -> check_busy 경로에서 자기 자신을 제외하여 성공해야 함."""
     from ttakkari import artcraft_tasks
-    from ttakkari.artcraft_update import start_update_job, start_rollback_job
+    from ttakkari.artcraft_update import start_rollback_job, start_update_job
 
     new_bin_script = _make_fake_cli_script("0.10.0")
     zip_bytes = _make_zip({"photocraft-cli": new_bin_script})

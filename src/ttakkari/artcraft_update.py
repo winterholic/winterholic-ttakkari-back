@@ -158,7 +158,7 @@ async def check_busy(
             active_apps = await artcraft_tasks.active_task_apps(db)
         except ArtcraftError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ArtcraftError(503, "busy_check_unavailable", f"활성 제작 작업을 확인할 수 없습니다: {exc}") from exc
         if app in active_apps:
             raise ArtcraftError(
@@ -183,7 +183,7 @@ async def check_busy(
                 )
     except ArtcraftError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ArtcraftError(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
 
     # 3. 로컬 인메모리 진행 중인 Job 검사 (스모크, GUI 조작, 타 업데이트)
@@ -217,7 +217,7 @@ async def check_busy(
         if exc.code in ("app_running", "busy_check_unavailable"):
             raise
         raise ArtcraftError(503, "busy_check_unavailable", f"앱 실행 상태를 확인할 수 없습니다: {exc.message}") from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ArtcraftError(503, "busy_check_unavailable", f"앱 실행 상태를 확인할 수 없습니다: {exc}") from exc
 
 
@@ -422,10 +422,10 @@ async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
                         mcp_proc.stdin.close()
                     mcp_proc.terminate()
                     await asyncio.wait_for(mcp_proc.wait(), timeout=2.0)
-                except (TimeoutError, ProcessLookupError, Exception):
+                except (TimeoutError, ProcessLookupError, Exception):  # noqa: BLE001
                     try:
                         mcp_proc.kill()
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 - Cleanup is best-effort after timeout.
                         pass
     except Exception as exc:  # noqa: BLE001
         return False, f"MCP 핸드셰이크 예외: {exc}"
@@ -959,7 +959,7 @@ async def get_app_update_info(
                 }
 
             artcraft.update_state(mutate_remote)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if isinstance(exc, ArtcraftError):
                 raise
             raise ArtcraftError(502, "release_refresh_failed", f"{app} 최신 릴리스 갱신에 실패했습니다: {exc}") from exc
@@ -997,7 +997,7 @@ async def get_app_update_info(
         try:
             from ttakkari import artcraft_tasks
             active_apps = await artcraft_tasks.active_task_apps(db)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ArtcraftError(503, "busy_check_unavailable", f"활성 제작 작업을 확인할 수 없습니다: {exc}") from exc
         if app in active_apps:
             is_busy = True
@@ -1022,7 +1022,7 @@ async def get_app_update_info(
                         is_busy = True
                         busy_reason = f"{app} 앱이 현재 실행 중입니다."
                         break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - Preview remains available when optional GUI status is unavailable.
             pass
 
     target_ver = validate_version(tag) if tag else None

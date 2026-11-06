@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from ttakkari import artcraft_catalog as catalog
 from ttakkari import artcraft_tasks
 from ttakkari.artcraft_tasks import RunPlan
@@ -180,8 +181,8 @@ def test_summaries_does_not_report_missing_file_for_information_template():
 
 def test_english_information_lookup_without_template_has_no_missing_output_error(monkeypatch):
     """성공한 영어 정보 조회는 summaries와 상세 라운드 모두 파일 누락 오류가 아니다."""
-    from ttakkari.models import ArtcraftTask, Run, RunStatus
     from ttakkari.api import desk_feedback
+    from ttakkari.models import ArtcraftTask, Run, RunStatus
 
     task = ArtcraftTask(id=uuid.uuid4(), session_id=uuid.uuid4(), category="video", title="영상 길이")
     run = Run(id=uuid.uuid4(), session_id=task.session_id, status=RunStatus.succeeded,
@@ -460,10 +461,11 @@ def test_provider_adapters_receive_artcraft_mcp_servers(monkeypatch, tmp_path: P
     """Claude, Codex, Antigravity, Muse 설정 파일에 ArtCraft MCP 인자와 환경이 그대로 전달된다."""
     import json
     import tomllib
+
+    from ttakkari.agents.antigravity import AntigravityAdapter
     from ttakkari.agents.base import LaunchSpec
     from ttakkari.agents.claude import ClaudeAdapter
     from ttakkari.agents.codex import CodexAdapter
-    from ttakkari.agents.antigravity import AntigravityAdapter
     from ttakkari.agents.muse import MuseAdapter
     from ttakkari.config import get_settings
 
@@ -520,7 +522,7 @@ def test_provider_adapters_receive_artcraft_mcp_servers(monkeypatch, tmp_path: P
 
 def test_effectcraft_motion_prompt_instructs_cli_video_render(monkeypatch, tmp_path: Path):
     """motion 카테고리 태스크는 MCP 프레임만으로 완료를 주장하지 않도록 CLI 동영상 렌더 안내가 주입되어야 한다."""
-    from ttakkari.models import ChatSession, ArtcraftTask, Workspace
+    from ttakkari.models import ArtcraftTask, ChatSession, Workspace
 
     db = AsyncMock()
     ws = Workspace(name="ArtCraft", root_path=str(tmp_path), is_git=False)

@@ -245,8 +245,8 @@ async def task_admission_lock(apps: list[str]):
         try:
             updates = load_state_strict().get("updates") or {}
             if not isinstance(updates, dict):
-                raise ValueError("ArtCraft updates state must be an object")
-        except Exception as exc:  # noqa: BLE001
+                raise ValueError("ArtCraft updates state must be an object")  # noqa: TRY004
+        except Exception as exc:
             raise ArtcraftError(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
         for app in apps:
             entry = updates.get(app)
@@ -306,7 +306,7 @@ def load_state_strict() -> dict[str, Any]:
     except FileNotFoundError:
         return {}
     if not isinstance(data, dict):
-        raise ValueError("ArtCraft state must be a JSON object")
+        raise ValueError("ArtCraft state must be a JSON object")  # noqa: TRY004
     return data
 
 

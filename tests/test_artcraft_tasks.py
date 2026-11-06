@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import agent_calls
 from helpers import wait_run
+
 from ttakkari import artcraft_catalog as catalog
 from ttakkari.artifacts.kinds import detect
 from ttakkari.config import get_settings

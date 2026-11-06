@@ -1,6 +1,10 @@
 """자연어 역분석은 관찰 증거와 작업공간의 재현 소스로 닫혀야 한다."""
 import hashlib
 import json
+import os
+import shlex
+import subprocess
+import sys
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -441,10 +445,92 @@ def test_web_prompt_gives_role_specific_browser_capture_and_verification_command
         assert 'needs_input' in prompt
         assert f"cd '{tmp_path / 'job folder'}'" in prompt
         assert 'mkdir -p .reverse/input .reverse/web-captures .reverse/comparisons' in prompt
-        assert 'PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/' in prompt
-        assert '/back/.venv/bin/python ' in prompt
+        assert f'PYTHONPATH={shlex.quote(str(tasks.Path(tasks.__file__).resolve().parents[1]))}' in prompt
+        assert f'{shlex.quote(sys.executable)} ' in prompt
+        checkout = tasks.Path(tasks.__file__).resolve().parents[2]
+        assert shlex.quote(str(checkout / 'scripts' / 'reverse_web_evidence_capture.py')) in prompt
+        assert shlex.quote(str(checkout / 'scripts' / 'reverse_web_evidence_verify.py')) in prompt
     assert 'implementation' in implementation.lower() or '구현자' in implementation
     assert 'verifier' in verifier.lower() or '검증자' in verifier
+
+
+@pytest.mark.parametrize('layout', ['development', 'release'])
+def test_prompt_capture_and_verify_commands_run_for_both_roles_in_spaced_job_paths(tmp_path, monkeypatch, layout):
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    checkout = tasks.Path(tasks.__file__).resolve().parents[2]
+    if layout == 'development':
+        python = sys.executable
+        source_root = checkout / 'src'
+        script_root = checkout / 'scripts'
+    else:
+        release = tmp_path / 'release tree' / 'releases' / 'fixed-sha'
+        source_root = release / 'src'
+        script_root = release / 'scripts'
+        source_root.mkdir(parents=True)
+        script_root.mkdir(parents=True)
+        release_venv = release / '.venv'
+        release_venv.symlink_to(checkout.parent / 'back' / '.venv', target_is_directory=True)
+        import shutil
+
+        shutil.copytree(checkout / 'src' / 'ttakkari', source_root / 'ttakkari')
+        shutil.copy2(checkout / 'scripts' / 'reverse_web_evidence_capture.py', script_root)
+        shutil.copy2(checkout / 'scripts' / 'reverse_web_evidence_verify.py', script_root)
+        python_path = release_venv / 'bin' / 'python'
+        python = str(python_path)
+        monkeypatch.setattr(sys, 'executable', python)
+        monkeypatch.setattr(tasks, '__file__', str(source_root / 'ttakkari' / 'reverse_tasks.py'))
+
+    for role, run_id in (('implementation', f'{layout}-impl-run'), ('verifier', f'{layout}-verify-run')):
+        root = tmp_path / f'{layout} {role} job'
+        root.mkdir()
+        capture = _web_capture(root, run_id=run_id, comparison_id=f'{layout}-{role}')
+        capture_path = root / capture['evidence'][0]['capture']['path']
+        raw_capture = json.loads(capture_path.read_text(encoding='utf-8'))
+        spec = {key: value for key, value in raw_capture.items()
+                if key in {'comparison_id', 'behavior', 'input', 'original', 'replica', 'run_id',
+                           'expected_viewport', 'origin_map', 'environment', 'pre_state', 'verified_at'}}
+        cli_case_id = f'{layout}-{role}-cli'
+        spec['comparison_id'] = cli_case_id
+        observations = root / '.reverse/input/web-observations.json'
+        observations.parent.mkdir(parents=True)
+        observations.write_text(json.dumps(spec), encoding='utf-8')
+        job = SimpleNamespace(output_path=str(root), target='capture test', result={
+            'schema_version': 2, 'job': {'mode': 'reconstruct', 'target_type': 'web'}})
+        run = SimpleNamespace(id=run_id, session_id=f'{run_id}-session')
+        prompt = tasks._prompt(job, run, review=(role == 'verifier'))
+        commands = [line for line in prompt.splitlines() if line.startswith('cd ') and '&& PYTHONPATH=' in line]
+        assert len(commands) == 2
+        assert f'PYTHONPATH={shlex.quote(str(source_root))}' in commands[0]
+        assert f' {shlex.quote(python)} ' in commands[0]
+        assert shlex.quote(str(script_root / 'reverse_web_evidence_capture.py')) in commands[0]
+        assert shlex.quote(str(script_root / 'reverse_web_evidence_verify.py')) in commands[1]
+        capture_result = subprocess.run(commands[0], shell=True, text=True, capture_output=True, timeout=15,
+                                        check=False)
+        assert capture_result.returncode == 0, capture_result.stderr
+        verify_command = commands[1].replace('<comparison-id>', cli_case_id)
+        verify_result = subprocess.run(verify_command, shell=True, text=True, capture_output=True, timeout=15,
+                                       check=False)
+        assert verify_result.returncode == 0, verify_result.stderr
+
+
+def test_bundle_rejects_fifo_without_blocking_and_records_reason(tmp_path):
+    root = tmp_path / 'job'
+    root.mkdir()
+    fifo = root / 'source.fifo'
+    os.mkfifo(fifo)
+    code = (
+        'import json; from pathlib import Path; from ttakkari.reverse_tasks import _bounded_evidence_bytes; '
+        f'print(json.dumps(_bounded_evidence_bytes(Path({str(root)!r}), "source.fifo", limit=1024)))'
+    )
+    env = {**os.environ, 'PYTHONPATH': str(tasks.Path(tasks.__file__).resolve().parents[1])}
+    try:
+        result = subprocess.run([sys.executable, '-c', code], text=True, capture_output=True,
+                                timeout=2, env=env, check=False)
+    except subprocess.TimeoutExpired:
+        pytest.fail('FIFO evidence read blocked instead of being rejected')
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == [None, 'not a regular file']
 
 
 def test_bundle_rechecks_and_archives_role_separated_web_evidence(tmp_path):

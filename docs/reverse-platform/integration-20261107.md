@@ -197,3 +197,52 @@ database_api_dispatch: unverified: fake DB, no API/DB or generation dispatch
 - Ruff 첫 실행에서 새 테스트 fixture의 미사용 import와 mutable class list 4건이 나와 fixture를 고쳤다. 변경 영향 Ruff, `git diff --check`, `py_compile`은 위 출력처럼 통과했다.
 - PostgreSQL/API 저장·dispatch는 기존 `initdb → shmget ... Operation not permitted` 제한 때문에 재시도하지 않았다. 실제 ReverseJob E2E·브라우저 provenance·generation dispatch는 미검증이다. worker f61의 고정 efd15f92 ZIP/배포 경로 감사 가설은 범위 밖이며 수정하지 않았다.
 - 다음 단계는 독립 재감사다. 이번 단위에서는 push, deploy, 실제 ReverseJob E2E를 하지 않았다.
+
+## Release 캡처 명령 경로와 FIFO 아카이브 읽기 교정 (2026-11-07)
+
+### 실행 신원·직전 기준
+
+- 저장소 접근 전 `ttk get /api/sessions/7e594972-a53a-4a52-aedc-aba29faeb219/runs`의 현재 running Run은 `480438b5-ee23-4d5e-8e33-fbdcdb372dcf`, profile은 `회사 코덱스 ai2 (ai2@hyperez.io)`였다. `/api/accounts`의 같은 이름 단일 ID는 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`다. 계정 토글·폴백·하위 위임은 하지 않았다.
+- 시작 revision `f0a382ec733022c4e5ddd2cb3540b24df96fa067`은 clean이었다. 바로 앞 `fix(reverse): gate completion on implementation evidence` 완료 gate 커밋과 해당 계약·테스트·기록을 유지했다. 이전 gate 검사 전체는 반복하지 않았다.
+- 기준 감사는 `efd15f9224024768203018f5cce1c1dac2354feb`; 감사 자료 커밋은 `25c1c5b215a4515956969277bd11e0dd02450728`이다. 독립 감사 worktree와 probe 파일은 수정하지 않았다.
+
+### 실패 재현과 교정
+
+- 감사의 배치 결함은 `_prompt`가 interpreter를 항상 `<checkout>/../back/.venv/bin/python`으로 만들고, scripts/PYTHONPATH는 `reverse_tasks.py`가 속한 checkout 또는 release root에서 찾는 불일치다. 고정 `efd15f92` 소스를 모의 `release/<sha>`에 두고 그 root의 `.venv`와 `scripts/`를 준비해 이전 prompt를 호출했다. prompt가 잘못 계산한 `releases/back/.venv/bin/python`을 실행하며 exit 127 및 `No such file or directory`를 반환했다. release packaging은 `Releases.archive()`가 tracked 소스/scripts를 release root로 추출하고 runtime은 그 root의 `.venv`를 제공하는 배치다.
+- `_prompt`가 현재 실행 프로세스의 `sys.executable`을 쓰고 같은 모듈 위치에서 capture/verify scripts와 `src`를 찾게 했다. venv symlink 경로를 resolve하지 않는다. web-evidence 지침에 개발 checkout 및 immutable release 경로와 이 이유를 기록했다.
+- FIFO는 descriptor `open(O_RDONLY)` 단계에서 대기한 뒤 `fstat`에 도달하지 못했다. bounded reader의 최종 파일 open에만 `O_NONBLOCK`을 추가해 FIFO를 열더라도 즉시 `not a regular file`로 거부한다. containment, descriptor별 `O_NOFOLLOW`, 정규 파일 검사, 1 MiB 일반 한도, SHA/byte 재검산과 PNG 전용 12 MiB 한도는 그대로다. source, check log, 웹 raw JSON/PNG의 archive read는 기존 동일 `_bounded_evidence_bytes`를 사용한다.
+
+### 좁은 회귀 및 ZIP 감사 결과
+
+테스트 우선 반례는 수정 전 실패했다.
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py -k 'web_prompt_gives_role_specific or prompt_capture_and_verify_commands_run_for_both_roles or bundle_rejects_fifo_without_blocking'
+4 failed, 40 deselected; FIFO child raised TimeoutExpired after 2 seconds
+```
+
+모의 release의 고정 과거 prompt 실행은 다음을 반환했다.
+
+```text
+revision: efd15f9224024768203018f5cce1c1dac2354feb
+expected: release/<sha>/.venv/bin/python; emitted: release-parent/back/.venv/bin/python
+exit: 127; stderr: No such file or directory
+```
+
+수정 뒤 같은 좁은 프롬프트/FIFO 묶음은 `4 passed, 40 deselected`다. 이 안에서 공백이 든 작업 폴더에 개발 checkout과 모의 `release/<sha>` 배치를 만들어 구현자·검증자 각각의 capture와 verify CLI를 직접 실행했다. 네 capture/verify 조합이 모두 exit 0이었다. release mock의 `.venv` 링크는 기존 의존성 환경을 가리킨 채 사용했고 Pillow import를 포함해 두 스크립트가 동작했다.
+
+고정 ZIP 감사 probe의 제품 경로를 그대로 불러오고 오래된 baseline HEAD assertion만 건너뛰어 독립 재검산했다. 양 역할 raw JSON·PNG·comparison·check log를 ZIP에서 추출하고 manifest SHA/크기를 다시 계산했으며, functional `match`, visual `mismatch`, integrity `verified`, provenance `unverified`를 유지했다. 잘못된 Run ID와 캡처 후 PNG 변조는 거부됐다. hostile file 검사에서 정확히 1 MiB 일반 파일은 포함, 1 MiB 초과는 거부됐고 traversal·절대경로·symlink·`.env`·directory를 거부했다. FIFO subprocess는 timeout 없이 반환했다.
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_reverse_tasks.py -k 'web_prompt_gives_role_specific or prompt_capture_and_verify_commands_run_for_both_roles or bundle_rejects_fifo_without_blocking or bundle_rechecks_and_archives_role_separated_web_evidence or bundle_refuses_web_evidence_with_tampered_sha_wrong_run_or_symlink or bundle_manifest_records_traversal_absolute_symlink_size_and_secret_rejections or bundle_keeps_verified_png_over_one_mib_under_png_specific_limit or bundle_does_not_include_web_capture_mutated_after_creation_or_symlinked or bundle_rejects_png_over_web_specific_twelve_mib_limit or collect_outputs_bundles_implementation_and_verifier_reports_separately or test_zip_contains_sources_but_excludes_target_and_secrets or bundle_refuses_symlink_as_zip_destination'
+13 passed, 31 deselected in 1.41s
+$ ../back/.venv/bin/ruff check src/ttakkari/reverse_tasks.py unit_tests/test_reverse_tasks.py
+All checks passed!
+$ git diff --check
+exit 0 (no output)
+```
+
+### 미검증·다음 단계
+
+- DB/API 저장·dispatch, 실제 configured-browser provenance, ReverseJob 운영 E2E는 미검증이며 실행하지 않았다. `initdb shmget` 및 `.vite` 삭제 거부를 반복하거나 우회하지 않았다.
+- 운영 runtime은 변경하지 않았다. push·배포를 하지 않았다. 이 커밋 뒤 고정 revision 독립 재감사와 정상 배포가 다음 단계다.

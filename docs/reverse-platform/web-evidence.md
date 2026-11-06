@@ -118,9 +118,16 @@ replica only on 127.0.0.1; stop it with Ctrl-C. The existing
 scripts/reverse_e2e_targets.py start web starts the original test target and
 its ownership-checked stop --pid-file shuts down only that process.
 
-ReverseJob web prompts provide the actual job folder, absolute interpreter and
-script paths from the integration checkout. They `cd` to that folder and quote
-paths containing spaces. Create `.reverse/input/web-observations.json` there,
+ReverseJob web prompts use the current process's dependency-enabled
+`sys.executable` and resolve both capture scripts from the root containing the
+loaded `src/ttakkari/reverse_tasks.py`. In a development checkout this uses the
+existing backend `.venv`; in an immutable release it uses that release root's
+`.venv/bin/python` and `scripts/`. `Releases.archive()` extracts tracked source
+and scripts into the release root, while the runtime supplies its `.venv`
+there. Keep the virtual-environment path as invoked: resolving a symlink to the
+base interpreter can drop the environment's Pillow dependency. Prompts `cd` to
+the actual job folder and quote paths containing spaces. Create
+`.reverse/input/web-observations.json` there,
 save the unedited configured-browser PNG bytes under `.reverse/web-captures/`,
 and use the module's `reverse_web_evidence_capture.py` writer followed by
 `reverse_web_evidence_verify.py`. For each run, original and replica must share

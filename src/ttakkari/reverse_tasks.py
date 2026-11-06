@@ -13,6 +13,7 @@ import os
 import re
 import shlex
 import stat
+import sys
 import uuid
 import zipfile
 from pathlib import Path
@@ -509,7 +510,8 @@ def _bounded_evidence_bytes(root: Path, name: Any, *, limit: int, sha256: Any = 
                 next_fd = os.open(part, os.O_RDONLY | directory_flag | nofollow | cloexec, dir_fd=directory_fd)
                 os.close(directory_fd)
                 directory_fd = next_fd
-            file_fd = os.open(parts[-1], os.O_RDONLY | nofollow | cloexec, dir_fd=directory_fd)
+            nonblock = getattr(os, "O_NONBLOCK", 0)
+            file_fd = os.open(parts[-1], os.O_RDONLY | nofollow | cloexec | nonblock, dir_fd=directory_fd)
             try:
                 before = os.fstat(file_fd)
                 if not stat.S_ISREG(before.st_mode):
@@ -809,7 +811,7 @@ def _prompt(job: ReverseJob, run: Run, *, review: bool = False) -> str:
     web_capture = ""
     if target_type == "web":
         repo_root = Path(__file__).resolve().parents[2]
-        python = repo_root.parent / "back" / ".venv" / "bin" / "python"
+        python = Path(sys.executable)
         source_root = repo_root / "src"
         capture_script = repo_root / "scripts" / "reverse_web_evidence_capture.py"
         verify_script = repo_root / "scripts" / "reverse_web_evidence_verify.py"

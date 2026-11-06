@@ -10,13 +10,14 @@ import time
 from datetime import UTC, datetime
 
 import psutil
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, case, exists, func, literal, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari import backup_status, deployment, generation
 from ttakkari.config import get_settings
 from ttakkari.models import (
     ChatSession,
+    EngineAccount,
     Run,
     RunStatus,
     RuntimeControl,
@@ -29,6 +30,7 @@ from ttakkari.operations import plans
 DB_PROBES = 20
 LOOP_PROBES = 20
 RECENT_DEPLOYS = 5
+LEASE_PROCESS_LIMIT = 100
 
 
 async def collection_report(db: AsyncSession) -> dict:
@@ -96,6 +98,73 @@ def _ms(values: list[float]) -> dict:
             "max_ms": round(ordered[-1], 2)}
 
 
+async def _lease_process_mappings(db: AsyncSession) -> tuple[list[dict], bool]:
+    """Bounded lease/group ownership links; never return process identity or lease tokens."""
+    session_id = func.coalesce(Run.session_id, RuntimeLease.session_id)
+    lease_rows = (await db.execute(select(
+        case((RuntimeProcessGroup.id.is_not(None), "lease_process_group"), else_="lease_only")
+        .label("entry_kind"),
+        RuntimeProcessGroup.id.label("process_group_id"),
+        RuntimeLease.generation_id,
+        RuntimeProcessGroup.attempt,
+        RuntimeLease.run_id.label("run_id"),
+        session_id.label("session_id"),
+        RuntimeLease.account_id,
+        EngineAccount.name.label("account_name"),
+        Run.status.label("run_status"),
+        ChatSession.archived_at.is_not(None).label("session_archived"),
+        RuntimeProcessGroup.id.is_not(None).label("lease_matches_process_group"),
+    ).select_from(RuntimeLease)
+        .outerjoin(Run, Run.id == RuntimeLease.run_id)
+        .outerjoin(RuntimeProcessGroup, and_(
+            RuntimeProcessGroup.run_id == RuntimeLease.run_id,
+            RuntimeProcessGroup.generation_id == RuntimeLease.generation_id,
+            RuntimeProcessGroup.lease_token == RuntimeLease.token,
+        ))
+        .outerjoin(ChatSession, ChatSession.id == session_id)
+        .outerjoin(EngineAccount, EngineAccount.id == RuntimeLease.account_id)
+        .order_by(RuntimeLease.created_at.desc(), RuntimeProcessGroup.created_at.desc())
+        .limit(LEASE_PROCESS_LIMIT + 1))).all()
+    orphan_group_rows = (await db.execute(select(
+        literal("orphan_process_group").label("entry_kind"),
+        RuntimeProcessGroup.id.label("process_group_id"),
+        RuntimeProcessGroup.generation_id,
+        RuntimeProcessGroup.attempt,
+        RuntimeProcessGroup.run_id,
+        Run.session_id.label("session_id"),
+        literal(None).label("account_id"),
+        literal(None).label("account_name"),
+        Run.status.label("run_status"),
+        ChatSession.archived_at.is_not(None).label("session_archived"),
+        literal(False).label("lease_matches_process_group"),
+    ).select_from(RuntimeProcessGroup)
+        .outerjoin(Run, Run.id == RuntimeProcessGroup.run_id)
+        .outerjoin(ChatSession, ChatSession.id == Run.session_id)
+        .where(~exists(select(1).where(
+            RuntimeLease.run_id == RuntimeProcessGroup.run_id,
+            RuntimeLease.generation_id == RuntimeProcessGroup.generation_id,
+            RuntimeLease.token == RuntimeProcessGroup.lease_token,
+        )))
+        .order_by(RuntimeProcessGroup.created_at.desc(), RuntimeProcessGroup.id.asc())
+        .limit(LEASE_PROCESS_LIMIT + 1))).all()
+    rows = [*lease_rows, *orphan_group_rows]
+    truncated = (len(lease_rows) > LEASE_PROCESS_LIMIT or len(orphan_group_rows) > LEASE_PROCESS_LIMIT
+                 or len(rows) > LEASE_PROCESS_LIMIT)
+    return ([{
+        "entry_kind": row.entry_kind,
+        "process_group_id": str(row.process_group_id) if row.process_group_id else None,
+        "generation_id": str(row.generation_id),
+        "attempt": row.attempt,
+        "run_id": str(row.run_id),
+        "session_id": str(row.session_id) if row.session_id else None,
+        "account_id": str(row.account_id) if row.account_id else None,
+        "account_name": row.account_name,
+        "run_status": row.run_status or "missing",
+        "session_archived": row.session_archived,
+        "lease_matches_process_group": bool(row.lease_matches_process_group),
+    } for row in rows[:LEASE_PROCESS_LIMIT]], truncated)
+
+
 async def runtime_report(db: AsyncSession) -> dict:
     """실행 소유권: 활성/실행기 세대, 세대별 lease·프로세스 그룹 수, 최근 배포 예약. 읽기만 한다."""
     control = (await db.execute(select(RuntimeControl))).scalars().first()
@@ -116,6 +185,7 @@ async def runtime_report(db: AsyncSession) -> dict:
         .outerjoin(RuntimeLease, RuntimeLease.run_id == Run.id)
         .where(ChatSession.archived_at.is_(None), Run.status.in_(("running", "queued", "interrupted")))
         .order_by((Run.status == "running").desc(), Run.created_at.desc()).limit(40))).all()
+    lease_processes, lease_processes_truncated = await _lease_process_mappings(db)
     from ttakkari.generation_deployment import _pid_alive
 
     home = get_settings().home
@@ -169,6 +239,9 @@ async def runtime_report(db: AsyncSession) -> dict:
                            "resume_after": r.resume_after.isoformat() if r.resume_after else None,
                            "lease_owner": str(r.generation_id) if r.generation_id else None,
                            "recovery_attempts": r.recovery_attempts or 0} for r in recovery_rows],
+        "lease_processes": lease_processes,
+        "lease_processes_limit": LEASE_PROCESS_LIMIT,
+        "lease_processes_truncated": lease_processes_truncated,
         "deploy_strategy": strategy, "recent_deploys": deploys,
         "supervisor": supervisor, "deploy_queue": deploy_queue,
         "collection": await collection_report(db),

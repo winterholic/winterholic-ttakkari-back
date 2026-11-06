@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from ttakkari import reverse
 from ttakkari import reverse_tasks as tasks
 from ttakkari.reverse import ReverseError
 
@@ -28,6 +29,28 @@ def report(root, **overrides):
             'checks': [{'command': 'python -m pytest', 'exit_code': 0, 'log': 'check.log'}],
             'limitations': []}
     return {**data, **overrides}
+
+
+@pytest.mark.asyncio
+async def test_start_analysis_forwards_caller_pool_and_v2_options(monkeypatch):
+    captured = {}
+
+    async def fake_start(description, db, workspace_id, **options):
+        captured.update(description=description, db=db, workspace_id=workspace_id, options=options)
+        return {"id": "job"}
+
+    monkeypatch.setattr(tasks, "start", fake_start)
+    workspace_id = uuid4()
+    result = await reverse.start_analysis(
+        "설명", object(), workspace_id, pool="work", title="작업", target_type="api",
+        mode="analyze", references=["fixture:reference"], max_repair_attempts=2,
+    )
+
+    assert result == {"id": "job"}
+    assert captured["options"] == {
+        "pool": "work", "title": "작업", "target_type": "api", "mode": "analyze",
+        "references": ["fixture:reference"], "max_repair_attempts": 2,
+    }
 
 
 def test_source_and_observation_and_executed_check_are_required(tmp_path):

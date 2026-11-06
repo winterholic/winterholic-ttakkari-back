@@ -1841,7 +1841,7 @@ async def start_repository_analysis(raw_target: str, db: Any) -> dict[str, Any]:
 async def start_analysis(description: str, db: Any, workspace_id: uuid.UUID | None = None, *,
                          pool: str | None = None, **options) -> dict[str, Any]:
     from ttakkari.reverse_tasks import start
-    return await start(description, db, workspace_id, **options)
+    return await start(description, db, workspace_id, pool=pool, **options)
 
 
 async def list_jobs(db: Any) -> dict[str, Any]:

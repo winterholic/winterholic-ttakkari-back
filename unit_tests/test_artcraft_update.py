@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -453,6 +454,34 @@ async def test_mcp_initialize_requires_success_result_structure(fake_artcraft_ro
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        ({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}, True),
+        ({"jsonrpc": "2.0", "id": 1}, False),
+        ({"id": 2, "result": {}}, False),
+    ],
+)
+async def test_mcp_initialize_correlates_result_and_rejects_malformed(
+    fake_artcraft_root: Path, response: dict, expected: bool,
+):
+    from ttakkari.artcraft_update import verify_installation
+
+    script = (
+        "#!/usr/bin/env python3\nimport json,sys\n"
+        f"RESPONSE={response!r}\n"
+        'if "--version" in sys.argv: print("photocraft-cli 0.9.0"); raise SystemExit(0)\n'
+        'if "mcp" in sys.argv: sys.stdin.readline(); print(json.dumps(RESPONSE), flush=True); raise SystemExit(0)\n'
+    )
+    binary = fake_artcraft_root / "correlation-test-cli"
+    binary.write_text(script, encoding="utf-8")
+    binary.chmod(0o755)
+
+    ok, _ = await verify_installation("photocraft", binary)
+    assert ok is expected
+
+
+@pytest.mark.asyncio
 async def test_mcp_initialize_accepts_valid_success_result(fake_artcraft_root: Path):
     from ttakkari.artcraft_update import verify_installation
 
@@ -714,6 +743,83 @@ async def test_preview_refresh_does_not_hide_release_error_or_download_binary(
     assert exc.value.code == "bad_gateway"
 
 
+@pytest.mark.asyncio
+async def test_refresh_preview_uses_metadata_without_downloading_zip_or_sums(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import get_app_update_info
+
+    urls = []
+    release = {
+        "tag_name": "v0.10.0",
+        "published_at": "2026-11-07T00:00:00Z",
+        "assets": [
+            {"name": "photocraft-cli-0.10.0-macos-universal.zip", "url": "https://example.invalid/zip"},
+            {"name": "SHA256SUMS.txt", "url": "https://example.invalid/sums"},
+        ],
+    }
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return release
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            urls.append(url)
+            return Response()
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: Client())
+    info = await get_app_update_info("photocraft", refresh=True)
+    assert info["latest_release"]["tag"] == "v0.10.0"
+    assert len(urls) == 1
+    assert "releases/latest" in urls[0]
+
+
+@pytest.mark.asyncio
+async def test_release_assets_rejects_other_apps_zip(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari.artcraft_update import fetch_release_assets
+
+    release = {
+        "tag_name": "v0.10.0",
+        "assets": [
+            {"name": "vectorcraft-cli-0.10.0-macos-universal.zip", "url": "https://example.invalid/vector"},
+            {"name": "SHA256SUMS.txt", "url": "https://example.invalid/sums"},
+        ],
+    }
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return release
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            calls.append(url)
+            return Response()
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ArtcraftError) as exc:
+        await fetch_release_assets("photocraft")
+    assert exc.value.code == "asset_not_found"
+    assert len(calls) == 1
+
+
 def test_status_response_contract_compliance(fake_artcraft_root: Path):
     """get_update_state 응답이 API 계약 스키마(app, current_version, previous_version, state, last_status, history)를 만족하는지 검증."""
     from ttakkari.artcraft_update import get_update_state
@@ -750,6 +856,54 @@ def test_interrupted_updates_reconciled_on_startup(fake_artcraft_root: Path):
     state = get_update_state("photocraft")
     assert state["state"] == "interrupted"
     assert "서버 재시작" in state.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_restart_reconciles_real_interrupted_swap_from_journal(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import reconcile_stale_updates, start_update_job
+
+    artcraft.JOBS.clear()
+    active = fake_artcraft_root / "bin/photocraft-cli"
+    previous_bytes = active.read_bytes()
+    candidate_zip = _make_zip({
+        "photocraft-cli-0.10.0-macos-universal/photocraft-cli": _make_fake_cli_script("0.10.0"),
+    })
+
+    async def fake_fetch(app: str, tag: str | None = None):
+        return {
+            "asset_name": "photocraft-cli-0.10.0-macos-universal.zip",
+            "zip_bytes": candidate_zip,
+            "sha256_sums": f"{hashlib.sha256(candidate_zip).hexdigest()}  photocraft-cli-0.10.0-macos-universal.zip\n",
+            "version": "0.10.0",
+            "tag": "v0.10.0",
+        }
+
+    class SimulatedProcessExit(BaseException):
+        pass
+
+    real_replace = os.replace
+
+    def replace_then_crash(src, dst):
+        result = real_replace(src, dst)
+        if Path(dst) == active:
+            raise SimulatedProcessExit()
+        return result
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    monkeypatch.setattr("ttakkari.artcraft_update.os.replace", replace_then_crash)
+    job = await start_update_job("photocraft", "v0.10.0", True)
+    await asyncio.gather(job.task, return_exceptions=True)
+    artcraft.JOBS.clear()  # 새 서버 세대
+    monkeypatch.setattr("ttakkari.artcraft_update.os.replace", real_replace)
+
+    reconcile_stale_updates()
+
+    assert active.read_bytes() == previous_bytes
+    state = artcraft.load_state()["updates"]["photocraft"]
+    assert state["state"] == "interrupted"
+    assert state["last_status"]["status"] == "interrupted"
 
 
 @pytest.mark.asyncio
@@ -893,6 +1047,118 @@ async def test_update_job_checks_active_task_apps_from_api_db(fake_artcraft_root
         await start_update_job("photocraft", tag=None, confirm=True, db=db)
     assert exc.value.code == "busy"
     assert seen == [db]
+
+
+@pytest.mark.asyncio
+async def test_busy_guard_fails_closed_when_gui_status_cannot_be_read(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import check_busy
+
+    async def unavailable(force: bool = False):
+        raise ArtcraftError(502, "status_failed", "status command unavailable")
+
+    monkeypatch.setattr("ttakkari.artcraft.raw_status", unavailable)
+    with pytest.raises(ArtcraftError) as exc:
+        await check_busy("photocraft")
+    assert exc.value.status == 503
+    assert exc.value.code == "busy_check_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_invalid_tag_is_rejected_before_job_registration(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari.artcraft_update import start_update_job
+
+    actions = []
+    monkeypatch.setattr(
+        artcraft, "_start",
+        lambda kind, action, apps, mode, runner: (
+            actions.append(action),
+            artcraft.Job(id="unexpected", kind=kind, action=action, apps=apps, mode=mode),
+        )[1],
+    )
+    with pytest.raises(ArtcraftError) as exc:
+        await start_update_job("photocraft", "latest; touch /tmp/pwn", True)
+    assert exc.value.status == 422
+    assert actions == []
+
+
+@pytest.mark.asyncio
+async def test_rollback_without_backup_is_rejected_before_job_registration(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import start_rollback_job
+
+    actions = []
+    monkeypatch.setattr(
+        artcraft, "_start",
+        lambda kind, action, apps, mode, runner: (
+            actions.append(action),
+            artcraft.Job(id="unexpected", kind=kind, action=action, apps=apps, mode=mode),
+        )[1],
+    )
+    with pytest.raises(ArtcraftError) as exc:
+        await start_rollback_job("photocraft", True)
+    assert exc.value.status == 404
+    assert exc.value.code == "no_backup_available"
+    assert actions == []
+
+
+@pytest.mark.asyncio
+async def test_foreign_generation_job_blocks_rollback(fake_artcraft_root: Path):
+    from ttakkari.artcraft_update import start_rollback_job
+
+    artcraft.update_state(lambda state: state.setdefault("updates", {}).update({
+        "photocraft": {
+            "state": "running",
+            "current_job_id": "other-process-job",
+            "owner_pid": os.getpid(),
+            "owner_generation": "foreign-generation",
+        },
+    }))
+    with pytest.raises(ArtcraftError) as exc:
+        await start_rollback_job("photocraft", True)
+    assert exc.value.status == 409
+    assert exc.value.code == "busy"
+
+
+@pytest.mark.asyncio
+async def test_same_version_swap_keeps_old_link_target_until_atomic_replace(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import apply_update
+
+    active = fake_artcraft_root / "bin/photocraft-cli"
+    old_target = active.resolve()
+    replacement = _make_zip({
+        "photocraft-cli-0.9.0-macos-universal/photocraft-cli": _make_fake_cli_script("0.9.0"),
+    })
+
+    async def fake_fetch(app: str, tag: str | None = None):
+        return {
+            "asset_name": "photocraft-cli-0.9.0-macos-universal.zip",
+            "zip_bytes": replacement,
+            "sha256_sums": f"{hashlib.sha256(replacement).hexdigest()}  photocraft-cli-0.9.0-macos-universal.zip\n",
+            "version": "0.9.0",
+            "tag": "v0.9.0",
+        }
+
+    real_move = __import__("shutil").move
+    move_sources = []
+
+    def assert_old_target_present(src, dst, *args, **kwargs):
+        assert old_target.is_file()
+        assert active.resolve() == old_target
+        move_sources.append(Path(src))
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    monkeypatch.setattr("ttakkari.artcraft_update.shutil.move", assert_old_target_present)
+    await apply_update("photocraft", "v0.9.0", True)
+
+    assert move_sources
+    assert active.resolve() != old_target
+    assert old_target.is_file()
 
 
 @pytest.mark.asyncio

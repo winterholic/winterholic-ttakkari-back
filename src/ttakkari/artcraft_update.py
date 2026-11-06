@@ -31,10 +31,26 @@ ASSET_CLI_RE = re.compile(r"^[a-z0-9_-]+-cli-\d+\.\d+\.\d+.*macos.*\.zip$")
 
 DOWNLOAD_TIMEOUT = 120.0
 VERIFY_TIMEOUT = 15.0
+PROCESS_GENERATION = uuid.uuid4().hex
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _owner_process_alive(entry: dict[str, Any]) -> bool:
+    pid = entry.get("owner_pid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------- 검증 및 Allowlist
@@ -129,9 +145,9 @@ async def check_busy(
     """앱 GUI 실행 여부, 활성 제작 작업(DB), 타 세대 영속 상태 및 인메모리 Job 상태를 종합 점검하여 충돌 방지.
     
     경계 주의: 인메모리 artcraft.JOBS는 해당 프로세스에서만 보이는 충돌 검사용이다.
-    state.json의 활성 표시로 이미 기록된 업데이트를 감지하고 DB의 active_task_apps(db)로
-    활성 제작 Run을 감지하지만, 상태 확인과 Job 등록은 하나의 원자 연산이 아니므로
-    이 검사만으로 여러 서버 세대 간 동시 시작을 엄밀히 배제한다고 보장하지 않는다.
+    state.json의 활성 표시와 소유 PID/세대를 확인해 이미 등록된 다른 프로세스 Job을 감지하고,
+    DB의 active_task_apps(db)로 활성 제작 Run을 감지한다. 상태 확인과 Job 등록은 하나의
+    원자 연산이 아니므로 이 검사만으로 동시 시작 경쟁까지 엄밀히 배제한다고 보장하지 않는다.
     """
     validate_app(app)
 
@@ -185,7 +201,9 @@ async def check_busy(
 
     # 4. GUI 실행 중 검사
     try:
-        status, _, _ = await artcraft.raw_status(force=False)
+        status, status_error, _ = await artcraft.raw_status(force=False)
+        if status_error:
+            raise ArtcraftError(503, "busy_check_unavailable", f"앱 실행 상태를 확인할 수 없습니다: {status_error}")
         for a in status:
             if a["app"] == app:
                 gui = a.get("gui") or {}
@@ -196,9 +214,11 @@ async def check_busy(
                         f"{app} 앱이 현재 실행 중입니다. 업데이트/롤백 전에 앱을 먼저 종료하세요.",
                     )
     except ArtcraftError as exc:
-        if exc.code == "app_running":
+        if exc.code in ("app_running", "busy_check_unavailable"):
             raise
-        logger.warning("상태 조회 중 오류 발생 (무시하고 계속): %s", exc.message)
+        raise ArtcraftError(503, "busy_check_unavailable", f"앱 실행 상태를 확인할 수 없습니다: {exc.message}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise ArtcraftError(503, "busy_check_unavailable", f"앱 실행 상태를 확인할 수 없습니다: {exc}") from exc
 
 
 # ---------------------------------------------------------------- 릴리스 자산 취득
@@ -235,7 +255,7 @@ async def fetch_release_assets(app: str, tag: str | None = None) -> dict[str, An
 
         for asset in assets:
             name = asset.get("name", "")
-            if "macos" in name and name.endswith(".zip") and "-cli-" in name:
+            if name.startswith(f"{app}-cli-") and "macos" in name and name.endswith(".zip"):
                 cli_asset = asset
             elif name in ("SHA256SUMS.txt", "SHA256SUMS"):
                 sums_asset = asset
@@ -300,8 +320,9 @@ async def fetch_latest_release_info(app: str) -> dict[str, Any]:
     release_info = resp.json()
     cli_assets = [
         asset for asset in release_info.get("assets", [])
-        if "macos" in asset.get("name", "") and asset.get("name", "").endswith(".zip")
-        and "-cli-" in asset.get("name", "")
+        if asset.get("name", "").startswith(f"{app}-cli-")
+        and "macos" in asset.get("name", "")
+        and asset.get("name", "").endswith(".zip")
     ]
     if not cli_assets:
         raise ArtcraftError(404, "asset_not_found", f"{repo} 릴리스에서 macOS CLI zip 자산을 찾을 수 없습니다.")
@@ -383,15 +404,7 @@ async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
                     if "error" in data:
                         return False, f"MCP 에러 응답: {data['error']}"
                     result = data.get("result")
-                    server_info = result.get("serverInfo") if isinstance(result, dict) else None
-                    if (
-                        isinstance(result, dict)
-                        and isinstance(result.get("protocolVersion"), str)
-                        and isinstance(result.get("capabilities"), dict)
-                        and isinstance(server_info, dict)
-                        and isinstance(server_info.get("name"), str)
-                        and isinstance(server_info.get("version"), str)
-                    ):
+                    if isinstance(result, dict) and isinstance(result.get("protocolVersion"), str):
                         return True, None
                     return False, "initialize 성공 result 구조가 올바르지 않습니다."
                 except json.JSONDecodeError:
@@ -436,6 +449,37 @@ def _get_backup_meta(app: str) -> dict[str, Any] | None:
     return None
 
 
+def _get_backup_target(app: str) -> Path | None:
+    meta = _get_backup_meta(app)
+    if not meta:
+        return None
+    target = meta.get("target_binary")
+    if target and Path(target).is_file():
+        return Path(target)
+    original = meta.get("original_target")
+    if original and Path(original).is_file():
+        return Path(original)
+    return None
+
+
+def _restore_swap_journal(app: str, journal: dict[str, Any]) -> None:
+    """중단된 바이너리 스왑 journal의 이전 타깃을 심링크에 복구한다."""
+    root = artcraft.root()
+    symlink_path = root / "bin" / f"{app}-cli"
+    previous = journal.get("previous_binary")
+    if previous:
+        previous_path = Path(previous)
+        if not previous_path.is_file():
+            raise FileNotFoundError(f"이전 바이너리 백업이 없습니다: {previous_path}")
+        temp_link = root / "bin" / f".tmp-recover-{app}-{uuid.uuid4().hex[:8]}"
+        temp_link.symlink_to(previous_path)
+        os.replace(temp_link, symlink_path)
+    elif journal.get("had_previous") is False:
+        symlink_path.unlink(missing_ok=True)
+    else:
+        raise FileNotFoundError("중단된 스왑의 이전 바이너리 정보가 없습니다.")
+
+
 async def apply_update(
     app: str,
     tag: str | None = None,
@@ -447,6 +491,8 @@ async def apply_update(
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
+    if tag is not None:
+        validate_version(tag)
 
     await check_busy(app, exclude_job_id=current_job_id, db=db)
 
@@ -527,10 +573,17 @@ async def apply_update(
             final_dir_name = f"{app}-cli-{new_version}-macos-universal"
         final_dest = app_dist_dir / final_dir_name
 
-        # 동일 버전 재설치 방어: final_dest가 이미 존재하면 즉시 지우지 않고 임시로 보존 이동
+        # 활성 링크 대상은 그대로 둔다. 동일 버전은 새 고유 경로에 설치한 뒤 링크만 원자적으로 교체한다.
         if final_dest.exists():
-            backup_old_dest = app_dist_dir / f".prev-{final_dir_name}-{job_uuid}"
-            shutil.move(str(final_dest), str(backup_old_dest))
+            try:
+                active_target_dir = bool(previous_target and previous_target.is_relative_to(final_dest))
+            except (OSError, ValueError):
+                active_target_dir = False
+            if active_target_dir:
+                final_dest = app_dist_dir / f"{final_dir_name}-{job_uuid}"
+            else:
+                backup_old_dest = app_dist_dir / f".prev-{final_dir_name}-{job_uuid}"
+                shutil.move(str(final_dest), str(backup_old_dest))
 
         if extracted_dir != staging_dir:
             shutil.move(str(extracted_dir), str(final_dest))
@@ -547,6 +600,24 @@ async def apply_update(
         if not new_binary_path:
             raise ArtcraftError(500, "corrupt_package", "설치 대상 바이너리를 찾을 수 없습니다.")
         new_binary_path.chmod(new_binary_path.stat().st_mode | 0o755)
+
+        journal_previous = (
+            preserved_backup_bin if preserved_backup_bin and preserved_backup_bin.is_file()
+            else previous_target if previous_target and previous_target.is_file()
+            else None
+        )
+
+        def mark_swap_journal(state: dict[str, Any]) -> None:
+            entry = state.setdefault("updates", {}).setdefault(app, {})
+            entry["swap_journal"] = {
+                "job_id": current_job_id or job_uuid,
+                "previous_binary": str(journal_previous) if journal_previous else None,
+                "had_previous": previous_target is not None,
+                "candidate_binary": str(new_binary_path),
+                "prepared_at": _now(),
+            }
+
+        artcraft.update_state(mark_swap_journal)
 
         # 4. 원자적 심링크 스왑
         tmp_symlink = root / "bin" / f".tmp-symlink-{app}-{job_uuid}"
@@ -606,6 +677,7 @@ async def apply_update(
                 "last_update": record,
                 "current_job_id": None,
                 "error": None,
+                "swap_journal": None,
             })
 
         artcraft.update_state(mutate_success)
@@ -655,6 +727,7 @@ async def apply_update(
                 "last_update": fail_record,
                 "current_job_id": None,
                 "error": fail_msg,
+                "swap_journal": None,
             })
 
         with artcraft.contextlib.suppress(Exception):
@@ -680,21 +753,18 @@ async def rollback_update(
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
 
+    if _get_backup_target(app) is None:
+        raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
+
     await check_busy(app, exclude_job_id=current_job_id, db=db)
 
     backup_meta = _get_backup_meta(app)
-    if not backup_meta or not backup_meta.get("target_binary"):
+    if not backup_meta:
         raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
 
-    target_binary = None
+    target_binary = _get_backup_target(app)
     # target_binary는 교체 직전 바이트를 복사 보존한 파일이다. original_target은
     # 같은 버전 재설치에서 새 바이트로 덮일 수 있으므로 롤백 원본으로 우선하지 않는다.
-    if backup_meta.get("target_binary") and Path(backup_meta["target_binary"]).is_file():
-        target_binary = Path(backup_meta["target_binary"])
-    else:
-        orig = backup_meta.get("original_target")
-        if orig and Path(orig).is_file():
-            target_binary = Path(orig)
 
     if not target_binary:
         raise ArtcraftError(404, "no_backup_available", "백업된 바이너리가 존재하지 않습니다.")
@@ -742,6 +812,7 @@ async def rollback_update(
                 "last_status": failed_record,
                 "last_update": failed_record,
                 "current_job_id": None,
+                "swap_journal": None,
             })
 
         with artcraft.contextlib.suppress(Exception):
@@ -770,6 +841,7 @@ async def rollback_update(
             "last_update": record,
             "current_job_id": None,
             "error": None,
+            "swap_journal": None,
         })
 
     artcraft.update_state(mutate_rollback_success)
@@ -786,25 +858,38 @@ async def rollback_update(
 # ---------------------------------------------------------------- 상태 조회 및 거짓 성공 방지
 
 def reconcile_stale_updates() -> None:
-    """서버 재시작 시 비정상 종료된 작업을 감지하여 'interrupted'로 정정 (거짓 성공 방지)."""
+    """종료된 세대의 중단 작업을 설치 저널과 함께 복구한다."""
     def mutate(state: dict[str, Any]) -> None:
         updates = state.get("updates") or {}
         for app_name, app_state in updates.items():
             if isinstance(app_state, dict) and app_state.get("state") in ("running", "queued"):
                 job_id = app_state.get("current_job_id")
-                # active JOBS에 해당 job_id가 없으면 서버 재시작으로 유실된 것으로 판단
-                if not job_id or job_id not in artcraft.JOBS or not artcraft.JOBS[job_id].active:
+                local_active = bool(job_id and job_id in artcraft.JOBS and artcraft.JOBS[job_id].active)
+                same_generation = (
+                    app_state.get("owner_pid") == os.getpid()
+                    and app_state.get("owner_generation") == PROCESS_GENERATION
+                )
+                foreign_alive = _owner_process_alive(app_state) and not same_generation
+                if not local_active and not foreign_alive:
+                    recovery_error = None
+                    journal = app_state.get("swap_journal")
+                    if isinstance(journal, dict):
+                        try:
+                            _restore_swap_journal(app_name, journal)
+                            app_state["swap_journal"] = None
+                        except Exception as exc:  # noqa: BLE001
+                            recovery_error = f"중단된 바이너리 복구 실패: {exc}"
                     rec = {
                         "job_id": job_id,
                         "action": app_state.get("action", "update"),
-                        "status": "interrupted",
-                        "error": "서버 재시작으로 작업이 중단되었습니다.",
+                        "status": "failed" if recovery_error else "interrupted",
+                        "error": recovery_error or "서버 재시작으로 작업이 중단되었습니다.",
                         "at": _now(),
                     }
                     history = app_state.setdefault("history", [])
                     history.append(rec)
-                    app_state["state"] = "interrupted"
-                    app_state["error"] = "서버 재시작으로 작업이 중단되었습니다."
+                    app_state["state"] = "failed" if recovery_error else "interrupted"
+                    app_state["error"] = rec["error"]
                     app_state["last_status"] = rec
                     app_state["last_update"] = rec
                     app_state["current_job_id"] = None
@@ -981,6 +1066,8 @@ async def start_update_job(
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
+    if tag is not None:
+        validate_version(tag)
 
     # 사전 종합 충돌 검사 (DB 활성 작업, 영속 상태, 인메모리 Job, GUI 실행)
     await check_busy(app, db=db)
@@ -996,6 +1083,8 @@ async def start_update_job(
                 "action": job.action,
                 "target_version": tag,
                 "started_at": _now(),
+                "owner_pid": os.getpid(),
+                "owner_generation": PROCESS_GENERATION,
             })
 
         artcraft.update_state(mark_running)
@@ -1029,6 +1118,8 @@ async def start_update_job(
                 "action": job.action,
                 "target_version": tag,
                 "created_at": _now(),
+                "owner_pid": os.getpid(),
+                "owner_generation": PROCESS_GENERATION,
             })
 
     artcraft.update_state(mark_queued)
@@ -1044,9 +1135,10 @@ async def start_rollback_job(
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
-
     # 사전 종합 충돌 검사
     await check_busy(app, db=db)
+    if _get_backup_target(app) is None:
+        raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
 
     async def runner(job: artcraft.Job) -> None:
         def mark_running(state: dict[str, Any]) -> None:
@@ -1057,6 +1149,8 @@ async def start_rollback_job(
                 "current_job_id": job.id,
                 "action": job.action,
                 "started_at": _now(),
+                "owner_pid": os.getpid(),
+                "owner_generation": PROCESS_GENERATION,
             })
 
         artcraft.update_state(mark_running)
@@ -1088,6 +1182,8 @@ async def start_rollback_job(
                 "current_job_id": job.id,
                 "action": job.action,
                 "created_at": _now(),
+                "owner_pid": os.getpid(),
+                "owner_generation": PROCESS_GENERATION,
             })
 
     artcraft.update_state(mark_queued)

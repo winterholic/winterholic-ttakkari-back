@@ -1,0 +1,268 @@
+{
+  "kind": "reconstruction",
+  "status": "done",
+  "stage": "infer",
+  "result": null,
+  "result_state": {
+    "source": {
+      "files": [],
+      "status": "unverified"
+    },
+    "execution": {
+      "checks": [],
+      "status": "unverified"
+    },
+    "direct_comparison": {
+      "count": 0,
+      "status": "unverified",
+      "matched": 0,
+      "mismatched": 0,
+      "unverified": 0
+    },
+    "independent_verification": {
+      "run_id": null,
+      "status": "not_required",
+      "verdict": null
+    }
+  },
+  "stages": [
+    {
+      "key": "request",
+      "label": "대상 설명",
+      "status": "done",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "observe",
+      "label": "대상 관찰·근거 수집",
+      "status": "done",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [
+        "evidence/state.txt"
+      ],
+      "notes": []
+    },
+    {
+      "key": "infer",
+      "label": "동작·구조 가설",
+      "status": "done",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [
+        "local state"
+      ],
+      "notes": []
+    },
+    {
+      "key": "implement",
+      "label": "소스코드 재현",
+      "status": "skipped",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "verify",
+      "label": "독립 실행 검증",
+      "status": "skipped",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "deliver",
+      "label": "소스·실행법 전달",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "reconstruction": {
+    "mode": "analyze",
+    "ready": false,
+    "checks": [],
+    "summary": "state finding",
+    "verdict": null,
+    "problems": [],
+    "unknowns": [
+      "cross-device behavior"
+    ],
+    "hypotheses": [
+      "local state"
+    ],
+    "comparisons": [],
+    "limitations": [],
+    "observations": [
+      {
+        "finding": "state persists after restart",
+        "evidence": "evidence/state.txt"
+      }
+    ],
+    "source_files": [],
+    "verification": "not_required",
+    "documentation": {
+      "checks": {
+        "environment": true,
+        "run_command": true,
+        "dependencies": true,
+        "test_command": true
+      },
+      "status": "not_required"
+    },
+    "analysis_ready": true,
+    "execution_ready": false,
+    "direct_comparison": {
+      "count": 0,
+      "status": "unverified",
+      "matched": 0,
+      "mismatched": 0,
+      "unverified": 0
+    }
+  },
+  "latest": {
+    "at": "2026-11-06T16:38:26.911463+00:00",
+    "role": "implement",
+    "report": {
+      "mode": "analyze",
+      "ready": false,
+      "checks": [],
+      "summary": "state finding",
+      "verdict": null,
+      "problems": [],
+      "unknowns": [
+        "cross-device behavior"
+      ],
+      "hypotheses": [
+        "local state"
+      ],
+      "comparisons": [],
+      "limitations": [],
+      "observations": [
+        {
+          "finding": "state persists after restart",
+          "evidence": "evidence/state.txt"
+        }
+      ],
+      "source_files": [],
+      "verification": "not_required",
+      "documentation": {
+        "checks": {
+          "environment": true,
+          "run_command": true,
+          "dependencies": true,
+          "test_command": true
+        },
+        "status": "not_required"
+      },
+      "analysis_ready": true,
+      "execution_ready": false,
+      "direct_comparison": {
+        "count": 0,
+        "status": "unverified",
+        "matched": 0,
+        "mismatched": 0,
+        "unverified": 0
+      }
+    },
+    "run_id": "b4d5c862-1f99-41ce-82a0-5f041762e7a0",
+    "source": {
+      "files": [],
+      "status": "unverified"
+    },
+    "execution": {
+      "checks": [],
+      "status": "unverified"
+    },
+    "comparisons": [],
+    "direct_comparison": {
+      "count": 0,
+      "status": "unverified",
+      "matched": 0,
+      "mismatched": 0,
+      "unverified": 0
+    },
+    "independent_verification": {
+      "run_id": null,
+      "status": "not_required",
+      "verdict": null
+    }
+  },
+  "history": [
+    {
+      "at": "2026-11-06T16:38:26.911463+00:00",
+      "role": "implement",
+      "report": {
+        "mode": "analyze",
+        "ready": false,
+        "checks": [],
+        "summary": "state finding",
+        "verdict": null,
+        "problems": [],
+        "unknowns": [
+          "cross-device behavior"
+        ],
+        "hypotheses": [
+          "local state"
+        ],
+        "comparisons": [],
+        "limitations": [],
+        "observations": [
+          {
+            "finding": "state persists after restart",
+            "evidence": "evidence/state.txt"
+          }
+        ],
+        "source_files": [],
+        "verification": "not_required",
+        "documentation": {
+          "checks": {
+            "environment": true,
+            "run_command": true,
+            "dependencies": true,
+            "test_command": true
+          },
+          "status": "not_required"
+        },
+        "analysis_ready": true,
+        "execution_ready": false,
+        "direct_comparison": {
+          "count": 0,
+          "status": "unverified",
+          "matched": 0,
+          "mismatched": 0,
+          "unverified": 0
+        }
+      },
+      "run_id": "b4d5c862-1f99-41ce-82a0-5f041762e7a0",
+      "source": {
+        "files": [],
+        "status": "unverified"
+      },
+      "execution": {
+        "checks": [],
+        "status": "unverified"
+      },
+      "comparisons": [],
+      "direct_comparison": {
+        "count": 0,
+        "status": "unverified",
+        "matched": 0,
+        "mismatched": 0,
+        "unverified": 0
+      },
+      "independent_verification": {
+        "run_id": null,
+        "status": "not_required",
+        "verdict": null
+      }
+    }
+  ]
+}

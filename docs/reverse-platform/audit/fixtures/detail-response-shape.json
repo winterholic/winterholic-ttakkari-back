@@ -1,0 +1,87 @@
+{
+  "kind": "reconstruction",
+  "status": "queued",
+  "stage": "request",
+  "result": null,
+  "result_state": {
+    "source": {
+      "status": "unverified",
+      "files": []
+    },
+    "execution": {
+      "status": "unverified",
+      "checks": []
+    },
+    "direct_comparison": {
+      "status": "unverified",
+      "count": 0,
+      "matched": 0,
+      "mismatched": 0,
+      "unverified": 0
+    },
+    "independent_verification": {
+      "status": "pending",
+      "run_id": null,
+      "verdict": null
+    }
+  },
+  "stages": [
+    {
+      "key": "request",
+      "label": "대상 설명",
+      "status": "running",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "observe",
+      "label": "대상 관찰·근거 수집",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "infer",
+      "label": "동작·구조 가설",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "implement",
+      "label": "소스코드 재현",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "verify",
+      "label": "독립 실행 검증",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "key": "deliver",
+      "label": "소스·실행법 전달",
+      "status": "pending",
+      "started_at": null,
+      "finished_at": null,
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "reconstruction": null,
+  "latest": {},
+  "history": []
+}

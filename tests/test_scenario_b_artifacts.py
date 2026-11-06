@@ -475,14 +475,17 @@ async def _assert_failed_with_evidence(run_id: uuid.UUID, error_code: str) -> No
         assert links == []
 
 
-def _assert_environment_with_owner(snapshot: dict) -> None:
+def _assert_environment_with_owner(snapshot: dict, *, receipt: dict | None = None) -> None:
     from datetime import datetime
 
     from ttakkari.research.ownership import OWNER_KEY, owner_token, probe
 
     owner = snapshot.get(OWNER_KEY)
     assert isinstance(owner, dict)
-    assert snapshot == {"engine": "test", OWNER_KEY: owner}
+    expected = {"engine": "test", OWNER_KEY: owner}
+    if receipt is not None:
+        expected["research_adapter_receipt"] = receipt
+    assert snapshot == expected
     assert set(owner) == {"contract", "token", "generation_id", "accepted_at"}
     assert owner["contract"] == 1 and owner["generation_id"] is None
     token = owner_token(snapshot)
@@ -616,7 +619,26 @@ async def test_artifact_registration_failure_keeps_measurements_and_removes_only
         assert run.status == ("cancelled" if failure_stage == "cancelled" else "failed")
         assert run.finished_at is not None
         assert run.raw_output == {"transcript": "kept"}
-        _assert_environment_with_owner(run.environment_snapshot)
+        receipt = run.environment_snapshot.get("research_adapter_receipt")
+        if failure_stage == "after_register":
+            assert receipt == {
+                "status": "failed", "error_type": "RuntimeError",
+                "error_message": "registration failed after copying",
+            }
+        elif failure_stage == "during_copy":
+            assert receipt == {
+                "status": "failed", "error_type": "OSError",
+                "error_message": "copy failed after partial write",
+            }
+        elif failure_stage in {"during_flush", "during_commit"}:
+            assert set(receipt) == {"status", "error_type", "error_message"}
+            assert receipt["status"] == "failed"
+            assert receipt["error_type"] == "IntegrityError"
+            assert receipt["error_message"] == run.error_message
+            assert "research_artifacts_study_id_fkey" in receipt["error_message"]
+        else:
+            assert failure_stage == "cancelled" and receipt is None
+        _assert_environment_with_owner(run.environment_snapshot, receipt=receipt)
         rows = list(await db.scalars(select(Measurement).where(Measurement.run_id == run_id)))
         assert [m.value for m in rows] == [0.2]
         assert list(await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == run_id))) == []

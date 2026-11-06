@@ -36,7 +36,10 @@ class _AdmissionDB:
     async def get(self, model, identity, **kwargs):
         self.get_calls.append((model, kwargs))
         if model is Experiment:
-            if kwargs.get("with_for_update"):
+            # A PostgreSQL transaction may issue FOR UPDATE again for a row it
+            # already owns. Keep the cross-session fence, but do not make the
+            # same fake transaction reacquire its non-reentrant asyncio.Lock.
+            if kwargs.get("with_for_update") and not self.locked:
                 await self.shared["lock"].acquire()
                 self.locked = True
             return self.shared["experiment"]
@@ -136,6 +139,33 @@ async def test_start_and_retry_share_experiment_row_admission_lock(monkeypatch, 
     assert sum(row.status == "queued" for row in shared["runs"]) == 1
     assert all(any(model is Experiment and kwargs.get("with_for_update") is True
                    for model, kwargs in db.get_calls) for db in sessions)
+
+
+@pytest.mark.asyncio
+async def test_retry_preserves_original_trial_identity(monkeypatch):
+    shared = _state()
+    original = shared["original"]
+    original_state = (
+        original.status, original.repeat_index, original.seed,
+        original.environment_snapshot.copy(), original.raw_output.copy(),
+    )
+    db = _AdmissionDB(shared, original=original)
+    monkeypatch.setattr(runner, "ExecutionOwner", SimpleNamespace(acquire=lambda: _Owner()))
+    monkeypatch.setattr(runner, "run_experiment_batch", lambda *args, **kwargs: _noop())
+    monkeypatch.setattr("ttakkari.research.planner.validate_experiment_plan", _validate_plan)
+
+    retry = await runner.retry_run(db, original.id, background=False)
+
+    assert (retry.experiment_id, retry.configuration_id, retry.study_id, retry.adapter_id,
+            retry.execution_origin, retry.repeat_index, retry.seed) == (
+        original.experiment_id, original.configuration_id, original.study_id, original.adapter_id,
+        "local_measured", original.repeat_index, original.seed,
+    )
+    assert retry.environment_snapshot["research_retry"] == {
+        "contract": 1, "retry_of_run_id": str(original.id),
+    }
+    assert (original.status, original.repeat_index, original.seed,
+            original.environment_snapshot, original.raw_output) == original_state
 
 
 async def _noop():

@@ -614,3 +614,24 @@ TTK_GATE_KEEP=1 UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-b05-schema-20261107 
 
 - 이 결과는 지정된 기본 계약 및 변경 파일 regression만 확인한다. 70개 전체 failure에 대한 통과, host/process 환경 경로, 운영 DB/E2E를 뜻하지 않는다.
 - 검증 후 남은 변경은 이 문서의 gate 결과뿐이다. fetch/merge/push/deploy는 하지 않았다. 로컬 `origin/main`이 `f75ba35242deb22d755f54388b0a00c723315f28`로 기록돼 있어도 이 Run은 fetch하지 않았으며 원격 상태는 미검증이다. 88a79c4c의 의미 변경도 별도 통합 검토다.
+
+### Research 10건 행동 계약 대조 (후속 단위)
+
+- 시작 확인: running Run은 `회사 코덱스 ai2 (ai2@hyperez.io)` 프로필이고, `/api/accounts`의 유일 동일 이름 enabled 계정은 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`다. 시작 HEAD는 `114fba47ca5857a83b30f7da271367b56a61f07c`, 작업 전 worktree clean이었다.
+- 근거는 기존 `/private/tmp/reverse-full-b05c9053-20261107.log`의 Research 상세 L371–1353에서 필요한 traceback만 읽었다. 전체 검사나 해당 RED 재생성은 하지 않았다.
+- `R-TIME` 4건: `start_experiment_runs()`에서 최초 Experiment `FOR UPDATE` 뒤 `_lock_experiment_admission()`가 같은 DB 세션/트랜잭션으로 다시 같은 행을 잠근다. retry도 `_lock_experiment_admission()`가 Experiment 행을 잠근 다음 plan 검증 후 commit한다. PostgreSQL row lock은 트랜잭션 종료까지 유지하고 같은 트랜잭션이 같은 행에 잠금을 보유할 수 있지만, 테스트 fake는 매 조회마다 비재진입 `asyncio.Lock.acquire()`를 호출해 자기 자신을 기다렸다. fake만 같은 트랜잭션 재획득을 모델링하도록 고쳤다. 별도 fake 세션은 공유 lock으로 상호 배제하며 queued/running 시 409, owner 취득 전 plan 검증, 원본 Run 불변 및 retry의 configuration·repeat_index·seed·retry 링크를 검증한다.
+- `R-PAGE` 1건: `/studies/{id}/resume`의 `pagination.totals` 계약은 `nodes`, `relations`, `experiments`, `configurations`, `runs`, `best_results`, `timeline` 일곱 키다. 500개 후 순회·페이지 크기·전체 ID 유일성·마지막 페이지 quote 보존은 그대로 두고 테스트가 초기 응답부터 일곱 컬렉션을 정확히 계산하도록 고쳤다.
+- `R-SELECT` 1건: 원시 실패는 `retrieval_eval.py:407`의 `doc["text"]`에서 `KeyError`이며 실제 failed run/receipt를 보존한다. 재선택 시 declared environment가 `{"dataset":"A"}`이고 요청도 dataset A일 때 실패 적용 가능성은 `applicable`이어야 하며, B는 `incompatible`, dataset 미지정은 `unknown`이다. 현재 `rules.py`는 `research_adapter_receipt`를 observed environment 조건에서 제거하지 않아 실행 메타데이터가 누락 조건이 되고 A 결과를 `unknown`으로 만든다. 테스트 기대값은 바꾸지 않았다. 제품 변경 제안: `research_adapter_receipt`를 `_EXECUTION_RECEIPT_FIELDS`에 추가해 execution metadata로 걸러낸다. 이 제품 수정은 이 카드의 쓰기 범위 밖이므로 미적용이며 기획 검토 대상으로 보고한다.
+- `R-RECEIPT` 4건: 실패 경로 계약은 environment snapshot의 기존 `engine` 및 `ExecutionOwner`와 함께 `research_adapter_receipt`를 보존한다. after-register는 RuntimeError, during-copy는 OSError, during-flush/commit은 `research_artifacts_study_id_fkey` IntegrityError receipt를 구별해 검증한다. cancellation에는 adapter failure receipt가 없다. 기존 measurement 0.2 보존, ResearchArtifact·Artifact DB row 롤백, 이번 실행이 만든 사본만 정리, 원래 marker·입력 파일 보존 assertion은 유지했다.
+- 변경 범위: 소유 테스트 3개(`test_research_retry_admission_unit.py`, `test_research_resume_pagination.py`, `test_scenario_b_artifacts.py`)와 이 기록뿐이다. selection 테스트는 계약 기대값과 재선택 동작을 유지했고, 제품 `src/`는 바꾸지 않았다. host49·기타 비Research4·원격 `88a79c4c`는 범위 밖이다.
+- 이번 고정 커밋의 표준 기본 gate:
+
+```text
+UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-research-b05-20261107 ./scripts/verify_deploy_gate.sh --commit HEAD --base 114fba47ca5857a83b30f7da271367b56a61f07c
+통과  ruff (변경된 파이썬 3개)
+계약 묶음: 87 passed, 6957 deselected in 24.76s; db reset 87 selective, full/fallback 0
+바뀐 테스트 파일: 27 passed in 2.31s; db reset 27 selective, full/fallback 0
+총 49초 (계약 묶음 30초 목표 초과 경고); exit 0
+```
+
+- 이 기본 gate는 변경된 세 테스트 파일만 실행했으므로 `test_research_selection_failures.py`의 기존 `R-SELECT` 재현을 다시 실행하지 않았다. 그 RED는 고정 b05 로그 L847–866의 기존 실패를 근거로 남겼으며 전체 검사·직접 initdb·별도 pytest는 실행하지 않았다.

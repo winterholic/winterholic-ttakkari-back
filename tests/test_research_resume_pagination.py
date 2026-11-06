@@ -29,7 +29,9 @@ async def test_resume_pages_all_collections_past_500_and_keeps_page_quotes(clien
     url = f'/api/research/studies/{sid}/resume'
     initial = (await client.get(url, headers=auth)).json()
     classes = {'nodes': Node, 'relations': Relation, 'experiments': Experiment, 'timeline': Event}
-    expected = {kind: {row['id'] for row in initial[kind]} for kind in classes}
+    collections = ('nodes', 'relations', 'experiments', 'configurations', 'runs',
+                   'best_results', 'timeline')
+    expected = {kind: {row['id'] for row in initial[kind]} for kind in collections}
     async with sessionmaker()() as db:
         identity = list((await db.execute(text('select current_database(), current_user'))).one())
         supplied = make_url(os.environ['TTAKKARI_TEST_DB'])
@@ -59,16 +61,16 @@ async def test_resume_pages_all_collections_past_500_and_keeps_page_quotes(clien
         await db.commit()
     default = (await client.get(url, headers=auth)).json()
     assert default['truncated'] is True and all(len(default[kind]) == 500 for kind in classes)
-    seen = {kind: [] for kind in classes}
+    seen = {kind: [] for kind in collections}
     pages = []
     for offset in range(0, 600, 100):
         response = await client.get(url, headers=auth, params={'offset': offset, 'limit': 100})
         assert response.status_code == 200, response.text
         page = response.json()
-        assert all(len(page[kind]) <= 100 for kind in classes)
+        assert all(len(page[kind]) <= 100 for kind in collections)
         assert page['pagination']['offset'] == offset and page['pagination']['limit'] == 100
         assert page['pagination']['totals'] == {kind: len(ids) for kind, ids in expected.items()}
-        for kind in classes:
+        for kind in collections:
             seen[kind].extend(row['id'] for row in page[kind])
         pages.append(page)
     for kind, ids in seen.items():

@@ -448,6 +448,27 @@ class LlmInferenceAdapter:
                 runs=repetitions,
             )
 
+            # Ensure prompt and full output trajectories are preserved
+            if isinstance(bench_result, dict):
+                bench_result["prompt"] = bench_prompt
+                trajectories = []
+                for r in bench_result.get("runs", []):
+                    if isinstance(r, dict):
+                        full_content = r.get("content")
+                        preview = r.get("output_preview")
+                        trajectories.append({
+                            "repetition": r.get("run"),
+                            "prompt": bench_prompt,
+                            "response": full_content if full_content is not None else preview or "",
+                            "response_completeness": "full" if full_content is not None else "preview_fallback",
+                            "response_source": "content" if full_content is not None else "output_preview",
+                            "prompt_tokens": r.get("prompt_tokens"),
+                            "generated_tokens": r.get("generated_tokens"),
+                            "wall_seconds": r.get("wall_seconds"),
+                            "tokens_per_second": r.get("generation_tokens_per_second"),
+                        })
+                bench_result["sample_trajectories"] = trajectories
+
             total_wall = time.monotonic() - started_wall
             run_result = AdapterRunResult(
                 status="succeeded",

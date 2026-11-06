@@ -7,10 +7,12 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import select, text
+from fastapi import HTTPException
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 
 from ttakkari.db import sessionmaker
+from ttakkari.models import utcnow
 from ttakkari.research import runner
 from ttakkari.research.adapters.base import AdapterRunResult
 from ttakkari.research.models import Configuration, Experiment, Run, Study
@@ -38,6 +40,92 @@ async def seed_runs(count=1):
         db.add_all(runs)
         await db.commit()
         return exp.id, [run.id for run in runs]
+
+
+async def test_idempotency_key_deduplicates_concurrent_and_sequential_batch_requests(monkeypatch):
+    async with sessionmaker()() as db:
+        identity = (await db.execute(text("select current_database(), current_user"))).one()
+        expected = make_url(os.environ["TTAKKARI_TEST_DB"])
+        assert identity[0] == expected.database != "ttakkari"
+        study = Study(title="Idempotency", goal="Deduplicate replay", scope="personal")
+        db.add(study)
+        await db.flush()
+        exp = Experiment(study_id=study.id, title="Idempotency", hypothesis="One request is one batch",
+                         rationale="Synthetic unit of work", adapter="probe", adapter_id="probe",
+                         strategy="single", state="queued")
+        db.add(exp)
+        await db.flush()
+        cfg = Configuration(experiment_id=exp.id, label="one", config_hash=uuid.uuid4().hex, parameters={})
+        other_cfg = Configuration(experiment_id=exp.id, label="two", config_hash=uuid.uuid4().hex, parameters={})
+        db.add_all([cfg, other_cfg])
+        await db.commit()
+        exp_id, cfg_id, other_cfg_id = exp.id, cfg.id, other_cfg.id
+
+    class FakeOwner:
+        def __init__(self):
+            self.metadata = {"contract": 1, "token": str(uuid.uuid4()), "generation_id": None,
+                             "accepted_at": "test"}
+
+        def snapshot(self, environment, **kwargs):
+            return {**(environment or {}), runner.OWNER_KEY: self.metadata}
+
+        def close(self):
+            pass
+
+    async def no_validate(db, experiment):
+        return None
+
+    async def no_execute(*args, **kwargs):
+        await asyncio.sleep(0.02)
+
+    monkeypatch.setattr(runner, "_validate_experiment_plan_for_execution", no_validate)
+    monkeypatch.setattr(runner, "ExecutionOwner", type("OwnerFactory", (), {"acquire": staticmethod(FakeOwner)}))
+    monkeypatch.setattr(runner, "run_experiment_batch", no_execute)
+
+    async def submit():
+        async with sessionmaker()() as db:
+            return await runner.start_experiment_runs(
+                db, exp_id, [cfg_id], background=True, idempotency_key="replay-key-0001",
+            )
+
+    first, concurrent = await asyncio.gather(submit(), submit())
+    assert len(first) == len(concurrent) == 1
+    assert first[0].id == concurrent[0].id
+    pending = runner._ACTIVE_TASKS.get(exp_id)
+    if pending:
+        await pending
+
+    async with sessionmaker()() as db:
+        row = await db.get(Run, first[0].id)
+        row.status = "succeeded"
+        await db.commit()
+    async with sessionmaker()() as db:
+        replay = await runner.start_experiment_runs(
+            db, exp_id, [cfg_id], background=True, idempotency_key="replay-key-0001",
+        )
+    assert [run.id for run in replay] == [first[0].id]
+    async with sessionmaker()() as db:
+        with pytest.raises(HTTPException) as conflict:
+            await runner.start_experiment_runs(
+                db, exp_id, [other_cfg_id], background=True, idempotency_key="replay-key-0001",
+            )
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail == "research_idempotency_key_reused_with_different_arguments"
+
+    async with sessionmaker()() as db:
+        fresh = await runner.start_experiment_runs(
+            db, exp_id, [cfg_id], background=True, idempotency_key="deliberate-new-0002",
+        )
+    assert len(fresh) == 1 and fresh[0].id != first[0].id
+    assert fresh[0].configuration_id == cfg_id
+    assert fresh[0].repeat_index == first[0].repeat_index
+    assert fresh[0].seed == first[0].seed
+    pending = runner._ACTIVE_TASKS.get(exp_id)
+    if pending:
+        await pending
+    async with sessionmaker()() as db:
+        count = await db.scalar(select(func.count()).select_from(Run).where(Run.experiment_id == exp_id))
+        assert count == 2
 
 
 class ProbeAdapter:
@@ -188,8 +276,8 @@ async def test_budget_expiry_preserves_adapter_cleanup_output(client):
         assert [row.status for row in rows] == ["cancelled", "cancelled"]
         assert all(row.error_code == "budget_exceeded" for row in rows)
         assert rows[0].raw_output == {"cleanup": "done"}
-        assert rows[0].environment_snapshot == {"execution": "synthetic_adapter",
-            "research_execution_owner": rows[0].environment_snapshot["research_execution_owner"]}
+        assert rows[0].environment_snapshot["execution"] == "synthetic_adapter"
+        assert rows[0].environment_snapshot["research_budget_receipt"]["expired"] is True
     assert uuid.UUID(rows[0].environment_snapshot["research_execution_owner"]["token"])
     assert adapter.calls == 1
 
@@ -311,9 +399,34 @@ async def test_cancelled_batch_closes_unstarted_runs(client):
         rows = [await db.get(Run, rid) for rid in ids]
         assert [row.status for row in rows] == ["cancelled", "cancelled"]
         assert all(row.finished_at is not None for row in rows)
-        assert rows[1].error_code == "batch_cancelled"
+        assert rows[1].error_code == "cancelled"
         assert (await db.get(Experiment, exp_id)).state == "cancelled"
     assert adapter.calls == 1
+
+
+@pytest.mark.parametrize("cancel_code", [None, "memory_guard_stopped"])
+async def test_any_cancellation_stops_the_rest_of_the_batch(client, monkeypatch, cancel_code):
+    exp_id, ids = await seed_runs(2)
+    executed = []
+
+    async def cancel_first(run_id, **kwargs):
+        executed.append(run_id)
+        async with sessionmaker()() as db:
+            row = await db.get(Run, run_id)
+            row.status = "cancelled"
+            row.error_code = cancel_code
+            row.finished_at = utcnow()
+            await db.commit()
+            return row
+
+    monkeypatch.setattr(runner, "execute_run_instance", cancel_first)
+    await runner.run_experiment_batch(exp_id, ids, ProbeAdapter())
+
+    assert executed == [ids[0]]
+    async with sessionmaker()() as db:
+        rows = [await db.get(Run, rid) for rid in ids]
+        assert [row.status for row in rows] == ["cancelled", "cancelled"]
+        assert rows[1].error_code == (cancel_code or "unknown_cancellation")
 
 
 async def test_cancel_request_survives_late_success_with_raw_evidence(client):

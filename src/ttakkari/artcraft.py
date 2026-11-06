@@ -429,6 +429,8 @@ def _conflict(kind: str, apps: list[str], mode: str | None) -> Job | None:
             return job
         if "full" in (mode, job.mode) and {kind, job.kind} == {"smoke", "gui"}:
             return job
+        if "update" in (kind, job.kind) and (set(apps) & set(job.apps) or "full" in (mode, job.mode) or job.kind == "smoke"):
+            return job
     return None
 
 

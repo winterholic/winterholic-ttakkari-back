@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from ttakkari import artcraft, artcraft_tasks
+from ttakkari import artcraft, artcraft_tasks, artcraft_update
 from ttakkari import artcraft_catalog as catalog
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
@@ -126,6 +126,59 @@ async def put_bug(bug_id: str, body: BugIn, _: User) -> dict:
 async def agent_config(_: User) -> dict:
     try:
         return await artcraft.agent_config()
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
+
+
+# ---------------------------------------------------------------- 앱별 업데이트 관리
+
+class UpdateIn(BaseModel):
+    tag: str | None = Field(default=None, max_length=50)
+    confirm: bool = False
+
+
+class RollbackIn(BaseModel):
+    confirm: bool = False
+
+
+@router.get("/apps/{app}/update")
+async def app_update(app: str, _: User, response: Response, refresh: bool = False) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return artcraft_update.get_app_update_info(app, refresh=refresh)
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/apps/{app}/update", status_code=202)
+async def update_apply(app: str, body: UpdateIn, request: Request, _: User, db: Db) -> dict:
+    try:
+        job = artcraft_update.start_update_job(app, body.tag, body.confirm)
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
+    record(db, action="artcraft.update.apply", target_type="artcraft_app", detail={"app": app, "tag": body.tag},
+           ip=client_ip(request))
+    await db.commit()
+    return job.public()
+
+
+@router.post("/apps/{app}/update/rollback", status_code=202)
+async def update_rollback(app: str, body: RollbackIn, request: Request, _: User, db: Db) -> dict:
+    try:
+        job = artcraft_update.start_rollback_job(app, body.confirm)
+    except artcraft.ArtcraftError as exc:
+        raise _http(exc) from exc
+    record(db, action="artcraft.update.rollback", target_type="artcraft_app", detail={"app": app},
+           ip=client_ip(request))
+    await db.commit()
+    return job.public()
+
+
+@router.get("/apps/{app}/update/status")
+async def update_status(app: str, _: User, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return artcraft_update.get_update_state(app)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
 

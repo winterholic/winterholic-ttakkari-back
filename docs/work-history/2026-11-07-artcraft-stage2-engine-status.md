@@ -185,3 +185,24 @@ $ git diff --check
 - 보조 검사: `git diff --check` → 출력 없음, exit 0. `../back/.venv/bin/ruff check src/ttakkari/collector_precise_runtime.py tests/test_collector_manage.py` → `All checks passed!`. release archive의 `python -m pytest -q --timeout=120 -m contract` → `87 passed, 6953 deselected in 9.96s`. release archive의 `python -m pytest -q --timeout=120 tests/test_collector_manage.py` → `10 passed in 2.29s` (DB reset: 10 selective, forced full/fallback 0).
 - push는 실행하지 않았다. 미실행 명령 `git push origin HEAD:refs/heads/main`; 사유: controller 보안 gate 실패. 따라서 `git ls-remote` 원격 full SHA 비교도 하지 않았고 request_backend_deploy를 호출하지 않았다. 예약 ID/상태 없음. `skip_tests=false` 예약, 독립 controller test, active generation 전환 확인, 운영 제작 시험은 미실행이다. 원 목표 R1–R4 review도 계속 남아 있다.
 - source SHA=`548df81697be1bb4e87e6efb145f68a6fb03ee55`; 이 검사에 사용한 source/document checkout SHA=`2cef9c1ada00c3fe38b00744928b1a6aa22b2299` (gate 이후 별도 문서 수정 전). 이 기록은 gate 실패와 보류 이유를 보존하며 push/배포 승인을 의미하지 않는다.
+
+## 수용된 ArtCraft 수정 push 및 controller 배포 예약 (2026-11-07)
+
+- Run API `/api/runs/43980791-25d8-426d-8ceb-a44c95fd830a`: `running`, `engine=codex`, `model=gpt-6-luna`, `effort=high`, `profile=회사 코덱스 ai2 (ai2@hyperez.io)`. GitHub 계정 목록은 `winterholic` active, `daeseon-dev` inactive였다. 계정 변경은 하지 않았다.
+- 시작 checkout은 `release/artcraft-main-20261107`, clean, HEAD=`63e17f8485530f959c9fee5399199f70c76401b4`, `origin/main=f75ba35242deb22d755f54388b0a00c723315f28`, ahead 4였다. `git fetch origin main`은 `f75ba352…`를 가져왔고 `git merge --no-edit origin/main`은 `Already up to date.`였다. source `548df81697be1bb4e87e6efb145f68a6fb03ee55`와 pin/lookup/updater 누적 source를 보존했다. 직전 Codex Run의 보안 gate 실패 `10 failed, 913 passed`는 재실행하지 않았고 권한 probe도 반복하지 않았다.
+- 현재 Run 주입 DB를 read-only로 확인했다. SQL `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` 결과는 `ttakkari_test / ttk_test / 51097 / /tmp/ttakkari-run-test-99596-c7e72490/data`; database/user/port는 주입 URL identity와 일치했다. 정확한 부모 marker `/tmp/ttakkari-run-test-99596-c7e72490/run-test-cluster.marker`의 `run_id=43980791-25d8-426d-8ceb-a44c95fd830a`, `port=51097`, `folder=ttakkari-run-test-99596-c7e72490`, `owner_pid=99596`이 일치했다. DB URL은 출력하지 않았고 다른 Run DB/new initdb는 사용하지 않았다.
+- 정상 push 명령: `env -u TTK_SKIP_GATE UV_CACHE_DIR=/private/tmp/ttakkari-run-43980791-artcraft-push/uv-cache TMPDIR=/private/tmp/ttakkari-run-43980791-artcraft-push git push origin HEAD:refs/heads/main`. 현재 Run 전용 tmp cache를 사용했고 pre-push hook을 그대로 실행했다. hook은 대상 `63e17f848553`, 기준 `f75ba35242de`, 변경 파일 3개를 검사했다.
+
+```text
+ruff (변경된 파이썬 2개): 통과
+계약 묶음: 87 passed, 6953 deselected; DB reset 87 selective, forced full/fallback 0
+바뀐 테스트 파일 1개: 10 passed; DB reset 10 selective, forced full/fallback 0
+총 36초; 사전 검증 통과; push exit 0
+To https://github.com/winterholic/winterholic-ttakkari-back.git
+   f75ba352..63e17f84  HEAD -> main
+```
+
+- push 후 `git rev-parse HEAD`와 `git ls-remote origin refs/heads/main`은 모두 full SHA `63e17f8485530f959c9fee5399199f70c76401b4`였다. `git status --short --branch`는 clean/ahead-behind 없음, `git diff --check HEAD^ HEAD`는 출력 없이 exit 0이었다.
+- 지원 배포 API 요청 `request_backend_deploy(revision="63e17f8485530f959c9fee5399199f70c76401b4")`의 receipt는 `id=28000cc3-93f6-438e-a469-27646c4b082e`, `revision=63e17f8485530f959c9fee5399199f70c76401b4`, `skip_tests=false`, `status=requested`, `strategy=generations`, `error=null`이었다. 이 요청은 예약 접수다. 상태 polling이나 추가 상태 조회는 하지 않았다.
+- 범위 분리: 직전 Codex 로컬 full security gate 실패는 과거 기록 그대로 유지한다. 이번 정상 pre-push 검사는 계약 87건과 변경 collector 테스트 10건만 통과했고 전체 release suite 통과를 뜻하지 않는다. 호스트 controller의 필수 security gate 및 전체 테스트는 예약 controller가 수행할 미완료 단계다. 배포 active 확인과 실제 ArtCraft 제작·업데이트/rollback 운영 시험, R1–R4 review도 남아 있다. provider 호출·서비스 재시작은 하지 않았다.
+- source SHA=`548df81697be1bb4e87e6efb145f68a6fb03ee55`; main에 push한 SHA=`63e17f8485530f959c9fee5399199f70c76401b4`. 이 단락은 push/예약 후의 경로 지정 문서 증거이며, 아래 문서 전용 커밋은 제품 변경이 아니다.

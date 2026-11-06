@@ -171,6 +171,10 @@ def test_unknown_inputs_negative_controls():
     assert classify_table("galactic_wormhole_records") == "unmatched"
     assert classify_migration("9999_brand_new_alien_migration") == "unmatched"
     assert classify_config("brand_new_unseen_alien_setting_field") == "unmatched"
+    assert (
+        classify_source_file("src/ttakkari/subscription_contract.py")
+        == "domain.knowledge_rag"
+    )
     assert classify_source_file("src/ttakkari/alien/teleport.py") == "unmatched"
     assert "unknown_plane.alien_module" not in MODULE_DEFINITIONS
 

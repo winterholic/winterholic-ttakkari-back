@@ -2156,6 +2156,9 @@ def classify_source_file(rel_path: str) -> str:
     # Domain Plane
     if "/context/" in p or "/api/library_insight" in p:
         return "domain.memory_ontology"
+    # Shared diagnosis contract exposed by the KB subscription transport.
+    if p.endswith("/subscription_contract.py"):
+        return "domain.knowledge_rag"
     if (
         "/kb/" in p
         or "knowledge" in p

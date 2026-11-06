@@ -303,6 +303,14 @@ $ git rev-parse HEAD && git rev-parse origin/main
 - 같은 full SHA로 `request_backend_deploy`를 호출했다. 반환: reservation ID `27cb9619-68cc-42a5-b944-be72a1463b2b`, revision `6dbc20ba70af9e32fa3806298d42f47dbe36589d`, status `requested`, `skip_tests=false`, strategy `generations`. 수락은 배포 성공이 아니며 상태를 폴링하지 않았다.
 - 이번 푸시의 integration 문서 기록 커밋 및 원격 결과는 이 절 다음의 문서 전용 변경으로 남긴다. backend 배포 후보는 위 제품 SHA다. production DB/API·실제 ReverseJob agent E2E·운영 health는 배포 뒤 별도 실행 단위다.
 
+## Catalog seed 배포 게이트 fixture 후속 (2026-11-07)
+
+- 지원 배포 로그에서 예약 `27cb9619-68cc-42a5-b944-be72a1463b2b`는 revision `6dbc20ba70af9e32fa3806298d42f47dbe36589d`의 release pytest 단계에서 실패했다. 실제 실패는 `tests/test_catalog_seed_readiness_path.py::test_system_seed_promotion_rejected_and_user_scope_promotion_preserved_across_sync`이며, `src/ttakkari/research/service.py:1049`의 `best_result_metric_not_measured_on_selected_run`이다. 컨트롤러 결과는 `1 failed, 871 passed, 2 skipped`였다. 운영 revision `529022861120e86f80400ffaec53dd3f3f7f81c6`은 유지됐다.
+- 실패 fixture는 `Run(status="succeeded")`만 만들고 측정값을 넣지 않은 채 `adopt_best_result(... primary_metric="decode_tps")`를 호출했다. 추가로 Experiment의 `primary_metric`은 기본값 `recall_at_k`에 맡겨져 있었다. 서비스는 선택 Run·Experiment·Configuration·요청 primary metric으로 Measurement를 조회하고 유한 값을 요구한다. 따라서 제품의 measured-metric 게이트가 아니라 fixture 계약이 원인이다.
+- fixture는 Experiment의 primary metric을 `decode_tps`로 명시하고 같은 Experiment·Configuration·succeeded Run을 참조하는 유한 `Measurement(metric_key="decode_tps", value=42.0)`를 추가한다. system seed 직접 승격 거부, BestResult 채택, user-scope 승격 및 catalog sync 보존의 기존 assertion은 유지했다. 제품 service와 모델은 수정하지 않았다.
+- 직전 Codex command sandbox Run `a94b4a34-f071-4702-9638-fec98b12dc46`에서 수정 전 단일 테스트를 실행했으나 `tests/conftest.py → pg_sandbox.start_cluster() → initdb` 단계의 `CalledProcessError` exit 1로 pytest가 수집 전 중단됐다. 출력에는 initdb stderr가 없었다. 이 실행에서 `shmget` 오류를 관측했다고 기록하지 않는다. 이번 준비에서도 해당 DB 초기화를 유발하는 검사는 재실행하지 않았다.
+- DB/API GREEN은 미실행이다. DB 비의존 확인은 `../back/.venv/bin/python -c 'import ast; from pathlib import Path; p=Path("tests/test_catalog_seed_readiness_path.py"); ast.parse(p.read_text(encoding="utf-8"), filename=str(p)); print("AST OK:", p)'`에서 `AST OK: tests/test_catalog_seed_readiness_path.py`, `git diff --check -- tests/test_catalog_seed_readiness_path.py docs/reverse-platform/integration-20261107.md`에서 exit 0·출력 없음이다. 독립 검토 후 정규 배포 로그 및 운영 health/ReverseJob E2E 확인이 필요하다. 이 준비 단위에서는 push와 배포를 하지 않는다.
+
 ### Push gate 진단·교정
 
 - 첫 일반 push에서 pre-push 게이트가 `/Users/winterholic/.cache/uv` 초기화를 `Operation not permitted`로 거부했다. 게이트를 생략하지 않고 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-189-integration`으로 허용된 cache 경로를 지정해 다시 실행했다.

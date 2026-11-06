@@ -124,6 +124,32 @@ $ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-0464247c ./scripts/verify_deploy_g
 - fixture `Measurement(metric_key="decode_tps", value=42.0)` 및 system seed 거부·user-scope promotion/sync assertion은 merge 뒤에도 남아 있다.
 - Ruff 정적 검사 `../back/.venv/bin/ruff check tests/test_catalog_seed_readiness_path.py`와 `git diff --check`는 통과했다.
 - 현재 Run의 `TTAKKARI_TEST_DB`는 URL의 `ttakkari_test`, `127.0.0.1:52972`와 실제 접속 `current_database=ttakkari_test`, `current_user=ttk_test`가 일치한다. 하지만 `/tmp/ttakkari-run-test-*/run-test-cluster.marker` 12개 중 현재 Run UUID 또는 port `52972`를 소유한 marker는 0개였다. 소유 증명 없는 DB에서 suite를 쓰지 않으므로 집중 DB 검사와 `verify_deploy_gate.sh`는 실행하지 않았다. 이전 `8f04cb3c` 시점 검사 결과를 현재 SHA의 통과로 재사용하지 않는다.
+- 최신 변경 source commit은 `cc6236b185db2d5bef0716659a5bfba182b3fc16`, 부모는 통합 merge `b9f0179144f58c08421d8ee15fd2b8c52fe57fff`, 기준 main은 `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`다. source diff는 테스트 48 줄 변경과 evidence 갱신 130 줄이며 `git diff --check <base> <source>` 통과. `../back/.venv/bin/ruff check tests/test_catalog_seed_readiness_path.py` 출력은 `All checks passed!`다.
+
+최신 main 기준 source diff (service.py에는 변경 없음):
+
+```diff
+ tests/test_catalog_seed_readiness_path.py
+@@
++from typing import ClassVar
+@@ six mock adapter classes
+-        supported_methods = [...]
+-        supported_parameters = [...]
++        supported_methods: ClassVar[list[str]] = [...]
++        supported_parameters: ClassVar[list[str]] = [...]
+@@ system seed adoption fixture
++        db.add(Measurement(
++            run_id=succ_run.id,
++            experiment_id=exp.id,
++            configuration_id=cfg.id,
++            metric_key="decode_tps",
++            metric_label="Decode tokens/s",
++            value=42.0,
++            unit="tokens/s",
++        ))
+```
+
+이번 통합 source의 집중 DB 검사와 필수 gate는 owner marker 확인 실패 때문에 **미실행**이다. 이 SHA의 gate 통과를 주장하지 않는다. 후속 evidence-only 문서 tip은 source commit과 별도로 최종 보고에서 구분한다.
 
 ## 범위
 

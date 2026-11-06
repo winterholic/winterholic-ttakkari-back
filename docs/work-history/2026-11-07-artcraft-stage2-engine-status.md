@@ -66,3 +66,38 @@ $ git diff --check
 - 코드·테스트 커밋: `88a79c4c` (`fix(collector): preserve unavailable precise engine status`).
 - 원격 진행분을 포함한 merge commit: `616f2731`; source `88a79c4c`와 최신 fetch `eafb7176…`를 포함한다. 이 evidence 기록을 포함할 후속 문서 commit은 별도 SHA다.
 - 예약 대상 `2f14f897…`은 이전 배포 시도이며, 이번 수정은 독립 검증 전이다. 이 작업에서는 push 및 새 배포 예약을 하지 않았다.
+
+## 후속 원격 통합 및 최종 직렬 검증
+
+- 작업 중 `origin/main`이 `eafb7176…`에서 `491312b8aaf7cec05674dfe90785f4f31d91495b`를 거쳐 `006130ab2c160d2672fc011560cf27d893a60645`로 더 전진했다. 새 변경에는 `precise_eval`의 분류를 다시 무조건 `waiting`으로 되돌리고 그 assertion을 `waiting`으로 완화하는 내용, 앞서 작성한 이 evidence 파일 삭제, 그리고 migration 기준을 `0077_artcraft_account_pin`으로 조정하는 `tests/test_collection_scope_merge.py`가 포함됐다.
+- `git merge --no-commit origin/main` 후 source/test 상태는 이 작업의 unavailable 분류, unavailable 기대 및 음성 반례를 보존했고, incoming runtime 격리 fixture와 scope-merge 테스트·통합 문서는 포함했다. 삭제 대상으로 들어온 이 evidence 파일도 보존했다. `origin/main`의 latest full SHA `006130ab…`는 merge에 포함됐다.
+- 최종 merge tree 직렬 회귀:
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_mission_stage2.py tests/test_collection_missions.py -q -x --timeout=120 -p no:cacheprovider
+................................................                         [100%]
+db reset: 48 selective (avg 13.1/132 tables), 0 forced full, 0 fell back to full
+48 passed in 6.24s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_subscription.py unit_tests/test_collection_mission_empty_result.py unit_tests/test_collection_triage_ml.py -q -x --timeout=120 -p no:cacheprovider
+..................................................                       [100%]
+50 passed in 1.13s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_scope_merge.py -q -x --timeout=120 -p no:cacheprovider
+.............                                                            [100%]
+db reset: 13 selective (avg 4.3/132 tables), 0 forced full, 0 fell back to full
+13 passed in 1.16s
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_mission_stage2.py::test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_everywhere tests/test_collection_mission_stage2.py::test_ready_engine_with_unavailable_scope_stays_waiting -q -x --timeout=120 -p no:cacheprovider
+..                                                                       [100%]
+db reset: 2 selective (avg 7.5/132 tables), 0 forced full, 0 fell back to full
+2 passed in 1.07s
+
+$ ../back/.venv/bin/ruff check src/ttakkari/collector/precise_eval.py tests/test_collection_mission_stage2.py
+All checks passed!
+
+$ git diff --check
+[no output; exit 0]
+```
+
+- Final source/test commit remains `88a79c4c…`; cumulative local merge commit is `2f8b5644811521c1e5cc4dbc0b2fcce5bb40dda4`, with latest origin `006130ab…` included. This evidence update creates a separate documentation tip. Both local commits remain unpushed as requested.

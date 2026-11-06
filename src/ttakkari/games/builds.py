@@ -344,6 +344,13 @@ async def _follow_or_pin(db: AsyncSession, game: GameProject, build: GameBuild) 
     사용자가 롤백으로 오래된 빌드에 고정해 두었으면 그 고정을 유지한다. 롤백으로 복구한 빌드는 항상 활성이 된다."""
     previous = await db.scalar(select(GameBuild.id).where(GameBuild.game_id == game.id, GameBuild.status == "succeeded", GameBuild.seq < build.seq)
                                .order_by(GameBuild.seq.desc()).limit(1))
+    if build.run_id is not None and build.restored_from_id is None and previous is not None:
+        run = await db.get(Run, build.run_id)
+        if run and ((run.usage or {}).get("game") or {}).get("review_before_apply") is True:
+            # 첫 성공본은 즉시 플레이한다. 이후 후보는 현재 플레이 버전을 덮지 않는다.
+            if game.active_build_id is None:
+                game.active_build_id = previous
+            return
     if build.restored_from_id is not None or game.active_build_id is None or game.active_build_id == previous:
         game.active_build_id = build.id
 

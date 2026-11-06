@@ -62,6 +62,7 @@ async def test_modify_request_becomes_worker_session_and_run_with_game_context(c
     r = await ask(client, auth, game["id"], kind="modify")
     assert r.status_code == 202, r.text
     req = r.json()
+    assert req["instruction"] == "점프를 20% 가볍게"
     assert req["kind"] == "modify" and req["lock"] == "verified" and req["build_id"] == game["build"]["id"]
     sess = (await client.get(f"/api/sessions/{req['session_id']}", headers=auth)).json()
     assert sess["kind"] == "worker" and sess["workspace_id"] == game["workspace_id"] and sess["engine"] == "auto"
@@ -76,6 +77,7 @@ async def test_modify_request_becomes_worker_session_and_run_with_game_context(c
     assert done["status"] in {"succeeded", "failed"}
     assert any("점프를 20% 가볍게" in json.dumps(c["argv"], ensure_ascii=False) for c in agent_calls())  # 엔진까지 전달됐다
     listed = (await client.get(f"/api/games/{game['id']}/requests", headers=auth)).json()
+    assert listed[0]["instruction"] == "점프를 20% 가볍게"
     assert [x["run_id"] for x in listed] == [req["run_id"]] and listed[0]["lock"] == "verified"
     other = await new_game(client, auth, "wk-other")
     assert (await client.get(f"/api/games/{other['id']}/requests", headers=auth)).json() == []  # 다른 게임의 요청은 섞이지 않는다

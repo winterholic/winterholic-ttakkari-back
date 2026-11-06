@@ -37,6 +37,7 @@ from ttakkari.games.contract import (
     register_game_project,
     verify_lock,
 )
+from ttakkari.games.discovery import discover_projects
 from ttakkari.games.feedback import FeedbackIn
 from ttakkari.models import GameBuild, GameProject, Run, Workspace
 from ttakkari.runs.manager import _background
@@ -189,6 +190,7 @@ class RequestIn(BaseModel):
     instruction: str = Field(min_length=1, max_length=game_worker.MAX_INSTRUCTION_CHARS)
     build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드(feedback 이 있으면 feedback.build_id)
     auto_build: bool = True  # develop·modify 가 성공하면 소스가 바뀐 경우 자동으로 빌드한다(ADR 0054). verify 는 항상 빌드하지 않는다
+    review_before_apply: bool = False  # 스튜디오 UI는 새 빌드를 후보로 두고 사용자가 선택한 뒤 적용한다.
     feedback: FeedbackIn | None = None  # 스크린샷 Artifact 참조(원본·주석본)·정규화 영역·캡처 빌드. worker prompt 에 열 수 있는 파일 경로로 전달된다
 
 
@@ -197,6 +199,7 @@ class RequestOut(BaseModel):
     run_id: uuid.UUID
     status: str
     kind: str
+    instruction: str = ""  # 사용자가 적은 요청의 요약. 시스템 프롬프트는 반환하지 않는다.
     build_id: uuid.UUID | None
     lock: str  # verified | tampered | unapproved | unreadable — 요청 시점의 잠금 결정 상태
     lock_after: str | None = None  # 같은 값 집합. Run 이 끝난 시점의 상태라 worker 가 승인된 잠금 결정을 바꿨으면 tampered. 끝나기 전이면 None
@@ -291,6 +294,33 @@ async def register_game(body: GameRegisterIn, _: User, db: Db, request: Request)
     record(db, action="game.register", target_type="game", target_id=game.id, detail={"slug": game.slug}, ip=client_ip(request))
     await db.commit()
     return _game_out(game, None)
+
+
+class GameCandidateOut(BaseModel):
+    slug: str
+    name: str
+    engine_id: str | None
+    game_id: str | None
+    can_register: bool
+    issues: list[str]
+
+
+class GameDiscoveryOut(BaseModel):
+    candidates: list[GameCandidateOut]
+    has_more: bool
+
+
+@router.get("/discover", response_model=GameDiscoveryOut)
+async def discover_games(_: User, db: Db, limit: int = Query(100, ge=1, le=100)) -> dict:
+    """연결 후보를 읽기 전용으로 진단한다. 사용자 인증이 필요하다."""
+    rows = (await db.scalars(select(GameProject))).all()
+    registered = {g.slug: str(g.id) if g.archived_at is None else None for g in rows}
+    try:
+        return await asyncio.to_thread(discover_projects, registered, limit)
+    except GameContractError as e:
+        raise _http(e) from e
+    except OSError as e:
+        raise HTTPException(409, {"code": "discovery_unavailable", "message": "게임 폴더를 읽지 못했어요. 잠시 후 다시 확인해 주세요."}) from e
 
 
 @router.post("/create", response_model=GameCreateOut, status_code=201)
@@ -482,6 +512,7 @@ async def play_game(game_id: uuid.UUID, body: PlayIn, _: User, db: Db, request: 
 def _request_out(run: Run) -> RequestOut:
     tag = (run.usage or {}).get(game_worker.USAGE_KEY) or {}
     return RequestOut(session_id=run.session_id, run_id=run.id, status=str(run.status), kind=tag.get("kind", ""),
+                      instruction=game_versions.instruction_of(run.prompt or ""),
                       build_id=tag.get("build_id"), lock=tag.get("lock", ""), lock_after=tag.get("lock_after"),
                       auto_build_result=tag.get("auto_build_result"), created_at=run.created_at)
 
@@ -492,7 +523,8 @@ async def request_work(game_id: uuid.UUID, body: RequestIn, _: User, db: Db, req
     game = await _game(db, game_id)
     try:
         _sess, run = await game_worker.start_request(db, game, kind=body.kind, instruction=body.instruction, build_id=body.build_id,
-                                                     feedback=body.feedback, ip=client_ip(request), auto_build=body.auto_build)
+                                                     feedback=body.feedback, ip=client_ip(request), auto_build=body.auto_build,
+                                                     review_before_apply=body.review_before_apply)
     except GameContractError as e:
         raise _http(e) from e
     await db.refresh(run)

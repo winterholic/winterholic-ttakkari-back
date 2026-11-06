@@ -56,6 +56,25 @@ async def test_succeeded_develop_run_builds_once_and_links_run(client, auth, fak
     assert len(await all_builds(game["id"])) == 1
 
 
+async def test_review_candidate_keeps_current_build_until_user_selects_it(client, auth, fake_adapter):  # noqa: F811
+    game = await new_game(client, auth, "ab-review")
+    first = await autobuild.after_run(await make_run(game, tag_extra={"review_before_apply": True}))
+    assert first is not None and first.status == "succeeded"
+    root = game_dir("ab-review")
+    (root / "a.txt").write_text("candidate")
+    git(root, "commit", "-qam", "candidate")
+    second = await autobuild.after_run(await make_run(game, kind="modify", tag_extra={"review_before_apply": True}))
+    assert second is not None and second.status == "succeeded"
+    shown = (await client.get(f"/api/games/{game['id']}", headers=auth)).json()
+    assert shown["active_build_id"] == str(first.id)
+    assert shown["last_build"]["id"] == str(second.id)
+    adopted = await client.post(f"/api/games/{game['id']}/rollback", headers=auth,
+                               json={"build_id": str(second.id), "restore_source": False, "confirm": True})
+    assert adopted.status_code == 200
+    assert adopted.json()["active_build_id"] == str(second.id)
+    assert git(root, "log", "-1", "--format=%s") == "candidate"
+
+
 async def test_new_commit_or_dirty_tree_builds_again(client, auth, fake_adapter):  # noqa: F811
     game = await new_game(client, auth, "ab-change")
     assert await autobuild.after_run(await make_run(game)) is not None

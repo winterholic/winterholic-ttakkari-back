@@ -682,3 +682,10 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 - `reuse_existing=true`와 `request_key`를 함께 주면 422다. 명시적인 별도 복구 요청은 기존 request_key 계약을 유지하며, 같은 키와 다른 입력은 409다. 별도 복구 시도도 같은 topic_key로 연결된다.
 - 다시 실행·추가·보충 수집은 기존 mission 제어 API를 사용하고 그 mission의 실행 회차에 남긴다. `runs` 상세는 최근 20회차, `run_count`는 전체 회차 수다.
 - 현재 수집의 적재량은 이전 시도와 합산하지 않는다. 과거 오류로 적재된 문서를 현재 수집의 성과로 표시하지 않기 위함이다.
+
+## 게임 스튜디오 연결·후보 검토 (2026-11-07)
+
+- 사용자 전용 `GET /api/games/discover?limit=100`: 허용된 games_root 바로 아래를 읽기 전용으로 진단한다. `{candidates:[{slug,name,engine_id,game_id,can_register,issues}],has_more}`. limit 1~100. 이미 등록된 게임은 game_id를 제공하며 can_register=false다. 설정 미비·미지원 엔진·심볼릭 링크는 연결 불가 사유를 반환한다. 프로젝트 코드를 실행하지 않으며 플레이 호환성을 보증하지 않는다. 실제 등록은 기존 `POST /api/games`를 사용한다.
+- 요청 응답의 `instruction`은 기존 프롬프트에서 사용자 요청 부분만 추출한 200자 요약이다. 시스템 프롬프트는 반환하지 않는다.
+- `POST /api/games/{id}/requests`의 선택적 `review_before_apply`(기본 false): true인 요청의 자동 빌드는 첫 성공본 이후 현재 활성 버전을 바꾸지 않고 후보로 남는다. 자동 타입 수리에도 전달한다. 기존 기본 호출 계약은 유지하며 스튜디오 UI는 true를 지정한다.
+- 후보의 플레이는 기존 `POST /api/games/{id}/play {build_id}`로 하고, 사용자 선택 후 적용은 `POST /api/games/{id}/rollback {build_id,restore_source:false,confirm:true}`를 재사용한다. 후보 확인 중 기존 활성 버전과 소스는 변경하지 않는다. 저장 데이터는 별도 호환성 확인 대상이다.

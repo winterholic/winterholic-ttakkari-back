@@ -64,7 +64,8 @@ async def _repair_if_typecheck_failed(run_id: uuid.UUID, build: GameBuild) -> No
             return
         try:
             await game_worker.start_request(db, game, kind="modify", instruction=game_worker.REPAIR_INSTRUCTION, build_id=None,
-                                            origin=RunOrigin.system, auto_build=True, repair_attempt=attempt + 1)
+                                            origin=RunOrigin.system, auto_build=True, repair_attempt=attempt + 1,
+                                            review_before_apply=tag.get("review_before_apply") is True)
             await db.commit()
         except Exception:  # 접수 실패가 빌드 결과를 바꾸지 않는다
             await db.rollback()

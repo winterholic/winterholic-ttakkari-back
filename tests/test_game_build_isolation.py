@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -363,12 +364,14 @@ async def test_build_does_not_modify_original_project_or_leave_containers(runner
         "package.json": package_json("node build.js"),
         "build.js": "const fs=require('fs');fs.writeFileSync('package.json','tampered');fs.writeFileSync('planted.txt','x');"
                     "fs.mkdirSync('dist');fs.writeFileSync('dist/index.html','<title>x</title>');",
-        ".git/HEAD": "ref: refs/heads/main",
     })
+    await asyncio.to_thread(subprocess.run, ["git", "init", "-q", str(project)], check=True)
+    git_before = await asyncio.to_thread(subprocess.check_output, ["git", "-C", str(project), "status", "--porcelain"])
     before = (project / "package.json").read_text()
     res = await runner.build_project(project, work, uid("orig1"))
     assert res.success, res.log
     assert (project / "package.json").read_text() == before
+    assert await asyncio.to_thread(subprocess.check_output, ["git", "-C", str(project), "status", "--porcelain"]) == git_before
     assert not (project / "planted.txt").exists() and not (project / "node_modules").exists() and not (project / "dist").exists()
     assert not (work / uid("orig1") / "src").exists()  # 스테이징 정리
     assert containers(uid("orig1")) == ""

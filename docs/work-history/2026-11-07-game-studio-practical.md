@@ -23,7 +23,9 @@ Git 저장소의 스테이징은 추적 파일과 무시되지 않은 새 파일
 
 산출물의 index.html을 추가 확인하니 `/assets/...` 절대 경로가 남아 있었다. 스튜디오 origin은 `/p/<token>/...` 경로만 허용하므로 첫 JS/CSS 요청이 호환되지 않는다(코드·산출물 대조, 브라우저 플레이 미실행). 잘못된 성공 안내를 막기 위해 게시 전에 script/link의 루트 자산 경로를 거부하고 Vite base와 코드 경로 수정 안내를 제공한다. RED는 거부 회귀 2 failed(예외가 발생하지 않음), 상대 경로 대조 1 passed였다.
 
-최신 통합 회귀: `TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src ../back/.venv/bin/python -m pytest tests/test_game_studio_kit.py tests/test_game_discovery.py tests/test_game_autobuild.py tests/test_game_rollback.py tests/test_game_worker_flow.py tests/test_api_games.py tests/test_game_adapter.py tests/test_game_build_snapshots.py -q --tb=short` → 78 passed in 71.07s. 마지막 게시 경로 guard의 좁은 시험은 별도 실행한다.
+최신 통합 회귀: `TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src ../back/.venv/bin/python -m pytest tests/test_game_studio_kit.py tests/test_game_discovery.py tests/test_game_autobuild.py tests/test_game_rollback.py tests/test_game_worker_flow.py tests/test_api_games.py tests/test_game_adapter.py tests/test_game_build_snapshots.py -q --tb=short` → 78 passed in 71.07s. 마지막 소스 복사·게시 경로 guard의 좁은 시험은 8 passed in 0.95s다.
+
+푸시 전 검증은 기본 uv 캐시 접근이 Codex 명령 샌드박스에서 거부되어, 허용된 `/private/tmp/uv-cache-ttk-gamestudio`로 캐시 위치를 정해 실행했다. 캐시 검증을 우회하지 않았다. 계약 시험 85 passed 뒤 변경 파일 시험은 73 passed / 1 failed였고, 실패는 `.git/HEAD`만 흉내 낸 기존 fixture가 실제 Git 인벤토리 조회에서 거부된 것이다. fixture를 `git init`으로 만들고 빌드 전후 Git 상태 불변도 확인하도록 보강했다. 해당 격리 시험은 수정 뒤 1 passed였다. 최종 푸시 시 전체 impacted 게이트를 다시 실행한다.
 
 ## 이어갈 일
 

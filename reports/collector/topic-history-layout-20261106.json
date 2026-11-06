@@ -1,0 +1,1426 @@
+{
+  "environment": "local synthetic fixture; actual Missions.tsx and design system CSS; configured ttakkari_browser",
+  "measurements": [
+    {
+      "label": "주제·390x844",
+      "url": "http://127.0.0.1:5416/verify-collect-topics.html?check=final390",
+      "at": "2026-11-06T14:44:17.342Z",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "coverage": {
+        "mode": "fullPage",
+        "viewportH": 844,
+        "docH": 844,
+        "measuredH": 844,
+        "innerHidden": 0,
+        "unmeasuredPx": 0,
+        "ratio": 1,
+        "innerScroll": []
+      },
+      "findings": [
+        {
+          "kind": "control-ratio",
+          "targets": [
+            22,
+            23,
+            24,
+            30,
+            35,
+            33,
+            38,
+            40
+          ],
+          "detail": "상하:좌우 패딩 비율이 4종 (0.06, 1, 0.67, 0.17)"
+        },
+        {
+          "kind": "heading-lineheight",
+          "targets": [
+            19
+          ],
+          "detail": "제목 행간 1.6 — 본문값 상속으로 보인다 (글자 32px / 줄상자 51px)",
+          "n": 1
+        }
+      ],
+      "counts": {
+        "control-ratio": 1,
+        "heading-lineheight": 1
+      },
+      "blindSpots": null,
+      "elements": [
+        {
+          "selector": "html",
+          "tag": "html",
+          "text": "import { injectIntoGlobalHook } from \"/@react-refresh\";\ninje",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 702.28125,
+            "top": 0,
+            "right": 390,
+            "bottom": 702.28125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "html > body",
+          "tag": "body",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 702.28125,
+            "top": 0,
+            "right": 390,
+            "bottom": 702.28125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root",
+          "tag": "div",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 702.28125,
+            "top": 0,
+            "right": 390,
+            "bottom": 702.28125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main",
+          "tag": "main",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 644.6875,
+            "top": 0,
+            "right": 390,
+            "bottom": 644.6875,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main > p",
+          "tag": "p",
+          "text": "로컬 검증 · 합성 데이터",
+          "rect": {
+            "x": 16,
+            "y": 16,
+            "w": 358,
+            "h": 22.390625,
+            "top": 16,
+            "right": 374,
+            "bottom": 38.390625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > h1",
+          "tag": "h1",
+          "text": "수집 관리",
+          "rect": {
+            "x": 16,
+            "y": 59.828125,
+            "w": 358,
+            "h": 51.1875,
+            "top": 59.828125,
+            "right": 374,
+            "bottom": 111.015625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div",
+          "tag": "div",
+          "text": "주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.AI",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 358,
+            "h": 496.234375,
+            "top": 132.453125,
+            "right": 374,
+            "bottom": 628.6875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav",
+          "tag": "nav",
+          "text": "주제실행 내역새 수집",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 358,
+            "h": 44,
+            "top": 132.453125,
+            "right": 374,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "주제",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 61.6875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 77.6875,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역",
+          "rect": {
+            "x": 85.6875,
+            "y": 132.453125,
+            "w": 93.5625,
+            "h": 44,
+            "top": 132.453125,
+            "right": 179.25,
+            "bottom": 176.453125,
+            "left": 85.6875
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(3)",
+          "tag": "button",
+          "text": "새 수집",
+          "rect": {
+            "x": 187.25,
+            "y": 132.453125,
+            "w": 79.71875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 266.96875,
+            "bottom": 176.453125,
+            "left": 187.25
+          }
+        },
+        {
+          "selector": "#root > main > div > section",
+          "tag": "section",
+          "text": "수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.AI Harness En",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 436.234375,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 628.6875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div",
+          "tag": "div",
+          "text": "수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 77.078125,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 269.53125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > h2",
+          "tag": "h2",
+          "text": "수집 주제",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 24.296875,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 216.75,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > p",
+          "tag": "p",
+          "text": "주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.",
+          "rect": {
+            "x": 16,
+            "y": 224.75,
+            "w": 358,
+            "h": 44.78125,
+            "top": 224.75,
+            "right": 374,
+            "bottom": 269.53125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1)",
+          "tag": "article",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서수집 중 · 현재 적재 127건실행 ",
+          "rect": {
+            "x": 16,
+            "y": 281.53125,
+            "w": 358,
+            "h": 167.578125,
+            "top": 281.53125,
+            "right": 374,
+            "bottom": 449.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1) > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서수집 중 · 현재 적재 127건",
+          "rect": {
+            "x": 16,
+            "y": 281.53125,
+            "w": 358,
+            "h": 115.578125,
+            "top": 281.53125,
+            "right": 374,
+            "bottom": 397.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(1) > button:nth-of-type(1) > strong",
+          "tag": "strong",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+          "rect": {
+            "x": 33,
+            "y": 298.53125,
+            "w": 324,
+            "h": 51.1875,
+            "top": 298.53125,
+            "right": 357,
+            "bottom": 349.71875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(1) > button:nth-of-type(1) > span",
+          "tag": "span",
+          "text": "수집 중 · 현재 적재 127건",
+          "rect": {
+            "x": 33,
+            "y": 357.71875,
+            "w": 142.328125,
+            "h": 22.390625,
+            "top": 357.71875,
+            "right": 175.328125,
+            "bottom": 380.109375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1) > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역 3건",
+          "rect": {
+            "x": 16,
+            "y": 405.109375,
+            "w": 113.3125,
+            "h": 44,
+            "top": 405.109375,
+            "right": 129.3125,
+            "bottom": 449.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2)",
+          "tag": "article",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서수집 중 · 현재 적재 56건실행 내역 3건",
+          "rect": {
+            "x": 16,
+            "y": 461.109375,
+            "w": 358,
+            "h": 167.578125,
+            "top": 461.109375,
+            "right": 374,
+            "bottom": 628.6875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2) > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서수집 중 · 현재 적재 56건",
+          "rect": {
+            "x": 16,
+            "y": 461.109375,
+            "w": 358,
+            "h": 115.578125,
+            "top": 461.109375,
+            "right": 374,
+            "bottom": 576.6875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(2) > button:nth-of-type(1) > strong",
+          "tag": "strong",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서",
+          "rect": {
+            "x": 33,
+            "y": 478.109375,
+            "w": 324,
+            "h": 51.1875,
+            "top": 478.109375,
+            "right": 357,
+            "bottom": 529.296875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(2) > button:nth-of-type(1) > span",
+          "tag": "span",
+          "text": "수집 중 · 현재 적재 56건",
+          "rect": {
+            "x": 33,
+            "y": 537.296875,
+            "w": 137.140625,
+            "h": 22.390625,
+            "top": 537.296875,
+            "right": 170.140625,
+            "bottom": 559.6875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2) > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역 3건",
+          "rect": {
+            "x": 16,
+            "y": 584.6875,
+            "w": 113.3125,
+            "h": 44,
+            "top": 584.6875,
+            "right": 129.3125,
+            "bottom": 628.6875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > footer",
+          "tag": "footer",
+          "text": "화면 계측",
+          "rect": {
+            "x": 0,
+            "y": 644.6875,
+            "w": 390,
+            "h": 57.59375,
+            "top": 644.6875,
+            "right": 390,
+            "bottom": 702.28125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > footer > button",
+          "tag": "button",
+          "text": "화면 계측",
+          "rect": {
+            "x": 16,
+            "y": 663.6875,
+            "w": 65.828125,
+            "h": 22,
+            "top": 663.6875,
+            "right": 81.828125,
+            "bottom": 685.6875,
+            "left": 16
+          }
+        }
+      ]
+    },
+    {
+      "label": "주제·1440x900",
+      "url": "http://127.0.0.1:5416/verify-collect-topics.html?check=final",
+      "at": "2026-11-06T14:43:58.057Z",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "coverage": {
+        "mode": "fullPage",
+        "viewportH": 900,
+        "docH": 900,
+        "measuredH": 900,
+        "innerHidden": 0,
+        "unmeasuredPx": 0,
+        "ratio": 1,
+        "innerScroll": []
+      },
+      "findings": [
+        {
+          "kind": "control-ratio",
+          "targets": [
+            22,
+            23,
+            24,
+            30,
+            35,
+            33,
+            38,
+            40
+          ],
+          "detail": "상하:좌우 패딩 비율이 4종 (0.06, 1, 0.67, 0.17)"
+        },
+        {
+          "kind": "heading-lineheight",
+          "targets": [
+            19
+          ],
+          "detail": "제목 행간 1.6 — 본문값 상속으로 보인다 (글자 32px / 줄상자 51px)",
+          "n": 1
+        }
+      ],
+      "counts": {
+        "control-ratio": 1,
+        "heading-lineheight": 1
+      },
+      "blindSpots": null,
+      "elements": [
+        {
+          "selector": "html",
+          "tag": "html",
+          "text": "import { injectIntoGlobalHook } from \"/@react-refresh\";\ninje",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 524.703125,
+            "top": 0,
+            "right": 1440,
+            "bottom": 524.703125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "html > body",
+          "tag": "body",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 524.703125,
+            "top": 0,
+            "right": 1440,
+            "bottom": 524.703125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root",
+          "tag": "div",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 524.703125,
+            "top": 0,
+            "right": 1440,
+            "bottom": 524.703125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main",
+          "tag": "main",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 ",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 467.109375,
+            "top": 0,
+            "right": 1440,
+            "bottom": 467.109375,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main > p",
+          "tag": "p",
+          "text": "로컬 검증 · 합성 데이터",
+          "rect": {
+            "x": 16,
+            "y": 16,
+            "w": 1408,
+            "h": 22.390625,
+            "top": 16,
+            "right": 1424,
+            "bottom": 38.390625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > h1",
+          "tag": "h1",
+          "text": "수집 관리",
+          "rect": {
+            "x": 16,
+            "y": 59.828125,
+            "w": 1408,
+            "h": 51.1875,
+            "top": 59.828125,
+            "right": 1424,
+            "bottom": 111.015625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div",
+          "tag": "div",
+          "text": "주제실행 내역새 수집수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.AI",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 1408,
+            "h": 318.65625,
+            "top": 132.453125,
+            "right": 1424,
+            "bottom": 451.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav",
+          "tag": "nav",
+          "text": "주제실행 내역새 수집",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 1408,
+            "h": 44,
+            "top": 132.453125,
+            "right": 1424,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "주제",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 61.6875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 77.6875,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역",
+          "rect": {
+            "x": 85.6875,
+            "y": 132.453125,
+            "w": 93.5625,
+            "h": 44,
+            "top": 132.453125,
+            "right": 179.25,
+            "bottom": 176.453125,
+            "left": 85.6875
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(3)",
+          "tag": "button",
+          "text": "새 수집",
+          "rect": {
+            "x": 187.25,
+            "y": 132.453125,
+            "w": 79.71875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 266.96875,
+            "bottom": 176.453125,
+            "left": 187.25
+          }
+        },
+        {
+          "selector": "#root > main > div > section",
+          "tag": "section",
+          "text": "수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.AI Harness En",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 1408,
+            "h": 258.65625,
+            "top": 192.453125,
+            "right": 1424,
+            "bottom": 451.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div",
+          "tag": "div",
+          "text": "수집 주제주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 1408,
+            "h": 54.6875,
+            "top": 192.453125,
+            "right": 1424,
+            "bottom": 247.140625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > h2",
+          "tag": "h2",
+          "text": "수집 주제",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 1408,
+            "h": 24.296875,
+            "top": 192.453125,
+            "right": 1424,
+            "bottom": 216.75,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > p",
+          "tag": "p",
+          "text": "주제별 현재 수집을 보여줍니다. 이전 시도는 실행 내역에서 볼 수 있습니다.",
+          "rect": {
+            "x": 16,
+            "y": 224.75,
+            "w": 1408,
+            "h": 22.390625,
+            "top": 224.75,
+            "right": 1424,
+            "bottom": 247.140625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1)",
+          "tag": "article",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서수집 중 · 현재 적재 127건실행 ",
+          "rect": {
+            "x": 16,
+            "y": 259.140625,
+            "w": 1408,
+            "h": 89.984375,
+            "top": 259.140625,
+            "right": 1424,
+            "bottom": 349.125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1) > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서수집 중 · 현재 적재 127건",
+          "rect": {
+            "x": 16,
+            "y": 259.140625,
+            "w": 1286.6875,
+            "h": 89.984375,
+            "top": 259.140625,
+            "right": 1302.6875,
+            "bottom": 349.125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(1) > button:nth-of-type(1) > strong",
+          "tag": "strong",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+          "rect": {
+            "x": 33,
+            "y": 276.140625,
+            "w": 379.921875,
+            "h": 25.59375,
+            "top": 276.140625,
+            "right": 412.921875,
+            "bottom": 301.734375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(1) > button:nth-of-type(1) > span",
+          "tag": "span",
+          "text": "수집 중 · 현재 적재 127건",
+          "rect": {
+            "x": 33,
+            "y": 309.734375,
+            "w": 142.328125,
+            "h": 22.390625,
+            "top": 309.734375,
+            "right": 175.328125,
+            "bottom": 332.125,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(1) > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역 3건",
+          "rect": {
+            "x": 1310.6875,
+            "y": 282.125,
+            "w": 113.3125,
+            "h": 44,
+            "top": 282.125,
+            "right": 1424,
+            "bottom": 326.125,
+            "left": 1310.6875
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2)",
+          "tag": "article",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서수집 중 · 현재 적재 56건실행 내역 3건",
+          "rect": {
+            "x": 16,
+            "y": 361.125,
+            "w": 1408,
+            "h": 89.984375,
+            "top": 361.125,
+            "right": 1424,
+            "bottom": 451.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2) > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서수집 중 · 현재 적재 56건",
+          "rect": {
+            "x": 16,
+            "y": 361.125,
+            "w": 1286.6875,
+            "h": 89.984375,
+            "top": 361.125,
+            "right": 1302.6875,
+            "bottom": 451.109375,
+            "left": 16
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(2) > button:nth-of-type(1) > strong",
+          "tag": "strong",
+          "text": "로보틱스·피지컬 AI 종합 기술 백과사전 구축 연구 지시서",
+          "rect": {
+            "x": 33,
+            "y": 378.125,
+            "w": 352.609375,
+            "h": 25.59375,
+            "top": 378.125,
+            "right": 385.609375,
+            "bottom": 403.71875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "main > div > section > article:nth-of-type(2) > button:nth-of-type(1) > span",
+          "tag": "span",
+          "text": "수집 중 · 현재 적재 56건",
+          "rect": {
+            "x": 33,
+            "y": 411.71875,
+            "w": 137.140625,
+            "h": 22.390625,
+            "top": 411.71875,
+            "right": 170.140625,
+            "bottom": 434.109375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > article:nth-of-type(2) > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역 3건",
+          "rect": {
+            "x": 1310.6875,
+            "y": 384.109375,
+            "w": 113.3125,
+            "h": 44,
+            "top": 384.109375,
+            "right": 1424,
+            "bottom": 428.109375,
+            "left": 1310.6875
+          }
+        },
+        {
+          "selector": "#root > footer",
+          "tag": "footer",
+          "text": "화면 계측",
+          "rect": {
+            "x": 0,
+            "y": 467.109375,
+            "w": 1440,
+            "h": 57.59375,
+            "top": 467.109375,
+            "right": 1440,
+            "bottom": 524.703125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > footer > button",
+          "tag": "button",
+          "text": "화면 계측",
+          "rect": {
+            "x": 16,
+            "y": 486.109375,
+            "w": 65.828125,
+            "h": 22,
+            "top": 486.109375,
+            "right": 81.828125,
+            "bottom": 508.109375,
+            "left": 16
+          }
+        }
+      ]
+    },
+    {
+      "label": "실행 내역·390x844",
+      "url": "http://127.0.0.1:5416/verify-collect-topics.html?history=h3",
+      "at": "2026-11-06T14:44:49.496Z",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "coverage": {
+        "mode": "fullPage",
+        "viewportH": 844,
+        "docH": 859,
+        "measuredH": 859,
+        "innerHidden": 0,
+        "unmeasuredPx": 0,
+        "ratio": 1,
+        "innerScroll": []
+      },
+      "findings": [
+        {
+          "kind": "control-ratio",
+          "targets": [
+            22,
+            23,
+            24,
+            29,
+            34,
+            38,
+            43
+          ],
+          "detail": "상하:좌우 패딩 비율이 3종 (0.06, 1, 0.17)"
+        },
+        {
+          "kind": "heading-lineheight",
+          "targets": [
+            19
+          ],
+          "detail": "제목 행간 1.6 — 본문값 상속으로 보인다 (글자 32px / 줄상자 51px)",
+          "n": 1
+        }
+      ],
+      "counts": {
+        "control-ratio": 1,
+        "heading-lineheight": 1
+      },
+      "blindSpots": null,
+      "elements": [
+        {
+          "selector": "html",
+          "tag": "html",
+          "text": "import { injectIntoGlobalHook } from \"/@react-refresh\";\ninje",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 858.90625,
+            "top": 0,
+            "right": 390,
+            "bottom": 858.90625,
+            "left": 0
+          }
+        },
+        {
+          "selector": "html > body",
+          "tag": "body",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집AI Harness Engineering 종합 기술 백",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 858.90625,
+            "top": 0,
+            "right": 390,
+            "bottom": 858.90625,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root",
+          "tag": "div",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집AI Harness Engineering 종합 기술 백",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 858.90625,
+            "top": 0,
+            "right": 390,
+            "bottom": 858.90625,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main",
+          "tag": "main",
+          "text": "로컬 검증 · 합성 데이터수집 관리주제실행 내역새 수집AI Harness Engineering 종합 기술 백",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 390,
+            "h": 801.3125,
+            "top": 0,
+            "right": 390,
+            "bottom": 801.3125,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > main > p",
+          "tag": "p",
+          "text": "로컬 검증 · 합성 데이터",
+          "rect": {
+            "x": 16,
+            "y": 16,
+            "w": 358,
+            "h": 22.390625,
+            "top": 16,
+            "right": 374,
+            "bottom": 38.390625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > h1",
+          "tag": "h1",
+          "text": "수집 관리",
+          "rect": {
+            "x": 16,
+            "y": 59.828125,
+            "w": 358,
+            "h": 51.1875,
+            "top": 59.828125,
+            "right": 374,
+            "bottom": 111.015625,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div",
+          "tag": "div",
+          "text": "주제실행 내역새 수집AI Harness Engineering 종합 기술 백과사전 구축 지시서 · 실행 내역각",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 358,
+            "h": 652.859375,
+            "top": 132.453125,
+            "right": 374,
+            "bottom": 785.3125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav",
+          "tag": "nav",
+          "text": "주제실행 내역새 수집",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 358,
+            "h": 44,
+            "top": 132.453125,
+            "right": 374,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "주제",
+          "rect": {
+            "x": 16,
+            "y": 132.453125,
+            "w": 61.6875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 77.6875,
+            "bottom": 176.453125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "실행 내역",
+          "rect": {
+            "x": 85.6875,
+            "y": 132.453125,
+            "w": 93.3125,
+            "h": 44,
+            "top": 132.453125,
+            "right": 179,
+            "bottom": 176.453125,
+            "left": 85.6875
+          }
+        },
+        {
+          "selector": "#root > main > div > nav > button:nth-of-type(3)",
+          "tag": "button",
+          "text": "새 수집",
+          "rect": {
+            "x": 187,
+            "y": 132.453125,
+            "w": 79.71875,
+            "h": 44,
+            "top": 132.453125,
+            "right": 266.71875,
+            "bottom": 176.453125,
+            "left": 187
+          }
+        },
+        {
+          "selector": "#root > main > div > section",
+          "tag": "section",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서 · 실행 내역각 시도의 상태와 적재",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 592.859375,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 785.3125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div",
+          "tag": "div",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서 · 실행 내역각 시도의 상태와 적재",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 101.375,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 293.828125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > h2",
+          "tag": "h2",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서 · 실행 내역",
+          "rect": {
+            "x": 16,
+            "y": 192.453125,
+            "w": 358,
+            "h": 48.59375,
+            "top": 192.453125,
+            "right": 374,
+            "bottom": 241.046875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > div > p",
+          "tag": "p",
+          "text": "각 시도의 상태와 적재량을 따로 표시합니다. 이전 시도의 자료는 그대로 보존됩니다.",
+          "rect": {
+            "x": 16,
+            "y": 249.046875,
+            "w": 358,
+            "h": 44.78125,
+            "top": 249.046875,
+            "right": 374,
+            "bottom": 293.828125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(1)",
+          "tag": "button",
+          "text": "현재 수집AI Harness Engineering 종합 기술 백과사전 구축 지시서수집 중 · 이 시도 적재 ",
+          "rect": {
+            "x": 16,
+            "y": 305.828125,
+            "w": 358,
+            "h": 169.953125,
+            "top": 305.828125,
+            "right": 374,
+            "bottom": 475.78125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(1) > small",
+          "tag": "small",
+          "text": "현재 수집",
+          "rect": {
+            "x": 33,
+            "y": 322.828125,
+            "w": 44.90625,
+            "h": 19.1875,
+            "top": 322.828125,
+            "right": 77.90625,
+            "bottom": 342.015625,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(1) > strong",
+          "tag": "strong",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+          "rect": {
+            "x": 33,
+            "y": 350.015625,
+            "w": 324,
+            "h": 51.1875,
+            "top": 350.015625,
+            "right": 357,
+            "bottom": 401.203125,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(1) > span",
+          "tag": "span",
+          "text": "수집 중 · 이 시도 적재 127건 · 1회차",
+          "rect": {
+            "x": 33,
+            "y": 409.203125,
+            "w": 200.375,
+            "h": 22.390625,
+            "top": 409.203125,
+            "right": 233.375,
+            "bottom": 431.59375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(1) > time",
+          "tag": "time",
+          "text": "2026. 11. 6. 오후 8:02:00",
+          "rect": {
+            "x": 33,
+            "y": 439.59375,
+            "w": 137,
+            "h": 19.1875,
+            "top": 439.59375,
+            "right": 170,
+            "bottom": 458.78125,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(2)",
+          "tag": "button",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서중지됨 · 이 시도 적재 0건 · 1",
+          "rect": {
+            "x": 16,
+            "y": 487.78125,
+            "w": 358,
+            "h": 142.765625,
+            "top": 487.78125,
+            "right": 374,
+            "bottom": 630.546875,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(2) > strong",
+          "tag": "strong",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+          "rect": {
+            "x": 33,
+            "y": 504.78125,
+            "w": 324,
+            "h": 51.1875,
+            "top": 504.78125,
+            "right": 357,
+            "bottom": 555.96875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(2) > span",
+          "tag": "span",
+          "text": "중지됨 · 이 시도 적재 0건 · 1회차",
+          "rect": {
+            "x": 33,
+            "y": 563.96875,
+            "w": 182.796875,
+            "h": 22.390625,
+            "top": 563.96875,
+            "right": 215.796875,
+            "bottom": 586.359375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(2) > time",
+          "tag": "time",
+          "text": "2026. 11. 6. 오후 6:00:00",
+          "rect": {
+            "x": 33,
+            "y": 594.359375,
+            "w": 137.296875,
+            "h": 19.1875,
+            "top": 594.359375,
+            "right": 170.296875,
+            "bottom": 613.546875,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(3)",
+          "tag": "button",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서중지됨 · 이 시도 적재 1467건 ",
+          "rect": {
+            "x": 16,
+            "y": 642.546875,
+            "w": 358,
+            "h": 142.765625,
+            "top": 642.546875,
+            "right": 374,
+            "bottom": 785.3125,
+            "left": 16
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(3) > strong",
+          "tag": "strong",
+          "text": "AI Harness Engineering 종합 기술 백과사전 구축 지시서",
+          "rect": {
+            "x": 33,
+            "y": 659.546875,
+            "w": 324,
+            "h": 51.1875,
+            "top": 659.546875,
+            "right": 357,
+            "bottom": 710.734375,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(3) > span",
+          "tag": "span",
+          "text": "중지됨 · 이 시도 적재 1467건 · 1회차",
+          "rect": {
+            "x": 33,
+            "y": 718.734375,
+            "w": 205.921875,
+            "h": 22.390625,
+            "top": 718.734375,
+            "right": 238.921875,
+            "bottom": 741.125,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > main > div > section > button:nth-of-type(3) > time",
+          "tag": "time",
+          "text": "2026. 11. 5. 오후 8:00:00",
+          "rect": {
+            "x": 33,
+            "y": 749.125,
+            "w": 137.09375,
+            "h": 19.1875,
+            "top": 749.125,
+            "right": 170.09375,
+            "bottom": 768.3125,
+            "left": 33
+          }
+        },
+        {
+          "selector": "#root > footer",
+          "tag": "footer",
+          "text": "화면 계측",
+          "rect": {
+            "x": 0,
+            "y": 801.3125,
+            "w": 390,
+            "h": 57.59375,
+            "top": 801.3125,
+            "right": 390,
+            "bottom": 858.90625,
+            "left": 0
+          }
+        },
+        {
+          "selector": "#root > footer > button",
+          "tag": "button",
+          "text": "화면 계측",
+          "rect": {
+            "x": 16,
+            "y": 820.3125,
+            "w": 65.828125,
+            "h": 22,
+            "top": 820.3125,
+            "right": 81.828125,
+            "bottom": 842.3125,
+            "left": 16
+          }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    "주제 2개 / 시도 6개 구분",
+    "주제별 실행 내역 3건 열기",
+    "과거 시도에 제어 버튼 없음",
+    "현재 수집 보기 → 실행 회차 이동",
+    "console error 0 (final fixture navigation)"
+  ],
+  "limitations": [
+    "합성 자료를 넣은 실제 컴포넌트 검증; 운영 로그인 UI·실제 Safari·다크모드는 미검증",
+    "control-ratio는 탐색 버튼·자료 카드·검증용 버튼의 서로 다른 역할/패딩 관찰, heading-lineheight는 검증 페이지 자체 h1에 해당",
+    "운영 반영은 별도 배포 증거 필요"
+  ]
+}

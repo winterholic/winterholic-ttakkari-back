@@ -29,7 +29,7 @@ def _adapter(scope: str) -> SubscriptionCliL2Adapter:
     visibility = "global" if pool == "personal" else "work_only"
     settings = get_settings()
     return SubscriptionCliL2Adapter(
-        sessionmaker,
+        sessionmaker(),
         engine=settings.kb_l2_subscription_engine,
         model=settings.kb_l2_subscription_model,
         effort=settings.kb_l2_subscription_effort,

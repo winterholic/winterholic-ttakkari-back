@@ -519,6 +519,16 @@ async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved
         )
         db.add(succ_run)
         await db.flush()
+        db.add(Measurement(
+            run_id=succ_run.id,
+            experiment_id=exp.id,
+            configuration_id=cfg.id,
+            metric_key="decode_tps",
+            metric_label="Decode tokens/s",
+            value=42.0,
+            unit="tokens/s",
+        ))
+        await db.flush()
 
         # Adoption requires a finite measurement linked to this exact run, experiment, configuration, and metric.
         db.add(Measurement(

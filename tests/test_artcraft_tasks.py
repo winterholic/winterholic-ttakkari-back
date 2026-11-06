@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from conftest import agent_calls
 from helpers import wait_run
-
 from ttakkari import artcraft_catalog as catalog
 from ttakkari.artifacts.kinds import detect
 from ttakkari.config import get_settings
@@ -311,3 +310,44 @@ def test_guard_blocks_protected_and_sensitive_paths_in_artcraft_mcp_calls(tmp_pa
     assert evaluate(tool, {"steps": [{"args": {"file": str(protected / "x")}}]}, str(work), cfg)  # 중첩 인자도 본다
     assert evaluate(tool, {"path": str(work / ".env")}, str(work), cfg)  # 민감 파일
     assert evaluate("mcp__ttakkari__recall", {"query": str(protected)}, str(work), cfg) is None  # 다른 MCP 는 건드리지 않는다
+
+
+def test_sweep_outputs_filters_zero_byte_empty_and_sensitive_files(tmp_path: Path):
+    """0바이트 빈 파일과 민감 파일(.env, .git 등)은 결과물 outbox 로 복사되지 않는다."""
+    from ttakkari import artcraft_tasks
+    from ttakkari.artcraft_tasks import RunPlan
+    from ttakkari.models import Run, utcnow
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    outbox = tmp_path / "outbox"
+    outbox.mkdir()
+
+    (out_dir / "empty.txt").write_bytes(b"")
+    (out_dir / ".env").write_text("SECRET=1")
+    (out_dir / ".DS_Store").write_bytes(b"\x00")
+    (out_dir / "valid.png").write_bytes(b"\x89PNG real image")
+
+    plan = RunPlan(prompt="", note="", mcp_servers={}, out_dir=out_dir)
+    run = Run(started_at=utcnow(), created_at=utcnow())
+
+    copied = artcraft_tasks.sweep_outputs(plan, run, outbox)
+    assert copied == 1
+    assert (outbox / "valid.png").exists()
+    assert not (outbox / "empty.txt").exists()
+    assert not (outbox / ".env").exists()
+    assert not (outbox / ".DS_Store").exists()
+
+
+def test_catalog_cli_recipes_are_all_fully_qualified():
+    """모든 카테고리의 cli 요령 내 실행 명령어가 단독 파편 없이 온전한 artcraft run <app> 형태여야 한다."""
+    import re
+    cmd_pattern = re.compile(r"`([^`]+)`")
+    for cat in catalog.CATEGORIES:
+        for line in cat.cli:
+            commands = cmd_pattern.findall(line)
+            for cmd in commands:
+                cmd_strip = cmd.strip()
+                if any(cmd_strip.startswith(p) for p in ("run ", "commands", "info ", "convert ", "render ", "cat ", "eval ", "sample ", "combine ", "extract ", "split ", "edit ")):
+                    pytest.fail(f"카테고리 {cat.id}에 단독 명령어 파편 존재: `{cmd_strip}` in {line}")
+

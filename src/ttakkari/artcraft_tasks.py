@@ -235,11 +235,15 @@ async def summaries(db: AsyncSession, tasks: list[ArtcraftTask]) -> list[dict[st
         rs = runs.get(t.session_id, [])
         last = rs[-1] if rs else None
         live = detailed.get(last.id) if last is not None else None
+        output_count = counts.get(t.session_id, 0)
+        last_error = (last.error or "")[:300] if last is not None and last.status == RunStatus.failed else None
+        if last is not None and last.status == RunStatus.succeeded and output_count == 0 and not last_error:
+            last_error = "결과 파일 없음 (산출물이 생성되지 않았습니다)"
         items.append({
             "id": str(t.id), "session_id": str(t.session_id), "category": t.category, "title": t.title, "apps": list(t.apps or []),
-            "template_id": t.template_id, "state": _state(last), "round_count": len(rs), "output_count": counts.get(t.session_id, 0),
+            "template_id": t.template_id, "state": _state(last), "round_count": len(rs), "output_count": output_count,
             "last_run_id": str(last.id) if last else None,
-            "error": (last.error or "")[:300] if last is not None and last.status == RunStatus.failed else None,
+            "error": last_error,
             "progress": live.last_progress if live else None, "waiting_reason": live.waiting_reason if live else None,
             "created_at": t.created_at, "updated_at": t.updated_at, "archived_at": t.archived_at,
         })
@@ -285,13 +289,17 @@ async def task_detail(db: AsyncSession, task: ArtcraftTask) -> dict[str, Any]:
     for index, run in enumerate(runs, 1):
         meta = (run.usage or {}).get("artcraft") or {}
         live = detailed.get(run.id)
+        round_outputs = outputs.get(run.id, [])
+        round_error = run.error
+        if run.status == RunStatus.succeeded and len(round_outputs) == 0 and not round_error:
+            round_error = "결과 파일 없음 (산출물이 생성되지 않았습니다)"
         rounds.append({
             "id": str(run.id), "index": index, "status": run.status, "state": _state(run), "prompt": run.prompt,
             "result_text": (run.result_text or "")[:RESULT_CHARS] or None,
-            "messages": messages.get(run.id, [])[-MESSAGES_KEEP:], "error": run.error,
+            "messages": messages.get(run.id, [])[-MESSAGES_KEEP:], "error": round_error,
             "options": meta.get("options") or {}, "use_previous": bool(meta.get("use_previous")),
             "inputs": [_artifact(inputs[uuid.UUID(str(i))]) for i in run.context_artifact_ids or [] if uuid.UUID(str(i)) in inputs],
-            "outputs": [_artifact(a) for a in outputs.get(run.id, [])],
+            "outputs": [_artifact(a) for a in round_outputs],
             "progress": live.last_progress if live else None, "waiting_reason": live.waiting_reason if live else None,
             "created_at": run.created_at, "started_at": run.started_at, "finished_at": run.finished_at,
         })
@@ -361,9 +369,18 @@ async def _round_index(db: AsyncSession, run: Run) -> int:
 
 
 async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
-    """이 Run 보다 앞선 Run 중 결과가 있는 가장 최근 라운드의 결과 파일."""
+    """이 Run 보다 앞선 Run 중 결과가 있는 가장 최근 라운드의 결과 파일(성공한 런 우선)."""
     prior = list(await db.scalars(select(Run).where(Run.session_id == run.session_id, Run.created_at < run.created_at)
                                   .order_by(Run.created_at.desc())))
+    # 성공한 Run 의 결과물 우선
+    for earlier in prior:
+        if earlier.status == RunStatus.succeeded:
+            arts = list(await db.scalars(select(Artifact).where(
+                Artifact.run_id == earlier.id, Artifact.source == OUTPUT_SOURCE, Artifact.deleted_at.is_(None),
+                Artifact.export_policy != ExportPolicy.sensitive).order_by(Artifact.filename).limit(PREV_LIMIT)))
+            if arts:
+                return arts
+    # 성공한 런이 없거나 결과가 없으면 전체 앞선 런 중 탐색
     for earlier in prior:
         arts = list(await db.scalars(select(Artifact).where(
             Artifact.run_id == earlier.id, Artifact.source == OUTPUT_SOURCE, Artifact.deleted_at.is_(None),
@@ -376,9 +393,9 @@ async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
 NOTE = """\
 [ArtCraft 작업 지침] 범주: {category}. 연결된 앱 MCP 서버: {servers}.
 - 작업 폴더: {base}  (in/ 입력 복사본, prev/ 이전 결과 복사본, work/ 중간 파일, out/ 최종 결과). 앱 도구는 이 폴더 안의 파일만 읽고 쓰게 설정돼 있다.
-- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 {out} 에 의미 있는 이름(예: report-v2.docx)으로 저장한다. 그곳에 저장한 파일은 outbox로 복사돼 에이전트 파일로 자동 수집된다. 사용자가 대화에서 열어 보게 하려면 share_file 로 공유한다(AI 작업 파일에 남는다).
-- 앱 MCP 도구가 안 보이거나 막히면 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
-- 끝내기 전에 결과를 직접 확인한다(렌더·info·text 등으로 열어 보고, 이미지 결과는 PNG 로 렌더해 본다). 확인한 내용을 답에 한두 줄로 적는다.
+- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 에 저장한 결과는 outbox로 복사되어 AI 작업 파일로 전달된다. 사용자가 대화에서 열어 보게 하려면 share_file 로 공유한다.
+- 앱 MCP 도구가 안 보이거나 오류가 나면 즉시 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
+- 끝내기 전에 0바이트 빈 파일이 아닌지 확인하고, 렌더·info·text 등으로 직접 열어 본다(이미지는 PNG 로 렌더). 확인한 내용을 답에 한두 줄로 적고, 요구한 결과 파일을 만들지 못했으면 실패 이유를 솔직히 적는다.
 - 앱이 못 하는 일은 지어내지 말고 무엇이 안 됐는지 솔직히 알린다. 유료·클라우드·AI 제공자 기능은 쓰지 않는다. 비밀·토큰 파일은 읽지 않는다.
 - 사용자는 폰으로 본다. 답은 한국어로 짧게(만든 파일 이름과 한 줄 설명, 막힌 점).
 {recipes}"""
@@ -416,6 +433,8 @@ async def prepare_run(db: AsyncSession, sess: ChatSession, run: Run, outbox: Pat
             staged = _stage(art, folders["prev"] / f"r{index}")
             if staged is not None:
                 previous.append(staged)
+            else:
+                log.append(f"이전 결과 파일을 작업 폴더로 복사하지 못했습니다: {art.filename}")
 
     servers: dict[str, dict[str, Any]] = {}
     roles = {a.app: a for a in cat.apps}
@@ -440,36 +459,63 @@ async def prepare_run(db: AsyncSession, sess: ChatSession, run: Run, outbox: Pat
     if meta.get("use_previous"):
         head.append("이전 결과 파일(이어서 고칠 대상): " + (", ".join(rel(p) for p in previous) if previous else "없음(앞 라운드에 결과 파일이 없었음)"))
     head.append(f"선택 옵션: {option_text}")
-    head.append(f"최종 결과 저장 위치: {folders['out']}")
+    head.append(f"최종 결과 저장 위치: 반드시 {folders['out']}")
     if log:
         head.append("주의: " + " / ".join(log))
     prompt = "\n".join(head) + "\n\n[사용자 지시]\n" + run.prompt
 
     launcher = str(artcraft.binary_path()) if artcraft.binary_ok() else "<artcraft 저장소>/bin/artcraft"
     agents_md = str(artcraft.root() / "AGENTS.md")
-    recipes = "\n".join(f"  · {line.replace('artcraft ', launcher + ' ', 1) if 'artcraft run' in line else line}" for line in cat.cli)
+    recipes = "\n".join(f"  · {line.replace('artcraft ', launcher + ' ')}" if "artcraft" in line else f"  · {line}" for line in cat.cli)
     note = NOTE.format(category=cat.title, servers=", ".join(servers) or "없음(CLI 로 진행)", base=base, out=folders["out"],
                        launcher=launcher, agents=agents_md, recipes="앱별 CLI 요령:\n" + recipes if recipes else "")
     return RunPlan(prompt=prompt, note=note, mcp_servers=servers, out_dir=folders["out"], log=log)
 
 
-def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
-    """out/ 에 이 Run 이 새로 만든 파일을 outbox 로 복사한다. 이미 같은 이름·크기로 있으면 건너뛴다.
+SENSITIVE_FILENAMES = {".env", ".git", ".DS_Store", "desktop.ini", "Thumbs.db"}
 
-    기준은 Run 의 첫 시작 시각이다(한도 대기 뒤 재개해도 바뀌지 않고, 에이전트는 시작 뒤에야 파일을 만든다)."""
-    since = (run.started_at or run.created_at).timestamp()
+
+def sweep_outputs(plan: RunPlan, run: Run, outbox: Path) -> int:
+    """out/ 에 이 Run 이 새로 만든 유효한 파일을 outbox 로 복사한다.
+
+    - 0바이트 빈 파일과 숨김/민감 파일(.env 등)은 결과물로 수집하지 않는다.
+    - 심볼릭 링크 및 작업 폴더 외부를 가리키는 경로는 엄격히 배제한다.
+    - 이전 시도와 크기가 같아도 내용이 수정되었거나 mtime이 새로우면 정상 복사한다."""
+    start_time = run.started_at or run.created_at
+    since = start_time.timestamp() if start_time else 0.0
     copied = 0
     root = plan.out_dir
     if not root.is_dir():
         return 0
+    resolved_root = root.resolve()
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
+        # 숨김 파일 및 민감 파일 배제
+        if path.name.startswith(".") or path.name in SENSITIVE_FILENAMES:
+            continue
         try:
-            stat = path.stat()
-            dest = outbox / path.relative_to(root)
-            if stat.st_mtime < since or (dest.exists() and dest.stat().st_size == stat.st_size):
+            resolved_path = path.resolve()
+            # 심볼릭 링크 디렉토리 등으로 root 바깥을 가리키는 경로 차단
+            if not resolved_path.is_relative_to(resolved_root):
                 continue
+            stat = path.stat()
+            # 0바이트 빈 파일은 결과물로 인정하지 않는다(에이전트 실패 은폐 방지)
+            if stat.st_size == 0:
+                continue
+            dest = outbox / path.relative_to(root)
+            # mtime 검사: since 이전 생성된 파일은 건너뜀
+            if since > 0 and stat.st_mtime < since:
+                continue
+            # dest 가 이미 존재하고, 내용이 완전히 동일(크기와 내용 일치)하면 건너뜀
+            if dest.exists():
+                dstat = dest.stat()
+                if dstat.st_size == stat.st_size and dstat.st_mtime >= stat.st_mtime:
+                    try:
+                        if path.read_bytes() == dest.read_bytes():
+                            continue
+                    except OSError:
+                        pass
             _copy(path, dest)
             copied += 1
         except OSError:

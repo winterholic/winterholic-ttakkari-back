@@ -5,14 +5,11 @@ from __future__ import annotations
 import http.client
 import json
 import os
-from pathlib import Path
 import subprocess
-import sys
 import tempfile
-import time
 import unittest
+from pathlib import Path
 from urllib.parse import urlsplit
-
 
 SCRIPT = Path(__file__).with_name("reverse_e2e_targets.py")
 PYTHON = Path(__file__).resolve().parents[1] / "../back/.venv/bin/python"
@@ -39,6 +36,7 @@ class ReverseE2ETargetProcessTests(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)["stopped"])
@@ -112,6 +110,7 @@ class ReverseE2ETargetProcessTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("ownership", result.stderr.lower())

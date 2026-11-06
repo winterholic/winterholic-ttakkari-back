@@ -470,7 +470,7 @@ def test_prompt_capture_and_verify_commands_run_for_both_roles_in_spaced_job_pat
         source_root.mkdir(parents=True)
         script_root.mkdir(parents=True)
         release_venv = release / '.venv'
-        release_venv.symlink_to(checkout.parent / 'back' / '.venv', target_is_directory=True)
+        release_venv.symlink_to(tasks.Path(sys.executable).parent.parent, target_is_directory=True)
         import shutil
 
         shutil.copytree(checkout / 'src' / 'ttakkari', source_root / 'ttakkari')

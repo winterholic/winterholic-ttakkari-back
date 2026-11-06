@@ -6,7 +6,6 @@ import argparse
 import importlib.util
 import json
 import os
-from pathlib import Path
 import secrets
 import signal
 import socket
@@ -16,7 +15,8 @@ import sys
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-
+from pathlib import Path
+from typing import ClassVar
 
 SCRIPT = Path(__file__).resolve()
 API_DEMO = SCRIPT.with_name("reverse_compare_api_demo.py")
@@ -101,8 +101,8 @@ def _api_server(port: int) -> ThreadingHTTPServer:
     DemoHandler = _load_demo_handler()
 
     class TargetHandler(DemoHandler):
-        state = {"count": 0}
-        items: list[dict] = []
+        state: ClassVar[dict] = {"count": 0}
+        items: ClassVar[list[dict]] = []
 
         def do_GET(self):
             if self.path == "/items":

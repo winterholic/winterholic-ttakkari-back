@@ -14,7 +14,7 @@ pytest_plugins = ["conftest"]
 
 # Import the test harness before application modules so it selects only its
 # per-process temporary PostgreSQL and test-only settings.
-import conftest as _test_harness  # noqa: F401,E402
+import conftest as _test_harness  # noqa: F401
 
 from ttakkari import reverse_tasks
 from ttakkari.db import sessionmaker

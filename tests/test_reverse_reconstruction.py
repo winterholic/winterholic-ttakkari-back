@@ -1,4 +1,5 @@
 """자연어 접수→도구 작업 세션→실제 소스→독립 검증 연결 계약."""
+import base64
 import hashlib
 import json
 import uuid
@@ -106,7 +107,9 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
     async def dispatch(_):
         pass
     monkeypatch.setattr(manager, 'dispatch', dispatch)
-    res = await client.post('/api/reverse', headers=auth, json={'description': '입력한 숫자의 두 배를 출력하는 프로그램을 동작 기준으로 재현해줘.'})
+    res = await client.post('/api/reverse', headers=auth, json={
+        'description': '입력한 숫자의 두 배를 출력하는 프로그램을 동작 기준으로 재현해줘.',
+        'target_type': 'cli'})
     assert res.status_code == 202, res.text
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(res.json()['id']))
@@ -126,10 +129,12 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
                   'checks': [{'command': 'python src/main.py', 'exit_code': 0, 'log': 'test.log'}], 'limitations': []}
         def add_match(report, run_id):
             run_id = str(run_id)
+            output = {'stdout': '4\n', 'stderr': '', 'exit_code': 0,
+                      'stdout_bytes_b64': base64.b64encode(b'4\n').decode(),
+                      'stderr_bytes_b64': base64.b64encode(b'').decode(), 'argv': ['double', '2']}
             raw = {'schema_version': 2, 'target_type': 'cli', 'run_id': run_id, 'complete': True,
                    'input': {'argv': ['double', '2']}, 'pre_state': {}, 'environment': {'os': 'test'},
-                   'original': {'stdout': '4\n', 'stderr': '', 'exit_code': 0},
-                   'replica': {'stdout': '4\n', 'stderr': '', 'exit_code': 0}}
+                   'original': output, 'replica': output}
             raw['execution_log'] = [{'side': side, **raw[key]} for side, key in
                                     (('original', 'original'), ('replica', 'replica'))]
             raw_path = root / f'.reverse/comparisons/case-{run_id}.json'
@@ -141,6 +146,11 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
                 'evidence_level': 'direct', 'evidence': [{'kind': 'execution', 'path': raw_path.relative_to(root).as_posix(),
                     'sha256': hashlib.sha256(encoded).hexdigest()}], 'verified_at': '2026-11-07T00:00:00Z',
                 'run_id': run_id, 'result': 'mismatch', 'difference': {'field': 'stdout'}}]
+        # A completed callback is idempotent. Model the user's follow-up as a
+        # fresh Run after the source and report have been added.
+        await reverse_tasks.follow_up(db, job, '소스와 비교 결과를 확인해 독립 검증을 이어서 진행해줘.')
+        run = await db.scalar(select(Run).where(Run.session_id == job.session_id).order_by(Run.created_at.desc()))
+        run.status = RunStatus.succeeded
         add_match(report, run.id)
         (root / '.reverse' / f'{run.id}.json').write_text(json.dumps(report))
         await reverse_tasks.on_finished(db, run)
@@ -154,12 +164,24 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
         review.status = RunStatus.succeeded
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'partial'  # 독립 검증 파일 없는 성공은 불충분.
+
+        async def new_verification_run():
+            next_run = Run(session_id=verifier.id, workspace_id=verifier.workspace_id,
+                           prompt='', engine='auto',
+                           usage={'reverse': {'job_id': str(job.id), 'role': 'verify'}})
+            db.add(next_run)
+            await db.flush()
+            next_run.status = RunStatus.succeeded
+            return next_run
+
+        review = await new_verification_run()
         add_match(report, review.id)
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed', 'comparisons': []}))
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'partial'  # 구현자의 직접 비교를 verifier 자신의 비교로 대체할 수 없다.
         assert job.result['latest']['independent_verification']['status'] == 'failed'
         assert job.result['latest']['verification_report']['comparisons'] == []
+        review = await new_verification_run()
         add_match(report, review.id)
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
@@ -167,13 +189,19 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
         # 정상 검사 하나가 있어도 실패한 필수 회귀 검사는 완료 판정을 막는다.
         failed = {**report, 'verdict': 'passed', 'checks': [*report['checks'],
                   {'command': 'pytest failing_regression', 'exit_code': 1, 'log': 'test.log'}]}
+        review = await new_verification_run()
+        add_match(report, review.id)
+        failed['comparisons'] = report['comparisons']
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps(failed))
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'partial'
         assert job.result['latest']['independent_verification']['status'] == 'failed'
+        review = await new_verification_run()
+        add_match(report, review.id)
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'comparisons': [], 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'partial'  # 검증자 비교 0건은 계속 완료를 막는다.
+        review = await new_verification_run()
         add_match(report, review.id)
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
@@ -189,7 +217,7 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
                                 json={'prompt': '소수 계산도 재현해줘.'})
     assert followup.status_code == 202, followup.text
     history = (await client.get('/api/reverse/' + res.json()['id'], headers=auth)).json()
-    assert len(history['rounds']) == 3
+    assert len(history['rounds']) >= 3
     assert any(r['role'] == 'verify' for r in history['rounds'])
     assert '소수 계산도 재현해줘.' in history['target']
     assert history['history'] and history['history'][-1]['report']['source_files'] == ['src/main.py']

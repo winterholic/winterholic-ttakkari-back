@@ -6,12 +6,16 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
 
 pytest_plugins = ["conftest"]
 
 # Reuse the unchanged core audit's fixture helpers and temp-PostgreSQL harness.
-from test_core_audit import _advance_implementation, _finish_verifier, _start  # noqa: E402
+from test_core_audit import (
+    _advance_implementation,
+    _finish_verifier,
+    _start,
+)
+
 from ttakkari.db import sessionmaker
 from ttakkari.models import ReverseJob
 
@@ -26,7 +30,7 @@ async def test_detail_api_failure_and_zero_comparison_are_consumer_consistent(
     job_id = await _start(client, auth, monkeypatch)
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(job_id))
-        implementation, verifier_run = await _advance_implementation(db, job)
+        _implementation, verifier_run = await _advance_implementation(db, job)
         await _finish_verifier(db, job, verifier_run, comparisons=comparisons,
                                failed_required=failed_required)
         verifier_session_id = job.verifier_session_id

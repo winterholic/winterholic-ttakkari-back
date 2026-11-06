@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPLICA = Path(__file__).with_name("reverse_compare_basename_replica.py")
 ORIGINAL = "/usr/bin/basename"
 EXISTING_VECTORS = [

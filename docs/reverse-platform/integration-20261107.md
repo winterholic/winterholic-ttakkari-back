@@ -269,7 +269,7 @@ Merge made by the 'ort' strategy.
 ### 고정 감사 대조 및 보존 파일
 
 - 통합된 원격 변경은 ArtCraft account pin을 위해 `ChatSession.account_id`와 manager 선택 경로를 추가하고, runtime lease mapping 보고를 보강한다. Reverse 생성 경로는 기존 caller `pool`을 `queue_run`까지 전달하며 `account_id`를 지정하지 않아 기본 `None`을 쓴다. 원격의 pin 분기는 `account_id is not None`일 때만 적용된다. 고정 감사의 callback 완료 판정, pool 경계, release 경로 및 FIFO 가정은 이 변경으로 달라지지 않는다. Reverse 파일/전용 테스트는 `189...`와 merge 결과 사이에서 변경되지 않았다. remote main 쪽 ArtCraft/manager 변경의 직접 회귀는 아래에서 별도로 실행했다.
-- 감사 원본은 제품 파일을 가져오지 않고 `docs/reverse-platform/audit-integrated-18917626/`에 보고서, 보완 기록, 기획 신원 JSON, 두 raw probe JSON, 두 probe 스크립트를 보존했다. 원본과 복사본의 SHA-256이 7개 파일 모두 일치했다. 기존 `docs/reverse-platform/audit/`, `audit-core-7266a2a1/` 등 과거 감사는 삭제·수정하지 않았다.
+- 감사 원본은 제품 파일을 가져오지 않고 `docs/reverse-platform/audit-integrated-18917626/`에 보고서, 보완 기록, 기획 신원 JSON, 두 raw probe JSON을 보존했다. 원본과 복사본의 SHA-256이 이 5개 자료에서 모두 일치했다. 재현 스크립트는 원래 독립 감사 worktree에 그대로 두었다. 기존 `docs/reverse-platform/audit/`, `audit-core-7266a2a1/` 등 과거 감사 경로는 삭제하지 않았다. push 게이트 Ruff에서 검출된 미사용 import/noqa·변수명·정렬만 정리했으며 probe assertion이나 감사 범위는 바꾸지 않았다.
 - 고정 감사의 결과를 이 단위에서 재사용한 경계: DB 비의존 callback positive/negative control, release/dev capture·verify 8회 exit 0, FIFO 4/4 timeout 없음. PNG 12 MiB 한계는 감사 보완에 기록된 이전 `efd15f92` 결과를 그대로 재사용했다. DB/API 저장·dispatch 및 운영 ReverseJob E2E는 계속 미검증이다. `initdb shmget` 및 `.vite` 삭제 거부는 재시도·우회하지 않았다.
 
 ### 이번 merge 후 실행한 검사
@@ -290,3 +290,10 @@ exit 0 (no output)
 ### 최종 푸시·배포 후속
 
 - 이 기록 반영 후 최종 SHA, 정상 push 결과, 원격 main SHA, `request_backend_deploy`의 예약 ID 및 반환 상태를 이어 기록한다. 배포 완료와 운영 동작은 예약 수락으로 간주하지 않는다. 실제 ReverseJob E2E와 운영 health 확인은 배포 후 별도 실행 단위다.
+
+### Push gate 진단·교정
+
+- 첫 일반 push에서 pre-push 게이트가 `/Users/winterholic/.cache/uv` 초기화를 `Operation not permitted`로 거부했다. 게이트를 생략하지 않고 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-189-integration`으로 허용된 cache 경로를 지정해 다시 실행했다.
+- 첫 게이트 실행은 코드 변경 32개 Ruff, 계약 묶음(`86 passed, 1 failed`), 변경 파일 검사(`82 passed, 2 failed`)에서 멈췄다. 계약 실패는 reverse PATCH 두 라우트의 `ROUTE_SCOPE` 누락이었다. 변경 파일 실패는 release CLI fixture가 sibling checkout의 `back/.venv`를 가정한 점과, DB/API 테스트가 완료 callback 뒤 같은 Run에 파일을 추가해 재호출한 점이었다. 같은 Run의 늦은 callback은 의도된 멱등성으로 무시되므로, 테스트를 새 후속 Run과 v2 raw output 스키마에 맞게 보완했다.
+- Ruff 실패는 새 제품 결함이 아니라 통합된 역방향 감사·fixture 스크립트들의 import 정렬, 미사용 이름, shebang 실행 비트 및 테스트 subprocess 옵션이었다. 동작·assertion을 바꾸지 않는 정리만 적용했다.
+- 교정 후 실행: reverse DB 비의존 회귀 `90 passed in 2.93s`; 원격 ArtCraft/manager 회귀 `73 passed in 5.62s`; API/callback, release fixture, route inventory 집중 검사 `4 passed in 1.51s` (DB reset 2 selective, fallback 0). 상세 pre-push 전체 결과와 최종 push SHA는 아래에 추가한다.

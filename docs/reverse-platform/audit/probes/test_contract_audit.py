@@ -8,14 +8,14 @@ pytest_plugins = ("conftest",)
 import base64
 import hashlib
 import json
-import re
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from ttakkari.reverse_compare import run_comparison
-from ttakkari.reverse_tasks import validate_report, verify_comparisons, _store_latest
+from ttakkari.reverse_tasks import _store_latest, validate_report, verify_comparisons
 
 
 def _report(root: Path, *, checks=None, comparisons=None, run_id="audit-run", verdict=None):
@@ -184,7 +184,11 @@ def test_symlink_and_path_escape_cannot_supply_source_or_capture(tmp_path):
 
 def test_history_append_preserves_prior_latest():
     class Job:
-        result = {"schema_version": 2, "latest": {"run_id": "old", "comparisons": [{"id": "one"}]}, "history": []}
+        result: ClassVar[dict] = {
+            "schema_version": 2,
+            "latest": {"run_id": "old", "comparisons": [{"id": "one"}]},
+            "history": [],
+        }
     _store_latest(Job, {"run_id": "new"})
     assert Job.result["history"] == [{"run_id": "old", "comparisons": [{"id": "one"}]}]
     assert Job.result["latest"] == {"run_id": "new"}
@@ -221,10 +225,12 @@ async def test_reverse_start_requires_authentication(client):
 
 @pytest.mark.asyncio
 async def test_agent_route_rejects_work_pool_session():
+    import uuid
+
     from fastapi import HTTPException
+
     from ttakkari.api.reverse import agent_access
     from ttakkari.models import ChatSession
-    import uuid
     class FakeDb:
         async def get(self, _model, _sid):
             return ChatSession(id=uuid.uuid4(), pool="work")
@@ -242,9 +248,10 @@ async def _start(client, auth, monkeypatch, *, mode="reconstruct", repairs=0):
         "description": "독립 감사용 동작 입력과 기대 출력을 확인한다.", "mode": mode,
         "target_type": "cli", "max_repair_attempts": repairs})
     assert response.status_code == 202, response.text
+    import uuid
+
     from ttakkari.db import sessionmaker
     from ttakkari.models import ReverseJob, Run
-    import uuid
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(response.json()["id"]))
         impl = await db.scalar(__import__("sqlalchemy").select(Run).where(Run.session_id == job.session_id))
@@ -282,11 +289,13 @@ def _save_detail_fixture(data):
 
 @pytest.mark.asyncio
 async def test_passed_verifier_cannot_promote_zero_direct_comparisons(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ChatSession, ReverseJob, Run, RunStatus
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, root = await _start(client, auth, monkeypatch)
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(jid)); impl = await db.get(Run, impl_id)
@@ -307,11 +316,13 @@ async def test_passed_verifier_cannot_promote_zero_direct_comparisons(client, au
 
 @pytest.mark.asyncio
 async def test_verifier_mismatch_does_not_enter_bounded_repair_cycle(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ChatSession, ReverseJob, Run, RunStatus
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, root = await _start(client, auth, monkeypatch, repairs=2)
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(jid)); impl = await db.get(Run, impl_id)
@@ -337,11 +348,13 @@ async def test_verifier_mismatch_does_not_enter_bounded_repair_cycle(client, aut
 
 @pytest.mark.asyncio
 async def test_direct_mismatch_repair_is_bounded_and_verifier_is_linked_to_latest_round(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ChatSession, ReverseJob, Run, RunStatus
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, root = await _start(client, auth, monkeypatch, repairs=1)
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(jid)); impl = await db.get(Run, impl_id)
@@ -369,11 +382,13 @@ async def test_direct_mismatch_repair_is_bounded_and_verifier_is_linked_to_lates
 
 @pytest.mark.asyncio
 async def test_duplicate_verifier_callback_appends_duplicate_history(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ChatSession, ReverseJob, Run, RunStatus
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, root = await _start(client, auth, monkeypatch)
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(jid)); impl = await db.get(Run, impl_id)
@@ -397,11 +412,13 @@ async def test_duplicate_verifier_callback_appends_duplicate_history(client, aut
 
 @pytest.mark.asyncio
 async def test_analyze_only_then_mode_switch_reuses_observations_without_source_requirement(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ReverseJob, Run, RunStatus
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, root = await _start(client, auth, monkeypatch, mode="analyze")
     async with sessionmaker()() as db:
         job = await db.get(ReverseJob, uuid.UUID(jid)); impl = await db.get(Run, impl_id)
@@ -431,11 +448,13 @@ async def test_analyze_only_then_mode_switch_reuses_observations_without_source_
 
 @pytest.mark.asyncio
 async def test_cancel_then_retry_ignores_late_old_callback(client, auth, monkeypatch):
+    import uuid
+
+    from sqlalchemy import select
+
     from ttakkari import reverse_tasks
     from ttakkari.db import sessionmaker
     from ttakkari.models import ReverseJob, Run
-    from sqlalchemy import select
-    import uuid
     jid, impl_id, _root = await _start(client, auth, monkeypatch)
     cancel = await client.post(f"/api/runs/{impl_id}/cancel", headers=auth)
     assert cancel.status_code == 200, cancel.text

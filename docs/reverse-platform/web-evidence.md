@@ -118,6 +118,39 @@ replica only on 127.0.0.1; stop it with Ctrl-C. The existing
 scripts/reverse_e2e_targets.py start web starts the original test target and
 its ownership-checked stop --pid-file shuts down only that process.
 
+ReverseJob web prompts provide the actual job folder, absolute interpreter and
+script paths from the integration checkout. They `cd` to that folder and quote
+paths containing spaces. Create `.reverse/input/web-observations.json` there,
+save the unedited configured-browser PNG bytes under `.reverse/web-captures/`,
+and use the module's `reverse_web_evidence_capture.py` writer followed by
+`reverse_web_evidence_verify.py`. For each run, original and replica must share
+the exact input, pre-state, viewport and environment. The verifier must repeat
+the observation in its own Run and store a separate comparison using its own Run
+ID. The verifier does not reuse the implementation capture as its observation.
+
+Label browser observations, manually transcribed values, secondary requests and
+inferences separately. If the original is unavailable or the configured browser
+fails, preserve a reason and keep the comparison `unverified`; request missing
+access as `needs_input`. Writer and verifier commands test the capture module in
+a job folder. They do not establish a platform ReverseJob browser E2E or
+authenticated browser provenance. `provenance.status` remains `unverified` until
+trusted RunEvent/tool-result linkage exists.
+
+When `collect_outputs` builds a ZIP for a completed Run, it reopens each web raw
+capture with that role's expected Run ID and rechecks the comparison, PNG paths,
+byte counts and SHA-256 immediately before writing. Original relative paths are
+preserved in the ZIP so the raw capture still resolves to its PNGs. Each ZIP
+contains `reverse-web-evidence-manifest.json`, with distinct `implementation`
+and `verifier` Run/session records, their comparisons, visual summaries,
+integrity, provenance, and test/check logs under
+`evidence/roles/<role>/checks/`. Included logs carry their own SHA and size;
+missing or rejected records carry a reason. A web artifact that fails a check is
+not packaged or marked included.
+
+General source, test and log files retain the existing 1 MiB file limit. Web raw
+JSON remains limited to 1 MiB and each verified PNG uses its own 12 MiB limit;
+the general file limit is not raised for all archive members.
+
 ## Verification boundary and negative controls
 
 Unit fixtures are explicitly synthetic and prove the verifier's recomputation

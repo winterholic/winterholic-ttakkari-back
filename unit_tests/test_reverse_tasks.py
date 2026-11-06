@@ -172,7 +172,8 @@ def test_bundle_includes_comparison_manifest_raw_evidence_tests_and_safe_depende
     raw_path.write_text('{"schema_version":2}')
     (root / '.reverse/comparisons/linked.json').symlink_to(root / 'setup.cfg')
     data['comparisons'] = [{'id': 'case', 'result': 'match', 'evidence': [
-        {'kind': 'execution', 'path': '.reverse/comparisons/case.json', 'sha256': 'abc'},
+        {'kind': 'execution', 'path': '.reverse/comparisons/case.json',
+         'sha256': hashlib.sha256(raw_path.read_bytes()).hexdigest()},
         {'kind': 'execution', 'path': '.reverse/comparisons/linked.json', 'sha256': 'def'},
         {'kind': 'execution', 'path': '.reverse/comparisons/../../setup.cfg', 'sha256': 'ghi'}]}]
     path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, data))
@@ -183,7 +184,278 @@ def test_bundle_includes_comparison_manifest_raw_evidence_tests_and_safe_depende
         assert '.reverse/comparisons/linked.json' not in archive.namelist()
         assert 'setup.cfg' not in archive.namelist()
         manifest = json.loads(archive.read('reverse-comparison-manifest.json'))
-        assert len(manifest[0]['evidence']) == 1
+        assert [item['included'] for item in manifest[0]['evidence']] == [True, False, False]
+
+
+def test_web_prompt_gives_role_specific_browser_capture_and_verification_commands(tmp_path):
+    job = SimpleNamespace(output_path=str(tmp_path / 'job folder'), target='행동을 재현한다', result={
+        'schema_version': 2, 'job': {'mode': 'reconstruct', 'target_type': 'web', 'title': 'web sample'}})
+    run = SimpleNamespace(id='run-123', session_id='session-456')
+    verifier_run = SimpleNamespace(id='verifier-run-789', session_id='verifier-session')
+
+    implementation = tasks._prompt(job, run)
+    verifier = tasks._prompt(job, verifier_run, review=True)
+
+    for prompt, run_id in ((implementation, 'run-123'), (verifier, 'verifier-run-789')):
+        assert 'ttakkari_browser' in prompt
+        assert 'same input' in prompt.lower() or '동일한 입력' in prompt or '같은 입력' in prompt
+        assert 'same viewport' in prompt.lower() or 'viewport' in prompt.lower()
+        assert 'reverse_web_evidence_capture.py' in prompt
+        assert 'reverse_web_evidence_verify.py' in prompt
+        assert run_id in prompt
+        assert 'unverified' in prompt
+        assert 'needs_input' in prompt
+        assert f"cd '{tmp_path / 'job folder'}'" in prompt
+        assert 'mkdir -p .reverse/input .reverse/web-captures .reverse/comparisons' in prompt
+        assert 'PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/' in prompt
+        assert '/back/.venv/bin/python ' in prompt
+    assert 'implementation' in implementation.lower() or '구현자' in implementation
+    assert 'verifier' in verifier.lower() or '검증자' in verifier
+
+
+def test_bundle_rechecks_and_archives_role_separated_web_evidence(tmp_path):
+    import zipfile
+
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    data = report(root)
+    impl = _web_capture(root, run_id='impl-run', comparison_id='impl-case')
+    verifier = _web_capture(root, run_id='verify-run', comparison_id='verify-case', state='different')
+    impl_report = {**data, 'comparisons': [impl]}
+    verify_report = {**data, 'comparisons': [verifier]}
+    roles = [
+        {'role': 'implementation', 'run_id': 'impl-run', 'session_id': 'impl-session', 'report': impl_report},
+        {'role': 'verifier', 'run_id': 'verify-run', 'session_id': 'verify-session', 'report': verify_report},
+    ]
+
+    path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, impl_report),
+                        evidence_roles=roles)
+
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        assert '.reverse/web-captures/impl-case-impl-run.json' in names
+        assert '.reverse/web-captures/verify-case-verify-run.json' in names
+        assert any(n.startswith('.reverse/web-captures/impl-case/') and n.endswith('.png') for n in names)
+        assert any(n.startswith('.reverse/web-captures/verify-case/') and n.endswith('.png') for n in names)
+        assert [item['role'] for item in manifest['runs']] == ['implementation', 'verifier']
+        assert manifest['runs'][0]['run_id'] == 'impl-run'
+        assert manifest['runs'][1]['run_id'] == 'verify-run'
+        assert manifest['runs'][0]['comparisons'][0]['functional_result'] == 'match'
+        assert manifest['runs'][0]['comparisons'][0]['visual_result'] == 'mismatch'
+        assert manifest['runs'][1]['comparisons'][0]['functional_result'] == 'mismatch'
+        assert manifest['runs'][1]['comparisons'][0]['visual_result'] == 'mismatch'
+        assert all(item['comparisons'][0]['provenance']['status'] == 'unverified'
+                   for item in manifest['runs'])
+        assert 'execution_checks' in manifest['runs'][0]
+        assert 'evidence/roles/implementation/checks/000-check.log' in names
+        assert 'evidence/roles/verifier/checks/000-check.log' in names
+        assert manifest['runs'][0]['execution_checks'][0]['included'] is True
+
+
+def test_bundle_refuses_web_evidence_with_tampered_sha_wrong_run_or_symlink(tmp_path):
+    import zipfile
+
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    data = report(root)
+    capture = _web_capture(root, run_id='real-run', comparison_id='web-case')
+    capture['evidence'][0]['capture']['sha256'] = '0' * 64
+    role = {'role': 'verifier', 'run_id': 'wrong-run', 'session_id': 'session',
+            'report': {**data, 'comparisons': [capture]}}
+    outbox = tmp_path / 'outbox'
+
+    path = tasks.bundle(root, outbox, tasks.validate_report(root, data), evidence_roles=[role])
+
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        assert not any(name.startswith('.reverse/web-captures/') and name.endswith('.json') for name in archive.namelist())
+        assert manifest['runs'][0]['comparisons'][0]['integrity']['status'] == 'unverified'
+        assert manifest['runs'][0]['comparisons'][0]['provenance']['status'] == 'unverified'
+        assert manifest['runs'][0]['comparisons'][0]['included'] is False
+
+
+def test_bundle_manifest_records_traversal_absolute_symlink_size_and_secret_rejections(tmp_path):
+    import zipfile
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    data = report(root)
+    outside = tmp_path / 'outside.py'
+    outside.write_text('outside')
+    (root / 'linked.py').symlink_to(outside)
+    (root / 'huge.bin').write_bytes(b'x' * (tasks.MAX_REPORT + 1))
+    (root / '.env').write_text('API_KEY=do-not-export')
+    untrusted = {**tasks.validate_report(root, data),
+                 'source_files': ['../outside.py', str(outside), 'linked.py', 'huge.bin', '.env',
+                                  'src/main.py']}
+
+    path = tasks.bundle(root, tmp_path / 'outbox', untrusted, evidence_roles=[])
+
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        rejected = {item['path']: item['reason'] for item in manifest['files'] if not item['included']}
+        assert '../outside.py' in rejected
+        assert str(outside) in rejected
+        assert 'linked.py' in rejected
+        assert 'huge.bin' in rejected
+        assert '.env' in rejected
+        assert 'src/main.py' in names
+        assert not any(name.startswith(('../', '/')) for name in names)
+
+
+def test_bundle_refuses_symlink_as_zip_destination(tmp_path):
+    root = tmp_path / 'job'
+    root.mkdir()
+    data = tasks.validate_report(root, report(root))
+    outbox = tmp_path / 'outbox'
+    outbox.mkdir()
+    victim = tmp_path / 'victim.zip'
+    victim.write_bytes(b'keep unchanged')
+    (outbox / 'reconstruction-source.zip').symlink_to(victim)
+
+    with pytest.raises(ValueError, match='symlink archive destination'):
+        tasks.bundle(root, outbox, data)
+
+    assert victim.read_bytes() == b'keep unchanged'
+
+
+def test_bundle_keeps_verified_png_over_one_mib_under_png_specific_limit(tmp_path):
+    import hashlib
+    import random
+    import zipfile
+
+    from PIL import Image
+
+    from ttakkari.reverse_web_evidence import create_web_capture
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    seed = _web_capture(root, run_id='large-run', comparison_id='large-case')
+    viewport = {'width': 1024, 'height': 1024, 'device_scale_factor': 1}
+    image_dir = root / '.reverse/web-captures/large'
+    image_dir.mkdir(parents=True)
+    pixels = random.Random(7).randbytes(viewport['width'] * viewport['height'] * 3)
+    paths = []
+    for side in ('original', 'replica'):
+        image_path = image_dir / f'{side}.png'
+        Image.frombytes('RGB', (viewport['width'], viewport['height']), pixels).save(image_path, format='PNG')
+        blob = image_path.read_bytes()
+        assert len(blob) > 1024 * 1024
+        paths.append({'path': image_path.relative_to(root).as_posix(), 'sha256': hashlib.sha256(blob).hexdigest(),
+                      'size_bytes': len(blob), 'viewport': viewport, 'format': 'png'})
+    original = {**seed['original'], 'viewport': viewport, 'screenshot': paths[0]}
+    replica = {**seed['replica'], 'viewport': viewport, 'screenshot': paths[1]}
+    capture = create_web_capture(
+        root, comparison_id='large-case-zip', behavior='submit', input_data=seed['input'],
+        original=original, replica=replica, run_id='large-run', expected_viewport=viewport,
+        pre_state=seed['pre_state'], environment=seed['environment'], verified_at='2026-11-07T00:01:00Z')
+    data = report(root)
+    role = {'role': 'implementation', 'run_id': 'large-run', 'session_id': 'large-session',
+            'report': {**data, 'comparisons': [capture]}}
+
+    path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, data), evidence_roles=[role])
+
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        assert manifest['runs'][0]['comparisons'][0]['included'] is True
+        for item in manifest['runs'][0]['comparisons'][0]['files']:
+            if item['path'].endswith('.png'):
+                blob = archive.read(item['path'])
+                assert len(blob) == item['size_bytes'] > 1024 * 1024
+                assert hashlib.sha256(blob).hexdigest() == item['sha256']
+                Image.open(__import__('io').BytesIO(blob)).verify()
+
+
+def test_bundle_does_not_include_web_capture_mutated_after_creation_or_symlinked(tmp_path):
+    import zipfile
+
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    mutated = _web_capture(root, run_id='run-archive', comparison_id='mutated-case')
+    linked = _web_capture(root, run_id='run-archive', comparison_id='linked-case')
+    mutated_path = root / mutated['original']['screenshot']['path']
+    mutated_path.write_bytes(mutated_path.read_bytes() + b'changed after capture')
+    external = tmp_path / 'external.png'
+    external.write_bytes((root / linked['original']['screenshot']['path']).read_bytes())
+    linked_path = root / linked['original']['screenshot']['path']
+    linked_path.unlink()
+    linked_path.symlink_to(external)
+    data = report(root)
+    role = {'role': 'implementation', 'run_id': 'run-archive', 'session_id': 'session-archive',
+            'report': {**data, 'comparisons': [mutated, linked]}}
+
+    path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, data), evidence_roles=[role])
+
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        comparisons = manifest['runs'][0]['comparisons']
+        assert [item['included'] for item in comparisons] == [False, False]
+        assert all(item['provenance']['status'] == 'unverified' for item in comparisons)
+        assert not any(name.startswith('.reverse/web-captures/') for name in archive.namelist())
+
+
+def test_bundle_rejects_png_over_web_specific_twelve_mib_limit(tmp_path):
+    import zipfile
+
+    from unit_tests.test_reverse_web_core_integration import _web_capture
+
+    root = tmp_path / 'job'
+    root.mkdir()
+    capture = _web_capture(root, run_id='large-run', comparison_id='oversized')
+    image = root / capture['original']['screenshot']['path']
+    image.write_bytes(b'P' * (tasks.MAX_WEB_PNG + 1))
+    data = report(root)
+    role = {'role': 'implementation', 'run_id': 'large-run', 'session_id': 'session',
+            'report': {**data, 'comparisons': [capture]}}
+
+    path = tasks.bundle(root, tmp_path / 'outbox', tasks.validate_report(root, data), evidence_roles=[role])
+
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read('reverse-web-evidence-manifest.json'))
+        comparison = manifest['runs'][0]['comparisons'][0]
+        assert comparison['included'] is False
+        assert 'size' in comparison['reason'].lower()
+        assert not any(name.startswith('.reverse/web-captures/') for name in archive.namelist())
+
+
+@pytest.mark.asyncio
+async def test_collect_outputs_bundles_implementation_and_verifier_reports_separately(monkeypatch, tmp_path):
+    job_id = uuid4()
+    job = SimpleNamespace(output_path=str(tmp_path), result={
+        'schema_version': 2, 'job': {'mode': 'reconstruct', 'target_type': 'web'},
+        'latest': {'run_id': 'impl-run', 'report': {'comparisons': ['implementation']},
+                   'verification_run_id': 'verify-run',
+                   'verification_report': {'comparisons': ['verifier']}}},
+        session_id='impl-session', verifier_session_id='verify-session')
+
+    class FakeDb:
+        async def get(self, _model, _id):
+            assert _id == job_id
+            return job
+
+    captured = {}
+    monkeypatch.setattr(tasks, 'read_report', lambda *_args, **_kwargs: {'ready': True})
+    monkeypatch.setattr(tasks, 'bundle', lambda *_args, **kwargs: captured.update(kwargs))
+    run = SimpleNamespace(id='verify-run', session_id='verify-session',
+                          usage={'reverse': {'job_id': str(job_id), 'role': 'verify'}})
+
+    await tasks.collect_outputs(FakeDb(), run, tmp_path / 'outbox')
+
+    assert {entry['role'] for entry in captured['evidence_roles']} == {'implementation', 'verifier'}
+    by_role = {entry['role']: entry for entry in captured['evidence_roles']}
+    assert by_role['implementation']['run_id'] == 'impl-run'
+    assert by_role['implementation']['session_id'] == 'impl-session'
+    assert by_role['verifier']['run_id'] == 'verify-run'
+    assert by_role['verifier']['session_id'] == 'verify-session'
 
 
 def test_phase_notes_cannot_self_approve_independent_verification(tmp_path):

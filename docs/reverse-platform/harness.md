@@ -18,6 +18,34 @@ From the backend worktree, with the existing `back/.venv` Python and `PYTHONPATH
 
 For web, run `PYTHONPATH=src ../back/.venv/bin/python scripts/reverse_compare_web_demo.py --output /tmp/reverse-web --serve`, observe `/original/` and `/replica/` using `ttakkari_browser`, then save the resulting observations and screenshots and call `scripts/reverse_compare_web_capture.py`. That script stores a functional comparison and keeps a separate visual result in `evidence[kind=visual_assessment]`.
 
+## ReverseJob web evidence handoff
+
+ReverseJob web prompts contain a concrete command pair for the actual job folder:
+the existing `.venv` interpreter, checkout `src` on `PYTHONPATH`, and absolute
+capture/verify script paths are shell-quoted. The commands run from the job folder
+and do not install dependencies or write into a deployment runtime. Use the
+canonical `reverse_web_evidence_capture.py` writer and then
+`reverse_web_evidence_verify.py` with that Run's ID. The instructions include the
+observations JSON shape and require the original and replica to share the same
+input, pre-state, viewport and browser environment.
+
+Both implementer and verifier must observe through the configured
+`ttakkari_browser`. The verifier repeats the browser actions in its own Run and
+stores its own comparison. Keep direct browser observations separate from manual
+transcription, secondary HTTP checks and inference. An unavailable original or
+browser failure remains `unverified` and may require `needs_input`. The writer and
+verifier check module-level files; they do not establish ReverseJob agent E2E or
+authenticated execution provenance. Provenance remains `unverified`.
+
+`collect_outputs` rechecks the run-specific raw JSON and both PNGs before adding
+them to `reconstruction-source.zip`. The ZIP keeps the paths referenced by raw
+JSON, records per-role Run and session IDs, comparison status, visual summary,
+checks/log hashes, integrity and provenance in
+`reverse-web-evidence-manifest.json`, and places each role's check logs under
+`evidence/roles/implementation/` or `evidence/roles/verifier/`. JSON and ordinary
+files retain the 1 MiB bound; PNGs have their separate 12 MiB bound. Rejected or
+missing evidence is listed with a reason and is not marked included.
+
 ## Captured target run
 
 On 2026-11-07 KST, the harness directly ran the real `/usr/bin/basename` against the source fixture `scripts/reverse_compare_basename_replica.py`: nine vectors covered plain input, Korean and spaces, suffixes, trailing slashes, root and empty values, `-s`, `-a`, missing arguments and an invalid option. Eight matched; the invalid-option error remains a mismatch because the original and replica print different command prefixes. No output normalization was applied. This is a harness target run, not a platform agent E2E.
@@ -34,4 +62,4 @@ The comparison ran on `macOS-27.0-arm64-arm-64bit-Mach-O`, Python 3.13.15, again
 
 The report contract has exactly the declared comparison keys, so this harness keeps visual judgement as a distinct `visual_assessment` evidence item inside the allowed `evidence` array rather than adding a top-level field. Consumers that render visual status should read that evidence kind separately from `result`.
 
-CLI byte equality uses `stdout_bytes_b64` and `stderr_bytes_b64`; the server comparator must prefer these when present, because two different invalid UTF-8 byte strings can decode to the same replacement text. API direct verification recomputes status/body-bytes/headers/state from captures. Current verifier deliberately leaves browser-observed web comparisons `unverified` as direct platform comparisons; the harness itself retains its browser-observed functional result and separate visual verdict. If platform status needs a server-verified web `match`, the contract needs an explicit rule for accepting browser observations and independently validating screenshot references.
+CLI byte equality uses `stdout_bytes_b64` and `stderr_bytes_b64`; the server comparator must prefer these when present, because two different invalid UTF-8 byte strings can decode to the same replacement text. API direct verification recomputes status/body-bytes/headers/state from captures. The web server path reopens the hashed raw capture and recomputes functional and pixel results while keeping provenance unverified because trusted RunEvent/tool-result linkage is not yet available.

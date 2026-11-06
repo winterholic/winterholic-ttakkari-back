@@ -87,3 +87,12 @@
 - 첫 수정 포함 commit `9b0262a8af2fd32e0a5f08b422c918787e735ef6`의 impacted gate는 계약 `85 passed, 6836 deselected in 15.36s`, 변경 테스트 `105 passed in 11.65s`였으나 새 테스트의 `from ttakkari import ...` 결합 import가 Ruff `I001`로 실패(exit 1)했다.
 - import를 `from ttakkari import artcraft_tasks, background_consumers`와 `from ttakkari import db as db_module`로 분리했다. 이후 latest fetch `origin/main=40e88581cc1010287ef2b82e13188e2d6c6e8df9`를 포함한 기준으로 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-453208be ./scripts/verify_deploy_gate.sh --commit 11bb047a894bb3d50cacd2af3b03095e91d037ae --base 40e88581cc1010287ef2b82e13188e2d6c6e8df9` 실행 → exit 0; Ruff 9 Python files 통과, 계약 `85 passed, 6836 deselected in 15.35s`, 변경 테스트 4 files `105 passed in 10.01s`, DB reset `38 selective`, `0 forced full`, `0 fell back to full`.
 - 이 검사는 필수 pre-push impacted 범위만 다룬다. 전체 suite는 반복하지 않았다. 이 기록 자체는 문서 변경이며, push hook은 최종 기록 commit SHA에서 다시 실행한다.
+
+### ArtCraft release push 및 backend 예약 (2026-11-07)
+
+- 배포 후보 `55f2a40aefb642f7ac5ceef9f7ca8055fcdd1fd3`, push 직전 fetch한 `origin/main=40e88581cc1010287ef2b82e13188e2d6c6e8df9`; merge-base 동일, ahead 23, worktree clean이었다. 원격은 후보에 이미 포함된 `40e88581` 이후 추가 전진이 없었다.
+- 계정별 인증: `github_accounts`는 `winterholic` active/success를 반환했다. `gh auth switch` 없이 per-command credential helper로 `git push origin HEAD:main`을 실행했다.
+- 실제 push의 pre-push hook → exit 0: Ruff(변경된 Python 9개) 통과, 계약 `85 passed, 6836 deselected in 15.56s`, 변경 테스트 4개 `105 passed in 10.13s`; DB reset `38 selective`, `0 forced full`, `0 fell back to full`.
+- push 결과: `40e88581..55f2a40a HEAD -> main`. 직후 `git fetch origin main`/`git rev-parse HEAD origin/main` → 둘 다 `55f2a40aefb642f7ac5ceef9f7ca8055fcdd1fd3`; branch `release/artcraft-main-20261107...origin/main` clean; `git diff --check origin/main^..HEAD` 출력 없음(exit 0).
+- `request_backend_deploy(revision='55f2a40aefb642f7ac5ceef9f7ca8055fcdd1fd3')` → reservation `09a13bbe-b69f-4efa-859f-d6d7101075ea`, `status=requested`, `strategy=generations`, `skip_tests=false`, `error=null`. 이는 접수이며 실제 배포 완료를 뜻하지 않는다. 요청된 대로 deploy 상태는 polling하지 않았다.
+- 이 추가 문단을 담는 후속 commit은 work-history만 바꾸며, release source와 예약 대상 SHA는 위 `55f2a40a…` 그대로다.

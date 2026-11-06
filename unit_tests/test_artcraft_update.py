@@ -23,14 +23,19 @@ from ttakkari import artcraft
 from ttakkari.artcraft import ArtcraftError
 
 
-def _make_fake_cli_script(version: str, mcp_ok: bool = True, crash: bool = False) -> str:
+def _make_fake_cli_script(
+    version: str,
+    mcp_ok: bool = True,
+    crash: bool = False,
+    mcp_response: str | None = None,
+) -> str:
     """--version 및 MCP initialize 핸드셰이크를 처리하는 모의 바이너리 스크립트."""
     if crash:
         return "#!/bin/sh\necho 'Crash!' >&2\nexit 1\n"
 
-    mcp_resp = (
+    mcp_resp = mcp_response or (
         'print(json.dumps({"jsonrpc": "2.0", "id": data.get("id", 1), '
-        f'"result": {{"protocolVersion": "2024-11-05", "serverInfo": {{"name": "mock", "version": "{version}"}}}}}}), flush=True)\n'
+        f'"result": {{"protocolVersion": "2024-11-05", "capabilities": {{}}, "serverInfo": {{"name": "mock", "version": "{version}"}}}}}}), flush=True)\n'
         if mcp_ok
         else 'print(json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "mcp init error"}}), flush=True)\n'
     )
@@ -361,11 +366,111 @@ async def test_manual_rollback(fake_artcraft_root: Path, monkeypatch: pytest.Mon
     assert "0.9.0" in str(target)
 
 
+@pytest.mark.asyncio
+async def test_manual_rollback_restores_previous_bytes_after_same_version_reinstall(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import apply_update, rollback_update
+
+    original = fake_artcraft_root / "dist/cli/photocraft/photocraft-cli-0.9.0-macos-universal/photocraft-cli"
+    original_bytes = original.read_bytes()
+    replacement_zip = _make_zip({
+        "photocraft-cli-0.9.0-macos-universal/photocraft-cli": _make_fake_cli_script(
+            "0.9.0",
+            mcp_response='print(json.dumps({"jsonrpc":"2.0","id":data.get("id"),"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"replacement","version":"0.9.0"}}}), flush=True)\n# replacement build\n',
+        ),
+    })
+
+    async def fake_fetch(app: str, tag: str | None = None):
+        return {
+            "asset_name": "photocraft-cli-0.9.0-macos-universal.zip",
+            "zip_bytes": replacement_zip,
+            "sha256_sums": f"{hashlib.sha256(replacement_zip).hexdigest()}  photocraft-cli-0.9.0-macos-universal.zip\n",
+            "version": "0.9.0",
+            "tag": "v0.9.0",
+        }
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    await apply_update("photocraft", tag="v0.9.0", confirm=True)
+    await rollback_update("photocraft", confirm=True)
+
+    restored = (fake_artcraft_root / "bin/photocraft-cli").resolve()
+    assert restored.read_bytes() == original_bytes
+    assert artcraft.load_state()["updates"]["photocraft"]["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_manual_rollback_verification_failure_preserves_current_installation(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import apply_update, rollback_update
+
+    new_zip = _make_zip({"photocraft-cli-0.10.0-macos-universal/photocraft-cli": _make_fake_cli_script("0.10.0")})
+
+    async def fake_fetch(app: str, tag: str | None = None):
+        return {
+            "asset_name": "photocraft-cli-0.10.0-macos-universal.zip",
+            "zip_bytes": new_zip,
+            "sha256_sums": f"{hashlib.sha256(new_zip).hexdigest()}  photocraft-cli-0.10.0-macos-universal.zip\n",
+            "version": "0.10.0",
+            "tag": "v0.10.0",
+        }
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    await apply_update("photocraft", tag="v0.10.0", confirm=True)
+    current = (fake_artcraft_root / "bin/photocraft-cli").resolve()
+    current_bytes = current.read_bytes()
+
+    async def reject_rollback(app: str, path: Path):
+        return False, "rollback binary rejected"
+
+    monkeypatch.setattr("ttakkari.artcraft_update.verify_installation", reject_rollback)
+    with pytest.raises(ArtcraftError, match="롤백 후 검증 실패"):
+        await rollback_update("photocraft", confirm=True)
+
+    restored = (fake_artcraft_root / "bin/photocraft-cli").resolve()
+    assert restored.read_bytes() == current_bytes
+    state = artcraft.load_state().get("updates", {}).get("photocraft", {})
+    assert state["last_status"]["status"] == "failed"
+    assert state["last_status"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_initialize_requires_success_result_structure(fake_artcraft_root: Path):
+    from ttakkari.artcraft_update import verify_installation
+
+    malformed = _make_fake_cli_script(
+        "0.9.0",
+        mcp_response='print(json.dumps({"jsonrpc":"2.0","id":data.get("id")}), flush=True)\n',
+    )
+    path = fake_artcraft_root / "malformed-cli"
+    path.write_text(malformed, encoding="utf-8")
+    path.chmod(0o755)
+
+    ok, message = await verify_installation("photocraft", path)
+    assert ok is False
+    assert "initialize" in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_mcp_initialize_accepts_valid_success_result(fake_artcraft_root: Path):
+    from ttakkari.artcraft_update import verify_installation
+
+    path = fake_artcraft_root / "valid-cli"
+    path.write_text(_make_fake_cli_script("0.9.0"), encoding="utf-8")
+    path.chmod(0o755)
+
+    ok, message = await verify_installation("photocraft", path)
+    assert ok is True
+    assert "0.9.0" in message
+
+
 # ---------------------------------------------------------------- 완료 기준 1: 실제 Job 경로 자기 자신 제외 회귀 테스트
 
 @pytest.mark.asyncio
 async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
     """실제 start_update_job -> _start -> runner -> apply_update -> check_busy 경로에서 자기 자신을 제외하여 성공해야 함."""
+    from ttakkari import artcraft_tasks
     from ttakkari.artcraft_update import start_update_job, start_rollback_job
 
     new_bin_script = _make_fake_cli_script("0.10.0")
@@ -382,9 +487,17 @@ async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: P
         }
 
     monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    db_calls = []
+
+    async def no_active_tasks(db):
+        db_calls.append(db)
+        return set()
+
+    monkeypatch.setattr(artcraft_tasks, "active_task_apps", no_active_tasks, raising=False)
+    db = object()
 
     # 1. 실제 start_update_job 실행 및 완료 대기
-    job = start_update_job("photocraft", tag="v0.10.0", confirm=True)
+    job = await start_update_job("photocraft", tag="v0.10.0", confirm=True, db=db)
     assert job.id in artcraft.JOBS
 
     if job.task:
@@ -394,12 +507,14 @@ async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: P
     assert "0.10.0" in job.summary
 
     # 2. 실제 start_rollback_job 실행 및 완료 대기
-    rb_job = start_rollback_job("photocraft", confirm=True)
+    rb_job = await start_rollback_job("photocraft", confirm=True, db=db)
     if rb_job.task:
         await rb_job.task
 
     assert rb_job.state == "succeeded"
     assert "0.9.0" in rb_job.summary
+    assert len(db_calls) >= 4
+    assert all(call is db for call in db_calls)
 
 
 # ---------------------------------------------------------------- 완료 기준 2: 동일 버전 재설치 및 실패 시 기존 바이너리 보존
@@ -468,6 +583,47 @@ async def test_same_version_verify_fail_preserves_existing_installation(fake_art
     assert symlink.resolve().is_file()
 
 
+@pytest.mark.asyncio
+async def test_apply_swap_failure_restores_install_and_persists_failure(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import apply_update
+
+    old_link = fake_artcraft_root / "bin/photocraft-cli"
+    old_target = old_link.resolve()
+    old_bytes = old_target.read_bytes()
+    new_zip = _make_zip({"photocraft-cli-0.10.0-macos-universal/photocraft-cli": _make_fake_cli_script("0.10.0")})
+
+    async def fake_fetch(app: str, tag: str | None = None):
+        return {
+            "asset_name": "photocraft-cli-0.10.0-macos-universal.zip",
+            "zip_bytes": new_zip,
+            "sha256_sums": f"{hashlib.sha256(new_zip).hexdigest()}  photocraft-cli-0.10.0-macos-universal.zip\n",
+            "version": "0.10.0",
+            "tag": "v0.10.0",
+        }
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    real_replace = __import__("os").replace
+    failed_once = False
+
+    def fail_initial_symlink_swap(src, dst):
+        nonlocal failed_once
+        if not failed_once and Path(dst) == old_link:
+            failed_once = True
+            raise OSError("simulated swap interruption")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("ttakkari.artcraft_update.os.replace", fail_initial_symlink_swap)
+    with pytest.raises(OSError, match="simulated swap interruption"):
+        await apply_update("photocraft", tag="v0.10.0", confirm=True)
+
+    assert old_link.resolve().read_bytes() == old_bytes
+    state = artcraft.load_state().get("updates", {}).get("photocraft", {})
+    assert state["last_status"]["status"] == "failed"
+    assert "simulated swap interruption" in state["error"]
+
+
 # ---------------------------------------------------------------- 완료 기준 3: MCP 핸드셰이크 검증
 
 @pytest.mark.asyncio
@@ -518,7 +674,7 @@ async def test_preview_refresh_actual_effect_and_gui_busy(fake_artcraft_root: Pa
             "published_at": "2026-11-07T00:00:00Z",
         }
 
-    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", fake_fetch)
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_latest_release_info", fake_fetch)
 
     # refresh 호출
     info = await get_app_update_info("photocraft", refresh=True)
@@ -536,6 +692,26 @@ async def test_preview_refresh_actual_effect_and_gui_busy(fake_artcraft_root: Pa
     assert busy_info["busy"] is True
     assert "실행 중" in busy_info["busy_reason"]
     assert busy_info["can_update"] is False
+
+
+@pytest.mark.asyncio
+async def test_preview_refresh_does_not_hide_release_error_or_download_binary(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from ttakkari.artcraft_update import get_app_update_info
+
+    async def fail_metadata(app: str):
+        raise ArtcraftError(502, "bad_gateway", "release metadata unavailable")
+
+    async def forbidden_binary_fetch(app: str, tag: str | None = None):
+        raise AssertionError("preview refresh must not download binary assets")
+
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_latest_release_info", fail_metadata)
+    monkeypatch.setattr("ttakkari.artcraft_update.fetch_release_assets", forbidden_binary_fetch)
+
+    with pytest.raises(ArtcraftError) as exc:
+        await get_app_update_info("photocraft", refresh=True)
+    assert exc.value.code == "bad_gateway"
 
 
 def test_status_response_contract_compliance(fake_artcraft_root: Path):
@@ -576,6 +752,25 @@ def test_interrupted_updates_reconciled_on_startup(fake_artcraft_root: Path):
     assert "서버 재시작" in state.get("error", "")
 
 
+@pytest.mark.asyncio
+async def test_busy_check_recovers_stale_persisted_job_before_rejecting(fake_artcraft_root: Path):
+    from ttakkari.artcraft_update import check_busy
+
+    def mark_stale(state: dict):
+        state.setdefault("updates", {})["photocraft"] = {
+            "state": "running",
+            "current_job_id": "lost-after-restart",
+            "action": "update-apply",
+        }
+
+    artcraft.update_state(mark_stale)
+    await check_busy("photocraft")
+
+    update = artcraft.load_state()["updates"]["photocraft"]
+    assert update["state"] == "interrupted"
+    assert update["last_status"]["status"] == "interrupted"
+
+
 # ---------------------------------------------------------------- FastAPI 라우터 통합 테스트
 
 @pytest.fixture
@@ -600,7 +795,13 @@ def app_with_routes(fake_artcraft_root: Path):
 
 
 @pytest.mark.asyncio
-async def test_update_preview_api(app_with_routes: FastAPI):
+async def test_update_preview_api(app_with_routes: FastAPI, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari import artcraft_tasks
+
+    async def no_active_apps(db):
+        return set()
+
+    monkeypatch.setattr(artcraft_tasks, "active_task_apps", no_active_apps, raising=False)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_with_routes), base_url="http://test") as c:
         r = await c.get("/api/artcraft/apps/photocraft/update")
         assert r.status_code == 200
@@ -620,14 +821,20 @@ async def test_update_apply_requires_confirm(app_with_routes: FastAPI):
 
 @pytest.mark.asyncio
 async def test_update_apply_and_rollback_api_success(app_with_routes: FastAPI, monkeypatch: pytest.MonkeyPatch):
-    async def fake_apply(app: str, tag: str | None = None, confirm: bool = False, current_job_id: str | None = None):
-        return {"success": True, "app": app, "version": "0.10.0", "previous_version": "0.9.0"}
+    db_seen = []
 
-    async def fake_rollback(app: str, confirm: bool = False, current_job_id: str | None = None):
-        return {"success": True, "app": app, "restored_version": "0.9.0"}
+    async def fake_start_update(app: str, tag: str | None, confirm: bool, db=None):
+        db_seen.append(db)
+        return artcraft.Job(id="fake-update", kind="update", action="update-apply", apps=[app], state="queued")
 
-    monkeypatch.setattr("ttakkari.artcraft_update.apply_update", fake_apply)
-    monkeypatch.setattr("ttakkari.artcraft_update.rollback_update", fake_rollback)
+    async def fake_start_rollback(app: str, confirm: bool, db=None):
+        if not confirm:
+            raise ArtcraftError(428, "confirm_required", "confirm required")
+        db_seen.append(db)
+        return artcraft.Job(id="fake-rollback", kind="update", action="update-rollback", apps=[app], state="queued")
+
+    monkeypatch.setattr("ttakkari.artcraft_update.start_update_job", fake_start_update)
+    monkeypatch.setattr("ttakkari.artcraft_update.start_rollback_job", fake_start_rollback)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_with_routes), base_url="http://test") as c:
         # 1. apply 요청 (202 Accepted)
@@ -641,12 +848,19 @@ async def test_update_apply_and_rollback_api_success(app_with_routes: FastAPI, m
         r_rb_fail = await c.post("/api/artcraft/apps/photocraft/update/rollback", json={"confirm": False})
         assert r_rb_fail.status_code == 428
 
+        r_rb_ok = await c.post("/api/artcraft/apps/photocraft/update/rollback", json={"confirm": True})
+        assert r_rb_ok.status_code == 202
+        assert r_rb_ok.json()["action"] == "update-rollback"
+
         # 3. status 조회
         r_st = await c.get("/api/artcraft/apps/photocraft/update/status")
         assert r_st.status_code == 200
         st_data = r_st.json()
         assert st_data["app"] == "photocraft"
         assert "history" in st_data
+
+    assert len(db_seen) == 2
+    assert all(db is not None for db in db_seen)
 
 
 @pytest.mark.asyncio
@@ -657,6 +871,40 @@ async def test_update_conflict_blocks_overlapping_job(fake_artcraft_root: Path):
     artcraft.JOBS["job_upd_1"] = job
 
     with pytest.raises(ArtcraftError) as exc:
-        start_update_job("photocraft", tag=None, confirm=True)
+        await start_update_job("photocraft", tag=None, confirm=True)
     assert exc.value.status == 409
     assert exc.value.code == "busy"
+
+
+@pytest.mark.asyncio
+async def test_update_job_checks_active_task_apps_from_api_db(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari import artcraft_tasks
+    from ttakkari.artcraft_update import start_update_job
+
+    seen = []
+
+    async def active_apps(db):
+        seen.append(db)
+        return {"photocraft"}
+
+    monkeypatch.setattr(artcraft_tasks, "active_task_apps", active_apps, raising=False)
+    db = object()
+    with pytest.raises(ArtcraftError) as exc:
+        await start_update_job("photocraft", tag=None, confirm=True, db=db)
+    assert exc.value.code == "busy"
+    assert seen == [db]
+
+
+@pytest.mark.asyncio
+async def test_busy_check_db_failure_fails_closed(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari import artcraft_tasks
+    from ttakkari.artcraft_update import check_busy
+
+    async def unavailable(db):
+        raise RuntimeError("database offline")
+
+    monkeypatch.setattr(artcraft_tasks, "active_task_apps", unavailable, raising=False)
+    with pytest.raises(ArtcraftError) as exc:
+        await check_busy("photocraft", db=object())
+    assert exc.value.status == 503
+    assert exc.value.code == "busy_check_unavailable"

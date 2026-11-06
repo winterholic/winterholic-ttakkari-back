@@ -1,6 +1,6 @@
 # ArtCraft 앱별 업데이트 API 계약
 
-> **문서 상태**: 확정 (2026-11-06)  
+> **문서 상태**: 확정 (2026-11-07)
 > **대상**: 프론트엔드 관제 UI, 백엔드 라우터, 오케스트레이터/리드 에이전트  
 > **기반 ADR**: ADR 0035 (ArtCraft 관제) 개정 및 신규 업데이트 명세
 
@@ -12,9 +12,9 @@
 
 ### 불변 조건 및 안전 원칙
 1. **공식 Storytold 자산 한정**: 임의 URL, 비공식 저장소, 임의 셸 입력은 차단하며 오직 `storytold/<app>` 공식 릴리스의 macOS Universal/ARM64 CLI 자산 및 `SHA256SUMS.txt`만 다운로드·검증합니다.
-2. **Busy Guard**: 대상 앱의 GUI가 켜져 있거나(`running` 또는 `listening`), 관련 Job(스모크, GUI 조작, 타 업데이트)이 진행 중일 때는 409 Conflict로 안전하게 거절합니다.
+2. **Busy Guard**: 대상 앱 GUI가 켜져 있거나(`running` 또는 `listening`), DB의 활성 제작 Run, 로컬 Job 또는 공유 상태 파일에 기록된 업데이트가 확인되면 409 Conflict로 거절합니다. 활성 제작 Run 조회나 상태 확인이 실패하면 업데이트를 허용하지 않고 503으로 돌려보냅니다. 인메모리 `JOBS`는 프로세스 안의 충돌만 찾으며 서버 세대 간 배타성을 보장하지 않습니다. 상태 확인과 Job 등록도 단일 원자 연산이 아니므로 여러 세대가 동시에 시작하는 경쟁까지 배제하는 계약은 아닙니다.
 3. **원자적 스왑 & 백업 보존**: 스테이징 디렉터리에서 압축 해제 및 무결성 검증을 마친 후 `dist/cli/<app>` 및 `bin/<app>-cli` 심링크를 원자적으로 교체하며, 직전 버전을 항상 보존합니다. 동일 버전 재설치 시에도 기존 디렉터리를 즉시 삭제하지 않고 임시 보존 이동 후 사후 검증 성공 시 정리합니다.
-4. **사후 검증 및 자동 롤백**: 교체 직후 CLI `--version` 및 stdio MCP `initialize` JSON-RPC 2.0 핸드셰이크를 검증하며, 실패 시 사용자 개입 없이 즉시 이전 버전으로 자동 롤백하고 기존 설치를 완벽히 복원합니다.
+4. **사후 검증 및 자동 롤백**: 교체 직후 CLI `--version` 및 정상 JSON-RPC 2.0 MCP `initialize` 성공 `result` 구조를 검증하며, 실패 시 사용자 개입 없이 이전 바이너리 바이트와 디렉터리를 복원합니다. 수동 롤백 후보도 검증에 실패하면 현재 설치로 심링크를 되돌립니다.
 5. **거짓 성공 금지**: 서버 재시작이나 프로세스 중단 발생 시 비정상 종료된 작업이 성공으로 표시되지 않도록 상태 파일(`state.json`)에서 세대 불일치/미완료를 감지하여 `interrupted`/`failed`로 마킹합니다.
 
 ---
@@ -23,9 +23,9 @@
 
 | 메서드 | 경로 | 인증 | 설명 | 상태 코드 |
 |---|---|---|---|---|
-| `GET` | `/api/artcraft/apps/{app}/update` | User | 앱별 업데이트 미리보기 및 백업/Busy 상태 조회 | 200, 404 |
-| `POST` | `/api/artcraft/apps/{app}/update` | User | 최신/지정 릴리스로 업데이트 실행 (비동기 Job) | 202, 400, 404, 409, 428 |
-| `POST` | `/api/artcraft/apps/{app}/update/rollback` | User | 이전 버전으로 롤백 실행 (비동기 Job) | 202, 404, 409, 428 |
+| `GET` | `/api/artcraft/apps/{app}/update` | User | 앱별 업데이트 미리보기 및 백업/Busy 상태 조회 | 200, 404, 502, 503 |
+| `POST` | `/api/artcraft/apps/{app}/update` | User | 최신/지정 릴리스로 업데이트 실행 (비동기 Job) | 202, 400, 404, 409, 428, 503 |
+| `POST` | `/api/artcraft/apps/{app}/update/rollback` | User | 이전 버전으로 롤백 실행 (비동기 Job) | 202, 404, 409, 428, 503 |
 | `GET` | `/api/artcraft/apps/{app}/update/status` | User | 앱별 업데이트 진행 상태 및 이력 조회 | 200, 404 |
 | `GET` | `/api/artcraft/jobs/{job_id}` | User | 표준 Job 상세 조회 (기존 API 활용) | 200, 404 |
 
@@ -39,7 +39,7 @@
 
 #### 요청
 - 경로 파라미터: `app` (string, `registry.json`에 정의된 13개 앱 이름)
-- 쿼리 파라미터: `refresh` (boolean, optional, 기본값 `false`) — `true` 지정 시 캐시를 무시하고 GitHub 최신 릴리스 및 실시간 앱 상태를 즉시 재조회
+- 쿼리 파라미터: `refresh` (boolean, optional, 기본값 `false`) — `true` 지정 시 GitHub 릴리스 메타데이터와 실시간 앱 상태를 즉시 재조회합니다. 미리보기 갱신은 ZIP 바이너리나 체크섬 파일을 받지 않습니다. 원격 조회 실패는 이전 캐시로 대체하지 않고 오류로 반환합니다.
 
 #### 응답 (`200 OK`)
 ```json
@@ -52,8 +52,7 @@
     "tag": "v0.10.0",
     "version": "0.10.0",
     "published_at": "2026-10-18T11:41:00Z",
-    "asset_name": "photocraft-cli-0.10.0-macos-universal.zip",
-    "sha256": "57b2bfa6514beb9f85177fbb6832f8aa3aebee08561d78d54a3182c404220927"
+    "asset_name": "photocraft-cli-0.10.0-macos-universal.zip"
   },
   "update_available": false,
   "can_update": true,
@@ -73,10 +72,11 @@
 }
 ```
 
-- `can_update`: `true`일 때 업데이트 버튼 활성화. `busy`가 `true`(GUI 실행 중이거나 작업 진행 중)이거나 최신 릴리스 정보가 없으면 `false`.
-- `busy`: 앱 GUI가 켜져 있거나(`running` / `listening`), 다른 Job(스모크/업데이트)이 진행 중이면 `true`.
+- `can_update`: `true`일 때 업데이트 버튼 활성화. `busy`이거나 최신 릴리스 정보가 없으면 `false`.
+- `busy`: 앱 GUI, DB에서 조회한 활성 제작 Run, 로컬 활성 Job 또는 공유 상태 파일의 활성 업데이트가 확인되면 `true`.
 - `busy_reason`: busy 상태의 구체적 사유(예: `"photocraft 앱이 현재 실행 중입니다."` 또는 `"작업 진행 중: smoke-full"`).
 - `can_rollback`: `true`일 때 롤백 버튼 활성화. 이전 백업 디렉터리가 존재할 때만 `true`.
+- `refresh=true`에서 릴리스 조회 실패 시 `502` 등 원격 오류를 반환합니다. 활성 제작 작업 DB 조회나 공유 상태 조회 실패는 `503 busy_check_unavailable`을 반환하며 업데이트 가능 여부를 추정하지 않습니다.
 
 ---
 
@@ -116,6 +116,7 @@
 - `409 Conflict`: 앱이 현재 실행 중이거나(`app_running`), 다른 스모크/업데이트가 진행 중임 (`busy`)
 - `422 Unprocessable Entity`: 잘못된 태그 형식 (`validation`)
 - `428 Precondition Required`: `confirm: true` 미포함 (`confirm_required`)
+- `503 Service Unavailable`: 활성 제작 작업 또는 공유 업데이트 상태를 확인할 수 없음 (`busy_check_unavailable`)
 
 ---
 
@@ -152,6 +153,7 @@
 - `404 Not Found`: 롤백할 이전 버전 백업이 없음 (`no_backup_available`)
 - `409 Conflict`: 앱 실행 중 또는 다른 작업 진행 중 (`busy` / `app_running`)
 - `428 Precondition Required`: `confirm: true` 미포함 (`confirm_required`)
+- `503 Service Unavailable`: 활성 제작 작업 또는 공유 업데이트 상태를 확인할 수 없음 (`busy_check_unavailable`)
 
 ---
 

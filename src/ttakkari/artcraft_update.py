@@ -121,14 +121,56 @@ def safe_extract_zip(zip_bytes: bytes, dest_dir: Path) -> list[str]:
 
 # ---------------------------------------------------------------- Busy Guard
 
-async def check_busy(app: str, exclude_job_id: str | None = None) -> None:
-    """앱 GUI 실행 여부 및 Job 활성 상태를 점검하여 충돌 방지.
+async def check_busy(
+    app: str,
+    exclude_job_id: str | None = None,
+    db: Any | None = None,
+) -> None:
+    """앱 GUI 실행 여부, 활성 제작 작업(DB), 타 세대 영속 상태 및 인메모리 Job 상태를 종합 점검하여 충돌 방지.
     
-    현재 실행 중인 자기 자신의 job_id는 검사에서 제외한다.
+    경계 주의: 인메모리 artcraft.JOBS는 해당 프로세스에서만 보이는 충돌 검사용이다.
+    state.json의 활성 표시로 이미 기록된 업데이트를 감지하고 DB의 active_task_apps(db)로
+    활성 제작 Run을 감지하지만, 상태 확인과 Job 등록은 하나의 원자 연산이 아니므로
+    이 검사만으로 여러 서버 세대 간 동시 시작을 엄밀히 배제한다고 보장하지 않는다.
     """
     validate_app(app)
 
-    # 1. 진행 중인 Job 검사 (스모크, GUI 조작, 타 업데이트)
+    # 1. DB 기반 활성 제작 작업 검사 (artcraft_tasks.active_task_apps)
+    if db is not None:
+        try:
+            from ttakkari import artcraft_tasks
+            active_apps = await artcraft_tasks.active_task_apps(db)
+        except ArtcraftError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ArtcraftError(503, "busy_check_unavailable", f"활성 제작 작업을 확인할 수 없습니다: {exc}") from exc
+        if app in active_apps:
+            raise ArtcraftError(
+                409,
+                "busy",
+                f"'{app}' 앱을 사용하는 제작 작업이 현재 실행 중입니다.",
+            )
+
+    # 2. 공유 영속 상태(state.json)에 이미 표시된 활성 업데이트 검사
+    try:
+        reconcile_stale_updates()
+        saved_state = artcraft.load_state()
+        updates = saved_state.get("updates") or {}
+        app_update_state = updates.get(app) or {}
+        if isinstance(app_update_state, dict) and app_update_state.get("state") in ("running", "queued"):
+            persisted_job_id = app_update_state.get("current_job_id")
+            if not (exclude_job_id and persisted_job_id == exclude_job_id):
+                raise ArtcraftError(
+                    409,
+                    "busy",
+                    f"{app} 업데이트/롤백 작업이 영속 상태(다른 세대/프로세스)에서 이미 진행 중입니다.",
+                )
+    except ArtcraftError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise ArtcraftError(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
+
+    # 3. 로컬 인메모리 진행 중인 Job 검사 (스모크, GUI 조작, 타 업데이트)
     for job in artcraft.JOBS.values():
         if not job.active:
             continue
@@ -141,7 +183,7 @@ async def check_busy(app: str, exclude_job_id: str | None = None) -> None:
         if app in job.apps:
             raise ArtcraftError(409, "busy", f"{app} 관련 작업({job.action})이 진행 중입니다.")
 
-    # 2. GUI 실행 중 검사
+    # 4. GUI 실행 중 검사
     try:
         status, _, _ = await artcraft.raw_status(force=False)
         for a in status:
@@ -234,6 +276,44 @@ async def fetch_release_assets(app: str, tag: str | None = None) -> dict[str, An
         }
 
 
+async def fetch_latest_release_info(app: str) -> dict[str, Any]:
+    """미리보기 갱신용 릴리스 메타데이터만 조회한다 (바이너리·체크섬 파일 다운로드 없음)."""
+    validate_app(app)
+    repo = f"{STORYTOLD_ORG}/{app}"
+    headers = {
+        "User-Agent": "Ttakkari-ArtCraft-Updater/1.0",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    gh_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if gh_token:
+        headers["Authorization"] = f"Bearer {gh_token}"
+
+    import httpx
+
+    async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
+        resp = await client.get(f"https://api.github.com/repos/{repo}/releases/latest", headers=headers)
+    if resp.status_code == 404:
+        raise ArtcraftError(404, "release_not_found", f"{repo} 릴리스 정보를 찾을 수 없습니다.")
+    if resp.status_code != 200:
+        raise ArtcraftError(502, "bad_gateway", f"GitHub API 응답 오류 (status={resp.status_code})")
+
+    release_info = resp.json()
+    cli_assets = [
+        asset for asset in release_info.get("assets", [])
+        if "macos" in asset.get("name", "") and asset.get("name", "").endswith(".zip")
+        and "-cli-" in asset.get("name", "")
+    ]
+    if not cli_assets:
+        raise ArtcraftError(404, "asset_not_found", f"{repo} 릴리스에서 macOS CLI zip 자산을 찾을 수 없습니다.")
+    version = validate_version(release_info.get("tag_name", ""))
+    return {
+        "asset_name": cli_assets[0].get("name"),
+        "version": version,
+        "tag": release_info.get("tag_name", f"v{version}"),
+        "published_at": release_info.get("published_at"),
+    }
+
+
 # ---------------------------------------------------------------- 설치 후 사후 검증
 
 async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
@@ -296,12 +376,26 @@ async def verify_installation(app: str, bin_path: Path) -> tuple[bool, str]:
                     continue
                 try:
                     data = json.loads(line_str)
-                    if data.get("id") == 1 and ("result" in data or "error" not in data):
-                        return True, None
+                    if not isinstance(data, dict):
+                        return False, "initialize 응답이 JSON 객체가 아닙니다."
+                    if data.get("id") != 1 or data.get("jsonrpc") != "2.0":
+                        continue
                     if "error" in data:
                         return False, f"MCP 에러 응답: {data['error']}"
+                    result = data.get("result")
+                    server_info = result.get("serverInfo") if isinstance(result, dict) else None
+                    if (
+                        isinstance(result, dict)
+                        and isinstance(result.get("protocolVersion"), str)
+                        and isinstance(result.get("capabilities"), dict)
+                        and isinstance(server_info, dict)
+                        and isinstance(server_info.get("name"), str)
+                        and isinstance(server_info.get("version"), str)
+                    ):
+                        return True, None
+                    return False, "initialize 성공 result 구조가 올바르지 않습니다."
                 except json.JSONDecodeError:
-                    continue
+                    return False, "initialize 응답이 유효한 JSON이 아닙니다."
             return False, "MCP 서버가 initialize 응답 없이 종료되었습니다."
 
         try:
@@ -347,13 +441,14 @@ async def apply_update(
     tag: str | None = None,
     confirm: bool = False,
     current_job_id: str | None = None,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     """앱별 업데이트 적용: Busy 검사 -> 다운로드 -> 해제 -> 백업 보존 -> 원자적 스왑 -> 사후 검증 -> 실패 시 자동 원복."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
 
-    await check_busy(app, exclude_job_id=current_job_id)
+    await check_busy(app, exclude_job_id=current_job_id, db=db)
 
     release_data = await fetch_release_assets(app, tag)
     new_version = release_data["version"]
@@ -510,6 +605,7 @@ async def apply_update(
                 "last_status": record,
                 "last_update": record,
                 "current_job_id": None,
+                "error": None,
             })
 
         artcraft.update_state(mutate_success)
@@ -558,6 +654,7 @@ async def apply_update(
                 "last_status": fail_record,
                 "last_update": fail_record,
                 "current_job_id": None,
+                "error": fail_msg,
             })
 
         with artcraft.contextlib.suppress(Exception):
@@ -576,24 +673,28 @@ async def rollback_update(
     app: str,
     confirm: bool = False,
     current_job_id: str | None = None,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     """보존된 이전 버전으로 수동 롤백."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
 
-    await check_busy(app, exclude_job_id=current_job_id)
+    await check_busy(app, exclude_job_id=current_job_id, db=db)
 
     backup_meta = _get_backup_meta(app)
     if not backup_meta or not backup_meta.get("target_binary"):
         raise ArtcraftError(404, "no_backup_available", "복구 가능한 이전 백업이 없습니다.")
 
     target_binary = None
-    orig = backup_meta.get("original_target")
-    if orig and Path(orig).is_file():
-        target_binary = Path(orig)
-    elif backup_meta.get("target_binary") and Path(backup_meta["target_binary"]).is_file():
+    # target_binary는 교체 직전 바이트를 복사 보존한 파일이다. original_target은
+    # 같은 버전 재설치에서 새 바이트로 덮일 수 있으므로 롤백 원본으로 우선하지 않는다.
+    if backup_meta.get("target_binary") and Path(backup_meta["target_binary"]).is_file():
         target_binary = Path(backup_meta["target_binary"])
+    else:
+        orig = backup_meta.get("original_target")
+        if orig and Path(orig).is_file():
+            target_binary = Path(orig)
 
     if not target_binary:
         raise ArtcraftError(404, "no_backup_available", "백업된 바이너리가 존재하지 않습니다.")
@@ -602,15 +703,50 @@ async def rollback_update(
     symlink_path = root / "bin" / f"{app}-cli"
     job_uuid = uuid.uuid4().hex[:8]
 
-    tmp_symlink = root / "bin" / f".tmp-rb-{app}-{job_uuid}"
-    if tmp_symlink.exists() or tmp_symlink.is_symlink():
-        tmp_symlink.unlink()
-    tmp_symlink.symlink_to(target_binary)
-    os.replace(tmp_symlink, symlink_path)
+    current_target = symlink_path.resolve() if symlink_path.is_symlink() else None
+    try:
+        tmp_symlink = root / "bin" / f".tmp-rb-{app}-{job_uuid}"
+        if tmp_symlink.exists() or tmp_symlink.is_symlink():
+            tmp_symlink.unlink()
+        tmp_symlink.symlink_to(target_binary)
+        os.replace(tmp_symlink, symlink_path)
 
-    ok, verify_msg = await verify_installation(app, symlink_path)
-    if not ok:
-        raise ArtcraftError(500, "verification_failed", f"롤백 후 검증 실패: {verify_msg}")
+        ok, verify_msg = await verify_installation(app, symlink_path)
+        if not ok:
+            raise ArtcraftError(500, "verification_failed", f"롤백 후 검증 실패: {verify_msg}")
+    except Exception as exc:
+        # 롤백 후보가 검증되지 않으면 심링크를 현재 설치로 되돌리고 실패를 영속화한다.
+        if current_target and current_target.exists():
+            restore_link = root / "bin" / f".tmp-rb-restore-{app}-{job_uuid}"
+            with artcraft.contextlib.suppress(FileNotFoundError):
+                restore_link.unlink()
+            restore_link.symlink_to(current_target)
+            os.replace(restore_link, symlink_path)
+        fail_msg = exc.message if isinstance(exc, ArtcraftError) else str(exc)
+        failed_record = {
+            "job_id": current_job_id or job_uuid,
+            "action": "update-rollback",
+            "to_version": backup_meta.get("version"),
+            "status": "failed",
+            "error": fail_msg,
+            "at": _now(),
+        }
+
+        def mutate_rollback_failure(state: dict[str, Any]) -> None:
+            updates = state.setdefault("updates", {})
+            entry = updates.setdefault(app, {})
+            entry.setdefault("history", []).append(failed_record)
+            entry.update({
+                "state": "idle",
+                "error": fail_msg,
+                "last_status": failed_record,
+                "last_update": failed_record,
+                "current_job_id": None,
+            })
+
+        with artcraft.contextlib.suppress(Exception):
+            artcraft.update_state(mutate_rollback_failure)
+        raise
 
     restored_version = backup_meta.get("version")
     record = {
@@ -633,6 +769,7 @@ async def rollback_update(
             "last_status": record,
             "last_update": record,
             "current_job_id": None,
+            "error": None,
         })
 
     artcraft.update_state(mutate_rollback_success)
@@ -707,10 +844,14 @@ def get_update_state(app: str) -> dict[str, Any]:
     }
 
 
-async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]:
+async def get_app_update_info(
+    app: str,
+    refresh: bool = False,
+    db: Any | None = None,
+) -> dict[str, Any]:
     """앱별 업데이트 미리보기 정보 반환.
     
-    refresh=True 시 원격 최신 릴리스 조회를 즉시 갱신하고 GUI 실행 여부를 정밀 검사한다.
+    refresh=True 시 원격 최신 릴리스 조회를 즉시 갱신하고 GUI 실행 여부 및 활성 제작 작업을 정밀 검사한다.
     """
     validate_app(app)
     reconcile_stale_updates()
@@ -720,8 +861,8 @@ async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]
     # refresh=True 시 원격 릴리스 정보 갱신
     if refresh:
         try:
-            latest_asset = await fetch_release_assets(app)
-            new_tag = latest_asset.get("tag")
+            latest_release = await fetch_latest_release_info(app)
+            new_tag = latest_release.get("tag")
 
             def mutate_remote(s: dict[str, Any]) -> None:
                 remote_data = s.setdefault("remote", {})
@@ -729,12 +870,14 @@ async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]
                 apps_remote = remote_data.setdefault("apps", {})
                 apps_remote[app] = {
                     "tag": new_tag,
-                    "published_at": latest_asset.get("published_at"),
+                    "published_at": latest_release.get("published_at"),
                 }
 
             artcraft.update_state(mutate_remote)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("%s 최신 릴리스 갱신 실패 (기존 캐시 사용): %s", app, exc)
+            if isinstance(exc, ArtcraftError):
+                raise
+            raise ArtcraftError(502, "release_refresh_failed", f"{app} 최신 릴리스 갱신에 실패했습니다: {exc}") from exc
 
     state = artcraft.load_state()
     remote = state.get("remote") or {}
@@ -764,12 +907,24 @@ async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]
     is_busy = False
     busy_reason = None
 
-    # 1. 활성 Job 검사
-    for job in artcraft.JOBS.values():
-        if job.active and (app in job.apps or (job.kind == "smoke" and job.mode == "full")):
+    # 1. DB 기반 활성 제작 작업 검사
+    if db is not None:
+        try:
+            from ttakkari import artcraft_tasks
+            active_apps = await artcraft_tasks.active_task_apps(db)
+        except Exception as exc:  # noqa: BLE001
+            raise ArtcraftError(503, "busy_check_unavailable", f"활성 제작 작업을 확인할 수 없습니다: {exc}") from exc
+        if app in active_apps:
             is_busy = True
-            busy_reason = f"작업 진행 중: {job.action}"
-            break
+            busy_reason = f"'{app}' 앱을 사용하는 제작 작업이 현재 실행 중입니다."
+
+    # 2. 활성 Job 검사
+    if not is_busy:
+        for job in artcraft.JOBS.values():
+            if job.active and (app in job.apps or (job.kind == "smoke" and job.mode == "full")):
+                is_busy = True
+                busy_reason = f"작업 진행 중: {job.action}"
+                break
 
     # 2. GUI 실행 중 검사 (raw_status 확인)
     if not is_busy:
@@ -816,14 +971,19 @@ async def get_app_update_info(app: str, refresh: bool = False) -> dict[str, Any]
 
 # ---------------------------------------------------------------- Job 연동
 
-def start_update_job(app: str, tag: str | None, confirm: bool) -> artcraft.Job:
+async def start_update_job(
+    app: str,
+    tag: str | None,
+    confirm: bool,
+    db: Any | None = None,
+) -> artcraft.Job:
     """비동기 업데이트 작업 등록 및 실행."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "업데이트 적용을 확인해야 합니다 (confirm=true).")
 
-    if any(j.active and (app in j.apps or (j.kind == "smoke" and j.mode == "full")) for j in artcraft.JOBS.values()):
-        raise ArtcraftError(409, "busy", "다른 작업이 진행 중입니다.")
+    # 사전 종합 충돌 검사 (DB 활성 작업, 영속 상태, 인메모리 Job, GUI 실행)
+    await check_busy(app, db=db)
 
     async def runner(job: artcraft.Job) -> None:
         # 상태 파일에 running 영속화
@@ -841,7 +1001,7 @@ def start_update_job(app: str, tag: str | None, confirm: bool) -> artcraft.Job:
         artcraft.update_state(mark_running)
 
         try:
-            res = await apply_update(app, tag=tag, confirm=True, current_job_id=job.id)
+            res = await apply_update(app, tag=tag, confirm=True, current_job_id=job.id, db=db)
             job.state = "succeeded"
             job.summary = f"{app} {res['version']} 업데이트 성공"
             job.output = res.get("verified_output", "")
@@ -875,14 +1035,18 @@ def start_update_job(app: str, tag: str | None, confirm: bool) -> artcraft.Job:
     return job
 
 
-def start_rollback_job(app: str, confirm: bool) -> artcraft.Job:
+async def start_rollback_job(
+    app: str,
+    confirm: bool,
+    db: Any | None = None,
+) -> artcraft.Job:
     """비동기 롤백 작업 등록 및 실행."""
     validate_app(app)
     if not confirm:
         raise ArtcraftError(428, "confirm_required", "롤백 적용을 확인해야 합니다 (confirm=true).")
 
-    if any(j.active and (app in j.apps or (j.kind == "smoke" and job.mode == "full")) for j in artcraft.JOBS.values()):
-        raise ArtcraftError(409, "busy", "다른 작업이 진행 중입니다.")
+    # 사전 종합 충돌 검사
+    await check_busy(app, db=db)
 
     async def runner(job: artcraft.Job) -> None:
         def mark_running(state: dict[str, Any]) -> None:
@@ -898,7 +1062,7 @@ def start_rollback_job(app: str, confirm: bool) -> artcraft.Job:
         artcraft.update_state(mark_running)
 
         try:
-            res = await rollback_update(app, confirm=True, current_job_id=job.id)
+            res = await rollback_update(app, confirm=True, current_job_id=job.id, db=db)
             job.state = "succeeded"
             job.summary = f"{app} {res['restored_version']} 롤백 성공"
             job.output = res.get("verified_output", "")

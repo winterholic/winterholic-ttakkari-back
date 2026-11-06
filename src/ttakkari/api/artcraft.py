@@ -142,10 +142,10 @@ class RollbackIn(BaseModel):
 
 
 @router.get("/apps/{app}/update")
-async def app_update(app: str, _: User, response: Response, refresh: bool = False) -> dict:
+async def app_update(app: str, _: User, db: Db, response: Response, refresh: bool = False) -> dict:
     response.headers["Cache-Control"] = "no-store"
     try:
-        return await artcraft_update.get_app_update_info(app, refresh=refresh)
+        return await artcraft_update.get_app_update_info(app, refresh=refresh, db=db)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
 
@@ -153,7 +153,7 @@ async def app_update(app: str, _: User, response: Response, refresh: bool = Fals
 @router.post("/apps/{app}/update", status_code=202)
 async def update_apply(app: str, body: UpdateIn, request: Request, _: User, db: Db) -> dict:
     try:
-        job = artcraft_update.start_update_job(app, body.tag, body.confirm)
+        job = await artcraft_update.start_update_job(app, body.tag, body.confirm, db=db)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
     record(db, action="artcraft.update.apply", target_type="artcraft_app", detail={"app": app, "tag": body.tag},
@@ -165,7 +165,7 @@ async def update_apply(app: str, body: UpdateIn, request: Request, _: User, db: 
 @router.post("/apps/{app}/update/rollback", status_code=202)
 async def update_rollback(app: str, body: RollbackIn, request: Request, _: User, db: Db) -> dict:
     try:
-        job = artcraft_update.start_rollback_job(app, body.confirm)
+        job = await artcraft_update.start_rollback_job(app, body.confirm, db=db)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
     record(db, action="artcraft.update.rollback", target_type="artcraft_app", detail={"app": app},

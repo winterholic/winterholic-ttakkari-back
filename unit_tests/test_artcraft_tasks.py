@@ -178,6 +178,37 @@ def test_summaries_does_not_report_missing_file_for_information_template():
     assert items[0]["error"] is None
 
 
+def test_english_information_lookup_without_template_has_no_missing_output_error(monkeypatch):
+    """성공한 영어 정보 조회는 summaries와 상세 라운드 모두 파일 누락 오류가 아니다."""
+    from ttakkari.models import ArtcraftTask, Run, RunStatus
+    from ttakkari.api import desk_feedback
+
+    task = ArtcraftTask(id=uuid.uuid4(), session_id=uuid.uuid4(), category="video", title="영상 길이")
+    run = Run(id=uuid.uuid4(), session_id=task.session_id, status=RunStatus.succeeded,
+              prompt="What is the duration of this video?", result_text="The video is 12 seconds long.")
+    db_summary = AsyncMock()
+    db_summary.scalars = AsyncMock(return_value=[run])
+    result = MagicMock()
+    result.all.return_value = []
+    db_summary.execute = AsyncMock(return_value=result)
+    db_detail = AsyncMock()
+    db_detail.scalars = AsyncMock(side_effect=[[run], [], [], [run]])
+    db_detail.execute = AsyncMock(return_value=result)
+    monkeypatch.setattr(desk_feedback, "runs_out", AsyncMock(return_value=[]))
+
+    summaries = asyncio.run(artcraft_tasks.summaries(db_summary, [task]))
+    detail = asyncio.run(artcraft_tasks.task_detail(db_detail, task))
+
+    assert summaries[0]["error"] is None
+    assert detail["error"] is None
+    assert detail["rounds"][0]["error"] is None
+    assert artcraft_tasks._expects_output_file(task, run) is False
+    korean_lookup = Run(id=uuid.uuid4(), session_id=task.session_id, prompt="이 영상 길이를 알려 주세요")
+    file_request = Run(id=uuid.uuid4(), session_id=task.session_id, prompt="Create a short video about the ocean")
+    assert artcraft_tasks._expects_output_file(task, korean_lookup) is False
+    assert artcraft_tasks._expects_output_file(task, file_request) is True
+
+
 def test_create_task_checks_real_active_update_job_before_queue(monkeypatch):
     """실제 create_task 호출은 동일 앱의 활성 업데이트 Job을 409로 막는다."""
     from ttakkari import artcraft
@@ -331,32 +362,79 @@ def test_create_task_rejects_updating_apps(monkeypatch):
 def test_resolve_task_engine_uses_first_active_account_in_effective_order(monkeypatch):
     """엔진은 계정 설정의 유효 순서에서 첫 활성 개인 계정으로 선택되어야 한다."""
     from ttakkari.models import EngineAccount
+    from ttakkari.runs.profiles import Profile
 
     db = AsyncMock()
     c_off = EngineAccount(id=uuid.uuid4(), engine="claude", name="Claude", enabled=False, pool="personal", priority=1)
     a_on = EngineAccount(id=uuid.uuid4(), engine="antigravity", name="Antigravity", enabled=True, pool="personal", priority=2)
+    available_accounts = [a_on]
+
+    async def availability(_db, engine, pool="personal", **_kwargs):
+        return ([Profile(id=a.id, engine=a.engine, name=a.name, pool=pool)
+                 for a in available_accounts if a.engine == engine], [])
 
     # 비활성 계정은 건너뛰고 활성 계정을 선택한다.
     monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[c_off, a_on]))
+    monkeypatch.setattr(artcraft_tasks.profiles, "availability", availability)
     engine, desc = asyncio.run(artcraft_tasks.resolve_task_engine(db))
     assert engine == "antigravity"
     assert "antigravity" in desc.lower()
 
     # Claude 가 켜져 있어도 유효 순서의 첫 계정이 Antigravity 면 이를 선택한다.
     c_on = EngineAccount(id=uuid.uuid4(), engine="claude", name="Claude", enabled=True, pool="personal", priority=1)
+    available_accounts = [a_on, c_on]
     monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[a_on, c_on]))
     engine, desc = asyncio.run(artcraft_tasks.resolve_task_engine(db))
     assert engine == "antigravity"
+    available_accounts = [c_on, a_on]
     monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[c_on, a_on]))
     engine, desc = asyncio.run(artcraft_tasks.resolve_task_engine(db))
     assert engine == "claude"
 
     # 3. 모두 꺼짐 -> 503 오류 발생
+    available_accounts = []
     monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[c_off]))
     with pytest.raises(artcraft_tasks.artcraft.ArtcraftError) as exc:
         asyncio.run(artcraft_tasks.resolve_task_engine(db))
     assert exc.value.status == 503
     assert exc.value.code == "no_active_engine"
+
+
+def test_resolve_task_engine_skips_active_account_that_is_not_execution_ready(monkeypatch):
+    """개인 임시 우선순위의 준비 안 된 엔진을 건너뛰고 다음 준비된 엔진을 선택한다."""
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs.profiles import Profile
+
+    db = AsyncMock()
+    ag = EngineAccount(id=uuid.uuid4(), engine="antigravity", name="Antigravity", enabled=True,
+                       pool="personal", priority=1)
+    claude = EngineAccount(id=uuid.uuid4(), engine="claude", name="Claude", enabled=True,
+                           pool="personal", priority=2)
+    monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[ag, claude]))
+    monkeypatch.setattr(artcraft_tasks.profiles, "availability", AsyncMock(return_value=([
+        Profile(id=claude.id, engine="claude", name=claude.name, pool="personal")
+    ], [])))
+
+    engine, _ = asyncio.run(artcraft_tasks.resolve_task_engine(db))
+
+    assert engine == "claude"
+
+
+def test_resolve_task_engine_reports_error_when_no_personal_engine_is_ready(monkeypatch):
+    """활성 개인 계정이 있어도 실행 준비된 엔진이 없으면 원인을 분명히 알린다."""
+    from ttakkari.models import EngineAccount
+
+    db = AsyncMock()
+    ag = EngineAccount(id=uuid.uuid4(), engine="antigravity", name="Antigravity", enabled=True,
+                       pool="personal", priority=1)
+    monkeypatch.setattr(artcraft_tasks.profiles, "effective_order", AsyncMock(return_value=[ag]))
+    monkeypatch.setattr(artcraft_tasks.profiles, "availability", AsyncMock(return_value=([], [])))
+
+    with pytest.raises(artcraft_tasks.artcraft.ArtcraftError) as exc:
+        asyncio.run(artcraft_tasks.resolve_task_engine(db))
+
+    assert exc.value.status == 503
+    assert exc.value.code == "no_ready_engine"
 
 
 def test_create_task_persists_the_resolved_active_engine(monkeypatch, tmp_path: Path):

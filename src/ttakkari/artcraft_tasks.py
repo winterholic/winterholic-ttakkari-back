@@ -200,16 +200,25 @@ async def active_task_apps(db: AsyncSession) -> set[str]:
 # ---------------------------------------------------------------- 실행 엔진 동적 결정
 
 async def resolve_task_engine(db: AsyncSession) -> tuple[str, str]:
-    """ArtCraft 작업 실행에 사용할 활성 개인 계정 엔진을 동적으로 선택한다.
+    """ArtCraft 작업 실행에 사용할 준비된 개인 계정 엔진을 동적으로 선택한다.
 
-    개인 계정의 유효 순서(임시 우선순위 포함)에서 첫 활성 계정을 선택한다.
-    활성 계정이 전혀 없으면 503 no_active_engine 에러를 발생시킨다.
+    개인 계정의 유효 순서(임시 우선순위 포함)에서 첫 실행 가능 계정을 선택한다.
+    계정이 꺼져 있으면 건너뛰고, 실행 가능한 계정이 없으면 명확한 503 오류를 발생시킨다.
     """
     accounts = await profiles.effective_order(db, pool="personal")
     active = [a for a in accounts if profiles.is_on(a, pool="personal")]
     if not active:
         raise _err(503, "no_active_engine", "활성화된 실행 엔진(계정)이 없습니다. 설정에서 엔진을 켜주세요.")
-    chosen = active[0]
+    available_by_engine: dict[str, set[uuid.UUID]] = {}
+    for account in active:
+        if account.engine not in available_by_engine:
+            ready, _blocked = await profiles.availability(db, account.engine, pool="personal")
+            available_by_engine[account.engine] = {profile.id for profile in ready}
+        if account.id in available_by_engine[account.engine]:
+            chosen = account
+            break
+    else:
+        raise _err(503, "no_ready_engine", "실행 준비된 엔진(계정)이 없습니다. 계정 준비 상태와 한도/쿨다운을 확인해 주세요.")
     return chosen.engine, f"{chosen.engine.capitalize()} ({chosen.name})"
 
 
@@ -296,8 +305,12 @@ def _expects_output_file(task: ArtcraftTask, run: Run | None = None) -> bool:
         return False
     if run is not None and task.template_id is None:
         prompt = (run.prompt or "").lower()
-        lookup = ("알려줘", "알려 주세요", "몇 개", "무엇", "무슨", "정보", "읽어줘", "읽어 주세요", "text ", "info ")
-        create = ("저장", "만들어", "제작", "내보내", "export", "render")
+        lookup = ("알려줘", "알려 주세요", "몇 개", "무엇", "무슨", "정보", "읽어줘", "읽어 주세요", "text ", "info ",
+                  "what is", "what are", "what's", "who is", "where is", "when is", "why ",
+                  "how many", "how much", "how long", "how tall", "how wide", "tell me", "show me",
+                  "describe", "explain", "identify", "summarize", "read ")
+        create = ("저장", "만들어", "제작", "내보내", "export", "render", "create", "make ", "draw ",
+                  "generate", "design", "produce", "save")
         if any(word in prompt for word in lookup) and not any(word in prompt for word in create):
             return False
     return True

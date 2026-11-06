@@ -33,3 +33,11 @@
 
 - push와 배포는 하지 않는다. 독립 검증자 `06378389`가 위 전용 브랜치의 최종 SHA를 대상으로 교정 probe를 실행할 수 있도록 최종 SHA를 작업 보고에 함께 적는다.
 - 안전 fetch 시점 이후 `origin/main` 추적 ref가 추가로 전진해 최종 상태에서 브랜치는 `origin/main`보다 2 commit 뒤로 표시된다. 검증 완료한 통합 기준은 fetch 시점의 `529022861120e86f80400ffaec53dd3f3f7f81c6`이며, 이 후속 변경을 검증 없이 재기반하지 않았다.
+
+## 보충 기록 — d0a1c092 실행 최종 입력 통합 (2026-11-07)
+
+- 사용자가 실행 입력 범위를 `dfdb5cc1`에서 `d0a1c09297892d5e25810ce9b03bd6a97db89e54`까지 확장했다. practical의 d0a는 두 파일만 변경하며, 활성 계정 중 `profiles.availability`에서 실제 실행 준비가 된 계정을 순서대로 선택하고 준비 계정이 없으면 `503 no_ready_engine`을 반환한다. `_expects_output_file`에 영어 조회·제작 표현을 추가해 성공한 정보조회에 결과 파일 누락 오류를 표시하지 않는다.
+- 통합 worktree HEAD `e8e67c1f`에서 `git cherry-pick --no-commit d0a1c092...`를 실행했다. 적용 충돌은 없었고 staged 파일은 `src/ttakkari/artcraft_tasks.py`, `unit_tests/test_artcraft_tasks.py` 두 개뿐이다. 기존 `api/artcraft.py`/`artcraft.py` 공용 coordination/admission lock과 `add_round` 경쟁 회귀는 보존했다.
+- 영향 검사: 준비·영어조회 unit 4개 → `4 passed in 0.42s`; task create/add-round 우선 경합 API 2개 → `2 passed in 2.40s`, DB reset `2 selective`, `0 forced full`, `0 fell back to full`. 두 동일 basename test 모듈을 한 pytest 호출로 수집하려던 첫 명령은 `import file mismatch`로 수집 단계에서 실패해 테스트가 실행되지 않았다. 파일군별 명령으로 분리 실행해 위 결과를 얻었다.
+- practical worktree는 확인 시 QA evidence 두 파일(`EVIDENCE.md`, `quality_inspection.json`)만 미커밋 상태였고, 이들은 통합하지 않았다. d0의 독립 검증 worker `55fa65f8-2cb8-4f8d-8717-33d5a9e8ec98`가 검증을 시작했다는 것은 사용자 보고다. 현재 Run에서 `get_worker`와 기재된 세션의 `read_session`은 각각 404라 결과는 미확인으로 남긴다.
+- 이전 전체 dfdb 병합은 무관한 alembic/deployment/runtime/test 충돌 때문에 abort했다. 그 시점부터 ArtCraft 실행 로직은 기존 `60bfa705` 통합본에 동등 반영돼 있었고, 이번에는 확정 d0 단일 커밋만 적용했다. push·배포는 이번 요청 범위에서 수행하지 않았다.

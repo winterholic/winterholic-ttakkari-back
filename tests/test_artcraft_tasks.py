@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import os
 import stat
+import uuid
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,9 @@ from helpers import wait_run
 from ttakkari import artcraft_catalog as catalog
 from ttakkari.artifacts.kinds import detect
 from ttakkari.config import get_settings
+from ttakkari.db import sessionmaker
+from ttakkari.models import ChatSession, EngineAccount
+from ttakkari.runs import profiles
 from ttakkari.security.guard import GuardConfig, evaluate
 
 REAL_REGISTRY = Path.home() / "development/projects/artcraft/registry.json"
@@ -187,6 +191,170 @@ async def test_task_create_validates_inputs(client, auth, platform):
     assert (await client.get("/api/artcraft/tasks", headers=auth)).json()["items"] == []  # 실패한 요청은 작업을 남기지 않는다
 
 
+async def test_account_id_is_persisted_and_used_for_all_artcraft_rounds(client, auth, platform):
+    accounts = await client.get("/api/accounts", headers=auth)
+    assert accounts.status_code == 200, accounts.text
+    first = await client.post("/api/accounts", headers=auth,
+                              json={"name": "preferred codex", "engine": "codex"})
+    second = await client.post("/api/accounts", headers=auth,
+                               json={"name": "higher priority codex", "engine": "codex"})
+    assert first.status_code == second.status_code == 201
+    preferred_id = first.json()["id"]
+    competitor_id = second.json()["id"]
+    async with sessionmaker()() as db:
+        preferred = await db.get(EngineAccount, uuid.UUID(preferred_id))
+        competitor = await db.get(EngineAccount, uuid.UUID(competitor_id))
+        preferred.priority = 10
+        competitor.priority = 0
+        await db.commit()
+
+    created = await _task(client, auth, account_id=preferred_id)
+    assert created.status_code == 201, created.text
+    task = created.json()
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(task["session_id"]))
+        assert session.account_id == uuid.UUID(preferred_id)
+    first_run = await wait_run(client, auth, task["rounds"][0]["id"])
+    assert first_run["profile"] == "preferred codex"
+
+    mismatch = await client.post(f"/api/artcraft/tasks/{task['id']}/runs", headers=auth,
+                                 json={"prompt": "continue", "account_id": competitor_id})
+    assert mismatch.status_code == 409 and mismatch.json()["code"] == "account_pin_immutable"
+    followup = await client.post(f"/api/artcraft/tasks/{task['id']}/runs", headers=auth,
+                                 json={"prompt": "continue"})
+    assert followup.status_code == 202, followup.text
+    detail = (await client.get(f"/api/artcraft/tasks/{task['id']}", headers=auth)).json()
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(task["session_id"]))
+        assert session.account_id == uuid.UUID(preferred_id)
+    assert len(detail["rounds"]) == 2
+    second_run = await wait_run(client, auth, detail["rounds"][1]["id"])
+    assert second_run["profile"] == "preferred codex"
+
+
+async def test_invalid_account_id_fails_closed(client, auth, platform):
+    response = await _task(client, auth, account_id="00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 503, response.text
+    assert response.json()["code"] == "account_unavailable"
+
+
+async def test_work_account_can_be_pinned_to_personal_artcraft_task(client, auth, platform):
+    response = await client.post("/api/accounts", headers=auth,
+                                 json={"name": "work codex for personal task", "engine": "codex", "pool": "work",
+                                       "enabled": True})
+    assert response.status_code == 201, response.text
+
+    created = await _task(client, auth, account_id=response.json()["id"])
+    assert created.status_code == 201, created.text
+    run = await wait_run(client, auth, created.json()["rounds"][0]["id"])
+    assert run["profile"] == "work codex for personal task"
+
+
+async def test_personal_account_cannot_be_pinned_to_work_session(client, auth, platform):
+    account = await client.post("/api/accounts", headers=auth,
+                                json={"name": "personal codex", "engine": "codex", "pool": "personal"})
+    assert account.status_code == 201, account.text
+    created = await _task(client, auth, account_id=account.json()["id"])
+    assert created.status_code == 201, created.text
+
+    from ttakkari.models import Run
+    from ttakkari.runs.manager import _eligible_profiles
+
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(created.json()["session_id"]))
+        run = await db.get(Run, uuid.UUID(created.json()["rounds"][0]["id"]))
+        session.pool = "work"
+        await db.commit()
+        free, blocked = await _eligible_profiles(db, session, run, False)
+    assert free == [] and blocked == []
+
+
+async def test_deleted_pinned_account_does_not_fall_back_to_peer(client, auth, platform):
+    pinned = await client.post("/api/accounts", headers=auth,
+                               json={"name": "deleted pinned codex", "engine": "codex"})
+    peer = await client.post("/api/accounts", headers=auth,
+                             json={"name": "available peer codex", "engine": "codex"})
+    assert pinned.status_code == peer.status_code == 201
+    created = await _task(client, auth, account_id=pinned.json()["id"])
+    assert created.status_code == 201, created.text
+
+    from ttakkari.models import Run
+    from ttakkari.runs.manager import _eligible_profiles
+
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(created.json()["session_id"]))
+        run = await db.get(Run, uuid.UUID(created.json()["rounds"][0]["id"]))
+        await db.delete(await db.get(EngineAccount, uuid.UUID(pinned.json()["id"])))
+        await db.commit()
+        free, blocked = await _eligible_profiles(db, session, run, False)
+    assert free == [] and blocked == []
+
+
+async def test_requested_account_must_be_enabled_and_ready(client, auth, platform, monkeypatch):
+    disabled = await client.post("/api/accounts", headers=auth,
+                                 json={"name": "disabled account", "engine": "codex", "enabled": False})
+    limited = await client.post("/api/accounts", headers=auth,
+                                json={"name": "limited account", "engine": "codex"})
+    unready = await client.post("/api/accounts", headers=auth,
+                                json={"name": "unready account", "engine": "codex"})
+    assert all(r.status_code == 201 for r in (disabled, limited, unready))
+    profiles.cool_down(uuid.UUID(limited.json()["id"]), 600)
+    original_ready = profiles.execution_ready
+    monkeypatch.setattr(profiles, "execution_ready",
+                        lambda profile: False if profile.id == uuid.UUID(unready.json()["id"])
+                        else original_ready(profile))
+
+    for account_id in (disabled.json()["id"], limited.json()["id"], unready.json()["id"]):
+        response = await _task(client, auth, account_id=account_id)
+        assert response.status_code == 503, response.text
+        assert response.json()["code"] == "account_unavailable"
+    assert (await client.get("/api/artcraft/tasks", headers=auth)).json()["items"] == []
+
+
+async def test_limited_pinned_account_waits_without_account_or_emergency_fallback(client, auth, platform):
+    import asyncio
+    import time
+
+    first = await client.post("/api/accounts", headers=auth,
+                              json={"name": "pinned quota account", "engine": "codex"})
+    second = await client.post("/api/accounts", headers=auth,
+                               json={"name": "fallback quota account", "engine": "codex"})
+    assert first.status_code == second.status_code == 201
+    pinned_id = first.json()["id"]
+    async with sessionmaker()() as db:
+        pinned = await db.get(EngineAccount, uuid.UUID(pinned_id))
+        alternative = await db.get(EngineAccount, uuid.UUID(second.json()["id"]))
+        pinned.priority = 10
+        alternative.priority = 0
+        await db.commit()
+
+    created = await _task(client, auth, account_id=pinned_id, prompt="CODEX_LIMIT")
+    assert created.status_code == 201, created.text
+    run_id = created.json()["rounds"][0]["id"]
+    deadline = time.monotonic() + 10
+    events = []
+    while time.monotonic() < deadline:
+        from helpers import run_events
+        events = await run_events(client, auth, run_id)
+        if any(event["type"] == "run.waiting" for event in events):
+            break
+        await asyncio.sleep(0.05)
+    assert any(event["type"] == "account.limited" for event in events), events
+    assert any(event["type"] == "run.waiting" for event in events), events
+    assert not any(event["type"] == "engine.fallback" for event in events), events
+    assert not any(event["type"] == "worker.routing" and event.get("data", {}).get("trigger") == "emergency"
+                   for event in events), events
+    from ttakkari.models import Run
+    from ttakkari.runs.manager import _eligible_profiles
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(created.json()["session_id"]))
+        run = await db.get(Run, uuid.UUID(run_id))
+        free, blocked = await _eligible_profiles(db, session, run, False)
+        assert free == []
+        assert {profile.id for profile, _until in blocked} == {uuid.UUID(pinned_id)}
+        assert run.usage["artcraft"]["account_id"] == pinned_id
+
+
 async def test_photo_task_uses_template_apps_and_options(client, auth, platform):
     ws_id = (await _catalog(client, auth))["workspace_id"]
     img = await _upload(client, auth, ws_id, "p.png", b"\x89PNG fake", "image/png")
@@ -252,6 +420,40 @@ async def test_follow_up_can_skip_previous_and_attach_a_chosen_output(client, au
 async def test_failed_run_is_reported_with_error(client, auth, platform):
     task = await _finish(client, auth, (await _task(client, auth, prompt="FAIL 실패해라")).json())
     assert task["state"] == "failed" and task["error"] and task["rounds"][0]["error"]
+
+
+async def test_report_lookup_without_output_has_no_missing_file_error(client, auth, platform):
+    from sqlalchemy import delete
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import Artifact
+
+    task = await _finish(client, auth, (await _task(
+        client, auth, category="doc", template_id="write-report", prompt="Create a report and save it as DOCX."
+    )).json())
+    lookup_prompt = (
+        "Without editing or creating a file, summarize the revised report's verification limits and next steps "
+        "in English. Use only the latest saved report and explicitly say when a value is unmeasured."
+    )
+    response = await client.post(
+        f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": lookup_prompt, "use_previous": True}, headers=auth
+    )
+    assert response.status_code == 202, response.text
+    detail = await _finish(client, auth, response.json())
+    lookup_run_id = detail["rounds"][-1]["id"]
+
+    # The fake agent normally emits files for every prompt; remove only this test Run's artifacts to model a text-only answer.
+    async with sessionmaker()() as db:
+        await db.execute(delete(Artifact).where(
+            Artifact.run_id == lookup_run_id, Artifact.source == "agent_output"
+        ))
+        await db.commit()
+
+    summary = (await client.get("/api/artcraft/tasks", headers=auth)).json()["items"]
+    summary = next(item for item in summary if item["id"] == task["id"])
+    task_detail = (await client.get(f"/api/artcraft/tasks/{task['id']}", headers=auth)).json()
+    assert summary["state"] == "done" and summary["error"] is None
+    assert task_detail["rounds"][-1]["error"] is None
 
 
 # ---- 목록·갤러리·보관
@@ -719,3 +921,52 @@ def test_check_app_not_updating_rejects_active_updating_job(monkeypatch):
     with pytest.raises(artcraft.ArtcraftError) as exc_info:
         artcraft_tasks.check_app_not_updating(["photocraft"])
     assert exc_info.value.status == 409 and exc_info.value.code == "app_updating"
+
+
+@pytest.mark.parametrize("template_id", [None, "write-report"])
+def test_follow_up_report_lookup_does_not_require_a_file(template_id):
+    from ttakkari.artcraft_tasks import _expects_output_file
+    from ttakkari.models import ArtcraftTask, Run
+
+    task = ArtcraftTask(template_id=template_id)
+    run = Run(prompt=("Without editing or creating a file, summarize the revised report's verification limits "
+                      "and next steps in English. Use only the latest saved report and explicitly say when a "
+                      "value is unmeasured."))
+
+    assert _expects_output_file(task, run) is False
+
+
+@pytest.mark.parametrize("template_id", [None, "write-report"])
+@pytest.mark.parametrize("prompt, expected", [
+    ("Without creating a file, summarize the saved report.", False),
+    ("Do not create a file; explain the verification limits.", False),
+    ("Do not create a file for the lookup, but create a revised report and save as PDF.", True),
+    ("Create a report and summarize its verification limits.", True),
+    ("Edit the report and save a new version.", True),
+    ("Export the report as a PDF file.", True),
+    ("보고서의 검증 한계를 알려 주세요.", False),
+    ("보고서를 수정하고 새 파일로 저장해 주세요.", True),
+    ("수정본의 검증 한계를 알려 주세요.", False),
+    ("수정된 보고서의 검증 한계를 알려 주세요.", False),
+    ("편집본의 변경 사항을 알려 주세요.", False),
+    ("편집된 보고서의 요약을 알려 주세요.", False),
+    ("보고서를 수정하고 변경 사항을 알려 주세요.", True),
+    ("보고서를 편집하고 변경 사항을 알려 주세요.", True),
+    ("Do not create or save a file; summarize the report's verification limits.", False),
+    ("Do not create or save a file for this lookup; summarize the report's verification limits, but save the revised report as PDF.", True),
+    ("파일을 만들지 않고 보고서의 검증 한계를 요약해 주세요.", False),
+])
+def test_output_requirement_distinguishes_lookup_from_file_creation(template_id, prompt, expected):
+    from ttakkari.artcraft_tasks import _expects_output_file
+    from ttakkari.models import ArtcraftTask, Run
+
+    assert _expects_output_file(ArtcraftTask(template_id=template_id), Run(prompt=prompt)) is expected
+
+
+def test_korean_negative_file_request_remains_a_lookup():
+    from ttakkari.artcraft_tasks import _expects_output_file
+    from ttakkari.models import ArtcraftTask, Run
+
+    assert _expects_output_file(ArtcraftTask(template_id="write-report"), Run(
+        prompt="파일을 저장하지 말고 보고서의 검증 한계를 알려 주세요."
+    )) is False

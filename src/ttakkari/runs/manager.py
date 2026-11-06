@@ -48,6 +48,7 @@ from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
     ChatSession,
+    EngineAccount,
     Meeting,
     Run,
     RunEvent,
@@ -1104,6 +1105,13 @@ class RunManager:
         else:
             profiles, blocked = await available_profiles()
         if not profiles:
+            if sess.account_id is not None:
+                if blocked:
+                    await self._wait_for_reset(db, run, sess, blocked)
+                else:
+                    await self._finish(db, run, RunStatus.failed,
+                                       error="지정한 계정을 사용할 수 없습니다. 다른 계정으로 대체하지 않았습니다.")
+                return
             if blocked:
                 # Saturation is not evidence that every cloud account exhausted its allowance.
                 if any(profiles_mod.cooldown_until(profiles_mod.model_capacity_key(p.engine, p.model))
@@ -1655,7 +1663,7 @@ class RunManager:
                 remaining = [p for p in remaining if p.engine != prof.engine]
             elif missing and pinned_fallback:
                 remaining = []
-            if limited and not stopped and not remaining:
+            if limited and not stopped and not remaining and sess.account_id is None:
                 # Mid-run exhaustion: no usable cloud candidate left. The existing
                 # fallback event below records the switch with saved progress.
                 # 한 Run에서 Qwen을 썼으면 다시 타지 않는다(무한 재시도 방지).
@@ -2429,7 +2437,8 @@ def _routing_policy(sess: ChatSession, run: Run, is_meeting: bool):
     task = ((sess.worker_task_type or worker_routing.infer_task_type(requested))
             if sess.kind == SessionKind.worker and sess.engine == "auto" and not is_meeting else None)
     pinned = (sess.engine in profiles_mod.ENGINES and sess.kind not in {SessionKind.orchestrator, SessionKind.desk}
-              and not is_meeting and run.origin != RunOrigin.system and not sess.strict_engine)
+              and not is_meeting and run.origin != RunOrigin.system and not sess.strict_engine
+              and sess.account_id is None)
     return task, pinned, requested
 
 
@@ -2473,6 +2482,14 @@ async def _eligible_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_m
     task, pinned, requested = _routing_policy(sess, run, is_meeting)
     if is_meeting:
         return await meeting_routing.availability(db)
+    if sess.account_id is not None:
+        account = await db.get(EngineAccount, sess.account_id)
+        if account is None or (sess.pool == "work" and account.pool != "work") \
+                or not profiles_mod.is_on(account, pool=sess.pool):
+            return [], []
+        free, blocked = await profiles_mod.availability(db, account.engine, pool=sess.pool)
+        return ([profile for profile in free if profile.id == sess.account_id],
+                [(profile, until) for profile, until in blocked if profile.id == sess.account_id])
     if sess.engine == "qwen-local":
         from ttakkari.runs import worker_routing as _wr
         # Qwen은 personal scope 전용이다(반례 4: 회사 pool 누설 금지). 명시

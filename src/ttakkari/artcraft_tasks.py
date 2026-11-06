@@ -7,6 +7,7 @@ Run 이다. 실행 직전 ``prepare_run`` 이 작업 폴더를 만들고 앱별 
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import uuid
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from ttakkari.models import (
     ArtcraftTask,
     Artifact,
     ChatSession,
+    EngineAccount,
     ExportPolicy,
     Run,
     RunEvent,
@@ -222,6 +224,25 @@ async def resolve_task_engine(db: AsyncSession) -> tuple[str, str]:
     return chosen.engine, f"{chosen.engine.capitalize()} ({chosen.name})"
 
 
+async def resolve_task_account(db: AsyncSession, account_id: uuid.UUID) -> EngineAccount:
+    """Validate an explicitly requested ArtCraft account without considering alternatives."""
+    account = await db.get(EngineAccount, account_id)
+    if account is None or not profiles.is_on(account, pool="personal"):
+        raise _err(503, "account_unavailable", "지정한 계정을 개인 pool에서 찾을 수 없거나 비활성 상태입니다.")
+    free, blocked = await profiles.availability(db, account.engine, pool="personal")
+    selected = next((p for p in free if p.id == account_id), None)
+    waiting = next((until for p, until in blocked if p.id == account_id), None)
+    if selected is None:
+        if waiting is not None:
+            reason = "사용량 한도 또는 쿨다운 중"
+        else:
+            reason = "인증 또는 실행 준비가 되지 않음"
+        raise _err(503, "account_unavailable", f"지정한 계정을 사용할 수 없습니다({reason}). 다른 계정으로 대체하지 않았습니다.")
+    if profiles.cooldown_until(profiles.model_capacity_key(selected.engine, selected.model)):
+        raise _err(503, "account_unavailable", "지정한 계정의 모델이 한도 중입니다. 다른 계정으로 대체하지 않았습니다.")
+    return account
+
+
 # ---------------------------------------------------------------- 작업 생성·라운드
 
 async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt: str, input_ids: list[uuid.UUID],
@@ -236,6 +257,7 @@ async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt
                 "options": options,
                 "use_previous": use_previous,
                 "engine": sess.engine,
+                "account_id": str(sess.account_id) if sess.account_id else None,
             },
         }
 
@@ -245,16 +267,21 @@ async def _queue(db: AsyncSession, sess: ChatSession, task: ArtcraftTask, prompt
 
 async def create_task(db: AsyncSession, *, category_id: str, prompt: str, template_id: str | None,
                       input_ids: list[uuid.UUID], apps: list[str] | None, options: dict[str, str] | None, speed: str,
-                      ip: str | None) -> tuple[ArtcraftTask, Run]:
+                      ip: str | None, account_id: uuid.UUID | None = None) -> tuple[ArtcraftTask, Run]:
     cat = _category(category_id)
     tpl = catalog.template(cat, template_id)
     chosen = selected_apps(category_id, template_id, apps)
     check_app_not_updating(chosen)
     clean = clean_options(tpl, options)
     await _load_inputs(db, cat, input_ids, tpl.min_files if tpl else 0)
+    if account_id is None:
+        engine, _engine_desc = await resolve_task_engine(db)
+    else:
+        account = await resolve_task_account(db, account_id)
+        engine = account.engine
     ws = await ensure_workspace(db)
-    engine, _engine_desc = await resolve_task_engine(db)
-    sess = ChatSession(workspace_id=ws.id, title=_title(prompt, tpl), engine=engine, kind=SessionKind.chat, pool="personal")
+    sess = ChatSession(workspace_id=ws.id, title=_title(prompt, tpl), engine=engine, kind=SessionKind.chat,
+                       pool="personal", account_id=account_id)
     db.add(sess)
     await db.flush()
     task = ArtcraftTask(session_id=sess.id, category=cat.id, apps=chosen, title=sess.title, template_id=tpl.id if tpl else None,
@@ -274,7 +301,8 @@ async def get_task(db: AsyncSession, task_id: uuid.UUID) -> ArtcraftTask:
 
 
 async def add_round(db: AsyncSession, task: ArtcraftTask, *, prompt: str, input_ids: list[uuid.UUID], use_previous: bool,
-                    options: dict[str, str] | None, speed: str, ip: str | None) -> Run:
+                    options: dict[str, str] | None, speed: str, ip: str | None,
+                    account_id: uuid.UUID | None = None) -> Run:
     if task.archived_at is not None:
         raise _err(409, "archived", "보관한 작업에는 이어서 지시할 수 없어요.")
     check_app_not_updating(list(task.apps or []))
@@ -283,6 +311,8 @@ async def add_round(db: AsyncSession, task: ArtcraftTask, *, prompt: str, input_
     sess = await db.get(ChatSession, task.session_id)
     if sess is None:
         raise _err(404, "not_found", "작업 세션을 찾을 수 없습니다.")
+    if account_id is not None and account_id != sess.account_id:
+        raise _err(409, "account_pin_immutable", "작업 생성 뒤에는 계정을 새로 지정하거나 변경할 수 없습니다.")
     tpl = catalog.template(cat, task.template_id)
     clean = clean_options(tpl, options) if options else dict(task.options or {})
     task.updated_at = utcnow()
@@ -303,15 +333,27 @@ def _expects_output_file(task: ArtcraftTask, run: Run | None = None) -> bool:
     """정보·텍스트 조회는 파일을 만들지 않아도 성공이며, 나머지 요청은 기본적으로 파일을 만든다."""
     if task.template_id in {"info", "text", "dxf-info"}:
         return False
-    if run is not None and task.template_id is None:
+    if run is not None:
         prompt = (run.prompt or "").lower()
-        lookup = ("알려줘", "알려 주세요", "몇 개", "무엇", "무슨", "정보", "읽어줘", "읽어 주세요", "text ", "info ",
+        lookup = ("알려줘", "알려 주세요", "몇 개", "무엇", "무슨", "정보", "읽어줘", "읽어 주세요", "요약해 주세요", "요약해줘", "요약해 주", "요약해", "text ", "info ",
                   "what is", "what are", "what's", "who is", "where is", "when is", "why ",
                   "how many", "how much", "how long", "how tall", "how wide", "tell me", "show me",
                   "describe", "explain", "identify", "summarize", "read ")
-        create = ("저장", "만들어", "제작", "내보내", "export", "render", "create", "make ", "draw ",
-                  "generate", "design", "produce", "save")
-        if any(word in prompt for word in lookup) and not any(word in prompt for word in create):
+        without_create = re.sub(
+            r"\bwithout\s+(?:(?:editing|modifying)\s+or\s+)?(?:creating|create|making|saving|editing|modifying|exporting)\b"
+            r"|\b(?:do\s+not|don't|never)\s+(?:create|make|save|edit|modify|export|render|generate|design|produce)"
+            r"(?:\s+or\s+(?:create|make|save|edit|modify|export|render|generate|design|produce))*\b"
+            r"|(?:저장하|만들|제작하|내보내|편집하|수정하?)지\s+(?:말고|마세요|마십시오|말아)",
+            " ", prompt,
+        )
+        create = re.search(
+            r"(?:저장|만들어|제작|내보내)"
+            r"|(?:편집|수정)(?:하(?:고|며|면서|여|여서|세요|십시오|면|려면|도록|자|겠습니다|였(?:고|다|습니다)?)"
+            r"|해(?:서|도|요|주세요| 주세요|줘| 줘|야|라)?|한\s+(?:뒤|다음|후))"
+            r"|\b(?:export|render|create|creating|make|making|draw|generate|design|produce|save|edit|modify)\b",
+            without_create,
+        )
+        if any(word in prompt for word in lookup) and create is None:
             return False
     return True
 

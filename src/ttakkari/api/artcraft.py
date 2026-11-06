@@ -195,6 +195,7 @@ class TaskIn(BaseModel):
     apps: list[str] | None = Field(default=None, max_length=13)
     options: dict[str, str] = Field(default_factory=dict)
     speed: Literal["fast", "normal", "careful"] = "normal"
+    account_id: uuid.UUID | None = None
 
 
 class RoundIn(BaseModel):
@@ -203,6 +204,7 @@ class RoundIn(BaseModel):
     use_previous: bool = True
     options: dict[str, str] | None = None
     speed: Literal["fast", "normal", "careful"] = "normal"
+    account_id: uuid.UUID | None = None
 
 
 class TaskPatch(BaseModel):
@@ -249,7 +251,7 @@ async def create_task(body: TaskIn, request: Request, _: User, db: Db) -> dict:
             task, run = await artcraft_tasks.create_task(
                 db, category_id=body.category, prompt=body.prompt, template_id=body.template_id,
                 input_ids=body.input_artifact_ids, apps=body.apps, options=body.options, speed=body.speed,
-                ip=client_ip(request))
+                account_id=body.account_id, ip=client_ip(request))
             record(db, action="artcraft.task.create", target_type="artcraft_task", target_id=task.id,
                    detail={"category": task.category, "apps": task.apps, "run_id": str(run.id)}, ip=client_ip(request))
             await db.commit()
@@ -286,7 +288,7 @@ async def add_round(task_id: uuid.UUID, body: RoundIn, request: Request, _: User
             task = await artcraft_tasks.get_task(db, task_id)
             run = await artcraft_tasks.add_round(
                 db, task, prompt=body.prompt, input_ids=body.input_artifact_ids, use_previous=body.use_previous,
-                options=body.options, speed=body.speed, ip=client_ip(request))
+                options=body.options, speed=body.speed, account_id=body.account_id, ip=client_ip(request))
             record(db, action="artcraft.task.round", target_type="artcraft_task", target_id=task.id,
                    detail={"run_id": str(run.id), "use_previous": body.use_previous}, ip=client_ip(request))
             await db.commit()

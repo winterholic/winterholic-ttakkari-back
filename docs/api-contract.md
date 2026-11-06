@@ -511,10 +511,10 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/artcraft/catalog` | `{sections[{id,title,categories[]}], categories[{id,section,title,tagline,icon,maturity{level(ready\|limited\|experimental),label,summary},apps[{app,title,role,installed}],can[],cannot[],accepts[],outputs[],templates[{id,title,prompt,example,min_files,apps[],options[{id,label,default,choices[]}]}]}], available, unavailable_reason, workspace_id, workspace_error, limits{files,prompt}}`. 느린 호출 없음. `workspace_id`는 파일 업로드(`POST /api/uploads`)에 쓰는 ArtCraft 작업 워크스페이스 |
-| POST | `/api/artcraft/tasks` | `{category, prompt(1-8000), template_id?, input_artifact_ids[≤10], apps?, options?{옵션ID:값}, speed?(fast\|normal\|careful)}` → 201 `TaskDetail`. 세션을 만들고 첫 Run을 대기열에 넣는다. 오류: 404 `unknown_category`, 422 `unknown_app`·`bad_input`(받지 않는 확장자, 파일 부족, 옵션 값, 없는 파일, 민감 파일), 503 `workspace_unavailable` |
+| POST | `/api/artcraft/tasks` | `{category, prompt(1-8000), template_id?, input_artifact_ids[≤10], apps?, options?{옵션ID:값}, speed?(fast\|normal\|careful), account_id?: UUID}` → 201 `TaskDetail`. 세션을 만들고 첫 Run을 대기열에 넣는다. `account_id`를 보내면 개인 pool의 해당 계정만 사용하도록 세션에 영속 고정한다. 미존재·다른 pool·비활성·준비 실패·한도/쿨다운이면 503 `account_unavailable`; 대체 계정은 선택하지 않는다. 미지정 시 기존 자동 선택. 기타 오류: 404 `unknown_category`, 422 `unknown_app`·`bad_input`(받지 않는 확장자, 파일 부족, 옵션 값, 없는 파일, 민감 파일), 503 `workspace_unavailable` |
 | GET | `/api/artcraft/tasks?category=&state=active\|all&session_id=&limit=` | 작업 요약 `{id,session_id,category,title,apps,template_id,state(queued\|running\|done\|failed\|cancelled\|interrupted),round_count,output_count,last_run_id,error,progress,waiting_reason,created_at,updated_at,archived_at}`. 보관한 작업은 `session_id` 조회에만 나온다 |
 | GET | `/api/artcraft/tasks/{id}` | 요약 + `options` + `rounds[{id,index,status,state,prompt,result_text,error,options,use_previous,inputs[ArtifactOut],outputs[ArtifactOut],progress,waiting_reason,created_at,started_at,finished_at}]`. 결과는 그 세션의 `source=agent_output` Artifact |
-| POST | `/api/artcraft/tasks/{id}/runs` | `{prompt, input_artifact_ids[], use_previous(기본 true: 직전 결과가 있는 라운드의 결과를 prev/ 로 복사), options?, speed?}` → 202 `TaskDetail`. 실행 중이면 세션 대기열에 쌓인다. 보관한 작업은 409 `archived` |
+| POST | `/api/artcraft/tasks/{id}/runs` | `{prompt, input_artifact_ids[], use_previous(기본 true: 직전 결과가 있는 라운드의 결과를 prev/ 로 복사), options?, speed?, account_id?: UUID}` → 202 `TaskDetail`. 작업 세션의 계정 고정을 그대로 상속하며 새 계정으로 바꿀 수 없다. `account_id`를 반복 지정하면 저장된 UUID와 같아야 하고, 다르면 409 `account_pin_immutable`. 실행 중이면 세션 대기열에 쌓인다. 보관한 작업은 409 `archived` |
 | PATCH | `/api/artcraft/tasks/{id}` | `{title?, archived?}` → `TaskDetail` |
 | GET | `/api/artcraft/outputs?category=&kind=&q=&limit=&offset=` | 작업물 갤러리 `{items[{artifact, task_id, task_title, category, run_id}], has_more}` |
 
@@ -523,6 +523,8 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 설정: `TTAKKARI_ARTCRAFT_WORKSPACE_ROOT`(기본 `~/development/projects/artcraft-workspace`, 작업 폴더 루트. `allowed_roots` 안이어야 한다).
 
 설정: `TTAKKARI_ARTCRAFT_ROOT`(기본 `~/development/projects/artcraft`), `TTAKKARI_ARTCRAFT_AUTO_REMOTE_CHECK`(기본 true, 최신 릴리스가 6시간 넘게 오래되면 조회 시 백그라운드로 갱신).
+
+계정 고정은 `sessions.account_id`에 EngineAccount UUID를 저장한다(nullable, FK 없음). 삭제·비활성·인증 실패·한도 후에도 다른 계정으로 바꾸지 않으며, 한도는 지정 계정만 대기 후보로 삼는다. Run의 `usage.artcraft.account_id`에도 같은 UUID를 기록한다. manager의 초기 선택·quota wait 재평가·재시작 재개·실행 중 재시도 모두 이 세션 UUID로 후보를 필터링한다.
 
 ### Muse Code 구독 사용량
 

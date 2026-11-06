@@ -228,3 +228,58 @@ The candidate's existing focused runtime-report test, correction-specific SQLite
 check receipts above remain the verification evidence. No claim2/identity10 or account/L2/precision full
 regressions were repeated. The push and deployment reservation receipts will be appended after the
 corresponding operations; the deployment activation status will not be polled.
+
+## Push and deployment reservation receipt (2026-11-07)
+
+The first push attempt's pre-push hook could not initialize its default uv cache (`Operation not permitted`
+opening `/Users/winterholic/.cache/uv/sdists-v9/.git`); no remote update occurred. Retrying with the
+authorized `/private/tmp/ttakkari-lease-diagnostics-uv-cache` kept the hook enabled. That run passed the
+contract bundle (85) and changed runtime-report test (6), but Ruff rejected the copied independent probe's
+import grouping (`I001`). A blank-line-only import formatting correction was committed as
+`225d138d5afb3c8a4522c08813f74434f1de6a9a`; the independent SQL probe was rerun and all three output kinds
+passed. No SQL/test behavior changed in that formatting-only follow-up.
+
+Final normal push command (the pre-push hook remained enabled):
+
+```text
+UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache GH_AS_USER=winterholic GH_AS_TOKEN="$(gh auth token --hostname github.com --user winterholic)" git -c credential.helper= -c 'credential.helper=!f() { echo username=$GH_AS_USER; echo password=$GH_AS_TOKEN; }; f' push origin HEAD:main
+```
+
+Hook verification and push output:
+
+```text
+ruff (changed Python 4 files): passed
+contract bundle: 85 passed, 6837 deselected
+changed tests: 6 passed
+pre-push: 통과
+293bb844..225d138d  HEAD -> main
+```
+
+The independent probe and final local hygiene commands after the import formatting correction were:
+
+```text
+argv: PYTHONPATH=src UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen python docs/verification/runtime-mapping-independent-probe-ee52abc7.py
+output:
+lease_only: active=false, archived=true, missing session=null, missing Run/session=null: PASS
+matched group: active=false, archived=true, missing session=null, missing Run/session=null: PASS
+orphan group: active=false, archived=true, missing session=null, missing Run/session=null: PASS
+
+argv: UV_CACHE_DIR=/private/tmp/ttakkari-lease-diagnostics-uv-cache uv run --frozen ruff check src/ttakkari/operations/inline.py runtime-mapping-missing-session-probe.py docs/verification/runtime-mapping-independent-probe-ee52abc7.py
+output: All checks passed!
+
+argv: git diff --check
+output: exit 0; no output
+```
+
+The backend deployment reservation was requested exactly once for the full pushed SHA:
+
+```text
+tool: mcp__ttakkari__request_backend_deploy
+args: {"revision":"225d138d5afb3c8a4522c08813f74434f1de6a9a"}
+output: {"id":"c49341c7-84bd-4eab-bc76-bf2f5f50373c","revision":"225d138d5afb3c8a4522c08813f74434f1de6a9a","skip_tests":false,"status":"requested","strategy":"generations","error":null}
+```
+
+`requested` is reservation acceptance only; activation and runtime behavior were not checked or polled.
+No operational database, cleanup/reconcile/process action, account toggle/scope change, service restart,
+or deployment bypass was used. The follow-up documentation commit records this receipt; the reserved
+source revision remains `225d138d5afb3c8a4522c08813f74434f1de6a9a`.

@@ -72,4 +72,12 @@ git diff --check
 ```
 
 - The first unit-suite run failed on the obsolete shared-error assertion; the corrected neutral-boundary test then passed. A subsequent unit-suite run found the availability propagation failure described above; the focused regression and full subscription suite passed after the runtime fix. Ruff first reported duplicate imports/constants, then import formatting; both were corrected, and the final Ruff run passed. These failures were corrected in the same transport-boundary scope; no guard was weakened.
-- The local full security suite was not rerun (prohibited due to the prior Codex host-operations EPERM). The supported controller's required security/full gate remains enabled for the deployment reservation. At this point there has been no push, deploy request, restart, account switch, new initdb, or provider operation.
+- The local full security suite was not rerun (prohibited due to the prior Codex host-operations EPERM). The supported controller's required security/full gate remains enabled. No restart, account switch, new initdb, or provider operation occurred. Deployment active state and the production ArtCraft journey remain unverified.
+
+## Normal push and deployment reservation
+
+- Before push, `git status --short --branch` was clean at `release/artcraft-final-20261107...origin/main [ahead 9]`; `git diff --check origin/main...HEAD` emitted no output; `git diff --name-only --diff-filter=U` emitted no paths. Full source SHA: `df8ec39cdc70387708a10dbb1688b31cd4796bba`.
+- Normal push used registered account `winterholic` per command, with `TTK_SKIP_GATE` unset so the normal pre-push gate ran. It reported changed Python Ruff pass, contract `87 passed, 6969 deselected`, changed test files `66 passed`, selective DB reset only, total 37 seconds; gate passed. `git push origin HEAD:refs/heads/main` advanced `b4a5c173..df8ec39c` and exited 0.
+- After push, `git rev-parse HEAD` and `git ls-remote origin refs/heads/main` both returned `df8ec39cdc70387708a10dbb1688b31cd4796bba`; `git status --short --branch` was clean; `git diff --check HEAD^ HEAD` emitted no output.
+- `request_backend_deploy(revision="df8ec39cdc70387708a10dbb1688b31cd4796bba")` returned receipt: `id=1692ed4e-4ad4-4685-acfc-28dd13559144`, revision `df8ec39cdc70387708a10dbb1688b31cd4796bba`, `status=requested`, `skip_tests=false`, `strategy=generations`, `error=null`. The request is accepted; the controller's full security and release gates remain required.
+- No deploy polling or active-state check was performed. Production ArtCraft creation/update/rollback/lookup exercises and review items R1–R4 remain incomplete.

@@ -34,6 +34,8 @@ from ttakkari.db import sessionmaker
 log = logging.getLogger(__name__)
 
 PRECISE_EVAL_VERSION = "subscription-precise-v1"
+DIAG_USAGE_LIMIT = "usage_limit"
+DIAG_SCOPE_CAPACITY_UNAVAILABLE = "scope_capacity_unavailable"
 
 SUBSCRIPTION_ENGINE = EngineBound(
     name="subscription-cli",
@@ -135,6 +137,29 @@ class EvaluatorUnavailable(Exception):
 
 class MalformedEvaluatorOutput(Exception):
     """Engine returned malformed JSON or violated schema."""
+
+
+class PreciseEvaluatorTransportError(Exception):
+    """Collector-neutral transport failure translated by the runtime composition boundary."""
+
+    def __init__(
+        self,
+        diagnosis: str,
+        detail: str,
+        retry_after: float | None = None,
+        *,
+        consumed: bool = True,
+        engine: str | None = None,
+        account: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        super().__init__(f"[{diagnosis}] {detail}")
+        self.diagnosis = diagnosis
+        self.retry_after = retry_after
+        self.consumed = consumed
+        self.engine = engine
+        self.account = account
+        self.model = model
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
@@ -278,11 +303,11 @@ def precise_eval_pool(scope: str) -> str:
     """Map stored document scope to an existing subscription account pool without widening access."""
     if scope in ("personal", "work"):
         return scope
-    from ttakkari.kb_pipeline.subscription_transport import (
+    raise PreciseEvaluatorTransportError(
         DIAG_SCOPE_CAPACITY_UNAVAILABLE,
-        L2TransportError,
+        "document provenance has no allowed account pool",
+        consumed=False,
     )
-    raise L2TransportError(DIAG_SCOPE_CAPACITY_UNAVAILABLE, "document provenance has no allowed account pool", consumed=False)
 
 
 def precise_request_key(item_id: uuid.UUID | str, job_id: uuid.UUID | str, attempt: int) -> str:
@@ -485,12 +510,7 @@ async def consume_pending_once(
             )
             continue
         except Exception as exc:
-            from ttakkari.kb_pipeline.subscription_transport import (
-                DIAG_SCOPE_CAPACITY_UNAVAILABLE,
-                DIAG_USAGE_LIMIT,
-                L2TransportError,
-            )
-            if isinstance(exc, L2TransportError):
+            if isinstance(exc, PreciseEvaluatorTransportError):
                 retryable = exc.diagnosis in (DIAG_SCOPE_CAPACITY_UNAVAILABLE, DIAG_USAGE_LIMIT) or not exc.consumed
                 state = "pending" if retryable else "unresolved"
                 engine_info = {k: v for k, v in {

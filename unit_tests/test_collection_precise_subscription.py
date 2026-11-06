@@ -44,8 +44,42 @@ def test_subscription_precise_output_rejects_invalid_json_shape():
 def test_subscription_precise_scope_uses_existing_pool_policy():
     assert precise_eval.precise_eval_pool("personal") == "personal"
     assert precise_eval.precise_eval_pool("work") == "work"
-    with pytest.raises(L2TransportError, match="scope_capacity_unavailable"):
+    with pytest.raises(precise_eval.PreciseEvaluatorTransportError) as excinfo:
         precise_eval.precise_eval_pool("unknown")
+    assert excinfo.value.diagnosis == "scope_capacity_unavailable"
+    assert excinfo.value.consumed is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_translates_transport_error_at_composition_boundary(monkeypatch):
+    from ttakkari import collector_precise_runtime
+
+    error = L2TransportError(
+        DIAG_USAGE_LIMIT,
+        "quota reached",
+        retry_after=123,
+        consumed=False,
+        engine="codex",
+        account="personal-ai2",
+        model="gpt-6-luna",
+    )
+
+    class Adapter:
+        async def call_json(self, *_args, **_kwargs):
+            raise error
+
+    monkeypatch.setattr(collector_precise_runtime, "_adapter", lambda _scope: Adapter())
+    with pytest.raises(precise_eval.PreciseEvaluatorTransportError) as excinfo:
+        await collector_precise_runtime.evaluate(
+            prompt="bounded", schema={}, system_prompt="evaluate", scope="personal"
+        )
+
+    translated = excinfo.value
+    assert translated.diagnosis == DIAG_USAGE_LIMIT
+    assert translated.consumed is False and translated.retry_after == 123
+    assert (translated.engine, translated.account, translated.model) == (
+        "codex", "personal-ai2", "gpt-6-luna"
+    )
 
 
 def test_precise_subscription_status_does_not_depend_on_qwen_flags(monkeypatch):

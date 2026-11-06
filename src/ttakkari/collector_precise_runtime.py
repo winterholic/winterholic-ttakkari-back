@@ -9,6 +9,22 @@ from ttakkari.db import sessionmaker
 from ttakkari.kb_pipeline.l2_adapters import SubscriptionCliL2Adapter
 
 
+def _translate_transport_error(exc: Exception) -> precise_eval.PreciseEvaluatorTransportError | None:
+    from ttakkari.kb_pipeline.subscription_transport import L2TransportError
+
+    if not isinstance(exc, L2TransportError):
+        return None
+    return precise_eval.PreciseEvaluatorTransportError(
+        exc.diagnosis,
+        str(exc),
+        retry_after=exc.retry_after,
+        consumed=exc.consumed,
+        engine=exc.engine,
+        account=exc.account,
+        model=exc.model,
+    )
+
+
 def engine_status() -> dict[str, Any]:
     settings = get_settings()
     engine = settings.kb_l2_subscription_engine
@@ -46,22 +62,28 @@ async def availability(*, scope: str) -> tuple[bool, str | None, float | None]:
         available, reason = await adapter.availability()
         return available, reason, adapter.retry_after
     except Exception as exc:
-        from ttakkari.kb_pipeline.subscription_transport import L2TransportError
-        if isinstance(exc, L2TransportError):
-            return False, exc.diagnosis, exc.retry_after
-        raise
+        translated = _translate_transport_error(exc)
+        if translated is None:
+            raise
+        return False, translated.diagnosis, translated.retry_after
 
 
 async def evaluate(*, prompt: str, schema: dict[str, Any], system_prompt: str,
                    scope: str, **_context: Any) -> tuple[dict[str, Any], dict[str, str]]:
     adapter = _adapter(scope)
-    return await adapter.call_json(
-        prompt,
-        schema,
-        system_prompt=system_prompt,
-        validator=precise_eval.validate_evaluator_result,
-        max_response_bytes=128_000,
-    )
+    try:
+        return await adapter.call_json(
+            prompt,
+            schema,
+            system_prompt=system_prompt,
+            validator=precise_eval.validate_evaluator_result,
+            max_response_bytes=128_000,
+        )
+    except Exception as exc:
+        translated = _translate_transport_error(exc)
+        if translated is None:
+            raise
+        raise translated from exc
 
 
 def install() -> None:

@@ -1,0 +1,264 @@
+{
+  "items": [
+    {
+      "id": "ad517d4f-75b0-48c9-90b2-2c1c7c8b1a31",
+      "session_id": "20ba2861-be99-41e9-9bad-464a61c11554",
+      "category": "sheet",
+      "title": "표 만들기",
+      "apps": [
+        "gridcraft"
+      ],
+      "template_id": "make-table",
+      "state": "done",
+      "round_count": 2,
+      "output_count": 2,
+      "last_run_id": "4d8e6c78-8053-46e5-a16b-ef799ea1230a",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:50:45.368588Z",
+      "updated_at": "2026-11-06T14:51:48.731104Z",
+      "archived_at": null
+    },
+    {
+      "id": "fe3854a2-2d53-4ca4-be4f-037a7790f9bc",
+      "session_id": "2a5cdcad-526d-4ed6-9df4-869d9e75602a",
+      "category": "doc",
+      "title": "보고서 쓰기",
+      "apps": [
+        "wordcraft"
+      ],
+      "template_id": "write-report",
+      "state": "done",
+      "round_count": 2,
+      "output_count": 8,
+      "last_run_id": "20899049-0ebb-44ca-a44d-a7d6fdb359f9",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:50:24.139555Z",
+      "updated_at": "2026-11-06T14:51:26.934193Z",
+      "archived_at": null
+    },
+    {
+      "id": "abe48467-b1d8-42cc-81fd-0ab1b48ed8c5",
+      "session_id": "4a473235-b368-416c-aa25-effc779e1a5d",
+      "category": "ui",
+      "title": "모바일 화면 시안",
+      "apps": [
+        "figcraft"
+      ],
+      "template_id": "mobile-screen",
+      "state": "done",
+      "round_count": 1,
+      "output_count": 3,
+      "last_run_id": "dfda8fec-8ce7-421e-b478-b757f5d70c90",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:51:08.406063Z",
+      "updated_at": "2026-11-06T14:51:08.406064Z",
+      "archived_at": null
+    },
+    {
+      "id": "0689733b-5e4c-4459-a0b8-a2ad57aff637",
+      "session_id": "2d064fe8-81cb-4da5-833e-491cea113770",
+      "category": "motion",
+      "title": "제목 카드 영상",
+      "apps": [
+        "effectcraft"
+      ],
+      "template_id": "title-card",
+      "state": "done",
+      "round_count": 1,
+      "output_count": 4,
+      "last_run_id": "cbc8ab8c-81d7-4718-ac71-86ac4827f3fe",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:51:03.429267Z",
+      "updated_at": "2026-11-06T14:51:03.429269Z",
+      "archived_at": null
+    },
+    {
+      "id": "cf0a8a92-2cac-4808-b8ba-b3e558aaf3ad",
+      "session_id": "754c3cb0-3a37-487b-ba4c-eea404a74eb1",
+      "category": "vector",
+      "title": "간단한 로고 그리기",
+      "apps": [
+        "vectorcraft"
+      ],
+      "template_id": "draw-logo",
+      "state": "done",
+      "round_count": 1,
+      "output_count": 4,
+      "last_run_id": "9e78a6b6-db46-4e06-b39e-d1745a1cb030",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:50:59.516253Z",
+      "updated_at": "2026-11-06T14:50:59.516256Z",
+      "archived_at": null
+    },
+    {
+      "id": "a8313357-c7b1-4f44-85d4-db54754c4eaa",
+      "session_id": "32e1ba2e-adde-4db4-a061-2460401994d9",
+      "category": "cad",
+      "title": "샘플 도면 만들기",
+      "apps": [
+        "cadcraft"
+      ],
+      "template_id": "sample-bracket",
+      "state": "done",
+      "round_count": 1,
+      "output_count": 4,
+      "last_run_id": "9ea0b276-a425-4c78-b457-8a39193cff55",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:50:54.130188Z",
+      "updated_at": "2026-11-06T14:50:54.130189Z",
+      "archived_at": null
+    },
+    {
+      "id": "e76aa925-3586-40a2-8c64-d494952f7c0d",
+      "session_id": "c11a9a4d-c3f3-41f1-8893-84b52e839744",
+      "category": "slides",
+      "title": "발표 자료 만들기",
+      "apps": [
+        "deckcraft"
+      ],
+      "template_id": "make-deck",
+      "state": "done",
+      "round_count": 1,
+      "output_count": 4,
+      "last_run_id": "fd38e20a-d20f-401b-a625-53a42a2d6976",
+      "error": null,
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:50:50.064267Z",
+      "updated_at": "2026-11-06T14:50:50.064269Z",
+      "archived_at": null
+    },
+    {
+      "id": "169f5a04-c68c-465d-9d6f-fdc26c9038d9",
+      "session_id": "d2a83eda-8c81-4b61-82b8-999dd4696159",
+      "category": "motion",
+      "title": "제목 카드 영상",
+      "apps": [
+        "effectcraft"
+      ],
+      "template_id": "title-card",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "01d02eac-13c3-4b5b-9f1d-b3c366897348",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:49:21.464948Z",
+      "updated_at": "2026-11-06T14:49:21.464949Z",
+      "archived_at": null
+    },
+    {
+      "id": "a2f8ab57-8b8d-4987-81fc-61e65446df26",
+      "session_id": "9fb37038-1b6f-4f35-8e6b-13dd486a3922",
+      "category": "vector",
+      "title": "간단한 로고 그리기",
+      "apps": [
+        "vectorcraft"
+      ],
+      "template_id": "draw-logo",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "9c3619e0-eb42-4331-b0fe-14edb8640666",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:49:10.126474Z",
+      "updated_at": "2026-11-06T14:49:10.126477Z",
+      "archived_at": null
+    },
+    {
+      "id": "53d025a9-5eab-485f-a6de-74279fb879ec",
+      "session_id": "35cc012d-4643-4653-a6cf-f770fc5422eb",
+      "category": "cad",
+      "title": "샘플 도면 만들기",
+      "apps": [
+        "cadcraft"
+      ],
+      "template_id": "sample-bracket",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "7cfe9838-1cc1-4364-8432-d3b32ec12c10",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:49:05.635477Z",
+      "updated_at": "2026-11-06T14:49:05.635478Z",
+      "archived_at": null
+    },
+    {
+      "id": "3c392415-4851-4732-a1d7-8f4ee071fe30",
+      "session_id": "2dc8e037-e924-4cb8-a507-1b39d98de7bf",
+      "category": "slides",
+      "title": "발표 자료 만들기",
+      "apps": [
+        "deckcraft"
+      ],
+      "template_id": "make-deck",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "3fe36e68-37bb-4179-8b18-86ba91f6f3ed",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:49:02.065437Z",
+      "updated_at": "2026-11-06T14:49:02.065440Z",
+      "archived_at": null
+    },
+    {
+      "id": "359dd91d-1cc2-4c0b-b811-b40677282def",
+      "session_id": "cd874dd6-99dd-4d6a-84c3-abe6e90ac636",
+      "category": "sheet",
+      "title": "표 만들기",
+      "apps": [
+        "gridcraft"
+      ],
+      "template_id": "make-table",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "a3a42826-4132-4646-becb-f40a0ee8ff01",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:48:56.648413Z",
+      "updated_at": "2026-11-06T14:48:56.648414Z",
+      "archived_at": null
+    },
+    {
+      "id": "16c33bac-5e9e-4369-abc2-a45026e76e58",
+      "session_id": "f12ead02-81f7-4c2c-a547-e56abae36776",
+      "category": "doc",
+      "title": "보고서 쓰기",
+      "apps": [
+        "wordcraft"
+      ],
+      "template_id": "write-report",
+      "state": "failed",
+      "round_count": 1,
+      "output_count": 0,
+      "last_run_id": "9998d7e9-e2be-489b-aeb8-e653fb012be8",
+      "error": "켜진 개인 claude 계정이 없습니다. 설정 > 계정의 개인 계정에서 켜 주세요.",
+      "progress": null,
+      "waiting_reason": null,
+      "created_at": "2026-11-06T14:48:50.856232Z",
+      "updated_at": "2026-11-06T14:48:50.856233Z",
+      "archived_at": null
+    }
+  ]
+}

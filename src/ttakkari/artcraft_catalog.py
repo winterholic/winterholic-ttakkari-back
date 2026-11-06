@@ -105,8 +105,8 @@ CATEGORIES: tuple[Category, ...] = (
                      "예: DNG 파일을 JPG로", 1, (), ("lightcraft",)),
         ),
         cli=(
-            "photocraft: `artcraft run photocraft convert in.png out.psd` / `run in.png --cmd filter.blur.gaussianBlur --params '{\"radius\":4}' --out o.png` / `commands --filter adjust` (명령 ID 목록, 리사이즈 등)",
-            "lightcraft: `artcraft run lightcraft render in.jpg -o out.jpg --set light.exposure=0.5 --size 1600`",
+            "photocraft: `artcraft run photocraft convert in.png out.psd` / `artcraft run photocraft run in.png --cmd filter.blur.gaussianBlur --params '{\"radius\":4}' --out o.png` / `artcraft run photocraft commands --filter adjust` (명령 ID 목록, 리사이즈 등)",
+            "lightcraft: `artcraft run lightcraft render in.jpg -o out.jpg --set light.exposure=0.5 --size 1600` / `artcraft run lightcraft commands`",
         ),
     ),
     Category(
@@ -124,7 +124,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("recolor", "색 바꾸기", "첨부한 SVG의 주요 색을 아래에 적은 색으로 바꿔 새 파일로 저장해 주세요.", "예: 파란색을 주황색으로", 1),
             Template("add-text", "글자 넣기", "첨부한 SVG에 아래 문구를 눈에 띄게 넣고 결과를 저장해 주세요.", "예: 하단에 '2026 여름 세일' 넣기", 1),
         ),
-        cli=("vectorcraft: `artcraft run vectorcraft convert in.svg out.png|pdf|jpg|svg` / `info in.svg` / `commands`",),
+        cli=("vectorcraft: `artcraft run vectorcraft convert in.svg out.png` (png/pdf/jpg/svg) / `artcraft run vectorcraft info in.svg` / `artcraft run vectorcraft commands`",),
     ),
     Category(
         id="ui", section="image", title="화면·UI 디자인", tagline="앱·웹 화면 시안, 아이콘",
@@ -139,7 +139,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("icon", "아이콘 만들기", "아래 설명대로 간단한 아이콘을 만들어 SVG와 PNG로 저장해 주세요.", "예: 둥근 모서리 사각형 안에 번개 모양"),
             Template("render-svg", "SVG를 이미지로", "첨부한 파일을 PNG로 내보내 주세요.", "예: 2배 크기로", 1, (_fmt("png", "jpg", "webp"),)),
         ),
-        cli=("figcraft: `artcraft run figcraft render in.svg -o out.png --scale 2` / `export f.figcraft -o out.pdf --format pdf` / `info in.svg`",),
+        cli=("figcraft: `artcraft run figcraft render in.svg -o out.png --scale 2` / `artcraft run figcraft export f.figcraft -o out.pdf --format pdf` / `artcraft run figcraft info in.svg` / `artcraft run figcraft commands`",),
     ),
     Category(
         id="layout", section="image", title="인쇄물·편집 디자인", tagline="포스터·브로셔·여러 쪽 레이아웃",
@@ -153,7 +153,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("poster", "한 장짜리 포스터", "아래 내용으로 한 장짜리 포스터를 만들어 PDF와 PNG로 저장해 주세요.", "예: 동네 벼룩시장 안내, 날짜·장소·시간"),
             Template("brochure", "여러 쪽 안내서", "첨부한 글과 이미지로 2~4쪽 안내서를 만들어 PDF로 저장해 주세요.", "예: 제품 소개서", 1),
         ),
-        cli=("designcraft: `artcraft run designcraft run --sample --export out.pdf` / `run --in file --cmd ID=JSON --export out.png` (명령 ID는 `commands`)",),
+        cli=("designcraft: `artcraft run designcraft run --sample --export out.pdf` / `artcraft run designcraft run --in file --cmd ID=JSON --export out.png` / `artcraft run designcraft commands`",),
     ),
     Category(
         id="video", section="av", title="영상 편집", tagline="영상 자르기·이어 붙이기·내보내기",
@@ -169,21 +169,21 @@ CATEGORIES: tuple[Category, ...] = (
             Template("frame", "한 장면 이미지로 뽑기", "첨부한 영상에서 아래 시점의 장면을 PNG로 저장해 주세요.", "예: 3초 지점", 1),
             Template("info", "영상 정보 확인", "첨부한 영상의 길이·해상도·코덱 정보를 알려 주세요.", "예: 해상도와 길이", 1),
         ),
-        cli=("filmcraft: `artcraft run filmcraft probe in.mp4` / `export out.mp4 --format h264 --start 0 --end 1` / 편집은 MCP `media_import`, `command_run` (명령 ID는 `commands`)",),
+        cli=("filmcraft: `artcraft run filmcraft probe in.mp4` / `artcraft run filmcraft export out.mp4 --format h264 --start 0 --end 1` / `artcraft run filmcraft commands` / 편집은 MCP `media_import`, `command_run`",),
     ),
     Category(
         id="motion", section="av", title="모션·영상 효과", tagline="글자 움직임·합성·효과 영상",
         icon="sparkles", level="limited",
         apps=(AppRole("effectcraft", "EffectCraft", "모션 그래픽(애프터이펙트 방식)", "rootflags"),),
-        can=("레이어·키프레임·효과 합성", "한 장면 PNG 렌더", "구간을 H.264·WebM·GIF 등 영상으로 렌더"),
-        cannot=("After Effects 프로젝트(.aep) 열기", "외부 플러그인"),
+        can=("레이어·키프레임·효과 합성, 프로젝트 파일(.ecproj) 생성", "한 장면 PNG 렌더 및 CLI를 통한 MP4·WebM·GIF 영상 렌더"),
+        cannot=("MCP 도구 단독 동영상 렌더(MCP는 단일 프레임만 지원하므로 동영상 파일은 CLI render 명령 필수)", "After Effects 프로젝트(.aep) 열기", "외부 플러그인"),
         accepts=("png", "jpg", "jpeg", "svg", "mp4", "mov", "webm", "wav", "mp3", "ecproj"),
         outputs=("PNG", "MP4", "WEBM", "GIF"),
         templates=(
             Template("title-card", "제목 카드 영상", "아래 문구가 부드럽게 나타났다 사라지는 3초짜리 제목 영상을 만들어 MP4로 저장해 주세요.", "예: '2026 여름 여행' 흰 글자, 어두운 배경"),
             Template("still-frame", "합성 장면 이미지", "첨부한 이미지 위에 아래 문구를 얹은 장면을 PNG로 렌더해 주세요.", "예: 사진 위에 큰 제목", 1),
         ),
-        cli=("effectcraft: `artcraft run effectcraft --demo render-frame --out f.png` / `--project X.ecproj render --out o.mp4` / `commands`",),
+        cli=("effectcraft: 프레임 렌더 `artcraft run effectcraft --demo render-frame --out f.png` / 동영상 렌더 `artcraft run effectcraft --project X.ecproj render --out o.mp4` / `artcraft run effectcraft commands`",),
     ),
     Category(
         id="audio", section="av", title="오디오", tagline="소리 파일 변환·크기 맞추기·믹스",
@@ -198,7 +198,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("convert", "형식 바꾸기", "첨부한 오디오를 지정한 형식과 24비트로 변환해 주세요.", "예: WAV를 FLAC으로", 1, (_fmt("flac", "wav"),)),
             Template("info", "오디오 정보 확인", "첨부한 오디오의 길이·채널·샘플레이트·최대 음량을 알려 주세요.", "예: 샘플레이트가 몇이야?", 1),
         ),
-        cli=("soundcraft: `artcraft run soundcraft info f.wav` / `convert in out --bit-depth 24 --normalize` (저장 가능: wav, aif, aiff, flac) / `run --demo --bounce out.wav`",),
+        cli=("soundcraft: `artcraft run soundcraft info f.wav` / `artcraft run soundcraft convert in out --bit-depth 24 --normalize` (저장 가능: wav, aif, aiff, flac) / `artcraft run soundcraft run --demo --bounce out.wav` / `artcraft run soundcraft commands`",),
     ),
     Category(
         id="pdf", section="doc", title="PDF 편집", tagline="PDF 합치기·나누기·페이지 정리·내용 읽기",
@@ -217,7 +217,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("summarize", "내용 요약", "첨부한 PDF의 내용을 읽고 핵심을 항목별로 요약해 문서(마크다운)로 저장해 주세요.", "예: 한 장 요약", 1),
             Template("preview-images", "쪽을 이미지로", "첨부한 PDF의 각 쪽을 PNG 이미지로 저장해 주세요.", "예: 첫 3쪽만 이미지로", 1),
         ),
-        cli=("pdfcraft: `artcraft run pdfcraft info|text|render f.pdf` / `combine a.pdf b.pdf --out c.pdf` / `extract in.pdf --pages 1,3 --out o.pdf` / `split in.pdf --every 5 --out-dir d` / `edit in.pdf --out o.pdf --rotate 2:90 --delete 3 --move 5:1 --title T`",),
+        cli=("pdfcraft: `artcraft run pdfcraft render f.pdf --page 1 --out p.png` / `artcraft run pdfcraft text f.pdf` / `artcraft run pdfcraft combine a.pdf b.pdf --out c.pdf` / `artcraft run pdfcraft extract in.pdf --pages 1,3 --out o.pdf` / `artcraft run pdfcraft split in.pdf --every 5 --out-dir d` / `artcraft run pdfcraft edit in.pdf --out o.pdf --rotate 2:90 --delete 3 --move 5:1 --title T` / `artcraft run pdfcraft commands`",),
     ),
     Category(
         id="doc", section="doc", title="문서 작성", tagline="보고서·편지 만들기, 워드(DOCX) 변환",
@@ -229,13 +229,13 @@ CATEGORIES: tuple[Category, ...] = (
         outputs=("DOCX", "PDF", "ODT", "MD", "HTML"),
         templates=(
             Template("write-report", "보고서 쓰기", "아래 주제로 한 쪽에서 두 쪽 분량의 보고서를 써서 DOCX와 PDF로 저장해 주세요. 제목·소제목·요약 목록이 있으면 좋아요.",
-                     "예: 2분기 판매 현황 보고서"),
+             "예: 2분기 판매 현황 보고서"),
             Template("md-to-docx", "마크다운을 워드로", "첨부한 파일을 DOCX와 PDF로 변환해 주세요.", "예: 메모를 보고서 파일로", 1),
             Template("docx-to-pdf", "워드를 PDF로", "첨부한 문서를 PDF로 변환하고 첫 쪽 미리보기 이미지도 함께 저장해 주세요.", "예: 제출용 PDF", 1),
             Template("edit-doc", "문서 고치기", "첨부한 문서를 아래 요청대로 고쳐 새 파일로 저장해 주세요. 원본은 그대로 두세요.", "예: 맨 끝에 감사 인사 문단 추가", 1),
             Template("letter", "편지·공문 쓰기", "아래 내용으로 정중한 편지(또는 공문)를 써서 DOCX로 저장해 주세요.", "예: 거래처에 납기 연기를 알리는 편지"),
         ),
-        cli=("wordcraft: `artcraft run wordcraft convert in.md out.docx` / `convert out.docx out.pdf` / `text f.docx` / `render f.docx out.png` / `run --file f.docx --cmd 'ID={json}' --save out.docx` (명령 ID는 `commands`)",),
+        cli=("wordcraft: `artcraft run wordcraft convert in.md out.docx` / `artcraft run wordcraft convert out.docx out.pdf` / `artcraft run wordcraft text f.docx` / `artcraft run wordcraft render f.docx out.png` / `artcraft run wordcraft run --file f.docx --cmd 'ID={json}' --save out.docx` / `artcraft run wordcraft commands`",),
     ),
     Category(
         id="slides", section="doc", title="발표 자료", tagline="슬라이드 만들기, 이미지·PDF로 뽑기",
@@ -252,7 +252,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("deck-to-pdf", "슬라이드를 PDF로", "첨부한 발표 자료를 PDF로 내보내고 첫 장 미리보기 이미지도 저장해 주세요.", "예: 메일 첨부용 PDF", 1),
             Template("add-slide", "슬라이드 추가", "첨부한 발표 자료 뒤에 아래 내용의 슬라이드를 추가해 새 파일로 저장해 주세요.", "예: 마지막에 질의응답 장 추가", 1),
         ),
-        cli=("deckcraft: `artcraft run deckcraft run --sample --save out.pptx` / `render f.pptx --slide 1 out.png` / `run --in f.pptx --export out.pdf` / `convert in.pptx out.odp` (명령 ID는 `commands`)",),
+        cli=("deckcraft: `artcraft run deckcraft run --sample --save out.pptx` / `artcraft run deckcraft render f.pptx --slide 1 out.png` / `artcraft run deckcraft run --in f.pptx --export out.pdf` / `artcraft run deckcraft convert in.pptx out.odp` / `artcraft run deckcraft commands`",),
     ),
     Category(
         id="sheet", section="doc", title="스프레드시트", tagline="표 정리, 수식 계산, CSV·XLSX 변환",
@@ -268,7 +268,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("clean-sort", "정렬·정리", "첨부한 표를 아래 기준으로 정렬하고 중복 행을 제거해 새 파일로 저장해 주세요.", "예: 단가 높은 순으로", 1),
             Template("make-table", "표 만들기", "아래 내용으로 표를 만들어 XLSX로 저장해 주세요. 합계 수식도 넣어 주세요.", "예: 월별 지출표, 항목 5개"),
         ),
-        cli=("gridcraft: `artcraft run gridcraft convert in.csv out.xlsx` / `cat f.xlsx --csv` / `info f.xlsx --json` / `eval '=SUM(1,2,3)'` / `run --in f.xlsx --cmd 'cell.set={\"cell\":\"D1\",\"value\":\"합계\"}' --out o.xlsx` (명령 ID는 `commands`)",),
+        cli=("gridcraft: `artcraft run gridcraft convert in.csv out.xlsx` / `artcraft run gridcraft cat f.xlsx --csv` / `artcraft run gridcraft info f.xlsx --json` / `artcraft run gridcraft eval '=SUM(1,2,3)'` / `artcraft run gridcraft run --in f.xlsx --cmd 'cell.set={\"cell\":\"D1\",\"value\":\"합계\"}' --out o.xlsx` / `artcraft run gridcraft commands`",),
     ),
     Category(
         id="cad", section="cad", title="도면·CAD(2D)", tagline="2D 도면 보기·그리기, SVG·PDF 변환",
@@ -283,7 +283,7 @@ CATEGORIES: tuple[Category, ...] = (
             Template("dxf-info", "도면 내용 조회", "첨부한 DXF에 들어 있는 도형 종류와 개수, 치수 정보를 정리해 알려 주세요.", "예: 원이 몇 개야?", 1),
             Template("sample-bracket", "샘플 도면 만들기", "샘플 브래킷 도면을 만들어 DXF와 PNG로 저장해 주세요.", "예: 연습용 도면"),
         ),
-        cli=("cadcraft: `artcraft run cadcraft sample bracket out.dxf` / `info f.dxf` / `convert f.dxf out.svg|png|pdf` (`--help`는 exit 1이지만 정상)",),
+        cli=("cadcraft: `artcraft run cadcraft sample bracket out.dxf` / `artcraft run cadcraft info f.dxf` / `artcraft run cadcraft convert f.dxf out.svg` (svg/png/pdf) / `artcraft run cadcraft commands` (`--help`는 exit 1이지만 정상)",),
     ),
 )
 

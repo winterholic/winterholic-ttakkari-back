@@ -1,20 +1,36 @@
 """ArtCraft 작업 플랫폼(ADR 0039): 카탈로그, 작업 생성·라운드·갤러리, 작업 폴더·MCP 연결, 가드. 가짜 claude 와 가짜 bin/artcraft 를 쓴다."""
 from __future__ import annotations
 
+import fcntl
 import json
+import multiprocessing
+import os
 import stat
 from pathlib import Path
 
 import pytest
 from conftest import agent_calls
 from helpers import wait_run
-
 from ttakkari import artcraft_catalog as catalog
 from ttakkari.artifacts.kinds import detect
 from ttakkari.config import get_settings
 from ttakkari.security.guard import GuardConfig, evaluate
 
 REAL_REGISTRY = Path.home() / "development/projects/artcraft/registry.json"
+
+
+def _compete_for_file_lock(path: str, contended, acquired) -> None:
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            contended.set()
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        acquired.set()
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 @pytest.fixture
@@ -271,6 +287,341 @@ async def test_active_task_is_listed_as_active(client, auth, platform):
     assert done["state"] == "cancelled"
 
 
+async def test_update_api_queries_real_db_and_rejects_active_creation_run(client, auth, platform):
+    from ttakkari import artcraft
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    task_response = await _task(client, auth, category="photo", prompt="SLEEP 제작 중", apps=["photocraft"])
+    assert task_response.status_code == 201, task_response.text
+
+    response = await client.post("/api/artcraft/apps/photocraft/update", json={"confirm": True}, headers=auth)
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "busy"
+
+
+async def test_create_commit_wins_same_app_update_race(client, auth, platform, monkeypatch):
+    import asyncio
+
+    from ttakkari import artcraft, artcraft_tasks
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    entered_create = asyncio.Event()
+    real_create_task = artcraft_tasks.create_task
+
+    async def hold_create_admission(db, **kwargs):
+        entered_create.set()
+        return await real_create_task(db, **kwargs)
+
+    monkeypatch.setattr(artcraft_tasks, "create_task", hold_create_admission)
+    create_request = asyncio.create_task(
+        _task(client, auth, category="photo", prompt="작업이 먼저 DB에 등록", apps=["photocraft"])
+    )
+    await asyncio.wait_for(entered_create.wait(), timeout=2)
+    update_request = asyncio.create_task(
+        client.post("/api/artcraft/apps/photocraft/update", json={"confirm": True}, headers=auth)
+    )
+
+    create_response, update_response = await asyncio.gather(create_request, update_request)
+
+    assert create_response.status_code == 201, create_response.text
+    assert update_response.status_code == 409, update_response.text
+    assert update_response.json()["code"] == "busy"
+    await client.post(f"/api/runs/{create_response.json()['rounds'][0]['id']}/cancel", headers=auth)
+
+
+async def test_add_round_commit_wins_same_app_update_race(client, auth, platform, monkeypatch):
+    import asyncio
+
+    from ttakkari import artcraft, artcraft_tasks
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    task = await _finish(
+        client, auth, (await _task(client, auth, category="photo", prompt="기존 작업 완료")).json()
+    )
+    entered_round = asyncio.Event()
+    release_round = asyncio.Event()
+    real_add_round = artcraft_tasks.add_round
+
+    async def hold_add_round(db, *args, **kwargs):
+        entered_round.set()
+        await release_round.wait()
+        return await real_add_round(db, *args, **kwargs)
+
+    monkeypatch.setattr(artcraft_tasks, "add_round", hold_add_round)
+    round_request = asyncio.create_task(
+        client.post(f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "이어 만들기"}, headers=auth)
+    )
+    await asyncio.wait_for(entered_round.wait(), timeout=2)
+    update_request = asyncio.create_task(
+        client.post("/api/artcraft/apps/photocraft/update", json={"confirm": True}, headers=auth)
+    )
+    await asyncio.sleep(0.05)
+    release_round.set()
+
+    round_response, update_response = await asyncio.gather(round_request, update_request)
+
+    assert round_response.status_code == 202, round_response.text
+    assert update_response.status_code == 409, update_response.text
+    assert update_response.json()["code"] == "busy"
+    await client.post(f"/api/runs/{round_response.json()['rounds'][-1]['id']}/cancel", headers=auth)
+
+
+async def test_update_admission_rechecks_persisted_state_after_waiting_for_lock(monkeypatch):
+    import contextlib
+
+    from ttakkari import artcraft
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+
+    lock_attempts = 0
+
+    @contextlib.asynccontextmanager
+    async def queued_update_wins(apps, *, wait=True):
+        nonlocal lock_attempts
+        lock_attempts += 1
+        if lock_attempts == 1:
+            raise artcraft.CoordinationLockBusy
+        if lock_attempts == 2:
+            artcraft.update_state(lambda state: state.setdefault("updates", {}).update({
+                "photocraft": {"state": "queued", "current_job_id": "update-first"}
+            }))
+        raise artcraft.CoordinationLockBusy
+        yield
+
+    monkeypatch.setattr(artcraft, "coordination_lock", queued_update_wins)
+    admitted = False
+
+    with pytest.raises(artcraft.ArtcraftError) as exc:
+        async with artcraft.task_admission_lock(["photocraft"]):
+            admitted = True
+    assert exc.value.status == 409 and exc.value.code == "app_updating"
+    assert not admitted
+    assert lock_attempts == 2
+    artcraft.update_state(lambda state: state.pop("updates", None))
+
+
+async def test_update_api_commit_wins_same_app_task_race(client, auth, platform, monkeypatch):
+    import asyncio
+
+    from ttakkari import artcraft, artcraft_update
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    entered_update_check = asyncio.Event()
+    release_update_check = asyncio.Event()
+    entered_apply = asyncio.Event()
+    release_apply = asyncio.Event()
+    original_check_busy = artcraft_update.check_busy
+    first_check = True
+
+    async def pause_first_check(app, exclude_job_id=None, db=None):
+        nonlocal first_check
+        if first_check:
+            first_check = False
+            entered_update_check.set()
+            await release_update_check.wait()
+        return await original_check_busy(app, exclude_job_id=exclude_job_id, db=db)
+
+    async def pause_apply(app, tag=None, confirm=False, current_job_id=None, db=None):
+        entered_apply.set()
+        await release_apply.wait()
+        return {"version": "0.10.0", "verified_output": "verified"}
+
+    async def ready_status(force=False):
+        return ([{"app": "photocraft", "gui": {"running": False, "listening": False}}], None, "")
+
+    monkeypatch.setattr(artcraft_update, "check_busy", pause_first_check)
+    monkeypatch.setattr(artcraft_update, "apply_update", pause_apply)
+    monkeypatch.setattr(artcraft, "raw_status", ready_status)
+
+    update_request = asyncio.create_task(
+        client.post("/api/artcraft/apps/photocraft/update", json={"confirm": True}, headers=auth)
+    )
+    await asyncio.wait_for(entered_update_check.wait(), timeout=2)
+    task_request = asyncio.create_task(
+        _task(client, auth, category="photo", prompt="업데이트 등록과 경합", apps=["photocraft"])
+    )
+    await asyncio.sleep(0.05)
+    release_update_check.set()
+
+    update_response = await asyncio.wait_for(update_request, timeout=3)
+    assert update_response.status_code == 202, update_response.text
+    job = artcraft.JOBS[update_response.json()["id"]]
+    try:
+        await asyncio.wait_for(entered_apply.wait(), timeout=3)
+        task_response = await asyncio.wait_for(task_request, timeout=3)
+        assert task_response.status_code == 409, task_response.text
+        assert task_response.json()["code"] == "app_updating"
+    finally:
+        release_apply.set()
+    await asyncio.wait_for(job.task, timeout=3)
+    assert job.state == "succeeded"
+
+
+async def test_update_and_rollback_api_jobs_use_fresh_db_sessions_and_hold_admission_lock(
+    client, auth, platform, monkeypatch
+):
+    import asyncio
+    import io
+    import zipfile
+
+    from ttakkari import artcraft, artcraft_tasks, artcraft_update
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    task = await _finish(client, auth, (await _task(client, auth, category="photo", prompt="ART_OUT 완료")).json())
+
+    old_bin = platform.base / "dist" / "cli" / "photocraft" / "0.9.0" / "photocraft-cli"
+    old_bin.parent.mkdir(parents=True)
+    old_bin.write_bytes(b"original-binary")
+    old_bin.chmod(0o755)
+    (platform.base / "bin" / "photocraft-cli").symlink_to(old_bin)
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("photocraft-cli", b"updated-binary")
+    entered_fetch = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def fetch_release(app, tag=None):
+        entered_fetch.set()
+        await release_fetch.wait()
+        return {"version": "0.10.0", "zip_bytes": archive.getvalue(), "asset_name": "photocraft-cli-0.10.0-macos-universal.zip"}
+
+    async def ready_status(force=False):
+        return ([{"app": "photocraft", "gui": {"running": False, "listening": False}}], None, "")
+
+    monkeypatch.setattr(artcraft_update, "fetch_release_assets", fetch_release)
+    monkeypatch.setattr(artcraft_update, "verify_installation", lambda app, path: asyncio.sleep(0, result=(True, "verified")))
+    monkeypatch.setattr(artcraft, "raw_status", ready_status)
+    real_active_task_apps = artcraft_tasks.active_task_apps
+    checked_sessions = []
+
+    async def track_active_task_apps(db):
+        checked_sessions.append(db)
+        return await real_active_task_apps(db)
+
+    monkeypatch.setattr(artcraft_tasks, "active_task_apps", track_active_task_apps)
+
+    update_response = await client.post(
+        "/api/artcraft/apps/photocraft/update", json={"confirm": True, "tag": "v0.10.0"}, headers=auth
+    )
+    assert update_response.status_code == 202, update_response.text
+    update_job = artcraft.JOBS[update_response.json()["id"]]
+    try:
+        await asyncio.wait_for(entered_fetch.wait(), timeout=3)
+    except TimeoutError:
+        release_fetch.set()
+        if update_job.task:
+            update_job.task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await update_job.task
+        pytest.fail(f"update runner stopped before fetch: state={update_job.state} summary={update_job.summary}")
+    try:
+        create_response = await _task(client, auth, category="photo", prompt="업데이트 중 신규 제작")
+        round_response = await client.post(
+            f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "업데이트 중 추가 라운드"}, headers=auth
+        )
+        other_app_response = await _task(
+            client, auth, category="photo", prompt="다른 앱 제작은 허용", apps=["lightcraft"]
+        )
+        assert create_response.status_code == 409 and create_response.json()["code"] == "app_updating"
+        assert round_response.status_code == 409 and round_response.json()["code"] == "app_updating"
+        assert other_app_response.status_code == 201, other_app_response.text
+    finally:
+        release_fetch.set()
+    await asyncio.wait_for(update_job.task, timeout=5)
+    assert update_job.state == "succeeded"
+
+    rollback_response = await client.post(
+        "/api/artcraft/apps/photocraft/update/rollback", json={"confirm": True}, headers=auth
+    )
+    assert rollback_response.status_code == 202, rollback_response.text
+    rollback_job = artcraft.JOBS[rollback_response.json()["id"]]
+    await asyncio.wait_for(rollback_job.task, timeout=5)
+    assert rollback_job.state == "succeeded"
+    assert len(checked_sessions) >= 4
+    assert checked_sessions[0] is not checked_sessions[1]
+    assert checked_sessions[2] is not checked_sessions[3]
+
+
+async def test_foreign_generation_persisted_update_blocks_create_and_add_round(client, auth, platform):
+    import os
+
+    from ttakkari import artcraft
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    task = await _finish(client, auth, (await _task(client, auth, category="photo", prompt="ART_OUT 제작 완료")).json())
+    artcraft.update_state(lambda state: state.setdefault("updates", {}).update({
+        "photocraft": {
+            "state": "running",
+            "current_job_id": "other-generation-job",
+            "owner_pid": os.getpid(),
+            "owner_generation": "other-generation",
+        }
+    }))
+
+    create_response = await _task(client, auth, category="photo", prompt="새 제작")
+    round_response = await client.post(
+        f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "추가 라운드"}, headers=auth
+    )
+
+    assert create_response.status_code == 409, create_response.text
+    assert create_response.json()["code"] == "app_updating"
+    assert round_response.status_code == 409, round_response.text
+    assert round_response.json()["code"] == "app_updating"
+
+
+async def test_coordination_lock_serializes_and_releases_after_runner_cancellation():
+    import asyncio
+
+    from ttakkari.artcraft import coordination_lock
+
+    holder_entered = asyncio.Event()
+    waiter_started = asyncio.Event()
+    waiter_entered = asyncio.Event()
+
+    async def hold_until_cancelled():
+        async with coordination_lock():
+            holder_entered.set()
+            await asyncio.Event().wait()
+
+    async def wait_for_lock():
+        waiter_started.set()
+        async with coordination_lock():
+            waiter_entered.set()
+
+    holder = asyncio.create_task(hold_until_cancelled())
+    await holder_entered.wait()
+    waiter = asyncio.create_task(wait_for_lock())
+    await waiter_started.wait()
+    assert not waiter_entered.is_set()
+
+    holder.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await holder
+    await asyncio.wait_for(waiter_entered.wait(), timeout=1)
+    await waiter
+
+
+async def test_coordination_lock_is_shared_between_process_generations():
+    import asyncio
+
+    from ttakkari import artcraft
+
+    context = multiprocessing.get_context("spawn")
+    contended = context.Event()
+    acquired = context.Event()
+    lock_path = str(artcraft._state_path().with_name("coordination-photocraft.lock"))
+    process = context.Process(target=_compete_for_file_lock, args=(lock_path, contended, acquired))
+    async with artcraft.coordination_lock(["photocraft"]):
+        process.start()
+        assert await asyncio.wait_for(asyncio.to_thread(contended.wait, 3), timeout=4)
+        assert not acquired.is_set()
+    assert await asyncio.wait_for(asyncio.to_thread(acquired.wait, 3), timeout=4)
+    await asyncio.to_thread(process.join, 3)
+    assert process.exitcode == 0
+
+
 async def test_outputs_gallery_filters_and_pages(client, auth, platform):
     await _finish(client, auth, (await _task(client, auth)).json())
     await _finish(client, auth, (await _task(client, auth, category="doc", prompt="ART_OUT 문서")).json())
@@ -311,3 +662,56 @@ def test_guard_blocks_protected_and_sensitive_paths_in_artcraft_mcp_calls(tmp_pa
     assert evaluate(tool, {"steps": [{"args": {"file": str(protected / "x")}}]}, str(work), cfg)  # 중첩 인자도 본다
     assert evaluate(tool, {"path": str(work / ".env")}, str(work), cfg)  # 민감 파일
     assert evaluate("mcp__ttakkari__recall", {"query": str(protected)}, str(work), cfg) is None  # 다른 MCP 는 건드리지 않는다
+
+
+def test_sweep_outputs_filters_zero_byte_empty_and_sensitive_files(tmp_path: Path):
+    """0바이트 빈 파일과 민감 파일(.env, .git 등)은 결과물 outbox 로 복사되지 않는다."""
+    from ttakkari import artcraft_tasks
+    from ttakkari.artcraft_tasks import RunPlan
+    from ttakkari.models import Run, utcnow
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    outbox = tmp_path / "outbox"
+    outbox.mkdir()
+    run = Run(started_at=utcnow(), created_at=utcnow())
+
+    (out_dir / "empty.txt").write_bytes(b"")
+    (out_dir / ".env").write_text("SECRET=1")
+    (out_dir / ".DS_Store").write_bytes(b"\x00")
+    (out_dir / "valid.png").write_bytes(b"\x89PNG real image")
+
+    plan = RunPlan(prompt="", note="", mcp_servers={}, out_dir=out_dir)
+
+    copied = artcraft_tasks.sweep_outputs(plan, run, outbox)
+    assert copied == 1
+    assert (outbox / "valid.png").exists()
+    assert not (outbox / "empty.txt").exists()
+    assert not (outbox / ".env").exists()
+    assert not (outbox / ".DS_Store").exists()
+
+
+def test_catalog_cli_recipes_are_all_fully_qualified():
+    """모든 카테고리의 cli 요령 내 실행 명령어가 단독 파편 없이 온전한 artcraft run <app> 형태여야 한다."""
+    import re
+    cmd_pattern = re.compile(r"`([^`]+)`")
+    for cat in catalog.CATEGORIES:
+        for line in cat.cli:
+            commands = cmd_pattern.findall(line)
+            for cmd in commands:
+                cmd_strip = cmd.strip()
+                if any(cmd_strip.startswith(p) for p in ("run ", "commands", "info ", "convert ", "render ", "cat ", "eval ", "sample ", "combine ", "extract ", "split ", "edit ")):
+                    pytest.fail(f"카테고리 {cat.id}에 단독 명령어 파편 존재: `{cmd_strip}` in {line}")
+
+
+def test_check_app_not_updating_rejects_active_updating_job(monkeypatch):
+    """활성 업데이트/롤백 Job 이 있는 앱은 작업 생성 시 409 app_updating 으로 차단된다."""
+    from ttakkari import artcraft, artcraft_tasks
+    from ttakkari.artcraft import Job
+
+    job = Job(id="up1", kind="update", action="update photocraft", apps=["photocraft"], state="running")
+    monkeypatch.setattr(artcraft, "JOBS", {"up1": job})
+
+    with pytest.raises(artcraft.ArtcraftError) as exc_info:
+        artcraft_tasks.check_app_not_updating(["photocraft"])
+    assert exc_info.value.status == 409 and exc_info.value.code == "app_updating"

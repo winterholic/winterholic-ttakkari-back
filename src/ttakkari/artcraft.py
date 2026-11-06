@@ -15,6 +15,7 @@ import os
 import re
 import shlex
 import signal
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -172,6 +173,107 @@ def _state_path() -> Path:
     return get_settings().data_dir / "artcraft" / "state.json"
 
 
+_coordination_local_locks: dict[str, threading.Lock] = {}
+_coordination_local_locks_guard = threading.Lock()
+
+
+def _coordination_local_lock(name: str) -> threading.Lock:
+    with _coordination_local_locks_guard:
+        return _coordination_local_locks.setdefault(name, threading.Lock())
+
+
+@contextlib.asynccontextmanager
+async def coordination_lock(apps: list[str] | None = None, *, wait: bool = True):
+    """Serialize admission and updater lifetime for sorted app IDs across processes/generations."""
+    names = sorted(set(apps or ["all"]))
+    if any(not re.fullmatch(r"[a-z0-9_-]+", name) for name in names):
+        raise ValueError("invalid ArtCraft coordination lock key")
+    lock_dir = _state_path().parent
+    lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fds: list[int] = []
+    local_locks: list[threading.Lock] = []
+    try:
+        while True:
+            for name in names:
+                local_lock = _coordination_local_lock(name)
+                if not local_lock.acquire(blocking=False):
+                    for held in reversed(local_locks):
+                        held.release()
+                    local_locks.clear()
+                    if not wait:
+                        raise CoordinationLockBusy
+                    break
+                local_locks.append(local_lock)
+            if len(local_locks) != len(names):
+                await asyncio.sleep(0.01)
+                continue
+            try:
+                for name in names:
+                    fd = os.open(lock_dir / f"coordination-{name}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+                    fds.append(fd)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                for fd in reversed(fds):
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    os.close(fd)
+                fds.clear()
+                for local_lock in reversed(local_locks):
+                    local_lock.release()
+                local_locks.clear()
+                if not wait:
+                    raise CoordinationLockBusy
+                await asyncio.sleep(0.01)
+        yield
+    finally:
+        for fd in reversed(fds):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        for local_lock in reversed(local_locks):
+            local_lock.release()
+
+
+class CoordinationLockBusy(Exception):
+    """A non-blocking app coordination lock could not be acquired."""
+
+
+@contextlib.asynccontextmanager
+async def task_admission_lock(apps: list[str]):
+    """Reject same-app work during updates, otherwise wait for the DB commit boundary."""
+
+    def reject_if_updating() -> None:
+        try:
+            updates = load_state_strict().get("updates") or {}
+            if not isinstance(updates, dict):
+                raise ValueError("ArtCraft updates state must be an object")
+        except Exception as exc:  # noqa: BLE001
+            raise ArtcraftError(503, "busy_check_unavailable", f"업데이트 상태를 확인할 수 없습니다: {exc}") from exc
+        for app in apps:
+            entry = updates.get(app)
+            if isinstance(entry, dict) and entry.get("state") in ("queued", "running"):
+                raise ArtcraftError(409, "app_updating", f"'{app}' 앱 업데이트/교체가 진행 중입니다. 잠시 후 다시 시도해 주세요.")
+
+    try:
+        async with coordination_lock(apps, wait=False):
+            reject_if_updating()
+            yield
+        return
+    except CoordinationLockBusy:
+        pass
+
+    reject_if_updating()
+    while True:
+        await asyncio.sleep(0.01)
+        try:
+            async with coordination_lock(apps, wait=False):
+                # The update may have registered while this request waited for the lock.
+                reject_if_updating()
+                yield
+            return
+        except CoordinationLockBusy:
+            reject_if_updating()
+
+
 @contextlib.contextmanager
 def _locked():
     path = _state_path()
@@ -194,6 +296,18 @@ def _read_state(path: Path) -> dict[str, Any]:
 
 def load_state() -> dict[str, Any]:
     return _read_state(_state_path())
+
+
+def load_state_strict() -> dict[str, Any]:
+    """Read state without converting corrupt or inaccessible shared state to an empty state."""
+    path = _state_path()
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except FileNotFoundError:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("ArtCraft state must be a JSON object")
+    return data
 
 
 def update_state(mutate) -> dict[str, Any]:
@@ -428,6 +542,8 @@ def _conflict(kind: str, apps: list[str], mode: str | None) -> Job | None:
         if kind == "gui" and job.kind == "gui" and set(apps) & set(job.apps):
             return job
         if "full" in (mode, job.mode) and {kind, job.kind} == {"smoke", "gui"}:
+            return job
+        if "update" in (kind, job.kind) and (set(apps) & set(job.apps) or "full" in (mode, job.mode) or job.kind == "smoke"):
             return job
     return None
 

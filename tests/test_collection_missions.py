@@ -1099,11 +1099,13 @@ async def test_precise_runtime_translates_transport_errors_without_losing_retry_
     from sqlalchemy import select
 
     from ttakkari import collector_precise_runtime
-    from ttakkari.collector import pipeline, runner
+    from ttakkari.collector import pipeline, precise_eval, runner
     from ttakkari.collector.budget_models import CollectorBudgetReservation
     from ttakkari.collector_models import CollectorItem
     from ttakkari.config import get_settings
     from ttakkari.kb_pipeline.subscription_transport import L2TransportError
+
+    previous_runtime = precise_eval._runtime
 
     url = env.server.url("/precise-unknown")
     env.server.page("/precise-unknown", article_html("직렬화", [prose("ko", 40, 12)]))
@@ -1142,10 +1144,12 @@ async def test_precise_runtime_translates_transport_errors_without_losing_retry_
             calls.append(True)
             raise transport_error
 
-    monkeypatch.setattr(collector_precise_runtime, "_adapter", lambda _scope: FailingAdapter())
-    collector_precise_runtime.install()
-    assert await runner.consume_once(limit=1, managed_only=True) == 1
-    assert await runner.consume_once(limit=1, managed_only=True) == 0
+    with monkeypatch.context() as runtime_patch:
+        runtime_patch.setattr(precise_eval, "_runtime", previous_runtime)
+        runtime_patch.setattr(collector_precise_runtime, "_adapter", lambda _scope: FailingAdapter())
+        collector_precise_runtime.install()
+        assert await runner.consume_once(limit=1, managed_only=True) == 1
+        assert await runner.consume_once(limit=1, managed_only=True) == 0
     assert len(calls) == 1
     async with sessionmaker()() as db:
         item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
@@ -1166,6 +1170,7 @@ async def test_precise_runtime_translates_transport_errors_without_losing_retry_
             assert precise.get("subscription_attempt", 0) == 0
         assert reservation.state == "unknown"
         assert reservation.charged_tokens == reservation.reserved_tokens
+    assert precise_eval._runtime is previous_runtime
 
 
 async def test_precise_day_budget_denial_leaves_item_pending_until_reset(client, auth, env, monkeypatch):  # noqa: F811

@@ -206,3 +206,62 @@ To https://github.com/winterholic/winterholic-ttakkari-back.git
 - 지원 배포 API 요청 `request_backend_deploy(revision="63e17f8485530f959c9fee5399199f70c76401b4")`의 receipt는 `id=28000cc3-93f6-438e-a469-27646c4b082e`, `revision=63e17f8485530f959c9fee5399199f70c76401b4`, `skip_tests=false`, `status=requested`, `strategy=generations`, `error=null`이었다. 이 요청은 예약 접수다. 상태 polling이나 추가 상태 조회는 하지 않았다.
 - 범위 분리: 직전 Codex 로컬 full security gate 실패는 과거 기록 그대로 유지한다. 이번 정상 pre-push 검사는 계약 87건과 변경 collector 테스트 10건만 통과했고 전체 release suite 통과를 뜻하지 않는다. 호스트 controller의 필수 security gate 및 전체 테스트는 예약 controller가 수행할 미완료 단계다. 배포 active 확인과 실제 ArtCraft 제작·업데이트/rollback 운영 시험, R1–R4 review도 남아 있다. provider 호출·서비스 재시작은 하지 않았다.
 - source SHA=`548df81697be1bb4e87e6efb145f68a6fb03ee55`; main에 push한 SHA=`63e17f8485530f959c9fee5399199f70c76401b4`. 이 단락은 push/예약 후의 경로 지정 문서 증거이며, 아래 문서 전용 커밋은 제품 변경이 아니다.
+
+## Collector forbidden dependency 경계 교정 — 독립 검토 전 (2026-11-07)
+
+### 실행 신원·checkout·DB 증명
+
+- 현재 Run API `/Users/winterholic/bin/ttk get "/api/runs/$TTAKKARI_RUN_ID" | jq '{id,status,engine,model,effort,profile}'` → exit 0, `id=b0136b76-78c6-443b-95bd-0ce95d32f6f2`, `running / codex / gpt-6-luna / high / 회사 코덱스 ai2 (ai2@hyperez.io)`. 카드 기준과 일치했다.
+- checkout `release/artcraft-main-20261107`, 시작 clean, `origin/main`보다 1 commit ahead. `git pull --ff-only` → exit 0, `Already up to date.`. 기준 source HEAD=`8a0b289c3d0d432180de0a70bc3304170d6e57c6`, `origin/main=63e17f8485530f959c9fee5399199f70c76401b4`.
+- 실패 근거 `back-artcraft-audit-20261107/docs/artcraft/evidence/2026-11-07-lead-checkpoints/deploy-28000cc3-failure.json`은 supported host controller의 release pytest 실패를 기록한다. 원인은 `tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency`, `precise_eval.py imports ttakkari.kb_pipeline.subscription_transport`; 기존 전체 gate 요약은 `1 failed, 1277 passed, 9 skipped`다. 이는 배포 controller의 pytest 실패이며 운영 제작 실패나 호스트 장애로 확대하지 않았다.
+- 테스트 DB URL 원문은 출력하지 않았다. 첫 guard red 실행 때 테스트 hook이 `db reset: 1 selective`를 출력한 뒤 DB identity를 확인했다. 첫 SQL 확인은 asyncpg URL에 동기 engine을 사용해 `MissingGreenlet` exit 1이 났고 DB 변경 전에 중단됐다. 올바른 async engine으로 read-only SQL을 실행해 `SELECT current_database(), current_user, inet_server_port(), current_setting('data_directory')` → `ttakkari_test / ttk_test / 50295 / /tmp/ttakkari-run-test-99596-3c347dd4/data`를 확인했고 URL identity도 `127.0.0.1 / ttakkari_test / 50295 / ttk_test`였다. SQL 반환 data_directory의 정확한 부모 marker에서 `run_id=b0136b76-78c6-443b-95bd-0ce95c173f2f`, `port=50295`, `owner_pid=99596`, `folder=ttakkari-run-test-99596-3c347dd4`를 확인했다. 다른 Run DB, 광역 경로 검색, 새 initdb는 쓰지 않았다.
+- **순서 예외:** 위 최초 red guard는 marker 증명 전에 실행되었고 hook에서 현재 테스트 DB의 selective reset이 수행됐다. 그 시점에 DB 소유 검증이 선행되지 않은 것을 뒤늦게 확인해 바로 read-only identity/marker를 검사했다. 이후 DB를 사용하는 통합 검증, green, 영향 범위 테스트는 모두 위 Run marker 확인 뒤에만 실행했다. 최초 reset의 선행 조건 미충족은 사후 확인으로 소급 충족되지 않는다.
+
+### 경계 교정
+
+- `docs/adr/collector-platform-20261020.md`의 bounded context 결정과 부모 `AGENTS.md`의 설계/소유 규칙을 대조했다. collector core가 knowledge adapter/transport 구체 타입을 알지 않도록 하고 composition/runtime에서 외부 예외를 도메인 어휘로 번역하는 경계가 맞다.
+- `src/ttakkari/collector/precise_eval.py`에 중립 `PreciseEvaluatorTransportError` 및 collector 진단 상수를 두었다. 허용 scope(personal/work)는 그대로 통과하고 다른 scope는 consumed=false의 중립 scope-capacity 오류로 거부한다. 예외 처리의 retryable, status, retry_after, engine/account/model receipt 규칙은 중립 예외 속성에 대해 기존 분류를 유지한다.
+- `src/ttakkari/collector_precise_runtime.py`가 실제 `L2TransportError`를 중립 collector 예외로 번역하고 진단, consumed, retry_after, engine, account, model을 복사한다. malformed/다른 예외는 원래 예외를 그대로 전파한다. collector package에 동적 import, guard allowlist/skip/약화는 추가하지 않았다.
+- 단위 테스트는 실제 `L2TransportError` 타입을 조립 경계에 전달해 변환 속성을 검사한다. mission 통합 테스트는 실제 `collector_precise_runtime.install()` 경로를 지나 timeout consumed=true → unresolved/no retry, timeout consumed=false → pending/waiting/retry, usage_limit consumed=true → pending/limited/retry를 확인한다. 모든 경우 retry_after와 account/model receipt를 검사하고 예약은 `unknown`으로 유지했다. 이는 provider 호출 성공 증거가 아니다.
+
+### Red / green / 음성·복구 및 영향 범위 증거
+
+```text
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency -q -x --timeout=120 -p no:cacheprovider
+F — AssertionError: precise_eval.py imports ttakkari.kb_pipeline.subscription_transport
+1 failed in 0.61s; exit 1 (hook: db reset 1 selective)
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_subscription.py::test_subscription_precise_scope_uses_existing_pool_policy unit_tests/test_collection_precise_subscription.py::test_runtime_translates_transport_error_at_composition_boundary -q -x --timeout=120 -p no:cacheprovider
+2 passed in 0.30s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_missions.py::test_precise_runtime_translates_transport_errors_without_losing_retry_or_receipt -q -x --timeout=120 -p no:cacheprovider
+3 passed in 1.17s; db reset 3 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency -q -x --timeout=120 -p no:cacheprovider
+. — 1 passed in 0.61s; db reset 1 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_eval.py -q -x --timeout=120 -p no:cacheprovider
+10 passed in 0.25s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest unit_tests/test_collection_precise_subscription.py -q -x --timeout=120 -p no:cacheprovider
+18 passed in 0.34s; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_mission_stage2.py -q -x --timeout=120 -p no:cacheprovider
+5 passed in 1.39s; db reset 5 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collector_pipeline.py -q -x --timeout=120 -p no:cacheprovider
+29 passed in 3.55s; db reset 29 selective, forced full/fallback 0; exit 0
+
+$ PYTHONPATH=src ../back/.venv/bin/pytest tests/test_collection_missions.py -q -x --timeout=120 -p no:cacheprovider
+45 passed in 7.22s; db reset 45 selective, forced full/fallback 0; exit 0
+
+$ ../back/.venv/bin/ruff check src/ttakkari/collector/precise_eval.py src/ttakkari/collector_precise_runtime.py tests/test_collection_missions.py unit_tests/test_collection_precise_subscription.py
+All checks passed!; exit 0
+
+$ git diff --check
+[no output]; exit 0
+```
+
+- 최초 Ruff 실행은 import 정렬과 미사용 import로 exit 1이었고 이를 고친 뒤 위 Ruff 명령 exit 0을 확인했다. 검증은 직렬 실행했으며 security suite, host_operations, 환경 probe는 실행하지 않았다.
+- source/test 경로 지정 commit=`ead9ef8f9f409301d0ea2bfa17b20d5c5b8ba9bc` (`fix(collector): translate subscription errors at runtime boundary`), parent=`8a0b289c3d0d432180de0a70bc3304170d6e57c6`; 커밋 파일은 source 2개와 테스트 2개뿐이다. 현재 release checkout은 해당 source commit 포함 `origin/main`보다 2 commits ahead다. push, 배포 예약/조회, runtime polling, 서비스 변경은 하지 않았다.
+- 독립 검토 전 미완료: DB 사용 선행 조건의 최초 guard 순서 예외는 남는다. 독립 source review, push, release controller 전체 gate, 배포/운영 확인도 수행하지 않았다.

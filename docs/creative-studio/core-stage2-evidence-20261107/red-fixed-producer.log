@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_caption_repair_does_not_restart_a_fixed_producer _____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10e8292b0>, <ttakkari.creative.service.Studio object at 0x10e829550>)
+
+    def test_caption_repair_does_not_restart_a_fixed_producer(stores):
+        plans,studio=stores
+        plan=approved(plans,director=ProductionDirection.model_validate(direction(('slideshow','slideshow','frame_animation_2d'))))
+        dispatch.dispatch(plans,studio,plan['id'],1,'title_only')
+        store=dispatch.ProductionStore(plans)
+        path=store.folder(plan['id'])/'before.mp4';path.write_bytes(b'contract-only output')
+        with store.tx(plan['id']) as data:
+            data['dispatches'][-1]['final']={'file':'before.mp4','sha256':dispatch._sha256_file(path),'status':'qa_passed'}
+        repair=proposal(plans,plan)
+        result=dispatch.apply_repair(plans,plan['id'],1,repair['proposal_sha256'],update())
+>       assert result['status']=='blocked'
+E       AssertionError: assert 'applied_needs_approval' == 'blocked'
+E         
+E         - blocked
+E         + applied_needs_approval
+
+unit_tests/test_creative_v2_stage2.py:577: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage2.py::test_caption_repair_does_not_restart_a_fixed_producer
+1 failed, 13 deselected in 0.84s

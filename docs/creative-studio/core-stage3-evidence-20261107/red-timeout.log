@@ -1,0 +1,49 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_executor_timeout_is_recorded_failed_without_duplicate_retry _______
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10ba17a10>, <ttakkari.creative.service.Studio object at 0x10ba17cb0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6872/test_executor_timeout_is_recor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bc94b00>
+
+    async def test_executor_timeout_is_recorded_failed_without_duplicate_retry(stores,tmp_path,monkeypatch):
+        import subprocess
+        from ttakkari.creative.v2 import render_worker as rw
+        plans,studio=stores;plan=approved(plans,director=ProductionDirection.model_validate(direction(('slideshow',)*3)))
+        upload_all(plans,plan,tmp_path);dispatch.dispatch(plans,studio,plan['id'],1);rw.enqueue(plans,plan['id'],1)
+        calls=[]
+        def timeout(*args):
+            calls.append(1);raise subprocess.TimeoutExpired('ffmpeg-fixture',1)
+        monkeypatch.setattr(dispatch,'request_render',timeout)
+>       assert await rw.consume_once(plans=plans,studio=studio) is True
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_stage3.py:556: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/render_worker.py:220: in consume_once
+    if await queued_work.run_tracked(
+src/ttakkari/queued_work.py:50: in run_tracked
+    return await asyncio.shield(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/creative/v2/render_worker.py:192: in execute
+    result = dispatch.request_render(plans, studio, plan_id, revision)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<ttakkari.creative.v2.plans.PlanStore object at 0x10ba17a10>, <ttakkari.creative.service.Studio object at 0x10ba17cb0>, '7b57902d-bb41-49e9-b7c5-b13dc17d5585', 1)
+
+    def timeout(*args):
+>       calls.append(1);raise subprocess.TimeoutExpired('ffmpeg-fixture',1)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       subprocess.TimeoutExpired: Command 'ffmpeg-fixture' timed out after 1 seconds
+
+unit_tests/test_creative_v2_stage3.py:554: TimeoutExpired
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage3.py::test_executor_timeout_is_recorded_failed_without_duplicate_retry
+1 failed, 18 deselected in 0.75s

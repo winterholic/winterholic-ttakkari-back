@@ -1,0 +1,20 @@
+{
+  "run_id": "7951dc2c-3e7c-4e53-9503-2df8a28ce696",
+  "artifacts": [
+    {
+      "name": "storyboard-executor-final.mp4",
+      "id": "b0586ecb-a397-48dc-a672-1e465df6d003",
+      "sha256": "9545d35f1b747e08c8df292e71ca7630e93b3503b81bee32f0f4a2bad797e3cd"
+    },
+    {
+      "name": "core-stage3-evidence.zip",
+      "id": "395f3c43-b0d0-4846-b720-e11e77f020a4",
+      "sha256": "93d7bfbbfc7aa13b04e6946d6b88504757ab4e345195a93f880966359f4787fb"
+    },
+    {
+      "name": "core-stage3-20261107.md",
+      "id": "a07648a0-ad33-4339-a746-087093f41b46",
+      "sha256": "0e8e330f37e8e6dfa91f753366b2a408aa08124d1ef769cffd0695803bac5a48"
+    }
+  ]
+}

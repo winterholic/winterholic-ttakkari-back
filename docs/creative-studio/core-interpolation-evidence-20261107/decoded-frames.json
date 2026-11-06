@@ -1,0 +1,12 @@
+{
+  "studio-linear-producer.mp4": {
+    "decoded_frames": 192,
+    "first": "0,          0,          0,        1,  1382400, f612c4a46d0d348ad58d8fcc4d97fd00",
+    "last": "0,        191,        191,        1,  1382400, 567c1944f0365c80694787b75a141d88"
+  },
+  "studio-linear-final.mp4": {
+    "decoded_frames": 192,
+    "first": "0,          1,          1,        1,  1382400, ab216849117cfa8c57727ff1266f32cd",
+    "last": "0,        192,        192,        1,  1382400, 8d99e87b66a0088a4b793b8e874b00d2"
+  }
+}

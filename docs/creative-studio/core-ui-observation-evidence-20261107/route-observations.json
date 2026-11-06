@@ -1,0 +1,41 @@
+{
+  "revision": "529022861120e86f80400ffaec53dd3f3f7f81c6",
+  "openapi": {
+    "status": 404,
+    "inference": "no route availability inference from disabled OpenAPI"
+  },
+  "deployed_git_source_route_declarations": [
+    "@router.get(\"/catalog\")",
+    "@router.get(\"/capabilities\")",
+    "@router.get(\"/registries\")",
+    "@router.get(\"/matrix\")",
+    "@router.get(\"/duration/policy\")",
+    "@router.post(\"/duration/preview\")",
+    "@router.post(\"/duration/recheck\")",
+    "@router.get(\"/intent/contract\")",
+    "@router.post(\"/intent/runs\", status_code=202)",
+    "@router.get(\"/intent/runs/{run_id}\")",
+    "@router.post(\"/intent/runs/{run_id}/resume\", status_code=202)",
+    "@router.post(\"/intent/validate\")",
+    "@router.post(\"/intent/hint\")",
+    "@router.post(\"/match\")",
+    "@router.get(\"/style-dna\")",
+    "@router.get(\"/style-dna/{style_id}/{version}\")",
+    "@router.post(\"/style-dna\", status_code=201)",
+    "@router.post(\"/style-dna/compose\")",
+    "@router.post(\"/style-dna/works/{work_id}/pin\")",
+    "@router.get(\"/style-dna/works/{work_id}\")",
+    "@router.post(\"/plans\", status_code=201)",
+    "@router.get(\"/plans\")",
+    "@router.get(\"/plans/{pid}\")",
+    "@router.patch(\"/plans/{pid}\")",
+    "@router.post(\"/plans/{pid}/approve\")",
+    "@router.get(\"/plans/{pid}/production\")",
+    "@router.post(\"/plans/{pid}/production\", status_code=201)",
+    "@router.post(\"/plans/{pid}/production/render\", status_code=202)",
+    "@router.post(\"/plans/{pid}/production/generate-assets\", status_code=202)",
+    "@router.post(\"/plans/{pid}/production/assets\", status_code=201)",
+    "@router.post(\"/plans/{pid}/production/media-link\")",
+    "@router.get(\"/plans/{pid}/production/media/{ident}\")"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "stage": "parse/materialize",
+  "error": "3 validation errors for Storyboard\nscenes.0.shots.0\n  Value error, unknown required capability [type=value_error, input_value={'shot_id': 'shot_01', 'a...e_caption_composition']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.14/v/value_error\nscenes.1.shots.0\n  Value error, unknown required capability [type=value_error, input_value={'shot_id': 'shot_02', 'a...e_caption_composition']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.14/v/value_error\nscenes.2.shots.0\n  Value error, unknown required capability [type=value_error, input_value={'shot_id': 'shot_03', 'a...e_caption_composition']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+  "type": "ValidationError"
+}

@@ -1,0 +1,24 @@
+..................................F...                                   [100%]
+=================================== FAILURES ===================================
+_ test_queued_request_survives_api_restart_and_is_finished_by_a_separate_consumer _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6867/test_queued_request_survives_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3f9f60>
+
+    async def test_queued_request_survives_api_restart_and_is_finished_by_a_separate_consumer(tmp_path, monkeypatch):
+        plans, plan = approved_plan(tmp_path)
+        await _post(plans, plan, monkeypatch, _RemoteApi())
+    
+        # API 프로세스 종료·재기동: 메모리 상태는 전부 사라지고 디스크 상태만 남는다.
+        creative_v2._ASSET_GENERATION_TASKS.clear()
+        reopened = PlanStore(plans.root, registry=Registry())
+        assert records(reopened, plan["id"])[0]["status"] == "queued"
+    
+        generator = FakeGenerator(tmp_path)
+>       assert await asset_worker.consume_once(plans=reopened, generator=generator) is True
+E       assert False is True
+
+unit_tests/test_creative_v2_asset_queue.py:397: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_asset_queue.py::test_queued_request_survives_api_restart_and_is_finished_by_a_separate_consumer
+1 failed, 37 passed in 4.18s

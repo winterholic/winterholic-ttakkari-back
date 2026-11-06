@@ -1,0 +1,31 @@
+{
+  "head": "439472b3bc4665edc04ad1d7fa8ad1a9684a47b4",
+  "sha256": {
+    "src/ttakkari/creative/v2/engines.py": "b4e58c5e9b6cce32c2888421970daa36e28e97453eb97ddcddc809c0bb4d2984",
+    "src/ttakkari/creative/v2/dispatch.py": "af471ee219b91f93406ceb9f6a399161d61e1678a8240182f67b3fcf223fb834",
+    "src/ttakkari/creative/v2/planner.py": "9a62c69698f7599e74ad4b2acaf01713e855c886ae4e7552b9000be6855e8262",
+    "src/ttakkari/creative/v2/plans.py": "278227ce84c4b90cabb2bc9161dec880d53a0eb1915d06ca05793843eefb107b",
+    "src/ttakkari/creative/v2/asset_worker.py": "f3b313a3b8512d8afaf6806a73cb04cad6e80b5302236c5518ba2a7264e0a3cb",
+    "src/ttakkari/creative/v2/run_extraction.py": "a15a30400bb6ea0523d233c55125a368d8adfea027d5521fc20d8d0e043403c3",
+    "src/ttakkari/creative/v2/production_review.py": "24533f67568c9d8188f64dd01641b2a3dca5eeda47384109a5541ec02ebca4ce",
+    "src/ttakkari/creative/v2/hyperframes.py": "4bd5579ef68379e75c98d84fe1f2827b593c30745c2e5872ce2506dde6d1c520",
+    "src/ttakkari/creative/v2/frame_animation.py": "f2c1ee2216dde8c9be3e2e8e0a10484c56671e139b47cfff6e90f94508f46cb4",
+    "src/ttakkari/creative/v2/scene_3d.py": "b3787d2509d7dcf26e7b4745cb74802ba5ff31c93d96bd4a95ec3905644a9a85",
+    "src/ttakkari/creative/v2/quality.py": "fa02f91aae7582217dc42577920cce42b2bd494392cf02319b4385d237197a81",
+    "src/ttakkari/creative/v2/quality_worker.py": "711b90370d1cc692d3f1d775030ea712df60a33ffcef95b7292bf618a14e9c90",
+    "src/ttakkari/api/creative_v2.py": "24431219a9549985335e05a6c064d1a8c81339bcff31169d41e952a0710b3857",
+    "scripts/run_frame_animation_benchmark.py": "223b4038a3153bd9ff369242e45a111f07f4a075ec128d9261e0592be856f0d2",
+    "unit_tests/test_creative_v2_frame_animation.py": "449c7cc5b7f338b1dbfe61212ef6b0c6948ed405e1cd2e4d285a658ced416f86",
+    "src/ttakkari/creative/v2/storyboard.py": "917f8d3f4c2d9edb0e22e2d119c9ca48c9b108399c3db448d21192d951521d7a",
+    "src/ttakkari/creative/v2/storyboard_runs.py": "fce5a68154c921678017d286d9686d385eee11d5b2564c28c86e405b72409b40",
+    "src/ttakkari/creative/v2/render_worker.py": "4c3e5a8339e2f5166a12c6c5cabf8c19103c7f34a670fa0f6bc175761b710390",
+    "unit_tests/test_creative_v2_stage3.py": "7a07c27e82a16b2c92698e568221d7a63de155e8423913c066b62a54c7c3330e"
+  },
+  "changed_since_start": [
+    "src/ttakkari/creative/v2/dispatch.py",
+    "src/ttakkari/creative/v2/planner.py",
+    "src/ttakkari/creative/v2/asset_worker.py",
+    "src/ttakkari/api/creative_v2.py"
+  ],
+  "note": "Executed snapshot predates restoration of original asset consumer admission plus the timeout recording guard; both final changes verified by narrow regressions. Actual render was not repeated."
+}

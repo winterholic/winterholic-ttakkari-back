@@ -1,0 +1,1176 @@
+{
+  "id": "56e54043-d9c3-40d3-842a-dc156553b199",
+  "revision": 1,
+  "created_at": "2026-11-06T17:17:18.807800+00:00",
+  "updated_at": "2026-11-06T17:17:18.807883+00:00",
+  "name": "Kafka 메시지 흐름을 16초, 16:9 기술 설명 영상으로 만든다. 프로듀서가 메시지를 토픽의 파티션에 ",
+  "brief": "Kafka 메시지 흐름을 16초, 16:9 기술 설명 영상으로 만든다. 프로듀서가 메시지를 토픽의 파티션에 기록하고, Kafka 브로커가 로그를 저장하며, 컨슈머가 오프셋을 따라 메시지를 읽는 순서를 정확한 한국어와 영어 용어로 설명한다. producer → broker/topic partition → consumer 흐름을 장면별로 구분하고, 데이터 방향 화살표와 메시지 레코드를 보여 준다. 기술 용어를 사실에 맞게 쓰고 읽기 쉬운 내레이션 자막으로 구성한다.",
+  "brief_sha256": "cb89c603500689f8f61ba7ef1dec568edf939bf023fe1ecf2bd012c2a4bd9e4b",
+  "aspect": "16:9",
+  "intent": {
+    "schema_version": 1,
+    "selections": [
+      {
+        "entry_id": "C01.tech_explainer",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "기술 설명"
+          }
+        ]
+      },
+      {
+        "entry_id": "C09.narration",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "내레이션"
+          }
+        ]
+      },
+      {
+        "entry_id": "C10.subtitles",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "자막"
+          }
+        ]
+      }
+    ],
+    "constraints": [],
+    "duration": {
+      "mode": "preferred",
+      "seconds": 16.0,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "aspect": "16:9",
+    "info_items": [],
+    "music_seconds": null,
+    "open_questions": [
+      "주된 콘텐츠 유형과 시각 스타일을 확인해 주세요."
+    ],
+    "extraction": {
+      "method": "lexical_hint",
+      "model": null
+    }
+  },
+  "intent_status": "unconfirmed_hint",
+  "validation": {
+    "valid": true,
+    "needs_confirmation": true,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "unconfirmed_hint",
+        "message": "단어 힌트로 만든 초안입니다. 확인 전에는 결정으로 쓰지 않습니다.",
+        "path": "extraction"
+      }
+    ]
+  },
+  "match": {
+    "matching_version": "2026-10-22.1",
+    "status": "blocked",
+    "execution_scope": "none",
+    "selections": [
+      {
+        "entry_id": "C01.tech_explainer",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "기술 설명"
+          }
+        ]
+      },
+      {
+        "entry_id": "C09.narration",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "내레이션"
+          }
+        ]
+      },
+      {
+        "entry_id": "C10.subtitles",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.3,
+        "source": "lexical_hint",
+        "evidence": [
+          {
+            "quote": "자막"
+          }
+        ]
+      }
+    ],
+    "dropped": [],
+    "conflicts": [],
+    "needs": [
+      {
+        "options": [
+          "edit.timeline"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.timeline",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-shorts-9-16(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.timeline",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+              "record:three-filmcraft-assembly(completed, 검수 unreviewed)"
+            ]
+          },
+          {
+            "entry_id": "tool.artcraft",
+            "capability": "edit.timeline",
+            "level": "installed",
+            "integration": "none",
+            "evidence": []
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.machine_video"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "tool.ffmpeg",
+          "capability": "qa.machine_video",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:remotion-intro-v1-v2(completed, 검수 conditional)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "skill.ttakkari-video-qa",
+            "capability": "qa.machine_video",
+            "level": "executed",
+            "integration": "lab_only",
+            "evidence": [
+              "record:remotion-intro-v1-v2(completed, 검수 conditional)",
+              "record:remotion-beat-v1-v2(completed, 검수 conditional)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "audio.tts"
+        ],
+        "priority": "should",
+        "sources": [
+          {
+            "entry_id": "C01.tech_explainer",
+            "relation": "prefers"
+          },
+          {
+            "entry_id": "C09.narration",
+            "relation": "requires"
+          }
+        ],
+        "level": "executed",
+        "best": {
+          "entry_id": "model.supertonic3",
+          "capability": "audio.tts",
+          "level": "executed",
+          "integration": "app_service",
+          "evidence": [
+            "record:three-character-talk-v1-v2(completed, 검수 conditional)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "skill.studio-character-lipsync",
+            "capability": "audio.tts",
+            "level": "executed",
+            "integration": "lab_only",
+            "evidence": [
+              "record:three-character-talk-v1-v2(completed, 검수 conditional)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "edit.captions"
+        ],
+        "priority": "should",
+        "sources": [
+          {
+            "entry_id": "C10.subtitles",
+            "relation": "requires"
+          }
+        ],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.captions",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.captions",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "render.react_motion"
+        ],
+        "priority": "should",
+        "sources": [
+          {
+            "entry_id": "C01.tech_explainer",
+            "relation": "requires"
+          }
+        ],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.ttakkari-remotion-setup",
+          "capability": "render.react_motion",
+          "level": "executed",
+          "integration": "lab_only",
+          "evidence": [
+            "record:remotion-intro-v1-v2(completed, 검수 conditional)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.remotion",
+            "capability": "render.react_motion",
+            "level": "executed",
+            "integration": "lab_only",
+            "evidence": [
+              "record:remotion-intro-v1-v2(completed, 검수 conditional)",
+              "record:remotion-beat-v1-v2(completed, 검수 conditional)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "orch.checkpoint_resume"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.studio-pipeline-checkpoints",
+          "capability": "orch.checkpoint_resume",
+          "level": "executed",
+          "integration": "lab_only",
+          "evidence": [
+            "record:pipeline-checkpoints-demo(completed, 검수 pass)"
+          ]
+        },
+        "alternatives": [],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "missing",
+        "best": {
+          "entry_id": "model.multimodal_judge",
+          "capability": "qa.visual_semantic",
+          "level": "missing",
+          "integration": "none",
+          "evidence": []
+        },
+        "alternatives": [],
+        "status": "missing"
+      },
+      {
+        "options": [
+          "render.dataviz"
+        ],
+        "priority": "prefer",
+        "sources": [
+          {
+            "entry_id": "C01.tech_explainer",
+            "relation": "prefers"
+          }
+        ],
+        "level": "installed",
+        "best": {
+          "entry_id": "tool.remotion",
+          "capability": "render.dataviz",
+          "level": "installed",
+          "integration": "lab_only",
+          "evidence": []
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.svg_canvas",
+            "capability": "render.dataviz",
+            "level": "installed",
+            "integration": "lab_only",
+            "evidence": []
+          }
+        ],
+        "status": "unverified"
+      },
+      {
+        "options": [
+          "research.fact_check"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "missing",
+        "best": null,
+        "alternatives": [],
+        "status": "missing"
+      },
+      {
+        "options": [
+          "research.map_data"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "missing",
+        "best": null,
+        "alternatives": [],
+        "status": "missing"
+      }
+    ],
+    "candidates": [
+      {
+        "recipe_id": "R21",
+        "name": "정지 이미지 슬라이드쇼(기준선)",
+        "score": 0.4733,
+        "fit": 0.3333,
+        "coverage": 0.1333,
+        "executability": 1.0,
+        "verdict": "studio_executable",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C10.subtitles",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 studio_executable"
+        ]
+      },
+      {
+        "recipe_id": "R19",
+        "name": "뮤직비디오",
+        "score": 0.32,
+        "fit": 0.0,
+        "coverage": 0.2667,
+        "executability": 0.8,
+        "verdict": "recipe_demonstrated",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 2/8개를 이 레시피가 다룬다",
+          "실행 판정 recipe_demonstrated"
+        ]
+      },
+      {
+        "recipe_id": "R16",
+        "name": "다큐멘터리",
+        "score": 0.2733,
+        "fit": 0.3333,
+        "coverage": 0.4667,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C09.narration",
+          "필요 능력 4/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R06",
+        "name": "한국형 웹툰",
+        "score": 0.26,
+        "fit": 0.0,
+        "coverage": 0.2667,
+        "executability": 0.6,
+        "verdict": "capabilities_executed",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 2/8개를 이 레시피가 다룬다",
+          "실행 판정 capabilities_executed"
+        ]
+      },
+      {
+        "recipe_id": "R03",
+        "name": "React 컴포넌트 조립",
+        "score": 0.2533,
+        "fit": 0.3333,
+        "coverage": 0.2,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C01.tech_explainer",
+          "필요 능력 2/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R17",
+        "name": "과학·기술 교육",
+        "score": 0.2333,
+        "fit": 0.3333,
+        "coverage": 0.3333,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C01.tech_explainer",
+          "필요 능력 3/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R18",
+        "name": "제품 광고",
+        "score": 0.1,
+        "fit": 0.0,
+        "coverage": 0.1333,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R05",
+        "name": "2D 만화·모션코믹",
+        "score": 0.08,
+        "fit": 0.0,
+        "coverage": 0.2667,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 2/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R01",
+        "name": "게임틱한 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R02",
+        "name": "SF 공상영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R09",
+        "name": "귀여운 생활형 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R11",
+        "name": "옛날 전쟁영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R12",
+        "name": "판타지 영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R14",
+        "name": "스톱모션·클레이",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R04",
+        "name": "일본 애니메이션",
+        "score": 0.04,
+        "fit": 0.0,
+        "coverage": 0.1333,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R07",
+        "name": "서양식 카툰",
+        "score": 0.04,
+        "fit": 0.0,
+        "coverage": 0.1333,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R08",
+        "name": "시뮬레이션 게임",
+        "score": 0.04,
+        "fit": 0.0,
+        "coverage": 0.1333,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R13",
+        "name": "픽셀아트 게임",
+        "score": 0.04,
+        "fit": 0.0,
+        "coverage": 0.1333,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 1/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R10",
+        "name": "사극·역사 재현",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R15",
+        "name": "수묵화·회화",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R20",
+        "name": "공포·스릴러",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/8개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      }
+    ],
+    "primary_recipe": "R16",
+    "auxiliary_recipes": [],
+    "gaps": [
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "status": "missing",
+        "why": "이 능력을 제공하는 항목이 없다",
+        "alternatives": []
+      },
+      {
+        "options": [
+          "research.fact_check"
+        ],
+        "priority": "must",
+        "status": "missing",
+        "why": "이 능력을 제공하는 항목이 없다",
+        "alternatives": []
+      },
+      {
+        "options": [
+          "research.map_data"
+        ],
+        "priority": "must",
+        "status": "missing",
+        "why": "이 능력을 제공하는 항목이 없다",
+        "alternatives": []
+      }
+    ],
+    "style_resolution_needed": [],
+    "trace": [
+      {
+        "step": "intent",
+        "summary": "선택 3개, 제약 0개, 추출 방식 lexical_hint",
+        "data": {
+          "warnings": [
+            "unconfirmed_hint"
+          ]
+        }
+      },
+      {
+        "step": "conflicts",
+        "summary": "충돌 0건, 제외 0건",
+        "data": {
+          "resolutions": []
+        }
+      },
+      {
+        "step": "needs",
+        "summary": "필요 능력 묶음 8개(must 2, should 3, prefer 3)",
+        "data": {
+          "notes": []
+        }
+      },
+      {
+        "step": "recipes",
+        "summary": "주 레시피 R16 다큐멘터리(점수 0.2733), 보조 없음",
+        "data": {
+          "top": [
+            [
+              "R21",
+              0.4733
+            ],
+            [
+              "R19",
+              0.32
+            ],
+            [
+              "R16",
+              0.2733
+            ],
+            [
+              "R06",
+              0.26
+            ],
+            [
+              "R03",
+              0.2533
+            ]
+          ]
+        }
+      },
+      {
+        "step": "decision",
+        "summary": "결정 blocked, 실행 범위 none",
+        "data": {
+          "missing_must": [
+            [
+              "research.fact_check"
+            ],
+            [
+              "research.map_data"
+            ]
+          ],
+          "unverified_must": [],
+          "blocking_conflicts": []
+        }
+      }
+    ],
+    "fingerprint": "9ab03c11a310eb78489989ca71694e922fc95a3cd258b9642be6e30d4c2b4c37"
+  },
+  "style": null,
+  "profile": {
+    "beats": [
+      {
+        "id": "s1",
+        "title": "오프닝",
+        "narration": "",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "s2",
+        "title": "전개 1",
+        "narration": "",
+        "info_weight": 1.3,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "s3",
+        "title": "전개 2",
+        "narration": "",
+        "info_weight": 1.3,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "s4",
+        "title": "마무리",
+        "narration": "",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      }
+    ],
+    "music_seconds": null,
+    "fps": 30,
+    "min_scene_seconds": 1.0
+  },
+  "basis": "template_scaffold",
+  "duration": {
+    "policy_version": "2026-10-22.1",
+    "status": "target_met",
+    "deviation_level": "none",
+    "request": {
+      "mode": "preferred",
+      "seconds": 16.0,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "fps": 30,
+    "needed": {
+      "min_seconds": 4.0,
+      "ideal_seconds": 21.2,
+      "max_seconds": 33.867,
+      "speech_seconds": 0.0,
+      "music_seconds": null,
+      "beats": [
+        {
+          "beat_id": "s1",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        },
+        {
+          "beat_id": "s2",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.6,
+          "ceiling": 8.96,
+          "essential": true
+        },
+        {
+          "beat_id": "s3",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.6,
+          "ceiling": 8.96,
+          "essential": true
+        },
+        {
+          "beat_id": "s4",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        }
+      ],
+      "reasons": [
+        "장면 4개: 발화 바닥 합 4.0초, 이상 21.2초, 반복 없이 늘릴 수 있는 한계 33.9초."
+      ]
+    },
+    "planned_seconds": 16.0,
+    "planned_frames": 480,
+    "scenes": [
+      {
+        "beat_id": "s1",
+        "start_frame": 0,
+        "end_frame": 114,
+        "seconds": 3.8,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "s2",
+        "start_frame": 114,
+        "end_frame": 240,
+        "seconds": 4.2,
+        "floor": 1.0,
+        "ideal": 5.6,
+        "ceiling": 8.96,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "s3",
+        "start_frame": 240,
+        "end_frame": 366,
+        "seconds": 4.2,
+        "floor": 1.0,
+        "ideal": 5.6,
+        "ceiling": 8.96,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "s4",
+        "start_frame": 366,
+        "end_frame": 480,
+        "seconds": 3.8,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      }
+    ],
+    "reasons": [
+      "장면 4개: 발화 바닥 합 4.0초, 이상 21.2초, 반복 없이 늘릴 수 있는 한계 33.9초.",
+      "희망 16초는 콘텐츠 범위(4.0~33.9초) 안이라 장면 길이를 맞췄습니다."
+    ],
+    "warnings": [],
+    "alternatives": [],
+    "estimator": {
+      "speech_syllables_per_second": 4.4,
+      "latin_words_per_second": 2.4,
+      "digits_per_second": 3.0,
+      "lead_tail_seconds": 0.4
+    },
+    "basis_sha256": "d5317c1deeb62e7b2d18ac489f4a952a1b1531c524c472f9fffe3dd3988b7605"
+  },
+  "duration_check": null,
+  "scenes": [
+    {
+      "scene_id": "s1",
+      "title": "오프닝",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 3.8,
+      "seconds": 3.8,
+      "start_frame": 0,
+      "end_frame": 114,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "오프닝",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [
+        "C09.narration"
+      ],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow",
+        "skill.ttakkari-remotion-setup"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [
+        "model.supertonic3"
+      ],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ]
+    },
+    {
+      "scene_id": "s2",
+      "title": "전개 1",
+      "narration": "",
+      "start_time": 3.8,
+      "end_time": 8.0,
+      "seconds": 4.2,
+      "start_frame": 114,
+      "end_frame": 240,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.6,
+      "ceiling": 8.96,
+      "speech_seconds": 0.0,
+      "info_weight": 1.3,
+      "essential": true,
+      "narrative_goal": "전개 1",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [
+        "C09.narration"
+      ],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow",
+        "skill.ttakkari-remotion-setup"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [
+        "model.supertonic3"
+      ],
+      "dependencies": [
+        "s1"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ]
+    },
+    {
+      "scene_id": "s3",
+      "title": "전개 2",
+      "narration": "",
+      "start_time": 8.0,
+      "end_time": 12.2,
+      "seconds": 4.2,
+      "start_frame": 240,
+      "end_frame": 366,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.6,
+      "ceiling": 8.96,
+      "speech_seconds": 0.0,
+      "info_weight": 1.3,
+      "essential": true,
+      "narrative_goal": "전개 2",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [
+        "C09.narration"
+      ],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow",
+        "skill.ttakkari-remotion-setup"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [
+        "model.supertonic3"
+      ],
+      "dependencies": [
+        "s2"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ]
+    },
+    {
+      "scene_id": "s4",
+      "title": "마무리",
+      "narration": "",
+      "start_time": 12.2,
+      "end_time": 16.0,
+      "seconds": 3.8,
+      "start_frame": 366,
+      "end_frame": 480,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "마무리",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [
+        "C09.narration"
+      ],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow",
+        "skill.ttakkari-remotion-setup"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [
+        "model.supertonic3"
+      ],
+      "dependencies": [
+        "s3"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ]
+    }
+  ],
+  "notes": [
+    "구조화된 의도가 없어 단어 힌트로 초안을 만들었습니다. 선택은 모두 soft이고 확인이 필요합니다.",
+    "브리프에 길이 언급(16초)이 있지만 확인 전에는 적용하지 않았습니다.",
+    "전달할 정보 항목이 없어 서사 구조 템플릿으로 장면을 추정했습니다. 정보 항목을 주면 길이 산정이 정확해집니다."
+  ],
+  "approval": null,
+  "history": [
+    {
+      "revision": 1,
+      "at": "2026-11-06T17:17:18.807946+00:00",
+      "kind": "created",
+      "total_seconds": 16.0,
+      "status": "target_met"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_remote_render_api_queues_without_running_native_preflight ________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10bc978c0>, <ttakkari.creative.service.Studio object at 0x10bc97b60>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6841/test_remote_render_api_queues_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bee8c30>
+
+    async def test_remote_render_api_queues_without_running_native_preflight(stores,tmp_path,monkeypatch):
+        import httpx
+        from fastapi import FastAPI
+        from ttakkari.api import creative_v2 as api
+        from ttakkari.creative.v2 import engines,render_worker
+        from ttakkari.security.auth import require_user
+        plans,studio=stores;plan=approved(plans,director=ProductionDirection.model_validate(direction(('slideshow',)*3)))
+        upload_all(plans,plan,tmp_path)
+        monkeypatch.setattr(dispatch.queued_work,'delegated',lambda:True)
+        monkeypatch.setattr(engines.V1SlideshowAdapter,'preflight',lambda *_:pytest.fail('API must defer runtime preflight'))
+        monkeypatch.setattr(api,'default_plan_store',lambda:plans);monkeypatch.setattr(api,'default_studio',lambda:studio)
+        app=FastAPI();app.include_router(api.router)
+        base=f"/api/creative/v2/plans/{plan['id']}"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+            assert (await client.post(base+'/production/render',json={'revision':1})).status_code==401
+            app.dependency_overrides[require_user]=lambda:'owner'
+>           dispatched=await client.post(base+'/production',json={'revision':1})
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_stage3.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/applications.py:1216: in __call__
+    await super().__call__(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:2786: in app
+    await route.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/fastapi/routing.py:727: in app
+    raw_response = await run_endpoint_function(
+.venv/lib/python3.13/site-packages/fastapi/routing.py:360: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/api/creative_v2.py:380: in production_dispatch
+    return await asyncio.to_thread(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/api/creative.py:212: in perform
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+src/ttakkari/creative/v2/dispatch.py:875: in dispatch
+    blockers = dispatch_blockers(plan)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/creative/v2/dispatch.py:146: in dispatch_blockers
+    pre = adapter.preflight()
+          ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_ = (<ttakkari.creative.v2.engines.V1SlideshowAdapter object at 0x10bc94440>,)
+
+>   monkeypatch.setattr(engines.V1SlideshowAdapter,'preflight',lambda *_:pytest.fail('API must defer runtime preflight'))
+                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: API must defer runtime preflight
+
+unit_tests/test_creative_v2_stage3.py:150: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage3.py::test_remote_render_api_queues_without_running_native_preflight
+1 failed, 11 deselected in 1.00s

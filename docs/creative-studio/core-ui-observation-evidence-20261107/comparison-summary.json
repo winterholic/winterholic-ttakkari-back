@@ -1,0 +1,28 @@
+{
+  "comparison_scope": "Kafka lexical draft vs existing B-reuse actual model output; different briefs, no new inference/render/approval",
+  "deployed_revision": "529022861120e86f80400ffaec53dd3f3f7f81c6",
+  "deployed_plan": {
+    "id": "3bf9f754-0039-4fe3-a771-e137b9235068",
+    "revision": 1,
+    "recipe": "R16",
+    "intent_status": "unconfirmed_hint",
+    "render_gate": false
+  },
+  "local_after": {
+    "recipe": "R03",
+    "intent_status": "unconfirmed_hint",
+    "render_gate": false,
+    "scope": "lab_manual",
+    "research_needs": []
+  },
+  "prior_actual_model": {
+    "run_id": "90bddc9c-fb91-44fc-8364-fd67c61d21a7",
+    "output_sha256": "2ee5207a0ff51bbafaac7eb8739a8c30ab8c8b371b0c395fd590032e2b8d5b9d",
+    "revalidated_recipe": "R21",
+    "intent_status": "confirmed",
+    "revalidated_unapproved": true,
+    "new_model_call": false,
+    "same_kafka_brief_inference": false
+  },
+  "preserved_approval_policy": true
+}

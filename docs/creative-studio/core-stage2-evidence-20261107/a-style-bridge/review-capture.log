@@ -1,0 +1,3 @@
+pre-dispatch review: theme=dark; partial_match; unapplied paths/values retained
+invalid animation=pop: rejected before preflight; allowed=technical; dispatches=0
+runtime/preflight/browser/render calls=0

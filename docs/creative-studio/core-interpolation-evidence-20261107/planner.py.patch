@@ -1,0 +1,30 @@
+--- before/planner.py
++++ after/planner.py
+@@ -56,9 +56,16 @@
+     scene_id: str = Field(min_length=1, max_length=50)
+     strategy: Strategy
+     preset: Literal["walk_cycle", "crystal_orbit", "kafka_flow"] | None = None
++    interpolation_mode: Literal["hold", "linear"] | None = None
+     rationale: str = Field(min_length=1, max_length=1500)
+     alternatives: list[StrategyAlternative] = Field(default_factory=list, max_length=5)
+     shots: list[ShotDirection] = Field(min_length=1, max_length=1)
++
++    @model_validator(mode="after")
++    def supported_interpolation(self):
++        if self.interpolation_mode is not None and self.strategy != "frame_animation_2d":
++            raise ValueError("interpolation_mode requires frame_animation_2d")
++        return self
+ 
+ 
+ class ProductionDirection(Strict):
+@@ -93,6 +100,10 @@
+         raise ValueError("director scenes must exactly match plan scenes")
+     for scene in scenes:
+         selected = by_id[scene["scene_id"]]
++        # Omission keeps legacy hold inputs and removes a previous explicit choice.
++        scene.pop("interpolation_mode", None)
++        if selected.interpolation_mode is not None:
++            scene["interpolation_mode"] = selected.interpolation_mode
+         engine = ENGINE_IDS[selected.strategy]
+         alternatives = [
+             {

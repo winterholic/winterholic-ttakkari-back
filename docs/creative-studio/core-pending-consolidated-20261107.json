@@ -1,0 +1,56 @@
+{
+  "observed_at": "2026-11-06T15:56:14.139136+00:00",
+  "reason": "원 core 보고 후 대기 중인 보충 지시 8개를 보존하고 이미 구현된 부분을 반복하지 않도록 한 후속 실행으로 합친다.",
+  "worker_id": "d93c9153-076c-4479-9a65-3b61de244221",
+  "prompt_scope": "prompt는 read_session이 제공한 본문 범위이며 긴 항목은 도구에서 잘렸을 수 있다. 품질 계약 정본은 quality-production-20261107.md, A 계약은 benchmark-a-20261107.md, 최신 구현 상태는 core-integration-20261107.md와 실제 소스를 우선 대조한다.",
+  "source_run": "62b89b5b-23cb-4b71-8858-06ed027e1ba7",
+  "pending": [
+    {
+      "run_id": "e16ae527-05fe-4b82-bcc7-9de02d7d6dec",
+      "prompt": "QA 담당 ece739f8-5b65-44e0-a977-abfbead42d74의 실제 연결 계약을 전달합니다. 현재 quality.py/quality_worker.py를 본인 소유 범위로 구현 중이며 공개 함수는 build_rubric(plan), evaluate_production(plan, record, *, media_path=None), plan_partial_repair(plan, record, defects)입니다. record.quality_evidence의 평가 receipt는 output_sha256·rubric_sha256·evaluator·criteria·evidence에 결합됩니다. 반환은 machine_qa/semantic_qa/viewing_qa/defects/repair_plan/overall_verdict이며 의미·시청 평가가 미실행이면 unknown입니다. quality_worker.prepare_review(plan, media_path, output_dir)는 프레임/영상/평가 요청을 기존 독립 하네스에 넘길 자료를 준비하고 새 유료 평가 서버는 만들지 않습니다. docs/creative-studio/quality-production-20261107.md에 상세 계약을 남깁니다. dispatch/api 통합은 당신 소유권입니다. media QA 통과·평가 파일 생성·평가 요청 준비를 의미/시청 PASS로 바꾸지 말고, 결함 부분 수정 후 이전 영상 receipt를 재사용하지 않도록 출력/루브릭 해시와 실제 검사 범위를 대조하세요. 아직 모듈이 구현 전이므로 존재를 가정하지 말고 나머지 ENG/PD 연결을 진행하면서 준비되는 계약에 붙이세요.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "c0620d77-9cbc-4ef4-9c98-2c1547ae93b4",
+      "prompt": "독립 B/C 검증 결과를 통합 판정에 반영하세요. 보고서 docs/creative-studio/verification-b-20261107.md 및 verification-c-20261107.md. B는 walk/wave 영점 키포즈로 실제 동작 실패, C는 기존 Blender가 어두운 정지 화면이고 Codex bpy 신규 렌더 SIGSEGV11입니다. C의 preflight는 bpy가 없어도 ok이고 audit실패를 차단하지 않아 현재 preflight만 믿고 실행가능을 광고하면 안 됩니다. B 담당20b17b35와 C 담당b1cce81e가 각각 소유 모듈 교정 중입니다. registration/direct call/studio 통합/실제 콘텐츠 품질을 분리하고 실패 시 자동 슬라이드쇼로 숨기지 마세요. 기존 3D 모듈을 수정하지 말고 이 보고를 반영해 독립 ENG/PD/동영상 모션 보존 통합을 계속하세요.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "11ea75e3-1174-44ea-b747-ed4068653324",
+      "prompt": "QA 중간 실제 실행을 확인했습니다. quality.py/quality_worker.py가 생성됐고 Run4d1a3f58 seq193은 전용 테스트30passed, seq197은 기존 B SHA30213960에서15PNG+WAV 추출 후 machine pass/semantic viewing overall unknown, rubric_recorded_before_render=false입니다. 렌더 전에 record.rubric=build_rubric(plan)을 보존하고 조립 후 evaluate_production(plan,record,media_path=절대경로)를 호출하세요. final.file은 plan 폴더 상대경로이므로 안전하게 해석해야 합니다. record.quality_evidence receipt의 output/rubric 해시·평가자·시간/장면 커버리지 검사가 계약입니다. plan_partial_repair는 invalidate/preserve/actions만 반환하는 순수 계획이므로 실제 수정 적용·인가·lease·캐시 무효화·재제작·평가요청 및 receipt 수용은 core 통합에서 구현해야 원래 QA 요구를 충족합니다. 프레임추출/수정계획 작성까지만으로 자율 평가·개선을 완료했다고 표시하지 마세요. 본인 ENG/PD 구현과 함께 이 수직 경로를 연결하세요.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "31e8a92c-0c2e-4ffa-b36c-63262b8bab4d",
+      "prompt": "UI부분 보고의 API공백을 원래 요구 미완으로 연결합니다. 현재 frontend는 자유 설명/계획·프로젝트 목록·장면근거·기계QA/최종미리보기·재시도를 구현했고 테스트27passed/build가 있지만, 계획 전 참고첨부와 품질목표·장면원본미리보기·문구 전후비교/복원·자연어수정/타임라인은 API미지원으로 남겼습니다. 이 표시는 전체 UI요구 완료가 아닙니다. 기존 upload/자산/history/plan revision계약을 재사용해 필요한 최소 호환 API필드를 제공하고 현재 UI소유자9f82d70e와 공유문서로 연결하세요. UI는 새컨텍스트 Runb76d7b11로 재개했고 사용자승인 테스트A Kafka 메시지흐름16초16:9를 실제 brief로 사용하므로 입력미지정 때문에 멈출 필요 없습니다. 현재 UI는 localhost5174가127.0.0.1:8787 auth/health CORS와 격리로그인에서 막혀 실제제작화면 미검증입니다. 인증해제 없이 정상 개발proxy/테스트환경을 확인하도록 지시했습니다. UI인계는 docs/creative-studio/ui-handoff-20261107.md.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "23853ad1-244d-4381-85ba-6195b0e40609",
+      "prompt": "QA 최종 보고를 실행 events와 대조했습니다. Run4d1a3f58 seq239 회귀 77 passed in 94.87s, seq250 core dispatch 1 passed, seq258 전용 37 passed in 6.73s입니다. docs/creative-studio/quality-production-20261107.md가 정본이고 미커밋 QA 4파일을 통합에 포함하세요. 현재 dispatch.py 692에서 evaluate_production(plan,{**record,'assets':data['assets']},media_path=final_path)를 직접 확인했으므로 assets 전달은 이미 반영되어 중복 교정하지 않습니다. 기존 지시의 실제 부분 수정 적용·lease·좋은 자산 보존·재제작·재평가 경로를 마저 연결하고 하나의 실제 전후 제작 증거를 남겨 주세요. receipt는 신뢰된 실행 경로에서만 기록하고 임의 클라이언트 independent:true를 수용하지 마세요. rubric_matches_record는 스냅샷 일치이며 생성 시각 증거가 아닙니다. QA 자체의 15PNG/WAV 추출과 callable 테스트는 독립 모델 평가·청취 증거가 아닙니다. 미실행 항목은 unknown을 유지하세요. 감사용 공유 ID는 보고서 0a4a63aa-5ffa-4126-b553-1be51accf904, 기존 B 사본 d5555554-0b3e-4b96-8a14-ea78a809ee19, ZIP 9763b5e4-a296-452e-a018-2db868731d2f입니다. 유효한 QA 검사는 변경으로 무효화된 범위만 재실행하고 전체를 반복하지 마세요.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "bed523ff-daab-4363-9ff3-9a4483721ce3",
+      "prompt": "새 A 보고를 실제 events와 대조했습니다. 기존 목표·후속23853ad1을 유지하고 이 정보만 통합하십시오. A Run5286b1cd seq29: Codex browser preflight exit78 status=blocked/browser_launched=false, seq99: 승인 브라우저 file: 접근 거부, seq135:9passed0.85s, seq139:lint error0/warning3, seq141:16초 timeline. 실제 A MP4·프레임·최종오디오·Studio dispatch는 없으므로 A/ENG 완료로 집계하지 않습니다. 문서 docs/creative-studio/benchmark-a-20261107.md에 정확한 경계가 있습니다. A 모듈은 현재 Kafka 전용 3 scenes/16:9인데 넓은 limits/style_params를 광고하여 소유자2c0d1e6d 새컨텍스트 Run2ce58ac9에 좁은 계약 정합성 교정을 배정했습니다. engines.py/dispatch.py는 그 작업자가 수정하지 않습니다. 로컬 차단을 다른 바이너리·엔진·보안설정으로 우회하지 마십시오. 지원되는 production dispatch/렌더 경로를 검토하되 먼저 실제 배포 revision·현재 adapter 유무를 확인하고 정상 통합·검증·표준 배포 이후 가능한 범위만 실제 실행하십시오. 이미 유효한 검사 재실행이나 기다리기 루프는 금지하며 불가능한 실제렌더는 정확한 단계와 남은 요구로 보존하십시오. QA 중복 보고와 B 취소는 새 재시작 지시가 아니며 현재 소유권을 유지합니다.",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "4d282477-ef7c-4aa4-898e-1df0a1c2d994",
+      "prompt": "품질 담당의 계약 원문을 현재 엔진·API 담당자에게 중계합니다. 옛 담당 86c93b9b-7d99-4814-b83c-0dd77c453b2c는 계정 재배정 때 취소되었으므로 재호출하지 않습니다. 기존 QA 후속23853ad1의 보충 자료이며 새 작업 단계·전체 테스트 재실행 지시가 아닙니다. 아래 계약을 기존 실제 부분 재제작·검수 receipt 통합에서 사용하고 이미 반영한 부분은 반복하지 마십시오.\n\n품질 담당 ece739f8-5b65-44e0-a977-abfbead42d74에서 현재 함수·입출력 계약을 전달합니다. 공유 경로 back-creative-production-20261107의 소유 모듈은 src/ttakkari/creative/v2/quality.py와 quality_worker.py입니다. quality.build_rubric(plan:dict)->dict: C01/C12 장르별 criteria, targets(scene/shot), plan_sha256, sha256를 반환하며 렌더 전에 record.rubric에 저장합니다. quality.evaluate_production(plan,record,*,media_path:Path|None=None)->dict: rubric/output_sha256/rubric_matches_record/rubric_timing/machine_qa/semantic_qa/viewing_qa/defects/repair_plan/overall_verdict를 반환합니다. final.file은 상대경로이므로 절대 media_path를 전달하고, record 복사본에 assets=data.assets를 넣어 보존 자산 키를 열거합니다. 현재 dispatch.py에서 assets를 포함한 호출과 사전 rubric 저장까지 연결된 것을 확인했습니다. quality.plan_partial_repair(plan,record,defects)->dict: actions(scene_id/shot_id/code/layer/strategy/evidence/requires_reevaluation), invalidate(scene_ids/shot_ids/layers/asset_keys/segment_ids/final/quality_evidence), preserve(scene_ids/shot_ids/segment_run_keys/asset_groups/asset_keys), blocked/status를 반환하는 순수 함수이며 실제 실행·승인·lease는 core가 담당합니다. quality_worker.prepare_review(plan,media_path,output_dir,*,max_frames=120)->dict는 실제 PNG/WAV와 전체 영상 해시를 묶은 request를 만들며 상태는 prepared_not_evaluated입니다. deliver_review(package,evaluator,*,max_payload_bytes=268435456)->dict는 기존 evaluator callable(request,payloads)에 실제 MP4/PNG/WAV 바이트를 전달하고 output_sha256/rubric_sha256/transport를 결합합니다. 신뢰된 독립 검수 receipt만 record.quality_evidence 배열로 받으며 stage=semantic_qa/viewing_qa, evaluator={id,version,source,independent:true}, criteria=[{criterion_id,scene_ids,verdict,uncertainty,evidence}], defects=[{code,scene_id,shot_id,layer,evidence}]입니다. 근거 파일은 path/sha256/source_sha256/kind/start_time/end_time으로 고정합니다. 미관측 의미·시청 QA와 누락/오래된 근거는 unknown이며 파일 QA만으로 overall pass를 만들지 않습니다. 상세 계약과 현재 한계는 docs/creative-stud",
+      "status_at_observation": "queued"
+    },
+    {
+      "run_id": "975e8db7-29ed-4047-a479-8aa331efc214",
+      "prompt": "HyperFrames 소유자의 좁은 계약 교정 Run2ce58ac9는 끝났고 style_dna 후속a472c984는 이미 running입니다. 새 작업자를 만들지 말고 기존 통합 범위에서 docs/creative-studio/benchmark-a-20261107.md 8절의 실제 호출 불일치를 해소해 주세요. 현재 소유 모듈의 discovery는 정확히3장면/16:9/고정style로 교정됐으나 ModuleAdapter.validate_spec은 각scene preset=kafka_flow를 요구하는 반면 plans._scene_records의 장면에는 preset이 없다고 A가 코드 대조로 확인했습니다. 감독 code_motion 구간 1~2장면과 비감독 최대40장면 묶기도 현재 모듈과 맞지 않습니다. dispatch가 전체style_dna와 truthy strategy/shots/camera/motion을 전달하면 모듈이 거부합니다. style_dna 계약 교정은 A 소유자a472c984가 계속하므로 같은 파일을 수정하지 마세요. core 소유 plans/engines/dispatch에서 선택·구간화·지원preset·편집메타데이터/스타일 전달을 일치시키고 실제 core입력 모양으로 render 진입 전 계약을 검증하세요. 지원하지 않는 임의영상 요청을 조용히Kafka로 치환하지 말고 명시적선택/실패를 보존하세요. 테스트나 등록만으로 A/ENG 완료를 선언하지 않습니다. 알려진 Codex browser preflight차단 때문에 이 메시지는 Chrome렌더 재시도 권한이 아닙니다. 현재 결과를 기존 후속에 합치고 유효한 전체검사는 반복하지 마세요.",
+      "status_at_observation": "queued"
+    }
+  ],
+  "stage2": "실제 결함 기반 부분 수정 적용·성공자산/구간보존·재제작·신뢰된 검수 receipt 수용을 기존 승인과 lease 경로로 연결하고 실제 전후 증거를 남긴다.",
+  "remaining_order": [
+    "현재 core API/수정 loop 연결",
+    "실제 LLM 감독/전문 지식→스토리보드 Run lifecycle와 원격 executor 소비자 연결",
+    "UI 실제 여정 및 통합 독립 검증",
+    "검증된 변경 통합·표준 배포·독립 감사"
+  ]
+}

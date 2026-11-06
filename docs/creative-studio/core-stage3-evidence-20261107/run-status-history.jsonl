@@ -1,0 +1,4 @@
+{"observed_at": "2026-11-06T16:41:19.725205+00:00", "id": "eb6ce21a-ca7e-4f5e-bb51-7777301316e8", "status": "succeeded", "engine": "codex", "model": null, "profile": "회사 코덱스 ai2 (ai2@hyperez.io)", "error": null}
+{"observed_at": "2026-11-06T16:44:29.182694+00:00", "id": "ea791aa5-500c-4a76-aa63-6feaef13eb9a", "status": "running", "engine": "codex", "model": null, "profile": "내 codex (iuholic83@gmail.com)", "error": null}
+{"observed_at": "2026-11-06T16:46:34.589887+00:00", "id": "ea791aa5-500c-4a76-aa63-6feaef13eb9a", "status": "succeeded", "engine": "codex", "model": null, "profile": "내 codex (iuholic83@gmail.com)", "error": null}
+{"observed_at": "2026-11-06T16:51:49.421887+00:00", "id": "90bddc9c-fb91-44fc-8364-fd67c61d21a7", "status": "succeeded", "engine": "codex", "model": null, "profile": "내 codex (iuholic83@gmail.com)", "error": null}

@@ -1,0 +1,29 @@
+--- before/frame_animation.py
++++ after/frame_animation.py
+@@ -237,6 +237,11 @@
+         workdir: Path | str | None = None,
+     ) -> dict[str, Any]:
+         """Core 통합 계약에 따른 세그먼트/프로젝트 렌더링 실행."""
++        interpolation_mode = spec.get("interpolation_mode", "hold")
++        if interpolation_mode not in ("hold", "linear"):
++            raise ValueError(
++                f"interpolation_mode={interpolation_mode!r}: allowed values are hold, linear"
++            )
+         start_t = time.perf_counter()
+         out_p = Path(output_path)
+         out_p.parent.mkdir(parents=True, exist_ok=True)
+@@ -308,9 +313,13 @@
+             target_duration=duration,
+             production_fps=int(spec.get("production_fps") or DEFAULT_PRODUCTION_FPS),
+             playback_fps=int(spec.get("playback_fps") or DEFAULT_PLAYBACK_FPS),
+-            interpolation_mode="hold",
++            interpolation_mode=interpolation_mode,
+             scenes=parsed_scenes,
+         )
++        if interpolation_mode == "linear":
++            proj_spec.interpolation_reason = (
++                "승인된 감독 계획의 명시적 linear 선택: 키포즈 수치 필드 선형 보간"
++            )
+ 
+         renderer = FrameAnimationRenderer()
+         manifest = renderer.render_project(

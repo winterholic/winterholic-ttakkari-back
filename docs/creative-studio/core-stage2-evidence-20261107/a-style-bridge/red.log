@@ -1,0 +1,215 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_________ test_wrapper_delegates_exact_compose_result_without_mutation _________
+
+    def test_wrapper_delegates_exact_compose_result_without_mutation():
+        dna=style();before=deepcopy(dna)
+        adapter=engines.adapter_by_id('skill.hyperframes_motion')
+>       contract=adapter.validate_style_dna(dna)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'ModuleAdapter' object has no attribute 'validate_style_dna'
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:49: AttributeError
+_ test_invalid_style_is_rejected_before_dispatch_preflight[visual_identity-theme-light-dark] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_invalid_style_is_rejected0')
+facet = 'visual_identity', param = 'theme', value = 'light', allowed = 'dark'
+
+    @pytest.mark.parametrize('facet,param,value,allowed',[
+        ('visual_identity','theme','light','dark'),
+        ('visual_identity','caption_style','plain','bottom_card'),
+        ('motion_language','animation','pop','technical'),
+        ('motion_language','transition','dissolve','cut'),
+    ])
+    def test_invalid_style_is_rejected_before_dispatch_preflight(tmp_path,facet,param,value,allowed):
+        dna=style();dna['dna'][facet]['params'][param]=value
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(dna));plan=plans.approve(plan['id'],1)
+>       reasons=dispatch.dispatch_blockers(plan)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/dispatch.py:109: in dispatch_blockers
+    pre = adapter.preflight()
+          ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<ttakkari.creative.v2.engines.V1SlideshowAdapter object at 0x10b8aaa50>,)
+kwargs = {}
+
+    def forbidden(*args,**kwargs):
+>       raise AssertionError('preflight/render forbidden in the style bridge checks')
+E       AssertionError: preflight/render forbidden in the style bridge checks
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:37: AssertionError
+_ test_invalid_style_is_rejected_before_dispatch_preflight[visual_identity-caption_style-plain-bottom_card] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_invalid_style_is_rejected1')
+facet = 'visual_identity', param = 'caption_style', value = 'plain'
+allowed = 'bottom_card'
+
+    @pytest.mark.parametrize('facet,param,value,allowed',[
+        ('visual_identity','theme','light','dark'),
+        ('visual_identity','caption_style','plain','bottom_card'),
+        ('motion_language','animation','pop','technical'),
+        ('motion_language','transition','dissolve','cut'),
+    ])
+    def test_invalid_style_is_rejected_before_dispatch_preflight(tmp_path,facet,param,value,allowed):
+        dna=style();dna['dna'][facet]['params'][param]=value
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(dna));plan=plans.approve(plan['id'],1)
+>       reasons=dispatch.dispatch_blockers(plan)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/dispatch.py:109: in dispatch_blockers
+    pre = adapter.preflight()
+          ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<ttakkari.creative.v2.engines.V1SlideshowAdapter object at 0x10b8aaa50>,)
+kwargs = {}
+
+    def forbidden(*args,**kwargs):
+>       raise AssertionError('preflight/render forbidden in the style bridge checks')
+E       AssertionError: preflight/render forbidden in the style bridge checks
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:37: AssertionError
+_ test_invalid_style_is_rejected_before_dispatch_preflight[motion_language-animation-pop-technical] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_invalid_style_is_rejected2')
+facet = 'motion_language', param = 'animation', value = 'pop'
+allowed = 'technical'
+
+    @pytest.mark.parametrize('facet,param,value,allowed',[
+        ('visual_identity','theme','light','dark'),
+        ('visual_identity','caption_style','plain','bottom_card'),
+        ('motion_language','animation','pop','technical'),
+        ('motion_language','transition','dissolve','cut'),
+    ])
+    def test_invalid_style_is_rejected_before_dispatch_preflight(tmp_path,facet,param,value,allowed):
+        dna=style();dna['dna'][facet]['params'][param]=value
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(dna));plan=plans.approve(plan['id'],1)
+>       reasons=dispatch.dispatch_blockers(plan)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/dispatch.py:109: in dispatch_blockers
+    pre = adapter.preflight()
+          ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<ttakkari.creative.v2.engines.V1SlideshowAdapter object at 0x10b8aaa50>,)
+kwargs = {}
+
+    def forbidden(*args,**kwargs):
+>       raise AssertionError('preflight/render forbidden in the style bridge checks')
+E       AssertionError: preflight/render forbidden in the style bridge checks
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:37: AssertionError
+_ test_invalid_style_is_rejected_before_dispatch_preflight[motion_language-transition-dissolve-cut] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_invalid_style_is_rejected3')
+facet = 'motion_language', param = 'transition', value = 'dissolve'
+allowed = 'cut'
+
+    @pytest.mark.parametrize('facet,param,value,allowed',[
+        ('visual_identity','theme','light','dark'),
+        ('visual_identity','caption_style','plain','bottom_card'),
+        ('motion_language','animation','pop','technical'),
+        ('motion_language','transition','dissolve','cut'),
+    ])
+    def test_invalid_style_is_rejected_before_dispatch_preflight(tmp_path,facet,param,value,allowed):
+        dna=style();dna['dna'][facet]['params'][param]=value
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(dna));plan=plans.approve(plan['id'],1)
+>       reasons=dispatch.dispatch_blockers(plan)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/dispatch.py:109: in dispatch_blockers
+    pre = adapter.preflight()
+          ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<ttakkari.creative.v2.engines.V1SlideshowAdapter object at 0x10b8aaa50>,)
+kwargs = {}
+
+    def forbidden(*args,**kwargs):
+>       raise AssertionError('preflight/render forbidden in the style bridge checks')
+E       AssertionError: preflight/render forbidden in the style bridge checks
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:37: AssertionError
+________ test_unapplied_fields_are_visible_before_approval_and_dispatch ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_unapplied_fields_are_visi0')
+
+    def test_unapplied_fields_are_visible_before_approval_and_dispatch(tmp_path):
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(style()))
+        view=dispatch.view(plans,studio,plan['id'])
+        assert view['state']=='not_dispatched' and not view['dispatchable']
+>       review=view['producer_style_reviews'][0]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'producer_style_reviews'
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:81: KeyError
+_______ test_valid_contract_is_preserved_in_dispatch_and_revision_review _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_valid_contract_is_preserv0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c858250>
+
+    def test_valid_contract_is_preserved_in_dispatch_and_revision_review(tmp_path,monkeypatch):
+        # Test-only metadata preflight. No process or producer can execute.
+        monkeypatch.setattr(engines.ModuleAdapter,'preflight',lambda _:engines.Preflight(True,'fixture-not-executed',[]))
+        monkeypatch.setattr(engines.V1SlideshowAdapter,'preflight',lambda _:engines.Preflight(True,'fixture-not-executed',[]))
+        plans=PlanStore(tmp_path/'plans');studio=Studio(tmp_path/'studio')
+        plan=plans.create(raw_plan(style()));plan=plans.approve(plan['id'],1)
+        view=dispatch.dispatch(plans,studio,plan['id'],1)
+        data=dispatch.ProductionStore(plans).read(plan['id'])
+>       assert data['dispatches'][0]['producer_style_reviews']==view['producer_style_reviews']
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'producer_style_reviews'
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:98: KeyError
+________ test_wrapper_direct_call_rejects_invalid_style_before_delegate ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_wrapper_direct_call_rejec0')
+
+    def test_wrapper_direct_call_rejects_invalid_style_before_delegate(tmp_path):
+        dna=style();dna['dna']['motion_language']['params']['animation']='pop'
+        plan=raw_plan(dna)
+        adapter=engines.adapter_by_id('skill.hyperframes_motion')
+        with pytest.raises(ValueError,match='motion_language.params.animation'):
+>           adapter.render_segment({'scenes':plan['scenes'],'style_dna':dna},output_path=tmp_path/'unused.mp4',workdir=tmp_path/'unused')
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/engines.py:185: in render_segment
+    result = self.delegate.render_segment(payload, output_path=output_path, workdir=workdir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'style_dna': {'status': 'resolved', 'sha256': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'd....6}, {'scene_id': 'i2', 'title': '장면 3', 'narration': '첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.', 'seconds': 8.6}]},)
+kwargs = {'output_path': PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/...folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6802/test_wrapper_direct_call_rejec0/unused')}
+
+    def forbidden(*args,**kwargs):
+>       raise AssertionError('preflight/render forbidden in the style bridge checks')
+E       AssertionError: preflight/render forbidden in the style bridge checks
+
+unit_tests/test_creative_v2_hyperframes_style_bridge.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_wrapper_delegates_exact_compose_result_without_mutation
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_invalid_style_is_rejected_before_dispatch_preflight[visual_identity-theme-light-dark]
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_invalid_style_is_rejected_before_dispatch_preflight[visual_identity-caption_style-plain-bottom_card]
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_invalid_style_is_rejected_before_dispatch_preflight[motion_language-animation-pop-technical]
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_invalid_style_is_rejected_before_dispatch_preflight[motion_language-transition-dissolve-cut]
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_unapplied_fields_are_visible_before_approval_and_dispatch
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_valid_contract_is_preserved_in_dispatch_and_revision_review
+FAILED unit_tests/test_creative_v2_hyperframes_style_bridge.py::test_wrapper_direct_call_rejects_invalid_style_before_delegate
+8 failed in 0.63s

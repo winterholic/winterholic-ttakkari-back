@@ -1,0 +1,11 @@
+{
+  "command": [
+    "ttk",
+    "get",
+    "/api/version"
+  ],
+  "environment": "deployed backend via existing owner CLI",
+  "returncode": 0,
+  "stdout": "{\"revision\":\"5f5cbd997addcb4ea084ab908790f8f6eec54122\",\"pid\":66067}\n",
+  "stderr": ""
+}

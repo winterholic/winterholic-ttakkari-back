@@ -1,0 +1,64 @@
+F.........                                                               [100%]
+=================================== FAILURES ===================================
+__ test_storyboard_requires_grounded_sources_alternatives_and_explicit_review __
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c40fb60>, <ttakkari.creative.service.Studio object at 0x10c40fcb0>)
+
+    def test_storyboard_requires_grounded_sources_alternatives_and_explicit_review(stores):
+        from ttakkari.creative.v2 import storyboard as sb
+        plans,_=stores;body=request();raw=json.dumps(output(),ensure_ascii=False)
+        draft=sb.parse_storyboard(body,raw)
+        with pytest.raises(ValueError,match='review'):
+            sb.materialize(plans,body,raw,run_id=str(uuid.uuid4()),model='fixture',reviewed_output_sha256='0'*64)
+        rid=str(uuid.uuid4())
+>       plan=sb.materialize(plans,body,raw,run_id=rid,model='fixture',reviewed_output_sha256=sb.output_hash(raw))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_stage3.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/storyboard.py:119: in materialize
+    base=build_plan(request.brief,intent,director=direction);base['id']=target
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+brief = '기존 영상으로 세 장면의 짧은 소개 영상을 만든다'
+intent = IntentSpec(schema_version=1, selections=[Selection(entry_id='C08.three_act', role='secondary', strength='soft', confid...tial=False, evidence=[])], music_seconds=None, open_questions=[], extraction=Extraction(method='llm', model='fixture'))
+name = '', duration = None, aspect = None
+registry = <ttakkari.creative.v2.registry.Registry object at 0x109848050>
+styles = None, style_refs = None, resolutions = None
+director = ProductionDirection(source='llm', model='fixture', reviewed=True, run_id='ecbb6545-e712-4b78-8cde-f83dff012cbd', outpu...rection(shot_id='shot-2', action='기존 영상의 프레임 재생', layers=['visual', 'captions', 'audio'], required_capabilities=[])])])
+
+    def build_plan(
+        brief: str,
+        intent: IntentSpec | None,
+        *,
+        name: str = "",
+        duration: DurationRequest | None = None,
+        aspect: str | None = None,
+        registry: Registry | None = None,
+        styles: StyleStore | None = None,
+        style_refs: list[StyleRef] | None = None,
+        resolutions: list[Resolution] | None = None,
+        director: ProductionDirection | None = None,
+    ) -> dict[str, Any]:
+        registry = registry or Registry()
+        notes: list[str] = []
+        if intent is None:
+            intent, hint = hint_intent(brief)
+            notes.append(
+                "구조화된 의도가 없어 단어 힌트로 초안을 만들었습니다. 선택은 모두 soft이고 확인이 필요합니다."
+            )
+            if hint:
+                notes.append(
+                    f"브리프에 길이 언급({hint['quote']})이 있지만 확인 전에는 적용하지 않았습니다."
+                )
+        elif intent.extraction.method == "llm":
+>           raise ValueError(
+                "검토 전 의도 초안은 계획 계산에 사용할 수 없습니다. 항목을 직접 검토하고 확인해 주세요."
+            )
+E           ValueError: 검토 전 의도 초안은 계획 계산에 사용할 수 없습니다. 항목을 직접 검토하고 확인해 주세요.
+
+src/ttakkari/creative/v2/plans.py:432: ValueError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage3.py::test_storyboard_requires_grounded_sources_alternatives_and_explicit_review
+1 failed, 9 passed in 2.28s

@@ -1,0 +1,75 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_core_hyperframes_projection_accepts_current_owned_template ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6708/test_core_hyperframes_projecti0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fdb4050>
+
+    def test_core_hyperframes_projection_accepts_current_owned_template(tmp_path, monkeypatch):
+        from ttakkari.creative.v2 import engines, hyperframes
+        from ttakkari.creative.v2.plans import build_plan
+        direction_input=direction(('code_motion',)*3)
+        for scene in direction_input['scenes']:
+            scene['preset']='kafka_flow'
+        plan=build_plan('Kafka 메시지 흐름',intent(),director=ProductionDirection.model_validate(direction_input))
+        from ttakkari.creative.v2.plans import render_plan
+        plan['render_plan']=render_plan(plan)
+        assert len(plan['render_plan']['segments'])==1
+        assert len(plan['render_plan']['segments'][0]['scene_ids'])==3
+        adapter=engines.adapter_by_id('skill.hyperframes_motion')
+        captured={}
+        def boundary(spec, **kwargs):
+            captured.update(spec)
+            hyperframes._prepare_spec_project(spec, tmp_path/'prepared')
+            raise RuntimeError('current template accepted; no browser/render invoked')
+        monkeypatch.setattr(adapter.delegate,'render_segment',boundary)
+        spec={'plan_id':plan['id'],'revision':1,'segment_id':'seg-01','seconds':16,'aspect':'16:9','width':1280,'height':720,'fps':24,'scenes':plan['scenes'],'style_dna':None,'editorial_scenes':plan['scenes']}
+        with pytest.raises(RuntimeError,match='current template accepted'):
+>           adapter.render_segment(spec,output_path=tmp_path/'unused.mp4',workdir=tmp_path/'work')
+
+unit_tests/test_creative_v2_stage2.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/engines.py:179: in render_segment
+    result = self.delegate.render_segment(payload, output_path=output_path, workdir=workdir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+unit_tests/test_creative_v2_stage2.py:231: in boundary
+    hyperframes._prepare_spec_project(spec, tmp_path/'prepared')
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = {'plan_id': 'd2fbf46c-efee-48c6-8530-1701cdc51584', 'revision': 1, 'segment_id': 'seg-01', 'seconds': 16, ...}
+workdir = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6708/test_core_hyperframes_projecti0/prepared')
+
+    def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
+        """소유 템플릿을 복사하고 spec의 콘텐츠/출력 설정을 실제 DOM에 주입한다."""
+        scenes = spec.get("scenes")
+        if not isinstance(scenes, list) or len(scenes) != 3:
+            raise ValueError("Kafka flow 템플릿은 producer, broker, consumer의 3개 scenes가 필요합니다.")
+        seconds = float(spec.get("seconds", 16))
+        if not 1 <= seconds <= 300:
+            raise ValueError("seconds는 1~300 범위여야 합니다.")
+        width, height = int(spec.get("width", 1920)), int(spec.get("height", 1080))
+        fps = int(spec.get("fps", 30))
+        if width <= 0 or height <= 0 or fps <= 0:
+            raise ValueError("width, height, fps는 양수여야 합니다.")
+        if width * 9 != height * 16:
+            raise ValueError("Kafka flow 템플릿은 16:9 출력만 지원합니다.")
+        if any(not isinstance(scene, dict) for scene in scenes):
+            raise ValueError("각 scene은 object여야 합니다.")
+        supported_style = {"theme": "dark", "animation": "technical", "transition": "cut", "caption_style": "bottom_card"}
+        style = spec.get("style") or {}
+        if not isinstance(style, dict):
+            raise ValueError("style은 object여야 합니다.")
+        unsupported_style = [f"{key}={value}" for key, value in style.items() if supported_style.get(key) != value]
+        if unsupported_style:
+            raise ValueError("Kafka flow 템플릿이 적용하지 않는 style: " + ", ".join(unsupported_style))
+        _style_dna_contract(spec.get("style_dna"), ADAPTER.style_params)
+        unsupported_scene_fields = {"shots", "camera", "motion", "asset_path", "voice_path", "caption_segments", "strategy"}
+        unsupported_scene_fields = sorted({key for scene in scenes for key in unsupported_scene_fields if scene.get(key)})
+        if unsupported_scene_fields:
+>           raise ValueError("Kafka flow 템플릿이 소비하지 않는 scene 입력: " + ", ".join(unsupported_scene_fields))
+E           ValueError: Kafka flow 템플릿이 소비하지 않는 scene 입력: shots, strategy
+
+src/ttakkari/creative/v2/hyperframes.py:339: ValueError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage2.py::test_core_hyperframes_projection_accepts_current_owned_template
+1 failed, 11 deselected in 0.60s

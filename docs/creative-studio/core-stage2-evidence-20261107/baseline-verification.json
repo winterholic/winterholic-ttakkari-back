@@ -1,0 +1,13 @@
+{
+  "core_source_match": {
+    "src/ttakkari/creative/v2/engines.py": true,
+    "src/ttakkari/creative/v2/dispatch.py": true,
+    "src/ttakkari/creative/v2/plans.py": true,
+    "src/ttakkari/creative/v2/planner.py": true,
+    "src/ttakkari/creative/v2/asset_generation.py": true,
+    "src/ttakkari/creative/v2/asset_generation_managed.py": true,
+    "src/ttakkari/api/creative_v2.py": true
+  },
+  "actual_render_compositor_version": "1aa79e3517d971027ccbfcb0cc0bc8ec23ee8995094c11edf27941703dfa48f7",
+  "actual_render_source_snapshot_matches": true
+}

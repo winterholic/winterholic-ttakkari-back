@@ -1,0 +1,17 @@
+{
+  "/api/creative/v2/storyboard/contract": {
+    "exit": 1,
+    "stdout": "{\"detail\":\"Not Found\"}\n",
+    "stderr": "[HTTP 404]\n"
+  },
+  "/api/creative/v2/plans/3bf9f754-0039-4fe3-a771-e137b9235068/production/revisions/1": {
+    "exit": 1,
+    "stdout": "{\"detail\":\"Not Found\"}\n",
+    "stderr": "[HTTP 404]\n"
+  },
+  "/api/creative/v2/plans/3bf9f754-0039-4fe3-a771-e137b9235068/production": {
+    "exit": 0,
+    "stdout": "{\"plan_id\":\"3bf9f754-0039-4fe3-a771-e137b9235068\",\"plan_revision\":1,\"caption_mode\":null,\"caption_timing\":null,\"caption_sources\":null,\"caption_contract\":null,\"assets\":{\"scenes_total\":4,\"scenes_with_asset\":0,\"missing_scene_ids\":[\"s1\",\"s2\",\"s3\",\"s4\"],\"music\":null,\"music_problem\":\"\uc74c\uc545 \uc790\uc0b0\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.\",\"complete\":false},\"asset_generation_blockers\":[\"\ub808\uc2dc\ud53c R16\ub294 \uc790\ub3d9 \uc790\uc0b0 \uc0dd\uc131 \uc5b4\ub311\ud130\uac00 \uc9c0\uc6d0\ud558\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.\"],\"asset_generation\":null,\"history\":[],\"state\":\"not_dispatched\",\"dispatchable\":false,\"reasons\":[\"\ub80c\ub354 \uac8c\uc774\ud2b8\uac00 \ub2eb\ud600 \uc788\uc2b5\ub2c8\ub2e4. \uc2b9\uc778, studio_runtime \ubc94\uc704, \ud544\uc218 \ub2a5\ub825 \ucda9\uc871\uc774 \ubaa8\ub450 \ud544\uc694\ud569\ub2c8\ub2e4.\"],\"engine\":null,\"outdated_segments\":[],\"segments\":[],\"final\":null,\"log\":[]}\n",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,460 @@
+{
+  "project_id": "0972b033-84e0-4b98-9b82-9068526fc839",
+  "title": "seg-01",
+  "aspect_ratio": "16:9",
+  "target_duration": 8.0,
+  "production_fps": 12,
+  "playback_fps": 24,
+  "interpolation_mode": "linear",
+  "interpolation_reason": "승인된 감독 계획의 명시적 linear 선택: 키포즈 수치 필드 선형 보간",
+  "scenes": [
+    {
+      "scene_id": "walk",
+      "duration_seconds": 8.0,
+      "background_type": "color",
+      "background_value": "#2B2D42",
+      "keyframes": [
+        [
+          0.0,
+          {
+            "pose_id": "walk_0",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -150.0,
+            "root_y": 0.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          2.0,
+          {
+            "pose_id": "walk_1",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 2.82842712474619,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -100.0,
+            "root_y": -14.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          4.0,
+          {
+            "pose_id": "walk_2",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -3.91886975727153e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 3.91886975727153e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 3.429011037612589e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -3.429011037612589e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 4.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": -50.0,
+            "root_y": -1.7145055188062944e-15,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          6.0,
+          {
+            "pose_id": "walk_3",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -32.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 28.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 2.8284271247461903,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": 0.0,
+            "root_y": -14.0,
+            "root_scale": 1.0
+          }
+        ],
+        [
+          8.0,
+          {
+            "pose_id": "walk_4",
+            "parts": {
+              "arm_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 7.83773951454306e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "arm_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -7.83773951454306e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_left": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": -6.858022075225178e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "leg_right": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 6.858022075225178e-15,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "head_base": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 4.898587196589413e-16,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": null
+              },
+              "face": {
+                "pivot_x": 0.5,
+                "pivot_y": 0.5,
+                "offset_x": 0.0,
+                "offset_y": 0.0,
+                "rotation_deg": 0.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "alpha": 1.0,
+                "z_order": 0,
+                "variant": "normal"
+              }
+            },
+            "expression": "normal",
+            "root_x": 50.0,
+            "root_y": -3.429011037612589e-15,
+            "root_scale": 1.0
+          }
+        ]
+      ],
+      "camera_keyframes": [
+        {
+          "time_sec": 0.0,
+          "center_x": 0.46,
+          "center_y": 0.5,
+          "zoom": 1.0
+        },
+        {
+          "time_sec": 8.0,
+          "center_x": 0.5,
+          "center_y": 0.5,
+          "zoom": 1.05
+        }
+      ],
+      "subtitles": [],
+      "transition_in": "none",
+      "transition_out": "none"
+    }
+  ],
+  "audio_bgm": null,
+  "character_id": "ttakkari_mascot",
+  "metadata": {}
+}

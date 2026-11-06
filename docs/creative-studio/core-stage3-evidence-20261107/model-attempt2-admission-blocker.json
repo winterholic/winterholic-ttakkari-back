@@ -1,0 +1,89 @@
+{
+  "stage": "approved current plan admission",
+  "observed_error": "렌더할 수 없습니다: 승인 스냅샷 또는 studio_runtime 조건이 맞지 않습니다.",
+  "render_gate": false,
+  "gate_reasons": [
+    "실행 범위가 lab_manual(ready_unverified)라 스튜디오 렌더러로 실행할 수 없습니다. 승인은 계획 확정까지만 의미합니다.",
+    "제작 런타임에 연결되지 않았거나 실행 기록이 없는 필수 능력: asset.model_3d, render.blender_offline, anim.camera_virtual"
+  ],
+  "match_status": "ready_unverified",
+  "execution_scope": "lab_manual",
+  "needs": [
+    {
+      "capability": null,
+      "priority": "must",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "must",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "should",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "should",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "prefer",
+      "status": "unverified",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "prefer",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "prefer",
+      "status": "missing",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "prefer",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "must",
+      "status": "unverified",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "must",
+      "status": "executed",
+      "reason": null
+    },
+    {
+      "capability": null,
+      "priority": "must",
+      "status": "executed",
+      "reason": null
+    }
+  ],
+  "selected_catalog_ids": [
+    "C01.product_intro",
+    "C03.comic_2d",
+    "C10.subtitles",
+    "C11.duration",
+    "C11.aspect",
+    "C11.render_strategy",
+    "C12.temporal_continuity",
+    "C12.subtitle_legibility"
+  ]
+}

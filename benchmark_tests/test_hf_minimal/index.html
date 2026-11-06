@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Minimal HyperFrames Test</title>
+    <script src="vendor/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Pretendard";
+        src: local("Apple SD Gothic Neo");
+      }
+      body {
+        margin: 0;
+        background: #0b0f14;
+        color: white;
+        font-family: "Pretendard", sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-width="1920"
+      data-height="1080"
+      data-duration="3"
+      data-fps="30"
+    >
+      <div id="title-card" class="clip" data-start="0" data-duration="3" data-track-index="1">
+        <h1 id="title">테스트 하이퍼프레임스</h1>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#title", { y: 48, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 0.2);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

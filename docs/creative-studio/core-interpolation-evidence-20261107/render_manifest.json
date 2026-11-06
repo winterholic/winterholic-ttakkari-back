@@ -1,0 +1,215 @@
+{
+  "project_id": "0972b033-84e0-4b98-9b82-9068526fc839",
+  "title": "seg-01",
+  "target_duration": 8.0,
+  "production_fps": 12,
+  "playback_fps": 24,
+  "interpolation_mode": "linear",
+  "interpolation_reason": "승인된 감독 계획의 명시적 linear 선택: 키포즈 수치 필드 선형 보간",
+  "total_frames_rendered": 192,
+  "output_mp4": "/Volumes/Backup/ttakkari-data/outbox/452cc3c0-e5b0-4157-b5cf-1ddca82787d5/interpolation/actual/plans/0972b033-84e0-4b98-9b82-9068526fc839/engine-work/0a7aecf64192716adacaad04d7e11b97417a5d868dd90e1d0660064c124f8926/source.mp4",
+  "qa": {
+    "passed": true,
+    "checks": [
+      {
+        "id": "video_track",
+        "passed": true,
+        "detail": "영상 트랙",
+        "measured": true
+      },
+      {
+        "id": "audio_track",
+        "passed": true,
+        "detail": "오디오 트랙",
+        "measured": true
+      },
+      {
+        "id": "resolution",
+        "passed": true,
+        "detail": "기대 1280x720",
+        "measured": "1280x720"
+      },
+      {
+        "id": "duration",
+        "passed": true,
+        "detail": "계획 8초 ±0.4초",
+        "measured": 8.0
+      },
+      {
+        "id": "not_black",
+        "passed": true,
+        "detail": "검은 화면 비율 90% 미만",
+        "measured": 0.0
+      },
+      {
+        "id": "audible",
+        "passed": true,
+        "detail": "오디오 최대 음량 -60 dB 초과",
+        "measured": {
+          "mean_db": -14.5,
+          "max_db": -1.7
+        }
+      }
+    ],
+    "probe": {
+      "duration": 8.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 24.0,
+      "has_video": true,
+      "has_audio": true
+    }
+  },
+  "motion_eval": {
+    "same_source_layer_assets_reused": true,
+    "identity_comparison": "not_performed",
+    "motion_continuity_score": null,
+    "motion_continuity_rating": "not_evaluated",
+    "average_displacement_per_prod_frame": 0.83,
+    "max_displacement_per_prod_frame": 0.84,
+    "total_production_frames_calculated": 96,
+    "displacement_basis": "root_transform_heuristic",
+    "teleport_threshold_px": 120.0,
+    "teleport_glitch_detected": false,
+    "evaluation_verdict": "NOT_RATED: 변위 통계와 원본 레이어 재사용 사실만 기록했으며 지각 품질 평가는 수행하지 않음"
+  },
+  "sampled_keyframes": [
+    {
+      "frame_index": 0,
+      "time_sec": 0.0,
+      "scene_id": "walk",
+      "pose_id": "walk_0",
+      "expression": "normal",
+      "file": "keyframe_00000_t0.00s.png"
+    },
+    {
+      "frame_index": 12,
+      "time_sec": 0.5,
+      "scene_id": "walk",
+      "pose_id": "walk_0->walk_1",
+      "expression": "normal",
+      "file": "keyframe_00012_t0.50s.png"
+    },
+    {
+      "frame_index": 24,
+      "time_sec": 1.0,
+      "scene_id": "walk",
+      "pose_id": "walk_0->walk_1",
+      "expression": "normal",
+      "file": "keyframe_00024_t1.00s.png"
+    },
+    {
+      "frame_index": 36,
+      "time_sec": 1.5,
+      "scene_id": "walk",
+      "pose_id": "walk_0->walk_1",
+      "expression": "normal",
+      "file": "keyframe_00036_t1.50s.png"
+    },
+    {
+      "frame_index": 48,
+      "time_sec": 2.0,
+      "scene_id": "walk",
+      "pose_id": "walk_1",
+      "expression": "normal",
+      "file": "keyframe_00048_t2.00s.png"
+    },
+    {
+      "frame_index": 60,
+      "time_sec": 2.5,
+      "scene_id": "walk",
+      "pose_id": "walk_1->walk_2",
+      "expression": "normal",
+      "file": "keyframe_00060_t2.50s.png"
+    },
+    {
+      "frame_index": 72,
+      "time_sec": 3.0,
+      "scene_id": "walk",
+      "pose_id": "walk_1->walk_2",
+      "expression": "normal",
+      "file": "keyframe_00072_t3.00s.png"
+    },
+    {
+      "frame_index": 84,
+      "time_sec": 3.5,
+      "scene_id": "walk",
+      "pose_id": "walk_1->walk_2",
+      "expression": "normal",
+      "file": "keyframe_00084_t3.50s.png"
+    },
+    {
+      "frame_index": 96,
+      "time_sec": 4.0,
+      "scene_id": "walk",
+      "pose_id": "walk_2",
+      "expression": "normal",
+      "file": "keyframe_00096_t4.00s.png"
+    },
+    {
+      "frame_index": 108,
+      "time_sec": 4.5,
+      "scene_id": "walk",
+      "pose_id": "walk_2->walk_3",
+      "expression": "normal",
+      "file": "keyframe_00108_t4.50s.png"
+    },
+    {
+      "frame_index": 120,
+      "time_sec": 5.0,
+      "scene_id": "walk",
+      "pose_id": "walk_2->walk_3",
+      "expression": "normal",
+      "file": "keyframe_00120_t5.00s.png"
+    },
+    {
+      "frame_index": 132,
+      "time_sec": 5.5,
+      "scene_id": "walk",
+      "pose_id": "walk_2->walk_3",
+      "expression": "normal",
+      "file": "keyframe_00132_t5.50s.png"
+    },
+    {
+      "frame_index": 144,
+      "time_sec": 6.0,
+      "scene_id": "walk",
+      "pose_id": "walk_3",
+      "expression": "normal",
+      "file": "keyframe_00144_t6.00s.png"
+    },
+    {
+      "frame_index": 156,
+      "time_sec": 6.5,
+      "scene_id": "walk",
+      "pose_id": "walk_3->walk_4",
+      "expression": "normal",
+      "file": "keyframe_00156_t6.50s.png"
+    },
+    {
+      "frame_index": 168,
+      "time_sec": 7.0,
+      "scene_id": "walk",
+      "pose_id": "walk_3->walk_4",
+      "expression": "normal",
+      "file": "keyframe_00168_t7.00s.png"
+    },
+    {
+      "frame_index": 180,
+      "time_sec": 7.5,
+      "scene_id": "walk",
+      "pose_id": "walk_3->walk_4",
+      "expression": "normal",
+      "file": "keyframe_00180_t7.50s.png"
+    },
+    {
+      "frame_index": 191,
+      "time_sec": 7.958,
+      "scene_id": "walk",
+      "pose_id": "walk_3->walk_4",
+      "expression": "normal",
+      "file": "keyframe_00191_t7.96s.png"
+    }
+  ],
+  "continuous_samples_count": 15
+}

@@ -1,0 +1,260 @@
+.FFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+____________ test_approved_plan_to_real_adapter_project_spec[hold] _____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c3a2e90>, <ttakkari.creative.service.Studio object at 0x10c3a3110>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_approved_plan_to_real_ada1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1e7a80>
+mode = 'hold'
+
+    @pytest.mark.parametrize("mode", [None, "hold", "linear"])
+    def test_approved_plan_to_real_adapter_project_spec(stores, tmp_path, monkeypatch, mode):
+        plans, _ = stores
+>       plan = approved(plans, director=selected(mode))
+                                        ^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_interpolation_bridge.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+mode = 'hold'
+
+    def selected(mode=None):
+        raw = direction(("frame_animation_2d", "slideshow", "slideshow"))
+        if mode is not None:
+            raw["scenes"][0]["interpolation_mode"] = mode
+>       return ProductionDirection.model_validate(raw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ProductionDirection
+E       scenes.0.interpolation_mode
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='hold', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+unit_tests/test_creative_v2_interpolation_bridge.py:24: ValidationError
+___________ test_approved_plan_to_real_adapter_project_spec[linear] ____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c3a3890>, <ttakkari.creative.service.Studio object at 0x10c3a39d0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_approved_plan_to_real_ada2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c39f890>
+mode = 'linear'
+
+    @pytest.mark.parametrize("mode", [None, "hold", "linear"])
+    def test_approved_plan_to_real_adapter_project_spec(stores, tmp_path, monkeypatch, mode):
+        plans, _ = stores
+>       plan = approved(plans, director=selected(mode))
+                                        ^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_interpolation_bridge.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+mode = 'linear'
+
+    def selected(mode=None):
+        raw = direction(("frame_animation_2d", "slideshow", "slideshow"))
+        if mode is not None:
+            raw["scenes"][0]["interpolation_mode"] = mode
+>       return ProductionDirection.model_validate(raw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ProductionDirection
+E       scenes.0.interpolation_mode
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='linear', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+unit_tests/test_creative_v2_interpolation_bridge.py:24: ValidationError
+__________ test_mode_edit_changes_segment_key_and_requires_reapproval __________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c4ecfc0>, <ttakkari.creative.service.Studio object at 0x10c4ed0f0>)
+
+    def test_mode_edit_changes_segment_key_and_requires_reapproval(stores):
+        plans, _ = stores
+>       before = approved(plans, director=selected("hold"))
+                                          ^^^^^^^^^^^^^^^^
+
+unit_tests/test_creative_v2_interpolation_bridge.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+mode = 'hold'
+
+    def selected(mode=None):
+        raw = direction(("frame_animation_2d", "slideshow", "slideshow"))
+        if mode is not None:
+            raw["scenes"][0]["interpolation_mode"] = mode
+>       return ProductionDirection.model_validate(raw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ProductionDirection
+E       scenes.0.interpolation_mode
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='hold', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+unit_tests/test_creative_v2_interpolation_bridge.py:24: ValidationError
+___ test_unsupported_selection_is_rejected_at_plan_and_adapter[optical_flow] ___
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c505040>
+mode = 'optical_flow'
+
+    @pytest.mark.parametrize("mode", ["optical_flow", "", False, 5])
+    def test_unsupported_selection_is_rejected_at_plan_and_adapter(tmp_path, monkeypatch, mode):
+        with pytest.raises(ValueError, match="interpolation_mode"):
+            selected(mode)
+        called = []
+        monkeypatch.setattr(frame_animation.FrameAnimationRenderer, "render_project", lambda *a, **k: called.append(True))
+        with pytest.raises(ValueError, match="interpolation_mode"):
+>           frame_animation.ADAPTER.render_segment({"seconds": 8, "interpolation_mode": mode}, output_path=tmp_path / "bad.mp4")
+
+unit_tests/test_creative_v2_interpolation_bridge.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/frame_animation.py:328: in render_segment
+    with out_p.open("rb") as f:
+         ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_0/bad.mp4')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_0/bad.mp4'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+_________ test_unsupported_selection_is_rejected_at_plan_and_adapter[] _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5049e0>, mode = ''
+
+    @pytest.mark.parametrize("mode", ["optical_flow", "", False, 5])
+    def test_unsupported_selection_is_rejected_at_plan_and_adapter(tmp_path, monkeypatch, mode):
+        with pytest.raises(ValueError, match="interpolation_mode"):
+            selected(mode)
+        called = []
+        monkeypatch.setattr(frame_animation.FrameAnimationRenderer, "render_project", lambda *a, **k: called.append(True))
+        with pytest.raises(ValueError, match="interpolation_mode"):
+>           frame_animation.ADAPTER.render_segment({"seconds": 8, "interpolation_mode": mode}, output_path=tmp_path / "bad.mp4")
+
+unit_tests/test_creative_v2_interpolation_bridge.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/frame_animation.py:328: in render_segment
+    with out_p.open("rb") as f:
+         ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_1/bad.mp4')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_1/bad.mp4'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+______ test_unsupported_selection_is_rejected_at_plan_and_adapter[False] _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c4bd450>
+mode = False
+
+    @pytest.mark.parametrize("mode", ["optical_flow", "", False, 5])
+    def test_unsupported_selection_is_rejected_at_plan_and_adapter(tmp_path, monkeypatch, mode):
+        with pytest.raises(ValueError, match="interpolation_mode"):
+            selected(mode)
+        called = []
+        monkeypatch.setattr(frame_animation.FrameAnimationRenderer, "render_project", lambda *a, **k: called.append(True))
+        with pytest.raises(ValueError, match="interpolation_mode"):
+>           frame_animation.ADAPTER.render_segment({"seconds": 8, "interpolation_mode": mode}, output_path=tmp_path / "bad.mp4")
+
+unit_tests/test_creative_v2_interpolation_bridge.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/frame_animation.py:328: in render_segment
+    with out_p.open("rb") as f:
+         ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_2/bad.mp4')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_2/bad.mp4'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+________ test_unsupported_selection_is_rejected_at_plan_and_adapter[5] _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c4bc450>, mode = 5
+
+    @pytest.mark.parametrize("mode", ["optical_flow", "", False, 5])
+    def test_unsupported_selection_is_rejected_at_plan_and_adapter(tmp_path, monkeypatch, mode):
+        with pytest.raises(ValueError, match="interpolation_mode"):
+            selected(mode)
+        called = []
+        monkeypatch.setattr(frame_animation.FrameAnimationRenderer, "render_project", lambda *a, **k: called.append(True))
+        with pytest.raises(ValueError, match="interpolation_mode"):
+>           frame_animation.ADAPTER.render_segment({"seconds": 8, "interpolation_mode": mode}, output_path=tmp_path / "bad.mp4")
+
+unit_tests/test_creative_v2_interpolation_bridge.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/creative/v2/frame_animation.py:328: in render_segment
+    with out_p.open("rb") as f:
+         ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_3/bad.mp4')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6893/test_unsupported_selection_is_3/bad.mp4'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+__________________ test_linear_on_non_b_strategy_is_rejected ___________________
+
+    def test_linear_on_non_b_strategy_is_rejected():
+        raw = direction(("slideshow",) * 3)
+        raw["scenes"][0]["interpolation_mode"] = "linear"
+>       with pytest.raises(ValueError, match="frame_animation_2d"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'frame_animation_2d'
+E         Actual message: "1 validation error for ProductionDirection\nscenes.0.interpolation_mode\n  Extra inputs are not permitted [type=extra_forbidden, input_value='linear', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden"
+
+unit_tests/test_creative_v2_interpolation_bridge.py:85: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_approved_plan_to_real_adapter_project_spec[hold]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_approved_plan_to_real_adapter_project_spec[linear]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_mode_edit_changes_segment_key_and_requires_reapproval
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_unsupported_selection_is_rejected_at_plan_and_adapter[optical_flow]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_unsupported_selection_is_rejected_at_plan_and_adapter[]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_unsupported_selection_is_rejected_at_plan_and_adapter[False]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_unsupported_selection_is_rejected_at_plan_and_adapter[5]
+FAILED unit_tests/test_creative_v2_interpolation_bridge.py::test_linear_on_non_b_strategy_is_rejected
+8 failed, 1 passed in 0.57s

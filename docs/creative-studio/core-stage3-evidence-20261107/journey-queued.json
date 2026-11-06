@@ -1,0 +1,11 @@
+{
+  "id": "1fe97a7b-59e1-402c-88d3-d9f77c53ddb8",
+  "key": "28f67e32722a1bf7b0ed85b4d530be024826a4b4cd193d8f56ba7001c3739d1c",
+  "revision": 2,
+  "plan_sha256": "02e1216f37d86dfc3ec901a5a9578bf3aaed8123e903a4780f67f6d9616aacba",
+  "assets_sha256": "79abdadf87141ff98b5228554ea155657c252accaf2a6dd7ffe0b996dd584747",
+  "status": "queued",
+  "requested_at": "2026-11-06T16:52:00.044198+00:00",
+  "error": null,
+  "cancel_policy": "queued_only; running cancellation is refused"
+}

@@ -38,7 +38,7 @@ async def run_asset_generation(
     return None
 
 
-async def consume_once(*, plans: PlanStore | None = None, generator=None) -> bool:
+async def consume_once(*, plans: PlanStore | None = None, generator=None, studio=None) -> bool:
     """가장 오래된 대기 요청 하나를 끝까지 실행한다. 실행했거나 실패로 닫았으면 True, 할 일이 없으면 False."""
     if queued_work.draining():
         return False
@@ -65,4 +65,5 @@ async def consume_once(*, plans: PlanStore | None = None, generator=None) -> boo
             refused or "자산 생성을 시작하지 못했습니다.",
         )
         return True
-    return False
+    from ttakkari.creative.v2 import render_worker
+    return await render_worker.consume_once(plans=plans, studio=studio)

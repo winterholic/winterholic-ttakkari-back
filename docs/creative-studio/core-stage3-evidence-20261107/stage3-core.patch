@@ -1,0 +1,256 @@
+--- before/src/ttakkari/creative/v2/dispatch.py
++++ after/src/ttakkari/creative/v2/dispatch.py
+@@ -124,7 +124,7 @@
+     return reviews
+ 
+ 
+-def dispatch_blockers(plan: dict[str, Any]) -> list[str]:
++def dispatch_blockers(plan: dict[str, Any], *, runtime_preflight: bool = True) -> list[str]:
+     """이 계획을 엔진으로 보낼 수 없는 이유. 비어 있으면 보낼 수 있다."""
+     reasons = [f"{review['engine']}: {review['reason']}" for review in producer_style_reviews(plan)
+                if review["status"] == "invalid"]
+@@ -143,7 +143,7 @@
+             + ", ".join(sorted(providers))
+         )
+         return reasons
+-    pre = adapter.preflight()
++    pre = adapter.preflight() if runtime_preflight else engines.Preflight(True, "deferred_executor", [])
+     reasons += [f"필수 의존성 없음: {m}" for m in pre.missing]
+     if not pre.ok and not pre.missing:
+         reasons.append(f"{adapter.id}: preflight failed without dependency details")
+@@ -160,7 +160,7 @@
+             if selected is None:
+                 reasons.append(f"엔진 어댑터가 없습니다: {scenes[0]['selected_engine']}")
+                 continue
+-            checked = selected.preflight()
++            checked = selected.preflight() if runtime_preflight else engines.Preflight(True, "deferred_executor", [])
+             if not checked.ok:
+                 reasons.append(f"{selected.id}: preflight failed: " + ", ".join(checked.missing))
+             validate = getattr(selected, "validate_spec", None)
+@@ -872,7 +872,8 @@
+     plan = plans.assert_renderable(plan_id, revision)
+     if caption_mode not in {"narration", "title_only"}:
+         raise ProductionError("caption_mode는 narration 또는 title_only여야 합니다.")
+-    blockers = dispatch_blockers(plan)
++    deferred = bool(plan.get("director") and queued_work.delegated())
++    blockers = dispatch_blockers(plan, runtime_preflight=not deferred)
+     if blockers:
+         raise ProductionError("디스패치할 수 없습니다: " + " / ".join(blockers))
+     adapter = engines.adapter_for(_providers(plan))
+@@ -881,7 +882,7 @@
+     with store.tx(plan_id) as data:
+         existing = _record(data, revision)
+         if existing is None:
+-            data["dispatches"].append(_new_record(plan, adapter, adapter.preflight(), caption_mode))
++            data["dispatches"].append(_new_record(plan, adapter, engines.Preflight(True, "deferred_executor", []) if deferred else adapter.preflight(), caption_mode))
+         view_ = _compose(plans, studio, plan, data, store)
+     if existing is not None and existing.get("caption_mode", "narration") != caption_mode:
+         # revision당 한 번만 디스패치되므로 뒤늦은 모드 요청은 적용되지 않는다. 조용히 무시하지 않고 알린다.
+@@ -1137,6 +1138,7 @@
+         "plan_id": plan["id"],
+         "plan_revision": plan["revision"],
+         "producer_style_reviews": producer_style_reviews(plan),
++        "render_request": deepcopy(record.get("render_request")) if record else None,
+         "caption_mode": record.get("caption_mode") if record else None,
+         "caption_timing": record.get("caption_timing") if record else None,
+         "caption_sources": record.get("caption_sources") if record else None,
+@@ -1169,7 +1171,7 @@
+         ],
+     }
+     if record is None:
+-        reasons = dispatch_blockers(plan)
++        reasons = dispatch_blockers(plan, runtime_preflight=not bool(plan.get("director") and queued_work.delegated()))
+         return base | {
+             "state": "stale_revision" if data["dispatches"] else "not_dispatched",
+             "dispatchable": not reasons,
+@@ -1221,6 +1223,9 @@
+             reasons.append(assets["music_problem"])
+     else:
+         state = "ready_to_render"
++    request = record.get("render_request") or {}
++    if not final and request.get("status") in {"queued", "running"}:
++        state = "queued" if request["status"] == "queued" else "rendering"
+     return base | {
+         "state": state,
+         "quality_report": record.get("quality_report"),
+--- before/src/ttakkari/creative/v2/planner.py
++++ after/src/ttakkari/creative/v2/planner.py
+@@ -47,11 +47,17 @@
+         return self
+ 
+ 
++class StrategyAlternative(Strict):
++    strategy: Strategy
++    rationale: str = Field(min_length=1, max_length=1500)
++
++
+ class SceneDirection(Strict):
+     scene_id: str = Field(min_length=1, max_length=50)
+     strategy: Strategy
+     preset: Literal["walk_cycle", "crystal_orbit", "kafka_flow"] | None = None
+     rationale: str = Field(min_length=1, max_length=1500)
++    alternatives: list[StrategyAlternative] = Field(default_factory=list, max_length=5)
+     shots: list[ShotDirection] = Field(min_length=1, max_length=1)
+ 
+ 
+@@ -59,6 +65,8 @@
+     source: Literal["llm", "user_structured"]
+     model: str | None = Field(default=None, max_length=120)
+     reviewed: bool = False
++    run_id: str | None = None
++    output_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+     intent: str = Field(min_length=1, max_length=3000)
+     domain_knowledge: list[str] = Field(default_factory=list, max_length=30)
+     scenes: list[SceneDirection] = Field(min_length=1, max_length=400)
+@@ -96,6 +104,10 @@
+             for strategy, eid in ENGINE_IDS.items()
+             if strategy != selected.strategy
+         ]
++        if selected.alternatives:
++            alternatives = [{"strategy": a.strategy, "engine": ENGINE_IDS[a.strategy],
++                             "reason": a.rationale, "scope": SURFACES[a.strategy], "automatic": False}
++                            for a in selected.alternatives]
+         estimates = {
+             "measured": False,
+             "cost": "no new paid purchase; generation cost not estimated",
+--- before/src/ttakkari/creative/v2/asset_worker.py
++++ after/src/ttakkari/creative/v2/asset_worker.py
+@@ -38,7 +38,7 @@
+     return None
+ 
+ 
+-async def consume_once(*, plans: PlanStore | None = None, generator=None) -> bool:
++async def consume_once(*, plans: PlanStore | None = None, generator=None, studio=None) -> bool:
+     """가장 오래된 대기 요청 하나를 끝까지 실행한다. 실행했거나 실패로 닫았으면 True, 할 일이 없으면 False."""
+     if queued_work.draining():
+         return False
+@@ -65,4 +65,5 @@
+             refused or "자산 생성을 시작하지 못했습니다.",
+         )
+         return True
+-    return False
++    from ttakkari.creative.v2 import render_worker
++    return await render_worker.consume_once(plans=plans, studio=studio)
+--- before/src/ttakkari/api/creative_v2.py
++++ after/src/ttakkari/api/creative_v2.py
+@@ -13,7 +13,7 @@
+ from urllib.parse import urlencode
+ 
+ import jwt
+-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
++from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+ from fastapi import Path as PathParam
+ from fastapi.responses import FileResponse, JSONResponse
+ from pydantic import Field
+@@ -22,7 +22,13 @@
+ from ttakkari.api.creative import _normalize, perform
+ from ttakkari.api.deps import Db
+ from ttakkari.creative.service import default_studio
+-from ttakkari.creative.v2 import asset_generation, asset_worker, production_review
++from ttakkari.creative.v2 import (
++    asset_generation,
++    asset_worker,
++    production_review,
++    render_worker,
++    storyboard_runs,
++)
+ from ttakkari.creative.v2 import dispatch as production
+ from ttakkari.creative.v2.asset_generation_managed import ManagedAssetGenerator
+ from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
+@@ -50,6 +56,7 @@
+     resume_intent_run,
+     start_intent_run,
+ )
++from ttakkari.creative.v2.storyboard import Storyboard, StoryboardRequest
+ from ttakkari.creative.v2.style_dna import (
+     Resolution,
+     StyleDNADoc,
+@@ -108,6 +115,10 @@
+ 
+ class PlanApprove(Strict):
+     revision: int = Field(ge=1)
++
++
++class RenderEnqueueInput(PlanApprove):
++    retry: bool = False
+ 
+ 
+ class ComposeInput(Strict):
+@@ -389,7 +400,13 @@
+ 
+ 
+ @router.post("/plans/{pid}/production/render", status_code=202)
+-async def production_render(pid: PlanId, body: PlanApprove, _: User):
++async def production_render(pid: PlanId, body: RenderEnqueueInput, _: User):
++    plans = default_plan_store()
++    if queued_work.delegated() and perform(plans.get, str(pid)).get("director"):
++        request = await asyncio.to_thread(perform, render_worker.enqueue, plans, str(pid), body.revision, retry=body.retry)
++        if request["status"] == "blocked":
++            return JSONResponse({"code": "executor_surface_blocked", **request}, status_code=422)
++        return await asyncio.to_thread(perform, production.view, plans, default_studio(), str(pid))
+     return await asyncio.to_thread(
+         perform,
+         production.request_render,
+@@ -476,6 +493,62 @@
+         raise HTTPException(403, "결과가 변경됐습니다. 재생 주소를 다시 발급해 주세요.")
+     return FileResponse(path, filename=name, content_disposition_type="attachment" if download else "inline",
+                         headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
++
++
++@router.post("/plans/{pid}/production/render/cancel")
++async def production_render_cancel(pid: PlanId, body: PlanApprove, _: User):
++    return await asyncio.to_thread(perform, render_worker.cancel, default_plan_store(), str(pid), body.revision)
++
++
++@router.get("/storyboard/contract")
++async def storyboard_contract(_: User):
++    return {"request_schema": StoryboardRequest.model_json_schema(), "output_schema": Storyboard.model_json_schema(),
++            "review_required": True, "approval_required_after_accept": True}
++
++
++@router.post("/storyboard/runs", status_code=202)
++async def storyboard_start(body: StoryboardRequest, _: User, db: Db,
++    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None):
++    return await storyboard_runs.start(db, body, request_key=request_key)
++
++
++@router.get("/storyboard/runs/{run_id}")
++async def storyboard_read(run_id: uuid.UUID, _: User, db: Db):
++    return await storyboard_runs.read(db, run_id)
++
++
++@router.post("/storyboard/runs/{run_id}/resume", status_code=202)
++async def storyboard_resume(run_id: uuid.UUID, _: User, db: Db,
++    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None):
++    return await storyboard_runs.resume(db, run_id, request_key=request_key)
++
++
++@router.post("/storyboard/runs/{run_id}/cancel")
++async def storyboard_cancel(run_id: uuid.UUID, user: User, db: Db, request: Request):
++    from ttakkari.api.sessions import cancel_run
++    await storyboard_runs.assert_owned_run(db, run_id)
++    return await cancel_run(run_id, user, db, request)
++
++
++@router.post("/storyboard/runs/{run_id}/adopt")
++async def storyboard_adopt(run_id: uuid.UUID, body: StoryboardRequest, _: User, db: Db):
++    return await storyboard_runs.adopt(db, run_id, body)
++
++
++class StoryboardAccept(Strict):
++    reviewed_output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
++    plan_id: uuid.UUID | None = None
++    revision: int | None = Field(default=None, ge=1)
++
++
++@router.post("/storyboard/runs/{run_id}/accept")
++async def storyboard_accept(run_id: uuid.UUID, body: StoryboardAccept, _: User, db: Db):
++    try:
++        return await storyboard_runs.accept(db, default_plan_store(), run_id,
++            reviewed_output_sha256=body.reviewed_output_sha256,
++            plan_id=str(body.plan_id) if body.plan_id else None, revision=body.revision)
++    except ValueError as exc:
++        raise HTTPException(422, str(exc)) from exc
+ 
+ 
+ async def _run_asset_generation(plan_id: str, revision: int) -> None:

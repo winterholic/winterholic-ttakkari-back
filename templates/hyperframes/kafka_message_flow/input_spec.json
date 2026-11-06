@@ -1,0 +1,45 @@
+{
+  "plan_id": "benchmark-a-kafka-20261107",
+  "revision": 1,
+  "segment_id": "kafka-message-flow-01",
+  "aspect": "16:9",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "seconds": 16,
+  "title": "Kafka: From Event to Consumer · 이벤트에서 컨슈머까지",
+  "caption_mode": "bilingual",
+  "style": {
+    "theme": "dark",
+    "animation": "technical",
+    "transition": "cut",
+    "caption_style": "bottom_card"
+  },
+  "music_path": null,
+  "scenes": [
+    {
+      "scene_id": "producer",
+      "title": "01 · Key selects a partition · 키가 파티션을 선택",
+      "narration": "The producer hashes the record key to choose a partition. 프로듀서는 레코드 키를 해시해 파티션을 선택합니다.",
+      "start_time": 0,
+      "end_time": 5.1,
+      "caption": "Key hash → Partition"
+    },
+    {
+      "scene_id": "broker",
+      "title": "02 · Broker appends the record · 브로커가 레코드를 기록",
+      "narration": "The partition leader appends the record; replicas follow according to the topic policy. 파티션 리더가 레코드를 추가하고 복제본은 토픽 정책에 따라 뒤따릅니다.",
+      "start_time": 5.1,
+      "end_time": 10.5,
+      "caption": "Leader log → Replicas"
+    },
+    {
+      "scene_id": "consumer",
+      "title": "03 · Consumer advances its offset · 컨슈머가 오프셋을 전진",
+      "narration": "A consumer in the group reads its assigned partition and commits progress. 그룹의 컨슈머가 할당된 파티션을 읽고 진행 위치를 커밋합니다.",
+      "start_time": 10.5,
+      "end_time": 16,
+      "caption": "Read → Process → Commit"
+    }
+  ]
+}

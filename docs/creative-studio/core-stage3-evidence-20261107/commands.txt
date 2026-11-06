@@ -1,0 +1,9 @@
+RED: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest unit_tests/test_creative_v2_stage3.py -q
+# 10 failed in 0.51s (new modules absent)
+REGRESSION: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest unit_tests/test_creative_v2_stage3.py unit_tests/test_creative_v2_asset_queue.py -q
+# 1 failed, 37 passed in 4.18s; restored existing asset-consumer admission, then 38 passed in 4.22s
+FINAL: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest unit_tests/test_creative_v2_stage3.py -q
+# 19 passed in 3.34s (includes final timeout failure recording guard)
+ACTUAL: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run python /Volumes/Backup/ttakkari-data/outbox/7951dc2c-3e7c-4e53-9503-2df8a28ce696/stage3/run_actual_journey.py
+# real Run 90bddc9c -> approved plan 501a5af3 rev2 -> consumer succeeded, duplicate consume=False
+# final SHA 9545d35f1b747e08c8df292e71ca7630e93b3503b81bee32f0f4a2bad797e3cd

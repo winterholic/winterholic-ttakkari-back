@@ -1,0 +1,18 @@
+{
+  "src/ttakkari/creative/v2/matching.py": {
+    "deployed_git_blob_available": true,
+    "local_sha256": "bb1a84743ec50746dc801f7f352c3866878d36f312239867b10b423fe931540a",
+    "deployed_commit_blob_sha256": "bb1a84743ec50746dc801f7f352c3866878d36f312239867b10b423fe931540a",
+    "matches_local": true
+  },
+  "src/ttakkari/creative/v2/registry_data.py": {
+    "deployed_git_blob_available": true,
+    "local_sha256": "9b97b2ac27a1a560f7c89c4f01b497adca9ec72b5ce06f34c7b0acf09fb2d5e5",
+    "deployed_commit_blob_sha256": "9b97b2ac27a1a560f7c89c4f01b497adca9ec72b5ce06f34c7b0acf09fb2d5e5",
+    "matches_local": true
+  },
+  "src/ttakkari/creative/v2/storyboard.py": {
+    "deployed_git_blob_available": false,
+    "local_sha256": "917f8d3f4c2d9edb0e22e2d119c9ca48c9b108399c3db448d21192d951521d7a"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "command": [
+    "ttk",
+    "get",
+    "/api/creative/v2/storyboard/contract"
+  ],
+  "environment": "deployed backend via existing owner CLI",
+  "returncode": 1,
+  "stdout": "{\"detail\":\"Not Found\"}\n",
+  "stderr": "[HTTP 404]\n"
+}

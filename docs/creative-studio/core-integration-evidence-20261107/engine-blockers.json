@@ -1,0 +1,137 @@
+{
+  "environment": "Codex command sandbox on user's Mac Studio; not deployed backend",
+  "head": "439472b3bc4665edc04ad1d7fa8ad1a9684a47b4",
+  "input_sha256": {
+    "src/ttakkari/creative/v2/engines.py": "bc895f322d91ba4eedb434b2d1e7109644586a392b37ef22074b3ad3483d14cc",
+    "src/ttakkari/creative/v2/dispatch.py": "2745e73f86467fecbd6175b79fdbe3d760a3bdb441c0024c964e56d73cc7ecde",
+    "src/ttakkari/creative/v2/plans.py": "f54a41e0ba1d458d3a21db3011912200422991fe7ee706d0d4074d954a4e80a6",
+    "src/ttakkari/creative/v2/planner.py": "ee870494d0adc87eb2c7c1eedd5c71199197ce6209c6aeab9dd3395f9e35758d",
+    "src/ttakkari/creative/v2/asset_generation.py": "04a22c0680b5eb58a6085c0e2ae0b7fbc1fe8eb6915506f05a04396d2515356c",
+    "src/ttakkari/creative/v2/asset_generation_managed.py": "279f24f3ff66fcf904bfe2fd56c670d63227916c2e85169e0034b45a1210413f",
+    "src/ttakkari/creative/v2/frame_animation.py": "942e97736afc2b8267ade3ad3f42c8ae0e634cb4ecc0ab57e334879276c60bb6",
+    "src/ttakkari/creative/v2/scene_3d.py": "20f6e2a909f8aa9f33a30beff58bd615ee93019c1efc7b987c6c8ad12254ce98",
+    "src/ttakkari/creative/v2/hyperframes.py": "ca91a3866a7de5b131ff1f9210a8f3ba3ddee4b1b308511940e06812e161709f",
+    "src/ttakkari/creative/v2/quality.py": "fa02f91aae7582217dc42577920cce42b2bd494392cf02319b4385d237197a81"
+  },
+  "adapters": [
+    "skill.v1_ffmpeg_slideshow",
+    "skill.comfy_video_renderer",
+    "skill.hyperframes",
+    "skill.frame_animation_2d",
+    "skill.studio-3d-cinematic"
+  ],
+  "catalogs": 12,
+  "catalog_entries": 166,
+  "recipes": [
+    {
+      "id": "R01",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R02",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R03",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R04",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R05",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R06",
+      "verdict": "capabilities_executed"
+    },
+    {
+      "id": "R07",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R08",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R09",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R10",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R11",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R12",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R13",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R14",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R15",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R16",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R17",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R18",
+      "verdict": "unverified"
+    },
+    {
+      "id": "R19",
+      "verdict": "recipe_demonstrated"
+    },
+    {
+      "id": "R20",
+      "verdict": "blocked"
+    },
+    {
+      "id": "R21",
+      "verdict": "studio_executable"
+    }
+  ],
+  "engine_dispatch": [
+    {
+      "strategy": "code_motion",
+      "preset": "kafka_flow",
+      "plan_id": "bc1293f5-7ee0-4920-bb32-536fa88a5b3b",
+      "render_gate": true,
+      "result": {
+        "state": "blocked",
+        "reason": "디스패치할 수 없습니다: skill.hyperframes: preflight failed: HyperFrames render_segment browser IPC blocked; no browser launched"
+      },
+      "dispatch_records": 0,
+      "studio_projects": 0
+    },
+    {
+      "strategy": "scene_3d",
+      "preset": "crystal_orbit",
+      "plan_id": "d39ad6f8-10fa-40e1-ae21-d9c9fab30ecc",
+      "render_gate": true,
+      "result": {
+        "state": "blocked",
+        "reason": "디스패치할 수 없습니다: skill.studio-3d-cinematic: preflight failed: Blender 실행 확인 실패: ArchWarn: ARCH_CACHE_LINE_SIZE != Arch_ObtainCacheLineSize()\n Function: Arch_ValidateAssumptions\n     File: /Users/jonas/blender-dev/build_darwin/deps_arm64/build/usd/src/external_usd/pxr/base/arch/assumptions.cpp\n     Line: 140, scene_3d: Blender import/version check failed or bpy runtime missing; no render attempted / skill.studio-3d-cinematic: preflight failed: Blender 실행 확인 실패: ArchWarn: ARCH_CACHE_LINE_SIZE != Arch_ObtainCacheLineSize()\n Function: Arch_ValidateAssumptions\n     File: /Users/jonas/blender-dev/build_darwin/deps_arm64/build/usd/src/external_usd/pxr/base/arch/assumptions.cpp\n     Line: 140, scene_3d: Blender import/version check failed or bpy runtime missing; no render attempted / skill.studio-3d-cinematic: preflight failed: Blender 실행 확인 실패: ArchWarn: ARCH_CACHE_LINE_SIZE != Arch_ObtainCacheLineSize()\n Function: Arch_ValidateAssumptions\n     File: /Users/jonas/blender-dev/build_darwin/deps_arm64/build/usd/src/external_usd/pxr/base/arch/assumptions.cpp\n     Line: 140, scene_3d: Blender import/version check failed or bpy runtime missing; no render attempted"
+      },
+      "dispatch_records": 0,
+      "studio_projects": 0
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+{
+  "project_id": "benchmark_b_mascot_2d",
+  "title": "Benchmark-B Run 2 (Remediated Final)",
+  "target_duration": 10.0,
+  "production_fps": 12,
+  "playback_fps": 24,
+  "interpolation_mode": "hold",
+  "interpolation_reason": "2D 셀 애니메이션 고유의 스냅과 리듬감을 온전히 보존하고, Optical Flow/AI 프레임 보간 시 발생하는 캐릭터 외곽선 번짐(ghosting) 및 젤리 왜곡을 방지하기 위해 hold 선택",
+  "total_frames_rendered": 240,
+  "output_mp4": "/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/outbox/benchmark_b_work/corrected_20261107/run_02_remediated/ttakkari_2d_animation_final.mp4",
+  "qa": {
+    "passed": true,
+    "checks": [
+      {
+        "id": "video_track",
+        "passed": true,
+        "detail": "영상 트랙",
+        "measured": true
+      },
+      {
+        "id": "audio_track",
+        "passed": true,
+        "detail": "오디오 트랙",
+        "measured": true
+      },
+      {
+        "id": "resolution",
+        "passed": true,
+        "detail": "기대 1280x720",
+        "measured": "1280x720"
+      },
+      {
+        "id": "duration",
+        "passed": true,
+        "detail": "계획 10초 ±0.4초",
+        "measured": 10.0
+      },
+      {
+        "id": "not_black",
+        "passed": true,
+        "detail": "검은 화면 비율 90% 미만",
+        "measured": 0.0
+      },
+      {
+        "id": "audible",
+        "passed": true,
+        "detail": "오디오 최대 음량 -60 dB 초과",
+        "measured": {
+          "mean_db": -14.5,
+          "max_db": -1.7
+        }
+      }
+    ],
+    "probe": {
+      "duration": 10.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 24.0,
+      "has_video": true,
+      "has_audio": true
+    }
+  },
+  "motion_eval": {
+    "same_source_layer_assets_reused": true,
+    "identity_comparison": "not_performed",
+    "motion_continuity_score": null,
+    "motion_continuity_rating": "not_evaluated",
+    "average_displacement_per_prod_frame": 4.82,
+    "max_displacement_per_prod_frame": 115.01,
+    "total_production_frames_calculated": 120,
+    "teleport_threshold_px": 120.0,
+    "teleport_glitch_detected": false,
+    "evaluation_verdict": "NOT_RATED: 변위 통계만 계산했으며 지각 품질 평가는 수행하지 않음"
+  },
+  "sampled_keyframes": [
+    {
+      "frame_index": 0,
+      "time_sec": 0.0,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_0",
+      "expression": "normal",
+      "file": "keyframe_00000_t0.00s.png"
+    },
+    {
+      "frame_index": 12,
+      "time_sec": 0.5,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_0",
+      "expression": "normal",
+      "file": "keyframe_00012_t0.50s.png"
+    },
+    {
+      "frame_index": 24,
+      "time_sec": 1.0,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_1",
+      "expression": "normal",
+      "file": "keyframe_00024_t1.00s.png"
+    },
+    {
+      "frame_index": 36,
+      "time_sec": 1.5,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_1",
+      "expression": "normal",
+      "file": "keyframe_00036_t1.50s.png"
+    },
+    {
+      "frame_index": 48,
+      "time_sec": 2.0,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_2",
+      "expression": "normal",
+      "file": "keyframe_00048_t2.00s.png"
+    },
+    {
+      "frame_index": 60,
+      "time_sec": 2.5,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_2",
+      "expression": "normal",
+      "file": "keyframe_00060_t2.50s.png"
+    },
+    {
+      "frame_index": 72,
+      "time_sec": 3.0,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_3",
+      "expression": "normal",
+      "file": "keyframe_00072_t3.00s.png"
+    },
+    {
+      "frame_index": 84,
+      "time_sec": 3.5,
+      "scene_id": "scene_01_walk",
+      "pose_id": "walk_3",
+      "expression": "normal",
+      "file": "keyframe_00084_t3.50s.png"
+    },
+    {
+      "frame_index": 96,
+      "time_sec": 4.0,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_start",
+      "expression": "smile",
+      "file": "keyframe_00096_t4.00s.png"
+    },
+    {
+      "frame_index": 108,
+      "time_sec": 4.5,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_up",
+      "expression": "smile",
+      "file": "keyframe_00108_t4.50s.png"
+    },
+    {
+      "frame_index": 120,
+      "time_sec": 5.0,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_swing_1",
+      "expression": "smile",
+      "file": "keyframe_00120_t5.00s.png"
+    },
+    {
+      "frame_index": 132,
+      "time_sec": 5.5,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_swing_2",
+      "expression": "smile",
+      "file": "keyframe_00132_t5.50s.png"
+    },
+    {
+      "frame_index": 144,
+      "time_sec": 6.0,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_swing_3",
+      "expression": "smile",
+      "file": "keyframe_00144_t6.00s.png"
+    },
+    {
+      "frame_index": 156,
+      "time_sec": 6.5,
+      "scene_id": "scene_02_wave",
+      "pose_id": "wave_swing_4",
+      "expression": "wink",
+      "file": "keyframe_00156_t6.50s.png"
+    },
+    {
+      "frame_index": 168,
+      "time_sec": 7.0,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_anticipation",
+      "expression": "normal",
+      "file": "keyframe_00168_t7.00s.png"
+    },
+    {
+      "frame_index": 180,
+      "time_sec": 7.5,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_anticipation",
+      "expression": "normal",
+      "file": "keyframe_00180_t7.50s.png"
+    },
+    {
+      "frame_index": 192,
+      "time_sec": 8.0,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_peak",
+      "expression": "smile",
+      "file": "keyframe_00192_t8.00s.png"
+    },
+    {
+      "frame_index": 204,
+      "time_sec": 8.5,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_float",
+      "expression": "smile",
+      "file": "keyframe_00204_t8.50s.png"
+    },
+    {
+      "frame_index": 216,
+      "time_sec": 9.0,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_float",
+      "expression": "smile",
+      "file": "keyframe_00216_t9.00s.png"
+    },
+    {
+      "frame_index": 228,
+      "time_sec": 9.5,
+      "scene_id": "scene_03_jump",
+      "pose_id": "jump_landing",
+      "expression": "smile",
+      "file": "keyframe_00228_t9.50s.png"
+    }
+  ],
+  "continuous_samples_count": 8
+}

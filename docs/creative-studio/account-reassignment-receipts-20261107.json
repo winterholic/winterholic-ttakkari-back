@@ -1,0 +1,35 @@
+{
+  "observed_at": "2026-11-06T15:29:16.835125+00:00",
+  "runs": [
+    {
+      "id": "62b89b5b-23cb-4b71-8858-06ed027e1ba7",
+      "session_id": "d93c9153-076c-4479-9a65-3b61de244221",
+      "status": "running",
+      "engine": "codex",
+      "model": "gpt-6.1-sol",
+      "profile": "회사 코덱스 ai2 (ai2@hyperez.io)",
+      "started_at": "2026-11-06T15:24:16.460630Z",
+      "error": null
+    },
+    {
+      "id": "5286b1cd-187b-4743-97a1-4e3f79cc4d89",
+      "session_id": "2c0d1e6d-e525-4396-9339-fa3e7b03b062",
+      "status": "running",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "profile": "회사 코덱스 ai2 (ai2@hyperez.io)",
+      "started_at": "2026-11-06T15:23:18.008145Z",
+      "error": null
+    },
+    {
+      "id": "d525012b-f07e-4477-b123-d975c3f266f3",
+      "session_id": "b1cce81e-2a67-4477-aa90-c4c81e31be91",
+      "status": "queued",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "profile": null,
+      "started_at": null,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "run_id": "run_01_initial",
+  "defect_type": "joint_separation_gap_and_abrupt_arm_offset",
+  "description": "초기 프레임에서 어깨 연결부 틈새가 있다고 제작 기록에 보고됨(약 8px 추정). 픽셀 측정 자료는 보존되지 않아 수치 독립 검증은 안 됨.",
+  "observed_frames": [
+    "frame_00096.png (t=4.0s)",
+    "frame_00120.png (t=5.0s)"
+  ],
+  "remediation_action": "어깨 조인트 Y 오프셋을 -36px에서 -24px로 변경. 수정 전후 픽셀 차이 측정은 미실행."
+}

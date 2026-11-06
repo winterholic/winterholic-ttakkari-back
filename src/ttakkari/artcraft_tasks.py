@@ -495,7 +495,7 @@ async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
 NOTE = """\
 [ArtCraft 작업 지침] 범주: {category}. 연결된 앱 MCP 서버: {servers}.
 - 작업 폴더: {base}  (in/ 입력 복사본, prev/ 이전 결과 복사본, work/ 중간 파일, out/ 최종 결과). 앱 도구는 이 폴더 안의 파일만 읽고 쓰게 설정돼 있다.
-- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 아래에 저장한 결과는 자동 수집되므로 share_file 을 호출하지 않는다(자동 수집과 중복 등록될 수 있음). share_file 은 대화에 파일을 공유할 때 쓰고, keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구다.
+- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 반드시 {out} 아래에 의미 있는 이름(예: report-v2.docx)으로 저장한다. work/ 나 작업 폴더 루트에만 둔 파일은 자동 수집되지 않는다. {out} 아래에 저장한 결과는 자동 수집되므로 결과 파일에 share_file 을 호출하지 않는다(자동 수집과 중복 등록될 수 있음). share_file 은 대화에 파일을 공유할 때 쓰고, keep_artifact 는 사용자가 요청했을 때 보관함에 넣는 도구다.
 - 앱 MCP 도구가 안 보이거나 오류가 나면 즉시 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
 - CLI 명령어 호출 시 shell 환경변수나 명령어 치환($VAR, $(cmd), eval)을 쓰지 않고 전체 리터럴 인자를 직접 실행한다. sudo, bypass 등 하네스 보안 가드를 우회하지 않는다.
 - 끝내기 전에 결과가 0바이트가 아닌지 확인하고 렌더·info·text 등으로 직접 열어 본다(이미지는 PNG 로 렌더). 확인한 내용을 답에 한두 줄로 적고, 요구한 결과 파일을 만들지 못했으면 실패 이유를 솔직히 적는다.

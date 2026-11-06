@@ -330,6 +330,43 @@ async def test_create_commit_wins_same_app_update_race(client, auth, platform, m
     await client.post(f"/api/runs/{create_response.json()['rounds'][0]['id']}/cancel", headers=auth)
 
 
+async def test_add_round_commit_wins_same_app_update_race(client, auth, platform, monkeypatch):
+    import asyncio
+
+    from ttakkari import artcraft, artcraft_tasks
+
+    artcraft.update_state(lambda state: state.pop("updates", None))
+    task = await _finish(
+        client, auth, (await _task(client, auth, category="photo", prompt="기존 작업 완료")).json()
+    )
+    entered_round = asyncio.Event()
+    release_round = asyncio.Event()
+    real_add_round = artcraft_tasks.add_round
+
+    async def hold_add_round(db, *args, **kwargs):
+        entered_round.set()
+        await release_round.wait()
+        return await real_add_round(db, *args, **kwargs)
+
+    monkeypatch.setattr(artcraft_tasks, "add_round", hold_add_round)
+    round_request = asyncio.create_task(
+        client.post(f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "이어 만들기"}, headers=auth)
+    )
+    await asyncio.wait_for(entered_round.wait(), timeout=2)
+    update_request = asyncio.create_task(
+        client.post("/api/artcraft/apps/photocraft/update", json={"confirm": True}, headers=auth)
+    )
+    await asyncio.sleep(0.05)
+    release_round.set()
+
+    round_response, update_response = await asyncio.gather(round_request, update_request)
+
+    assert round_response.status_code == 202, round_response.text
+    assert update_response.status_code == 409, update_response.text
+    assert update_response.json()["code"] == "busy"
+    await client.post(f"/api/runs/{round_response.json()['rounds'][-1]['id']}/cancel", headers=auth)
+
+
 async def test_update_admission_rechecks_persisted_state_after_waiting_for_lock(monkeypatch):
     import contextlib
 
@@ -361,6 +398,7 @@ async def test_update_admission_rechecks_persisted_state_after_waiting_for_lock(
     assert exc.value.status == 409 and exc.value.code == "app_updating"
     assert not admitted
     assert lock_attempts == 2
+    artcraft.update_state(lambda state: state.pop("updates", None))
 
 
 async def test_update_api_commit_wins_same_app_task_race(client, auth, platform, monkeypatch):
@@ -511,6 +549,7 @@ async def test_foreign_generation_persisted_update_blocks_create_and_add_round(c
 
     from ttakkari import artcraft
 
+    artcraft.update_state(lambda state: state.pop("updates", None))
     task = await _finish(client, auth, (await _task(client, auth, category="photo", prompt="ART_OUT 제작 완료")).json())
     artcraft.update_state(lambda state: state.setdefault("updates", {}).update({
         "photocraft": {

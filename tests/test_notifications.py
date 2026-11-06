@@ -34,6 +34,8 @@ async def test_notification_saved_without_push_subscription(client, auth):
     (service.PushKind.deployment, "system"), (service.PushKind.test, "system"),
 ])
 async def test_categories(client, auth, kind, category):
+    if kind != service.PushKind.test:
+        assert (await client.patch("/api/notifications/preferences", json={"kind": kind.value, "enabled": True}, headers=auth)).status_code == 200
     await emit(kind)
     assert (await client.get(f"/api/notifications?category={category}", headers=auth)).json()["items"][0]["category"] == category
 

@@ -531,6 +531,8 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/notebooklm/notebooks/{notebook_id}"): "owner-scoped",
     ("GET", "/api/notebooklm/notebooks/{notebook_id}/sources"): "owner-scoped",
     ("GET", "/api/notifications"): "owner-plain",
+    ("GET", "/api/notifications/preferences"): "owner-plain",
+    ("PATCH", "/api/notifications/preferences"): "owner-plain",
     ("GET", "/api/ops-logs/deploys"): "owner-scoped",
     ("GET", "/api/ops-logs/deploys/{ref}/log"): "owner-scoped",
     ("GET", "/api/ops-logs/events"): "owner-scoped",

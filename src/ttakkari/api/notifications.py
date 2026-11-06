@@ -4,16 +4,45 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from sqlalchemy import func, select, update
 
+from ttakkari import audit
 from ttakkari.api.deps import Db
 from ttakkari.models import Notification, utcnow
+from ttakkari.push import preferences as prefs
+from ttakkari.push.service import PushKind
 from ttakkari.security.auth import User
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 Category = Literal["tasks", "assistant", "planner", "weather", "meetings", "system"]
 CATEGORIES = ("tasks", "assistant", "planner", "weather", "meetings", "system")
+
+
+class PreferenceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: PushKind
+    enabled: StrictBool
+
+    @field_validator("kind")
+    @classmethod
+    def configurable(cls, kind: PushKind) -> PushKind:
+        if kind not in prefs.DEFAULTS:
+            raise ValueError("설정 가능한 알림 유형이 아닙니다.")
+        return kind
+
+
+@router.get("/preferences")
+async def notification_preferences(_: User, db: Db) -> dict:
+    return await prefs.preferences(db)
+
+
+@router.patch("/preferences")
+async def update_notification_preference(body: PreferenceIn, _: User, db: Db) -> dict:
+    await prefs.save(db, body.kind, body.enabled)
+    audit.record(db, action="notification.preference", detail={"kind": body.kind.value, "enabled": body.enabled})
+    await db.commit()
+    return await prefs.preferences(db)
 
 
 class NotificationOut(BaseModel):

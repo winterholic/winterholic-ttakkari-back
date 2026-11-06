@@ -370,7 +370,11 @@ async def _publish(row_id) -> None:
             await db.commit()
             log.warning("weather push failed: %s", type(exc).__name__)
             return
-        if delivery["sent"] == 0 or delivery["failed"] > 0:
+        if delivery.get("suppressed"):
+            # 수신 거부는 전송 실패가 아니다. 다음 스캔에서 과거 브리핑을 재발송하지 않는다.
+            row.push_error = "disabled_by_preference"
+            row.push_sent_at = None
+        elif delivery["sent"] == 0 or delivery["failed"] > 0:
             row.push_error = "no_subscriptions" if delivery["sent"] == 0 else "partial_delivery"
             row.push_sent_at = None
         else:
@@ -388,7 +392,7 @@ async def advance(row_id) -> None:
         if row is None or (row.lease_until and row.lease_until > now):
             return
         if row.status in {"ready", "degraded"}:
-            should_publish = row.push_sent_at is None
+            should_publish = row.push_sent_at is None and row.push_error != "disabled_by_preference"
             row.lease_until = now + timedelta(minutes=2) if should_publish else None
             await db.commit()
             if should_publish:

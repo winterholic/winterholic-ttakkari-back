@@ -2234,7 +2234,7 @@ async def _notify_waiting(run: Run, title: str | None, until: float, *, capacity
         name = (title or "새 세션")[:60]
         reason = "모델 혼잡" if capacity_wait else "사용량 한도"
         await notify(PushKind.run_waiting, f"작업 대기 · {reason}", f"{name} · {when}에 이어서 진행",
-                     url=f"/chat/{run.session_id}", tag=f"{run.session_id}-waiting", target_id=run.id)
+                     url=f"/chat/{run.session_id}", tag=f"{run.session_id}-waiting", target_id=run.id, source_session_id=run.session_id)
     except Exception:
         log.exception("push notification failed for run %s", run.id)
 

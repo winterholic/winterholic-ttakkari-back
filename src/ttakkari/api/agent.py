@@ -448,7 +448,7 @@ async def system_resources(sid: AgentSession, db: Db) -> dict[str, Any]:
 @router.post("/notify")
 async def notify(body: NotifyIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     await _session(db, sid)
-    return await push_notify(PushKind.agent, body.title, body.body, url=f"/chat/{sid}", tag=f"agent-{sid}", target_id=sid)
+    return await push_notify(PushKind.agent, body.title, body.body, url=f"/chat/{sid}", tag=f"agent-{sid}", target_id=sid, source_session_id=sid)
 
 
 @router.get("/sessions")

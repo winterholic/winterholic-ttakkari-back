@@ -16,7 +16,15 @@ from sqlalchemy.dialects.postgresql import insert
 
 from ttakkari import audit
 from ttakkari.db import sessionmaker
-from ttakkari.models import Notification, PushSubscription, Run, RunStatus, utcnow
+from ttakkari.models import (
+    ChatSession,
+    Notification,
+    PushSubscription,
+    Run,
+    RunStatus,
+    SessionKind,
+    utcnow,
+)
 from ttakkari.push import vapid
 
 log = logging.getLogger(__name__)
@@ -27,6 +35,9 @@ class PushKind(enum.StrEnum):
     run_waiting = "push.run_waiting"  # 모든 계정이 사용량 한도라 Run 이 초기화를 기다림
     run_failed = "push.run_finished"  # Run 오류 실패(자동). 이름은 기존 감사 로그와 이어지게 유지
     agent = "push.agent"  # 에이전트가 MCP notify_user 로 직접 보냄
+    worker_agent = "push.worker_agent"  # 하위 에이전트의 직접 알림
+    worker_failed = "push.worker_failed"  # 하위 작업 실패
+    worker_waiting = "push.worker_waiting"  # 하위 작업 한도·용량 대기
     test = "push.test_sent"  # 설정 화면의 테스트 알림
     calendar_reminder = "push.calendar_reminder"  # 일정 알림(planner/reminders.py)
     checklist_reminder = "push.checklist_reminder"
@@ -41,6 +52,7 @@ INBOX_CATEGORY = {
     PushKind.run_waiting: "tasks", PushKind.run_failed: "tasks", PushKind.agent: "assistant",
     PushKind.calendar_reminder: "planner", PushKind.checklist_reminder: "planner",
     PushKind.meeting: "meetings", PushKind.deployment: "system", PushKind.test: "system",
+    PushKind.worker_agent: "tasks", PushKind.worker_failed: "tasks", PushKind.worker_waiting: "tasks",
     PushKind.weather: "weather", PushKind.notebooklm: "system", PushKind.google_account: "system",
 }
 
@@ -122,12 +134,29 @@ async def _deliver(payload: dict[str, str], *, action: str, target_id: Any = Non
 
 
 async def notify(kind: PushKind, title: str, body: str = "", *, url: str = "/chat", tag: str | None = None,
-                 target_id: Any = None, dedupe_key: str | None = None) -> dict[str, int]:
+                 target_id: Any = None, dedupe_key: str | None = None,
+                 source_session_id: uuid.UUID | None = None) -> dict[str, int]:
     """푸시 발송의 유일한 진입점. 기능 쪽에서는 `await notify(PushKind.x, "제목", "본문", url=...)` 한 줄이면 된다.
     구독 유무·전송 결과와 무관하게 알림함에 먼저 저장한다. 같은 `tag` 는 기기에서만 합쳐지고 알림함은 개별 기록을 남긴다.
     결과 집계는 감사 로그 `kind` 값으로 남는다."""
+    from ttakkari.push.preferences import enabled
+
     url = internal_url(url)
     async with sessionmaker()() as db:
+        # 부모가 접수인 기획 세션은 사용자에게 결과를 보내는 메인이다.
+        # 작업 세션과 기획/작업 세션 아래의 중첩 기획은 하위 알림으로 구분한다.
+        if source_session_id is not None:
+            source = await db.get(ChatSession, source_session_id)
+            child = source is not None and source.kind == SessionKind.worker
+            if source is not None and source.parent_id is not None:
+                parent_kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == source.parent_id))
+                child = child or parent_kind != SessionKind.desk
+            if child:
+                kind = {PushKind.agent: PushKind.worker_agent, PushKind.run_failed: PushKind.worker_failed,
+                        PushKind.run_waiting: PushKind.worker_waiting}.get(kind, kind)
+        if not await enabled(db, kind):
+            log.info("notification suppressed by preference: kind=%s", kind.value)
+            return {"sent": 0, "removed": 0, "failed": 0, "suppressed": 1}
         row = Notification(kind=kind.value, category=INBOX_CATEGORY[kind], title=title, body=body, url=url,
                            dedupe_key=dedupe_key)
         if dedupe_key:
@@ -147,4 +176,4 @@ async def notify_run_finished(run: Run, session_title: str | None) -> None:
     if run.status not in NOTIFY_TITLES:
         return
     p = build_payload(run, session_title)
-    await notify(PushKind.run_failed, p["title"], p["body"], url=p["url"], tag=p["tag"], target_id=run.id)
+    await notify(PushKind.run_failed, p["title"], p["body"], url=p["url"], tag=p["tag"], target_id=run.id, source_session_id=run.session_id)

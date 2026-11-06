@@ -150,7 +150,19 @@ payload 는 `{title, body, url, tag}`:
 
 알림 항목: `{id, kind, category, title, body, url, created_at, read_at}`. `read_at=null`은 안 읽음이다. `unread_counts`는 필터·페이지와 관계없는 유형별 미확인 개수 및 합계 `all`을 반환한다. `next_before=null`이면 마지막 페이지다.
 
-유형: `tasks`(작업 실패·사용량 대기), `assistant`(따까리가 보낸 소식), `planner`(일정·체크리스트), `meetings`(회의록), `system`(배포·테스트). 탭에는 전체·작업·따까리·일정·할 일·회의록·시스템으로 표시한다. 푸시의 `tag` 중복 합치기는 기기에서만 적용되며 알림함은 각각의 발생 기록을 남긴다. 외부 주소나 제어 문자가 포함된 목적지는 `/notifications`로 대체한다.
+유형: `tasks`(메인 작업 상태·하위 에이전트), `assistant`(메인이 직접 보낸 소식), `planner`(일정·할 일), `weather`(날씨), `meetings`(회의록), `system`(계정 로그인·배포·테스트). 새 알림은 발송 주체의 세션 역할로 분류하며 제목·본문으로 추측하지 않는다. 과거 기록은 변경하지 않는다. 푸시의 `tag` 중복 합치기는 기기에서만 적용된다. 외부 주소나 제어 문자가 포함된 목적지는 `/notifications`로 대체한다.
+
+### 유형별 수신 설정
+
+- `GET /api/notifications/preferences` → `{items: [{kind, category, label, description, enabled, default_enabled}]}`. 활성 발송 유형 12종을 반환한다.
+- `PATCH /api/notifications/preferences` → 엄격한 `{kind, enabled: boolean}` 한 유형을 저장하고 같은 목록을 반환한다. 알 수 없는 kind·추가 필드·문자열 boolean은 422. 테스트 알림과 과거 NotebookLM kind는 설정 대상이 아니다.
+- 소유자 인증 전용이며 에이전트 토큰으로 변경할 수 없다. 단일 사용자 앱의 `app_settings`에 유형당 한 행(`notification:<kind>`)으로 저장한다. 다른 기기에서 서로 다른 유형을 바꿔도 덮어쓰지 않는다. DB 마이그레이션은 없다.
+- 날씨·일정·할 일·메인 직접 알림·메인 실패·회의록·Google 로그인은 기본 켜짐. 메인 대기·하위 직접 알림·하위 실패·하위 대기·배포 결과는 기본 꺼짐. 모두 개별 선택할 수 있다.
+- `notify()`가 실제 발송과 새 알림함 저장 전에 수신 설정을 확인한다. 꺼진 유형은 둘 다 생략하고 `{sent:0, removed:0, failed:0, suppressed:1}`을 반환한다. 기존 알림은 삭제·재분류하지 않는다. 켰을 때 과거 알림을 재발송하지 않는다.
+- 직접 알림은 `push.agent`/`push.worker_agent`, 실패는 `push.run_finished`/`push.worker_failed`, 대기는 `push.run_waiting`/`push.worker_waiting`으로 구분한다. worker 및 기획·작업 세션 아래의 중첩 세션은 하위이고 접수(desk) 바로 아래의 기획은 메인이다.
+- 기기별 푸시 구독은 유형 설정과 독립이다. 유형은 모든 기기에 공통 적용하며 테스트 버튼의 명시적 발송은 유형 설정을 거치지 않는다. 과거 `push.notebooklm` 발송은 Google 로그인 설정을 따른다.
+- 날씨 수신 거부는 `disabled_by_preference`로 기록해 전송 실패 재시도로 이어지지 않는다. 날씨 브리핑 자체는 계속 생성되어 날씨 화면에서 볼 수 있다.
+
 
 ## 오케스트레이터(ADR 0006)
 

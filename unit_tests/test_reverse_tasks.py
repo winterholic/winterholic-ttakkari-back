@@ -1,4 +1,5 @@
 """자연어 역분석은 관찰 증거와 작업공간의 재현 소스로 닫혀야 한다."""
+import hashlib
 import json
 
 import pytest
@@ -18,6 +19,7 @@ def test_description_keeps_multiline_behaviour_and_optional_url():
 def report(root, **overrides):
     (root / 'src').mkdir(exist_ok=True)
     (root / 'src/main.py').write_text('print(15)\n')
+    (root / 'README.md').write_text('환경: Python 3.13\n의존성: 없음\n실행: python src/main.py\n테스트: pytest -q\n')
     (root / 'check.log').write_text('1 passed\n')
     data = {'summary': '덧셈 재현', 'source_files': ['src/main.py'],
             'observations': [{'finding': '12 + 3 = 15', 'evidence': '사용자 설명'}],
@@ -114,3 +116,71 @@ def test_observed_error_cases_declare_expected_exit_status(tmp_path):
     (tmp_path / 'error.log').write_text('usage: basename string [suffix]\n')
     data['checks'].append({'command': 'python src/main.py', 'exit_code': 1, 'expected_exit_code': 1, 'log': 'error.log'})
     assert tasks.validate_report(tmp_path, data)['ready'] is True
+
+
+def test_comparisons_are_recomputed_from_hashed_raw_evidence(tmp_path):
+    data = report(tmp_path)
+    raw = {'schema_version': 2, 'target_type': 'cli', 'run_id': 'run-1', 'complete': True,
+           'input': {'argv': ['slugify', 'two words.txt']}, 'pre_state': {}, 'environment': {'os': 'test'},
+           'original': {'stdout': 'two-words\n', 'stderr': '', 'exit_code': 0},
+           'replica': {'stdout': 'two_words\n', 'stderr': '', 'exit_code': 0}}
+    raw['execution_log'] = [{'side': side, **raw[key]} for side, key in
+                            (('original', 'original'), ('replica', 'replica'))]
+    path = tmp_path / '.reverse/comparisons/slug.json'
+    path.parent.mkdir(parents=True)
+    encoded = json.dumps(raw).encode()
+    path.write_bytes(encoded)
+    comparison = {'id': 'slug', 'behavior': 'basename 정규화', 'target_type': 'cli',
+                  'input': raw['input'], 'pre_state': {}, 'original': raw['original'], 'replica': raw['replica'],
+                  'environment': {'os': 'test'}, 'evidence_level': 'direct',
+                  'evidence': [{'kind': 'execution', 'path': '.reverse/comparisons/slug.json',
+                                'sha256': hashlib.sha256(encoded).hexdigest()}],
+                  'verified_at': '2026-11-07T00:00:00Z', 'run_id': 'run-1',
+                  'result': 'match', 'difference': None}
+    data['comparisons'] = [comparison]
+    checked = tasks.validate_report(tmp_path, data)
+    assert checked['comparisons'][0]['result'] == 'mismatch'
+    assert checked['comparisons'][0]['difference']['field'] == 'stdout'
+    encoded = encoded + b' '
+    path.write_bytes(encoded)
+    assert tasks.validate_report(tmp_path, data)['comparisons'][0]['result'] == 'unverified'
+
+
+def test_legacy_report_has_zero_unverified_direct_comparisons(tmp_path):
+    checked = tasks.validate_report(tmp_path, report(tmp_path))
+    assert checked['comparisons'] == []
+    assert checked['direct_comparison'] == {'status': 'unverified', 'count': 0, 'matched': 0,
+                                             'mismatched': 0, 'unverified': 0}
+
+
+def test_analysis_mode_accepts_observations_without_source_or_checks(tmp_path):
+    checked = tasks.validate_report(tmp_path, {'mode': 'analyze', 'summary': '분석',
+        'observations': [{'finding': '입력에 따라 출력이 달라짐', 'evidence': 'evidence/capture.txt'}],
+        'hypotheses': ['옵션이 기본값을 바꿀 수 있음'], 'unknowns': ['오류 종료 코드']})
+    assert checked['analysis_ready'] is True
+    assert checked['ready'] is False
+
+
+def test_reconstruction_requires_readme_environment_dependencies_run_and_test_commands(tmp_path):
+    data = report(tmp_path)
+    (tmp_path / 'README.md').write_text('python src/main.py')
+    checked = tasks.validate_report(tmp_path, data)
+    assert checked['ready'] is False
+    assert checked['documentation']['status'] == 'unverified'
+    assert 'README.md' in ' '.join(checked['problems'])
+
+
+def test_invalid_comparison_is_preserved_as_unverified_instead_of_dropped(tmp_path):
+    checked = tasks.validate_report(tmp_path, {**report(tmp_path), 'comparisons': [{'id': 'bad'}]})
+    assert len(checked['comparisons']) == 1
+    assert checked['comparisons'][0]['result'] == 'unverified'
+    assert checked['direct_comparison']['unverified'] == 1
+
+
+def test_pre_v2_result_remains_readable_without_inventing_direct_comparisons():
+    legacy = {'summary': '기존 재현 결과', 'source_files': ['src/main.py'],
+              'checks': [{'command': 'pytest', 'exit_code': 0}], 'verification': 'passed'}
+    metadata = tasks._metadata(legacy)
+    assert metadata['latest']['report']['summary'] == '기존 재현 결과'
+    assert metadata['latest']['direct_comparison'] == {'status': 'unverified', 'count': 0,
+        'matched': 0, 'mismatched': 0, 'unverified': 0}

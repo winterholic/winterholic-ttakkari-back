@@ -561,15 +561,18 @@ async def test_foreign_generation_persisted_update_blocks_create_and_add_round(c
         }
     }))
 
-    create_response = await _task(client, auth, category="photo", prompt="새 제작")
-    round_response = await client.post(
-        f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "추가 라운드"}, headers=auth
-    )
+    try:
+        create_response = await _task(client, auth, category="photo", prompt="새 제작")
+        round_response = await client.post(
+            f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": "추가 라운드"}, headers=auth
+        )
 
-    assert create_response.status_code == 409, create_response.text
-    assert create_response.json()["code"] == "app_updating"
-    assert round_response.status_code == 409, round_response.text
-    assert round_response.json()["code"] == "app_updating"
+        assert create_response.status_code == 409, create_response.text
+        assert create_response.json()["code"] == "app_updating"
+        assert round_response.status_code == 409, round_response.text
+        assert round_response.json()["code"] == "app_updating"
+    finally:
+        artcraft.update_state(lambda state: state.pop("updates", None))
 
 
 async def test_coordination_lock_serializes_and_releases_after_runner_cancellation():

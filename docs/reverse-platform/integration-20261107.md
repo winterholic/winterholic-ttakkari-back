@@ -311,7 +311,10 @@ $ git rev-parse HEAD && git rev-parse origin/main
 - 직전 Codex command sandbox Run `a94b4a34-f071-4702-9638-fec98b12dc46`에서 수정 전 단일 테스트를 실행했으나 `tests/conftest.py → pg_sandbox.start_cluster() → initdb` 단계의 `CalledProcessError` exit 1로 pytest가 수집 전 중단됐다. 출력에는 initdb stderr가 없었다. 이 실행에서 `shmget` 오류를 관측했다고 기록하지 않는다. 이번 준비에서도 해당 DB 초기화를 유발하는 검사는 재실행하지 않았다.
 - 657 준비본 기획 독립 검토는 실제 7369 두 파일 diff와 서비스의 측정값 query·모델 연결을 대조하고, 기존 assertion이 유지됐음을 확인했다. 제품 service/model 변경은 없으며 DB/API GREEN은 검토 범위에도 포함되지 않았다.
 - 이번 통합 시작은 clean `7369a08346b1d51e638673c3798b71f0530e405c`, 부모 `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`였다. 일반 fetch 뒤 `origin/main`은 `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`로 동일했고 `git rev-list --left-right --count HEAD...origin/main`은 `1 0`이었다. 원격의 새 커밋이 없어 추가 merge는 없었다. 실제 `git diff origin/main..HEAD`는 이 fixture와 통합 문서 두 파일만 포함한다.
-- DB/API GREEN은 미실행이며 로컬 DB 초기화는 반복하지 않는다. AST 구문 검사와 소유 diff check는 이전 7369 준비에서 각각 `AST OK` 및 exit 0이었다. 이번 표준 pre-push gate 결과, push SHA, 배포 예약 응답과 상태를 아래에 기록한다. 예약 수락은 배포 성공을 뜻하지 않으며 운영 health와 ReverseJob E2E는 별도 검증 대상이다.
+- 첫 표준 push는 Ruff에서 import 순서와 기존 fixture adapter class list의 `RUF012` 12건으로 실패했다. assertion·값·동작을 바꾸지 않고 import를 정렬하고 해당 class 속성에 `ClassVar[list[str]]` 타입만 선언했다. 재시도한 표준 pre-push는 Ruff 통과, contract `87 passed`, 변경 테스트 파일 `34 passed`였고 각 DB reset은 selective 87/34, forced full/fallback 0이었다. 우회 옵션이나 테스트 생략은 사용하지 않았다.
+- 정상 push 출력은 `7a10d0cc..97f6f34d HEAD -> main`이며, push 직후 `git rev-parse HEAD`와 `git rev-parse origin/main` 모두 `97f6f34de23bb47c6d58a1db4b325705a2168c24`였다. 해당 SHA는 `7a10d0ccf71c9f3e5ce7f2314bc3db5c1513517c`의 후손이며 원격 신규 커밋은 없었다.
+- `request_backend_deploy(revision="97f6f34de23bb47c6d58a1db4b325705a2168c24")` 수락 응답은 reservation `e00ecfd5-76ac-45e6-9678-5b445b50f043`, `skip_tests=false`, strategy `generations`, status `requested`다. 예약 상태를 기다리거나 폴링하지 않았으므로 배포 성공은 확인하지 않았다.
+- 이전 Codex 직접 pytest/conftest/initdb 실행은 반복하지 않았다. 표준 pre-push의 변경 파일 DB 테스트는 위와 같이 통과했지만 운영 DB, 운영 health, 실제 CLI/API/웹 ReverseJob E2E는 미검증이다. fixture 원인은 여전히 코드 대조에 따른 추정이며 컨트롤러 release GREEN이 확인되기 전까지 확정하지 않는다.
 
 ### Push gate 진단·교정
 

@@ -1,6 +1,7 @@
 """0076 + C2: engine-access revocation must constrain every KB read surface."""
 import uuid
 
+import pytest
 from sqlalchemy import select
 from test_collection_scope_merge import (  # noqa: F401
     _operation_generation,
@@ -14,12 +15,19 @@ from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbPassage
 
 
-async def test_scope_merge_operates_on_current_0076_without_weakening_runtime_guards(monkeypatch):
-    await _operation_generation(monkeypatch, version='0076_kb_v3_collection_merge')
+async def test_scope_merge_operates_on_current_0077_without_weakening_runtime_guards(monkeypatch):
+    await _operation_generation(monkeypatch, version='0077_artcraft_account_pin')
     async with sessionmaker()() as db:
         report = await scope_merge.operate(db, apply=False)
         assert report['applied'] is False
         assert report['tables']['collector_sources']['normalized'] == 1
+
+
+async def test_scope_merge_rejects_previous_0076_head(monkeypatch):
+    await _operation_generation(monkeypatch, version='0076_kb_v3_collection_merge')
+    async with sessionmaker()() as db:
+        with pytest.raises(RuntimeError, match='schema_not_ready'):
+            await scope_merge.operate(db, apply=False)
 
 
 async def _register(client, auth, *, work=False):

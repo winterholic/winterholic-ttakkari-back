@@ -2,7 +2,7 @@
 
 시나리오(한 번의 Docker 컨테이너에서 순서대로 진행):
   1. 빈 DB 에 alembic upgrade 0071 -> 대표 기존 데이터 삽입(personal 2, work 2, revision/passage/evidence)
-  2. upgrade head(0073) -> 백필(personal->global, work->work_only), L2 예산 원장 생성
+  2. upgrade head(0077) -> 백필(personal->global, work->work_only), L2 예산 원장 생성
   3. 반례: visibility 파생/모순 거부, 근거 없는 active 거부(INSERT·UPDATE), evidence_count 강제 동기화,
      activate_relation_with_evidence, 근거 삭제 시 강등
   4. downgrade: 신규 테이블 데이터가 있으면 거부, 비운 뒤 성공, 기존 데이터 보존, upgrade head 재실행
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.pg
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "tests" / "fixtures" / "kb_v3_seed_0071.sql"
 IMAGE = "pgvector/pgvector:pg17"
-HEAD = "0076_kb_v3_collection_merge"
+HEAD = "0077_artcraft_account_pin"
 V3_TABLES = (
     "kb_pipeline_jobs",
     "kb_pipeline_stages",

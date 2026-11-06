@@ -1,6 +1,6 @@
-"""세대 배포 공존 증명: 0071 세대 코드의 writer 가 0072/0073 스키마에서 계속 통과해야 한다.
+"""세대 배포 공존 증명: 0071 세대 writer 가 0077 head 스키마에서도 계속 통과해야 한다.
 
-deploy/generation-contract.json 은 0071/0072 를 online_migration_from 에 둔다. 새 세대 마이그레이션은 구 세대가
+deploy/generation-contract.json 은 0071~0076 을 online_migration_from 에 둔다. 새 세대 마이그레이션은 구 세대가
 서비스 중일 때 적용되므로, 구 세대의 INSERT/UPDATE 모양(origin_scope·visibility·새 컬럼을 넘기지 않는다)이 head 스키마에서
 거부되면 계약이 거짓이다. 여기서는 0071 코드가 실제로 내는 SQL 모양을 그대로 재현한다.
 실제 0071 코드 체크아웃으로 돌리는 증명은 scripts/kb_v3_generation_coexistence_proof.py 다.
@@ -37,7 +37,7 @@ def test_contract_declares_head_and_both_intermediate_revisions_online():
         "0072_research_lab_v2", "0073_research_reuse_source", "0073_kb_l2_budget_ledger",
         "0072_collection_missions", "0073_collection_mission_runs",
         "0074_collection_single_library", "0074_kb_v3_research_merge",
-        "0075_collection_research_merge",
+        "0075_collection_research_merge", "0076_kb_v3_collection_merge",
     } <= set(contract["online_migration_from"])
     assert HEAD not in contract["online_migration_from"]
 

@@ -10,6 +10,7 @@ from scripts.platform_v2_inventory import classify_migration
 
 ROOT = Path(__file__).resolve().parents[1]
 HEAD_MERGE = "0076_kb_v3_collection_merge"
+CURRENT_HEAD = "0077_artcraft_account_pin"
 MERGE = "0075_collection_research_merge"
 COLLECTION = (
     "0072_collection_missions",
@@ -25,7 +26,8 @@ def scripts():
 
 def test_single_head_preserves_both_published_branch_identities():
     graph = scripts()
-    assert graph.get_heads() == [HEAD_MERGE]
+    assert graph.get_heads() == [CURRENT_HEAD]
+    assert graph.get_revision(CURRENT_HEAD).down_revision == HEAD_MERGE
     assert set(graph.get_revision(HEAD_MERGE).down_revision) == {
         "0074_kb_v3_research_merge",
         "0075_collection_research_merge",
@@ -35,8 +37,8 @@ def test_single_head_preserves_both_published_branch_identities():
         for parent, child in zip(("0071_library_platform_v2_merge",) + chain, chain):
             assert graph.get_revision(child).down_revision == parent
     contract = json.loads((ROOT / "deploy/generation-contract.json").read_text())
-    assert contract["schema_revision"] == HEAD_MERGE
-    assert set(COLLECTION + RESEARCH + (MERGE,)) <= set(contract["online_migration_from"])
+    assert contract["schema_revision"] == CURRENT_HEAD
+    assert set(COLLECTION + RESEARCH + (MERGE, HEAD_MERGE)) <= set(contract["online_migration_from"])
 
 
 @pytest.mark.parametrize(("existing", "missing"), [

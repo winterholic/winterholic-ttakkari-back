@@ -369,3 +369,230 @@ ruff (변경된 파이썬 1개): 통과
 - 정상 push의 pre-push 출력은 Ruff 통과, 계약 `87 passed, 6952 deselected`, 변경 테스트 `4 passed`이며 DB reset은 선택적 87/4, full/fallback 0이다. 푸시는 `3cce2588..72116f9f HEAD -> main`; push 직후 HEAD와 origin/main은 모두 `72116f9fc75b2aa785651eae7aa8814bce60be88`이고 worktree clean이었다.
 - 해당 full SHA 예약 응답: ID `0131e8cf-ebf6-4ee4-9b6c-a5a4f66deaf3`, `skip_tests=false`, strategy `generations`, status `requested`. 이는 예약 수락이며 배포 성공을 뜻하지 않는다. 상태를 기다리거나 폴링하지 않았다. 이 기록을 위한 후속 doc-only 변경은 별도 SHA로 정상 push하고, 예약 대상은 위 제품·테스트 SHA 그대로 둔다.
 - 검증 범위는 표준 계약 게이트와 변경된 소유 테스트 파일이다. 직접 `env -u TTAKKARI_TEST_DB ... pytest/conftest/initdb`는 재실행하지 않았다. 새 release 전체 GREEN, 운영 evaluator 상태, 운영 E2E는 미실행·미확인이다.
+
+
+## 고정 b05c9053 전체 pytest 수집 (2026-11-07)
+
+- 권한 연결: 대상 세션의 현재 running Run 프로필은 `회사 코덱스 ai2 (ai2@hyperez.io)`였고 `/api/accounts`의 동일 이름 enabled 계정은 유일하게 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a`였다. 다른 프로필 폴백이나 계정 변경 없이 진행했다.
+- 출발 상태: `HEAD=b05c9053244f069742de0390eed7aa59b25ff6e3`, 부모 `006130ab2c160d2672fc011560cf27d893a60645`, 시작 worktree clean, 시작 `origin/main=006130ab2c160d2672fc011560cf27d893a60645` (ahead 1).
+- 단 한 번 실행한 명령(전체 stdout/stderr는 비밀을 제외한 필요한 증거를 아래에 옮겼으며 원본 임시 로그는 `/private/tmp/reverse-full-b05c9053-20261107.log`):
+
+```text
+TTK_GATE_KEEP=1 UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-reverse-full-20261107 ./scripts/verify_deploy_gate.sh --full --commit b05c9053244f069742de0390eed7aa59b25ff6e3 --base 006130ab2c160d2672fc011560cf27d893a60645
+대상 커밋: b05c9053244f fix: pass precise evaluator session factory
+변경 기준: 006130ab2c16
+모드: full
+--> 전체 pytest (-x 없음, 슬롯 제한 안)
+pytest 최종 집계: `70 failed, 6938 passed, 31 skipped, 2 xfailed, 48 warnings, 5022 subtests passed in 1685.39s (0:28:05)`.
+
+지원 스크립트 최종 출력:
+
+```text
+실패  전체 pytest (-x 없음, 슬롯 제한 안) (1698초, exit 1)
+총 1700초
+사전 검증 실패 1건: 전체 pytest (-x 없음, 슬롯 제한 안)
+임시 디렉터리 보존: /var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T//ttk-gate-echCq8
+```
+
+대표 원시 실패 근거(선택된 요약; 관측값만 기록):
+
+```text
+PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)
+subprocess.SubprocessError: Exception occurred in preexec_fn.
+process table could not be enumerated completely; refusing forced release
+orphan lease recovery needs a complete process table; enumeration was incomplete
+Failed: Timeout (>120.0s) from pytest-timeout.
+AssertionError: precise_eval.py imports ttakkari.kb_pipeline.subscription_transport
+AssertionError: assert '0077_artcraft_account_pin' == '0076_kb_v3_collection_merge'
+AttributeError: 'int' object has no attribute 'kind'
+```
+
+실패 노드 전체(원문 pytest summary, 생략 없음):
+
+- `tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency`
+- `tests/test_host_gpu.py::test_supervisor_runs_until_stopped_and_cleans_up`
+- `tests/test_host_gpu.py::test_only_one_supervisor_can_own_an_instance`
+- `tests/test_host_gpu.py::test_instance_stops_at_the_max_runtime - Asser...`
+- `tests/test_host_gpu.py::test_server_that_never_gets_healthy_is_stopped_at_the_start_timeout`
+- `tests/test_host_gpu.py::test_unconfirmed_server_stop_keeps_the_lease_until_hostgpu_observes_absence`
+- `tests/test_host_gpu.py::test_server_exit_is_recorded - AssertionError:...`
+- `tests/test_host_gpu.py::test_start_status_bench_stop_through_a_detached_supervisor`
+- `tests/test_host_gpu.py::test_status_reveals_total_and_per_slot_context`
+- `tests/test_host_gpu.py::test_state_file_is_private_and_holds_no_secrets`
+- `tests/test_host_gpu.py::test_sigkilled_supervisor_leaves_no_unguarded_server`
+- `tests/test_host_gpu.py::test_watchdog_exits_quietly_when_the_supervisor_stops_normally`
+- `tests/test_host_gpu.py::test_watchdog_only_matches_our_server_by_path_alias_port_and_start_time`
+- `tests/test_host_gpu.py::test_supervisor_refuses_to_run_the_server_without_a_working_watchdog`
+- `tests/test_host_operations.py::test_inline_reports_are_recorded - Asse...`
+- `tests/test_host_operations.py::test_runner_times_out_and_kills_process_group`
+- `tests/test_host_operations.py::test_runner_cancel_flag_stops_child - s...`
+- `tests/test_host_operations.py::test_failed_run_keeps_error_and_masks_secrets`
+- `tests/test_host_operations.py::test_backup_restore_snapshot_end_to_end`
+- `tests/test_host_operations.py::test_real_runner_sigkill_leaves_verifiable_child_identity`
+- `tests/test_host_operations.py::test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile`
+- `tests/test_host_operations.py::test_runner_timeout_confirms_whole_group_gone_not_just_leader`
+- `tests/test_host_operations.py::test_runner_reports_cleanup_pending_when_group_survives_sigkill`
+- `tests/test_host_operations.py::test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed`
+- `tests/test_kb_v3_collection_access_delta.py::test_scope_merge_operates_on_current_0076_without_weakening_runtime_guards`
+- `tests/test_kb_v3_generation_coexistence.py::test_contract_declares_head_and_both_intermediate_revisions_online`
+- `tests/test_kb_v3_generation_coexistence.py::test_old_generation_writers_pass_on_head_schema`
+- `tests/test_kb_v3_schema_migration.py::test_alembic_v3_single_head_and_lineage`
+- `tests/test_kb_v3_schema_realdb.py::test_real_db_upgrade_guards_downgrade_roundtrip`
+- `tests/test_research_resume_pagination.py::test_resume_pages_all_collections_past_500_and_keeps_page_quotes`
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders0]`
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders1]`
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders2]`
+- `tests/test_research_retry_admission_unit.py::test_admission_reuses_plan_validation_before_owner_run_or_event[normal]`
+- `tests/test_research_selection_failures.py::test_real_failure_reappears_in_followup_selection_without_global_exclusion[True]`
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[after_register]`
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_copy]`
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_flush]`
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_commit]`
+- `unit_tests/test_artifact_delivery_guidance.py::test_reverse_prompt_requires_share_for_zip_delivery`
+- `unit_tests/test_artifact_delivery_guidance.py::test_artcraft_note_requires_share_for_user_delivery`
+- `unit_tests/test_collection_research_migration_merge.py::test_single_head_preserves_both_published_branch_identities`
+- `unit_tests/test_host_resource_process_state.py::test_watchdog_keeps_guarding_a_server_whose_lookup_is_unknown`
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_without_any_state_is_reclaimed_when_owner_is_confirmed_absent`
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_with_another_launchs_stopped_state_is_reclaimed`
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_owner_pid_reuse_is_identity_mismatch_and_leaves_that_process_alone`
+- `unit_tests/test_host_resource_recovery.py::test_pending_spawn_with_a_live_server_is_stopped_then_reclaimed`
+- `unit_tests/test_host_resource_recovery.py::test_pending_spawn_without_any_server_is_reclaimed`
+- `unit_tests/test_host_resource_recovery.py::test_supervisor_writes_a_durable_state_before_it_spawns_the_server`
+- `unit_tests/test_host_resource_recovery.py::test_automatic_recovery_refuses_legacy_state_and_force_release_clears_it_after_verification`
+- `unit_tests/test_host_resource_recovery.py::test_force_release_clears_a_live_lease_whose_owner_evidence_is_missing`
+- `unit_tests/test_host_resource_recovery.py::test_force_release_refuses_while_any_test_server_process_is_alive_and_never_signals`
+- `unit_tests/test_host_resource_recovery.py::test_recorded_pid_of_an_unrelated_live_process_needs_explicit_acceptance`
+- `unit_tests/test_host_resource_recovery.py::test_recorded_supervisor_or_owner_that_is_still_alive_cannot_be_forced_even_with_acceptance`
+- `unit_tests/test_host_resource_recovery.py::test_cli_force_release_requires_confirmation_and_reports_refusals`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_setuid_foreign_binary_rule`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_strict_enumeration_skips_unreadable_setuid_binaries_but_not_other_unreadable_processes`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_force_release_succeeds_when_a_setuid_login_started_after_the_lease`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_spawn_recovery_tolerates_a_setuid_login_started_after_the_supervisor`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_the_real_process_table_does_not_block_force_release_of_an_old_lease`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_comfy_lease_with_a_confirmed_stopped_runtime_is_released_with_consumer_evidence`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_comfy_lease_whose_runtime_pid_was_never_recorded_needs_the_explicit_flag`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_without_state_is_kept_while_an_alias_server_still_runs`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_with_another_launchs_state_is_also_checked_by_enumeration`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_is_reclaimed_when_enumeration_is_complete_and_empty`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[3.0]`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[120.0]`
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[250.0]`
+- `unit_tests/test_orchestrator_report_merge.py::test_claim_locks_session_and_run_for_update_before_leasing`
+- `unit_tests/test_schema_head_admission.py::test_single_or_missing_database_head_keeps_existing_policy[heads8-expected8]`
+
+공통 원인 후보와 범위 판단:
+
+- 가장 큰 묶음은 `host_gpu`, `host_operations`, `host_resource_*`의 프로세스 생성·감시·회수 검사다. 위에서 관측한 `sysctl()`의 `Operation not permitted`, `preexec_fn` 실패, 불완전 프로세스 테이블 오류가 readiness, child process, watchdog 및 회수 기대 실패와 함께 나타났다. 이는 이 실행 환경의 프로세스/시스템 조회 제한이 영향을 준 후보라는 뜻이며, 해당 제품 동작 자체가 잘못됐다고 확정하지 않는다.
+- 별도 schema 묶음은 고정 소스의 migration head `0077_artcraft_account_pin`과 일부 테스트 기대값 `0076_kb_v3_collection_merge`의 불일치로 보인다. `schema_not_ready` 및 현재 head 기대 차이는 출력에 직접 나타났으나, 원인 분류는 테스트·계약 코드 대조 전이므로 후보로 남긴다.
+- 그 외 collector 의존 경계, reverse/artcraft prompt fixture 계약, research 결과 집계·artifact receipt, orchestrator fake 객체 타입 등 서로 다른 단일·소수 테스트 실패가 확인됐다. 이들은 공통 환경 원인으로 합치지 않았다.
+- `research_retry_admission_unit` 4개 parameterized 실패에서 `pytest-timeout` 120초가 관측됐다. 전체 pytest가 완료될 때까지 기다렸으며 같은 검사는 반복하지 않았다.
+- 이 실패 목록만으로 수정 범위나 실제 운영 장애를 결론내리지 않는다. 요청 범위상 교정·skip·assertion 완화는 하지 않았다.
+
+이번 실행 실패로 정상 fetch/merge, push 및 `request_backend_deploy(skip_tests=false)`는 하지 않았다. 실행 후 읽은 로컬 `origin/main` tracking ref는 시작 때 `006130ab2c160d2672fc011560cf27d893a60645`에서 `f75ba35242deb22d755f54388b0a00c723315f28`로 바뀌어 있었다. 이 Run은 fetch하지 않았으므로 원격 상태나 변경 내용은 미검증이며 merge하지 않았다. 따라서 배포 예약 ID/상태는 없음이며, 예약 성공이나 운영 E2E를 주장하지 않는다. 다음 후보는 운영 환경에서의 전체 실패 재검토 전에 위 프로세스/sysctl 제한을 제거한 승인된 실행 환경을 확보하고, 환경 독립적인 schema-head·fixture 계약 실패를 코드와 고정 commit에서 개별 대조하는 것이다. 전체 검사를 재실행하지 않았다.
+
+
+## b05 전체 실패 노드 원인 분류 및 0077 schema 교정 (후속 분석)
+- 원본 `/private/tmp/reverse-full-b05c9053-20261107.log`의 상세 failure blocks 70개와 `FAILED` summary 70개를 대조했다. 요약은 로그 L1656–L1725, 상세 traceback 줄은 각 항목에 병기했다. host 경로 49개를 환경 실패로 일괄 확정하지 않는다.
+- 프로필 재확인: 대상 session의 running Run `회사 코덱스 ai2 (ai2@hyperez.io)`와 유일 동일 이름 enabled 계정 `6b76a5c4-a622-4345-b7e6-fb9e76b74b9a` 일치.
+- 현행 schema 근거: `deploy/generation-contract.json`은 `schema_revision=0077_artcraft_account_pin`, `online_migration_from`에 `0076_kb_v3_collection_merge`; migration 0077의 부모는 0076. `GenerationController.schema_plan()`은 0077을 `current`, listed 0076을 `online`으로 분류한다. `collector.scope_merge.operate()`는 DB head가 contract schema revision과 정확히 같아야 진행한다. work-history와 account-pin evidence도 같은 계보를 기록한다.
+- 따라서 schema 7건은 제품의 현행 head가 0076이라는 계약이 아니라 stale test fixture/expectation이다. 범위는 지정된 여섯 test files다. 0074/0075/0076 migration identity와 부모는 보존하고, 0076은 deploy online source로 유지하며 runtime scope merge에서는 0076 거부를 명시한다.
+- 분류 코드(각 항목의 증거 수준과 다음 처리):
+  - `S` — schema fixture/expectation mismatch; 확정. Deploy contract, graph, runtime gate directly corroborate. 다음: six schema tests only; fix stale current-head fixture/expectation, preserve 0076 historical merge and online behavior; then standard gate.
+  - `H-SYS` — process/sysctl denial directly observed in this test; environment denial 확정, wider product cause 미확정. 다음: do not retry this path here; later inspect evidence from supported host process observation and isolate harness vs product.
+  - `H-PROC` — process-table lookup/recovery mismatch; incomplete/unknown result is directly observed where stated. Why enumeration is incomplete is unverified; sandbox attribution is inference. 다음: keep fail-closed behavior; later inspect process lookup result/exception and test doubles in a permitted environment; do not label all host failures environmental.
+  - `H-FS/PROC` — temporary setuid fixture or strict-enumeration mismatch; observed directly, filesystem/process-enumeration contribution inferred. 다음: separately verify fixture chmod/stat and strict enumeration boundary in an allowed host environment; no blanket host exemption.
+  - `H-LIFE` — supervisor/runner lifecycle result absent or OSError/preexec failure; output direct, environment causation not isolated and inferred only from correlated process denial. 다음: later split child creation, preexec, watchdog, and status observations; keep product-vs-sandbox unresolved until evidence.
+  - `C-IMPORT` — dependency-boundary assertion directly fails; whether kb_pipeline.subscription_transport violates intended collector layering is unresolved. 다음: inspect import graph and intended boundary; report product edge vs stale forbidden prefix, no changes in this card.
+  - `R-PAGE` — response-shape assertion differs by three zero-valued keys; contract owner unverified. 다음: review API response contract and pagination consumers before aligning test or behavior.
+  - `R-TIME` — four pytest-timeout failures at 120 seconds directly observed; deadlock, lock contention, or environment cause unresolved. 다음: inspect timeout stacks and transaction/lock ownership in separate scoped work; do not rerun full suite.
+  - `R-SELECT` — state assertion directly differs: unknown vs applicable; policy cause unresolved. 다음: trace selection eligibility inputs and expected state transition before any assertion change.
+  - `R-RECEIPT` — four failure-path assertions differ because a failed research_adapter_receipt is present; exact error payloads are in referenced detail lines. 다음: decide receipt contract and rollback expectations before fixture/test edits; preserve measurement and cleanup assertions.
+  - `ART-REVERSE` — test double lacks job.result required by current prompt builder; direct fixture-shape mismatch, behavior contract not reviewed here. 다음: review reverse job result contract in a separate artifact-guidance task before changing fixture.
+  - `ART-CRAFT` — prompt text assertion expects a phrase absent from current NOTE; direct text mismatch, intended wording unresolved. 다음: review delivery guidance contract before changing test or copy.
+  - `ORCH-FAKE` — claim accesses sess.kind but fake session is int; direct test invocation mismatch, signature contract not reviewed here. 다음: compare claim signature and callers, then correct fake or identify product API inconsistency in separate work.
+
+### Schema head/fixture 7건
+- `tests/test_kb_v3_collection_access_delta.py::test_scope_merge_operates_on_current_0076_without_weakening_runtime_guards` — log L1680 (요약), L336 / `tests/test_kb_v3_collection_access_delta.py:20: in test_scope_merge_operates_on_current_0076_without_weakening_runtime_guards`; 관찰: RuntimeError: schema_not_ready (DB fixture supplied 0076; runtime gate requires exact release head). 분류: `S`.
+- `tests/test_kb_v3_generation_coexistence.py::test_contract_declares_head_and_both_intermediate_revisions_online` — log L1681 (요약), L343 / `tests/test_kb_v3_generation_coexistence.py:34: in test_contract_declares_head_and_both_intermediate_revisions_online`; 관찰: contract schema_revision is 0077, while imported test HEAD was 0076. 분류: `S`.
+- `tests/test_kb_v3_generation_coexistence.py::test_old_generation_writers_pass_on_head_schema` — log L1682 (요약), L350 / `tests/test_kb_v3_generation_coexistence.py:57: in test_old_generation_writers_pass_on_head_schema`; 관찰: after upgrade head, db.version() is 0077 but test HEAD was 0076. 분류: `S`.
+- `tests/test_kb_v3_schema_migration.py::test_alembic_v3_single_head_and_lineage` — log L1683 (요약), L357 / `tests/test_kb_v3_schema_migration.py:64: in test_alembic_v3_single_head_and_lineage`; 관찰: graph head is 0077, assertion expected 0076. 분류: `S`.
+- `tests/test_kb_v3_schema_realdb.py::test_real_db_upgrade_guards_downgrade_roundtrip` — log L1684 (요약), L364 / `tests/test_kb_v3_schema_realdb.py:286: in test_real_db_upgrade_guards_downgrade_roundtrip`; 관찰: real DB reached 0077; assertion expected 0076. 분류: `S`.
+- `unit_tests/test_collection_research_migration_merge.py::test_single_head_preserves_both_published_branch_identities` — log L1697 (요약), L1370 / `unit_tests/test_collection_research_migration_merge.py:28: in test_single_head_preserves_both_published_branch_identities`; 관찰: Alembic graph head is 0077; test treated 0076 merge as head. 분류: `S`.
+- `unit_tests/test_schema_head_admission.py::test_single_or_missing_database_head_keeps_existing_policy[heads8-expected8]` — log L1725 (요약), L1598 / `unit_tests/test_schema_head_admission.py:68: in test_single_or_missing_database_head_keeps_existing_policy`; 관찰: schema_plan returned ('online', '0076'); test expected ('current', '0076'). 분류: `S`.
+
+### Host/process path 49건
+- `tests/test_host_gpu.py::test_supervisor_runs_until_stopped_and_cleans_up` — log L1657 (요약), L119 / `tests/test_host_gpu.py:234: in test_supervisor_runs_until_stopped_and_cleans_up`; 관찰: timed out waiting for supervisor ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_only_one_supervisor_can_own_an_instance` — log L1658 (요약), L126 / `tests/test_host_gpu.py:248: in test_only_one_supervisor_can_own_an_instance`; 관찰: timed out waiting for first supervisor ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_instance_stops_at_the_max_runtime` — log L1659 (요약), L132 / `tests/test_host_gpu.py:279: in test_instance_stops_at_the_max_runtime`; 관찰: stop_reason was supervisor_error: OSError:; expected max_runtime. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_server_that_never_gets_healthy_is_stopped_at_the_start_timeout` — log L1660 (요약), L139 / `tests/test_host_gpu.py:306: in test_server_that_never_gets_healthy_is_stopped_at_the_start_timeout`; 관찰: stop_reason was supervisor_error: OSError:; expected start_timeout. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_unconfirmed_server_stop_keeps_the_lease_until_hostgpu_observes_absence` — log L1661 (요약), L146 / `tests/test_host_gpu.py:315: in test_unconfirmed_server_stop_keeps_the_lease_until_hostgpu_observes_absence`; 관찰: timed out waiting for ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_server_exit_is_recorded` — log L1662 (요약), L153 / `tests/test_host_gpu.py:344: in test_server_exit_is_recorded`; 관찰: stop_reason was supervisor_error: OSError:; expected server_exited:7. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_start_status_bench_stop_through_a_detached_supervisor` — log L1663 (요약), L160 / `tests/test_host_gpu.py:351: in test_start_status_bench_stop_through_a_detached_supervisor`; 관찰: start response phase was stopped; expected starting or ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_status_reveals_total_and_per_slot_context` — log L1664 (요약), L164 / `tests/test_host_gpu.py:389: in test_status_reveals_total_and_per_slot_context`; 관찰: timed out waiting for ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_state_file_is_private_and_holds_no_secrets` — log L1665 (요약), L171 / `tests/test_host_gpu.py:494: in test_state_file_is_private_and_holds_no_secrets`; 관찰: timed out waiting for ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_sigkilled_supervisor_leaves_no_unguarded_server` — log L1666 (요약), L177 / `tests/test_host_gpu.py:521: in test_sigkilled_supervisor_leaves_no_unguarded_server`; 관찰: timed out waiting for ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_watchdog_exits_quietly_when_the_supervisor_stops_normally` — log L1667 (요약), L184 / `tests/test_host_gpu.py:549: in test_watchdog_exits_quietly_when_the_supervisor_stops_normally`; 관찰: timed out waiting for ready. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_watchdog_only_matches_our_server_by_path_alias_port_and_start_time` — log L1668 (요약), L191 / `tests/test_host_gpu.py:564: in test_watchdog_only_matches_our_server_by_path_alias_port_and_start_time`; 관찰: process match result was []; expected the fixture PID. 분류: `H-LIFE`.
+- `tests/test_host_gpu.py::test_supervisor_refuses_to_run_the_server_without_a_working_watchdog` — log L1669 (요약), L203 / `tests/test_host_gpu.py:582: in test_supervisor_refuses_to_run_the_server_without_a_working_watchdog`; 관찰: stop_reason was supervisor_error: OSError:; expected watchdog-start refusal. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_inline_reports_are_recorded` — log L1670 (요약), L211 / `tests/test_host_operations.py:129: in test_inline_reports_are_recorded`; 관찰: runner status failed with OSError: (empty detail); expected succeeded. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_runner_times_out_and_kills_process_group` — log L1671 (요약), L219 / `tests/test_host_operations.py:305: in test_runner_times_out_and_kills_process_group`; 관찰: subprocess.SubprocessError: Exception occurred in preexec_fn. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_runner_cancel_flag_stops_child` — log L1672 (요약), L230 / `tests/test_host_operations.py:312: in test_runner_cancel_flag_stops_child`; 관찰: subprocess.SubprocessError: Exception occurred in preexec_fn. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_failed_run_keeps_error_and_masks_secrets` — log L1673 (요약), L241 / `tests/test_host_operations.py:326: in test_failed_run_keeps_error_and_masks_secrets`; 관찰: status was failed but exit_code was None; expected 7. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_backup_restore_snapshot_end_to_end` — log L1674 (요약), L247 / `tests/test_host_operations.py:493: in test_backup_restore_snapshot_end_to_end`; 관찰: backup_db result status failed; expected succeeded. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_real_runner_sigkill_leaves_verifiable_child_identity` — log L1675 (요약), L255 / `tests/test_host_operations.py:888: in test_real_runner_sigkill_leaves_verifiable_child_identity`; 관찰: child identity did not appear before wait ended; captured child also failed in preexec_fn. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile` — log L1676 (요약), L283 / `tests/test_host_operations.py:908: in test_runner_sigkill_before_child_identity_is_recorded_is_recovered_from_child_pidfile`; 관찰: PermissionError: sysctl() process enumeration returned Operation not permitted. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_runner_timeout_confirms_whole_group_gone_not_just_leader` — log L1677 (요약), L306 / `tests/test_host_operations.py:942: in test_runner_timeout_confirms_whole_group_gone_not_just_leader`; 관찰: subprocess.SubprocessError: Exception occurred in preexec_fn. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_runner_reports_cleanup_pending_when_group_survives_sigkill` — log L1678 (요약), L317 / `tests/test_host_operations.py:967: in test_runner_reports_cleanup_pending_when_group_survives_sigkill`; 관찰: subprocess.SubprocessError: Exception occurred in preexec_fn. 분류: `H-LIFE`.
+- `tests/test_host_operations.py::test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed` — log L1679 (요약), L328 / `tests/test_host_operations.py:1213: in test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirmed`; 관찰: runner result failed; expected cleanup_pending with no finished_at. 분류: `H-LIFE`.
+- `unit_tests/test_host_resource_process_state.py::test_watchdog_keeps_guarding_a_server_whose_lookup_is_unknown` — log L1698 (요약), L1377 / `unit_tests/test_host_resource_process_state.py:309: in test_watchdog_keeps_guarding_a_server_whose_lookup_is_unknown`; 관찰: watchdog wait returned false; expected the server to remain guarded. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_without_any_state_is_reclaimed_when_owner_is_confirmed_absent` — log L1699 (요약), L1382 / `unit_tests/test_host_resource_recovery.py:168: in test_orphan_lease_without_any_state_is_reclaimed_when_owner_is_confirmed_absent`; 관찰: recovery wait returned false; expected orphan lease reclamation. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_with_another_launchs_stopped_state_is_reclaimed` — log L1700 (요약), L1394 / `unit_tests/test_host_resource_recovery.py:183: in test_orphan_lease_with_another_launchs_stopped_state_is_reclaimed`; 관찰: GpuError: process table enumeration incomplete; lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_orphan_lease_owner_pid_reuse_is_identity_mismatch_and_leaves_that_process_alone` — log L1701 (요약), L1406 / `unit_tests/test_host_resource_recovery.py:232: in test_orphan_lease_owner_pid_reuse_is_identity_mismatch_and_leaves_that_process_alone`; 관찰: GpuError: process table enumeration incomplete; lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_pending_spawn_with_a_live_server_is_stopped_then_reclaimed` — log L1702 (요약), L1418 / `unit_tests/test_host_resource_recovery.py:294: in test_pending_spawn_with_a_live_server_is_stopped_then_reclaimed`; 관찰: expected identified server stop/reclaim; observed wait false. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_pending_spawn_without_any_server_is_reclaimed` — log L1703 (요약), L1423 / `unit_tests/test_host_resource_recovery.py:308: in test_pending_spawn_without_any_server_is_reclaimed`; 관찰: GpuError: owned server stop not confirmed (observed unknown); lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_supervisor_writes_a_durable_state_before_it_spawns_the_server` — log L1704 (요약), L1433 / `unit_tests/test_host_resource_recovery.py:403: in test_supervisor_writes_a_durable_state_before_it_spawns_the_server`; 관찰: expected captured pre-spawn state; seen list empty. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_automatic_recovery_refuses_legacy_state_and_force_release_clears_it_after_verification` — log L1705 (요약), L1438 / `unit_tests/test_host_resource_recovery.py:427: in test_automatic_recovery_refuses_legacy_state_and_force_release_clears_it_after_verification`; 관찰: GpuError: process table could not be enumerated completely; forced release refused. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_force_release_clears_a_live_lease_whose_owner_evidence_is_missing` — log L1706 (요약), L1445 / `unit_tests/test_host_resource_recovery.py:447: in test_force_release_clears_a_live_lease_whose_owner_evidence_is_missing`; 관찰: GpuError: process table could not be enumerated completely; forced release refused. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_force_release_refuses_while_any_test_server_process_is_alive_and_never_signals` — log L1707 (요약), L1452 / `unit_tests/test_host_resource_recovery.py:461: in test_force_release_refuses_while_any_test_server_process_is_alive_and_never_signals`; 관찰: expected live child PID in refusal; instead process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_recorded_pid_of_an_unrelated_live_process_needs_explicit_acceptance` — log L1708 (요약), L1459 / `unit_tests/test_host_resource_recovery.py:503: in test_recorded_pid_of_an_unrelated_live_process_needs_explicit_acceptance`; 관찰: expected 'still exists'; instead process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_recorded_supervisor_or_owner_that_is_still_alive_cannot_be_forced_even_with_acceptance` — log L1709 (요약), L1466 / `unit_tests/test_host_resource_recovery.py:518: in test_recorded_supervisor_or_owner_that_is_still_alive_cannot_be_forced_even_with_acceptance`; 관찰: expected 'lease_owner pid'; instead process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery.py::test_cli_force_release_requires_confirmation_and_reports_refusals` — log L1710 (요약), L1473 / `unit_tests/test_host_resource_recovery.py:533: in test_cli_force_release_requires_confirmation_and_reports_refusals`; 관찰: CLI exit 2 instead of 0; stderr says process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_setuid_foreign_binary_rule` — log L1711 (요약), L1481 / `unit_tests/test_host_resource_recovery_hardening.py:106: in test_setuid_foreign_binary_rule`; 관찰: _setuid_foreign_binary returned false for the temporary login fixture. 분류: `H-FS/PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_strict_enumeration_skips_unreadable_setuid_binaries_but_not_other_unreadable_processes` — log L1712 (요약), L1488 / `unit_tests/test_host_resource_recovery_hardening.py:130: in test_strict_enumeration_skips_unreadable_setuid_binaries_but_not_other_unreadable_processes`; 관찰: find_alias_processes_strict returned None; expected []. 분류: `H-FS/PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_force_release_succeeds_when_a_setuid_login_started_after_the_lease` — log L1713 (요약), L1494 / `unit_tests/test_host_resource_recovery_hardening.py:140: in test_force_release_succeeds_when_a_setuid_login_started_after_the_lease`; 관찰: GpuError: process table could not be enumerated completely; forced release refused. 분류: `H-FS/PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_spawn_recovery_tolerates_a_setuid_login_started_after_the_supervisor` — log L1714 (요약), L1501 / `unit_tests/test_host_resource_recovery_hardening.py:165: in test_pending_spawn_recovery_tolerates_a_setuid_login_started_after_the_supervisor`; 관찰: GpuError: owned server stop not confirmed (observed unknown); lease retained. 분류: `H-FS/PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_the_real_process_table_does_not_block_force_release_of_an_old_lease` — log L1715 (요약), L1511 / `unit_tests/test_host_resource_recovery_hardening.py:173: in test_the_real_process_table_does_not_block_force_release_of_an_old_lease`; 관찰: GpuError: process table could not be enumerated completely; forced release refused. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_comfy_lease_with_a_confirmed_stopped_runtime_is_released_with_consumer_evidence` — log L1716 (요약), L1518 / `unit_tests/test_host_resource_recovery_hardening.py:281: in test_comfy_lease_with_a_confirmed_stopped_runtime_is_released_with_consumer_evidence`; 관찰: GpuError: process table could not be enumerated completely; forced release refused. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_comfy_lease_whose_runtime_pid_was_never_recorded_needs_the_explicit_flag` — log L1717 (요약), L1525 / `unit_tests/test_host_resource_recovery_hardening.py:299: in test_comfy_lease_whose_runtime_pid_was_never_recorded_needs_the_explicit_flag`; 관찰: CLI exit 2; enumeration incomplete after explicit unrecorded-runtime flag. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_without_state_is_kept_while_an_alias_server_still_runs` — log L1718 (요약), L1534 / `unit_tests/test_host_resource_recovery_hardening.py:312: in test_orphan_lease_without_state_is_kept_while_an_alias_server_still_runs`; 관찰: expected matching live PID in refusal; instead process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_with_another_launchs_state_is_also_checked_by_enumeration` — log L1719 (요약), L1541 / `unit_tests/test_host_resource_recovery_hardening.py:331: in test_orphan_lease_with_another_launchs_state_is_also_checked_by_enumeration`; 관찰: expected 'still exist'; instead process table enumeration incomplete. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_orphan_lease_is_reclaimed_when_enumeration_is_complete_and_empty` — log L1720 (요약), L1548 / `unit_tests/test_host_resource_recovery_hardening.py:346: in test_orphan_lease_is_reclaimed_when_enumeration_is_complete_and_empty`; 관찰: GpuError: orphan recovery needs a complete process table; lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[3.0]` — log L1721 (요약), L1560 / `unit_tests/test_host_resource_recovery_hardening.py:368: in test_pending_server_is_found_even_when_the_clock_stepped_back`; 관찰: GpuError: owned server stop not confirmed (observed unknown); lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[120.0]` — log L1722 (요약), L1570 / `unit_tests/test_host_resource_recovery_hardening.py:368: in test_pending_server_is_found_even_when_the_clock_stepped_back`; 관찰: GpuError: owned server stop not confirmed (observed unknown); lease retained. 분류: `H-PROC`.
+- `unit_tests/test_host_resource_recovery_hardening.py::test_pending_server_is_found_even_when_the_clock_stepped_back[250.0]` — log L1723 (요약), L1580 / `unit_tests/test_host_resource_recovery_hardening.py:368: in test_pending_server_is_found_even_when_the_clock_stepped_back`; 관찰: GpuError: owned server stop not confirmed (observed unknown); lease retained. 분류: `H-PROC`.
+
+### Schema 외 나머지 14건
+- `tests/test_collector_pipeline.py::test_collector_package_has_no_llm_or_knowledge_dependency` — log L1656 (요약), L112 / `tests/test_collector_pipeline.py:781: in test_collector_package_has_no_llm_or_knowledge_dependency`; 관찰: Assertion reports precise_eval.py imports ttakkari.kb_pipeline.subscription_transport (blocked prefix is ttakkari.kb). 분류: `C-IMPORT`.
+- `tests/test_research_resume_pagination.py::test_resume_pages_all_collections_past_500_and_keeps_page_quotes` — log L1685 (요약), L371 / `tests/test_research_resume_pagination.py:70: in test_resume_pages_all_collections_past_500_and_keeps_page_quotes`; 관찰: pagination totals add zero-valued best_results, configurations, runs absent from expected map. 분류: `R-PAGE`.
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders0]` — log L1686 (요약), L380 / `상세 test 위치 없음`; 관찰: pytest-timeout: exceeded 120 seconds. 분류: `R-TIME`.
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders1]` — log L1687 (요약), L496 / `상세 test 위치 없음`; 관찰: pytest-timeout: exceeded 120 seconds. 분류: `R-TIME`.
+- `tests/test_research_retry_admission_unit.py::test_start_and_retry_share_experiment_row_admission_lock[contenders2]` — log L1688 (요약), L615 / `상세 test 위치 없음`; 관찰: pytest-timeout: exceeded 120 seconds. 분류: `R-TIME`.
+- `tests/test_research_retry_admission_unit.py::test_admission_reuses_plan_validation_before_owner_run_or_event[normal]` — log L1689 (요약), L731 / `상세 test 위치 없음`; 관찰: pytest-timeout: exceeded 120 seconds. 분류: `R-TIME`.
+- `tests/test_research_selection_failures.py::test_real_failure_reappears_in_followup_selection_without_global_exclusion[True]` — log L1690 (요약), L847 / `tests/test_research_selection_failures.py:70: in test_real_failure_reappears_in_followup_selection_without_global_exclusion`; 관찰: actual state 'unknown'; expected 'applicable'. 분류: `R-SELECT`.
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[after_register]` — log L1691 (요약), L867 / `tests/test_scenario_b_artifacts.py:619: in test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies`; 관찰: actual receipt adds research_adapter_receipt(status=failed, RuntimeError after copying). 분류: `R-RECEIPT`.
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_copy]` — log L1692 (요약), L893 / `tests/test_scenario_b_artifacts.py:619: in test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies`; 관찰: actual receipt adds research_adapter_receipt(status=failed, OSError after partial write). 분류: `R-RECEIPT`.
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_flush]` — log L1693 (요약), L929 / `tests/test_scenario_b_artifacts.py:619: in test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies`; 관찰: actual receipt adds research_adapter_receipt(status=failed); registration returned a foreign-key violation. 분류: `R-RECEIPT`.
+- `tests/test_scenario_b_artifacts.py::test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies[during_commit]` — log L1694 (요약), L1136 / `tests/test_scenario_b_artifacts.py:619: in test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies`; 관찰: actual receipt adds research_adapter_receipt(status=failed); registration returned a foreign-key violation. 분류: `R-RECEIPT`.
+- `unit_tests/test_artifact_delivery_guidance.py::test_reverse_prompt_requires_share_for_zip_delivery` — log L1695 (요약), L1354 / `unit_tests/test_artifact_delivery_guidance.py:22: in test_reverse_prompt_requires_share_for_zip_delivery`; 관찰: test SimpleNamespace omitted job.result; _prompt accessed result. 분류: `ART-REVERSE`.
+- `unit_tests/test_artifact_delivery_guidance.py::test_artcraft_note_requires_share_for_user_delivery` — log L1696 (요약), L1365 / `unit_tests/test_artifact_delivery_guidance.py:32: in test_artcraft_note_requires_share_for_user_delivery`; 관찰: ArtCraft NOTE did not contain phrase '에이전트 파일' expected by test. 분류: `ART-CRAFT`.
+- `unit_tests/test_orchestrator_report_merge.py::test_claim_locks_session_and_run_for_update_before_leasing` — log L1724 (요약), L1590 / `unit_tests/test_orchestrator_report_merge.py:394: in test_claim_locks_session_and_run_for_update_before_leasing`; 관찰: AttributeError: fake session is int; claim reads sess.kind. 분류: `ORCH-FAKE`.
+
+
+### 수정 범위와 보존한 역사적 계약
+
+- `tests/test_kb_v3_collection_access_delta.py`: 성공 fixture를 current 0077로 고치고 0076 runtime scope-merge 거부 반례를 추가했다. visibility, provenance, access revocation assertion은 그대로 뒀다.
+- `tests/test_kb_v3_generation_coexistence.py`, `tests/test_kb_v3_schema_migration.py`, `tests/test_kb_v3_schema_realdb.py`: current head만 0077로 맞췄다. 0071 writer SQL, DB upgrade/downgrade·손실 방지·백필·단일 head 검사는 유지하고 0077→0076 부모 edge를 명시했다.
+- `unit_tests/test_collection_research_migration_merge.py`: 0076을 `HEAD_MERGE` 역사 revision으로 계속 검사하고 current head 0077 및 direct parent 0076을 별도 assert한다. 두 branch parent, 양쪽 upgrade 계획, migration inventory 검사는 유지했다.
+- `unit_tests/test_schema_head_admission.py`: 0076은 contract online source로 유지하고 0077 단일 head는 current로 별도 확인한다. 0073/0074/0075 online 정책과 multiple-head 거부를 바꾸지 않았다.
+- Schema 외 14개와 host/process 49개는 수정·삭제·skip하지 않았다. 다음 순서: (1) 허용된 host process/sysctl 관측으로 host lookup과 환경을 구분, (2) research 4 timeout의 lock/stack 분석, (3) collector import 및 reverse/artcraft/orchestrator fixture 경계, (4) pagination/selection/receipt 행동 계약.
+- 이 분류는 고정 b05 실행의 관측값이며 88a79c4c 별도 runtime 의미 변경은 포함·검증하지 않았다. 전체 통과나 배포 가능 판정이 아니다.

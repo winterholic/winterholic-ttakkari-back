@@ -1,7 +1,7 @@
 """지식 도서관(KB v3) 스키마 확장, 온톨로지·파이프라인 모델 및 마이그레이션 계약 검증.
 
 KB3-102 검증 범위:
-1. Alembic 마이그레이션 그래프 단일 head (0072_kb_v3_schema_and_scope) 및 down_revision (0071_library_platform_v2_merge) 검속.
+1. Alembic 마이그레이션 그래프 단일 head (0077_artcraft_account_pin) 및 0076 KB merge 계보 검증.
 2. Base.metadata 모델 등록 parity: 파이프라인 2종, 온톨로지 8종, kb_passages 위치 메타, kb_sources 원본 메타, kb_document_access scope 통합.
 3. 불변 원장 RESTRICT 외래키 보호: kb_documents, kb_revisions, kb_passages, kb_evidence 참조 FK의 ondelete='RESTRICT' 전수 검증.
 4. 중요 설계 보정: kb_documents 에 current_revision_id 포인터가 없음을 보증(현재성은 event_time 및 rev_no 규칙 보존).
@@ -55,13 +55,14 @@ def _load_migration(name: str):
 
 
 def test_alembic_v3_single_head_and_lineage():
-    """Alembic 그래프가 단일 head이며 0076_kb_v3_collection_merge 가 0074와 0075를 정확히 머지했는지 검증."""
+    """Alembic head 0077이 0076 위에 있고, 0076이 0074와 0075를 머지했는지 검증."""
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "alembic"))
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
     assert len(heads) == 1, f"Alembic heads must be exactly 1, got: {heads}"
-    assert heads[0] == "0076_kb_v3_collection_merge"
+    assert heads[0] == "0077_artcraft_account_pin"
+    assert _load_migration("0077_artcraft_account_pin").down_revision == "0076_kb_v3_collection_merge"
     assert set(_load_migration("0076_kb_v3_collection_merge").down_revision) == {
         "0074_kb_v3_research_merge", "0075_collection_research_merge"
     }

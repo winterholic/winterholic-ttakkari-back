@@ -109,6 +109,69 @@ async def test_unavailable_scoped_profile_does_not_reserve_a_call(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_precise_runtime_availability_uses_the_factory_returned_by_sessionmaker(monkeypatch):
+    from types import SimpleNamespace
+
+    from ttakkari import collector_precise_runtime
+    from ttakkari.runs import profiles
+
+    accessor_calls = []
+    session_calls = []
+    session = object()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, *_args):
+            return None
+
+    def session_factory():
+        session_calls.append(True)
+        return SessionContext()
+
+    def sessionmaker_accessor():
+        accessor_calls.append(True)
+        return session_factory
+
+    async def scoped_availability(db, engine, pool, *, model=None):
+        assert db is session
+        assert (engine, pool, model) == ("codex", "personal", "gpt-6-luna")
+        return [SimpleNamespace(pool=pool)], []
+
+    monkeypatch.setattr(collector_precise_runtime, "sessionmaker", sessionmaker_accessor)
+    monkeypatch.setattr(collector_precise_runtime, "get_settings", lambda: SimpleNamespace(
+        kb_l2_subscription_engine="codex",
+        kb_l2_subscription_model="gpt-6-luna",
+        kb_l2_subscription_effort="",
+        kb_l2_subscription_timeout_seconds=5,
+        kb_l2_subscription_concurrency=1,
+    ))
+    monkeypatch.setattr(profiles, "availability", scoped_availability)
+
+    assert await collector_precise_runtime.availability(scope="personal") == (True, None, None)
+    assert accessor_calls == [True]
+    assert session_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_precise_runtime_availability_preserves_scope_capacity_diagnostic(monkeypatch):
+    from ttakkari import collector_precise_runtime
+    from ttakkari.kb_pipeline.subscription_transport import (
+        DIAG_SCOPE_CAPACITY_UNAVAILABLE,
+    )
+
+    def unexpected_sessionmaker():
+        raise AssertionError("invalid provenance must be rejected before opening a session")
+
+    monkeypatch.setattr(collector_precise_runtime, "sessionmaker", unexpected_sessionmaker)
+
+    assert await collector_precise_runtime.availability(scope="unknown") == (
+        False, DIAG_SCOPE_CAPACITY_UNAVAILABLE, None
+    )
+
+
+@pytest.mark.asyncio
 async def test_subscription_budget_uses_daily_caps_without_persistent_job_cap(monkeypatch):
     from ttakkari.collector import budget
 

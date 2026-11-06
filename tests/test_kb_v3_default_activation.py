@@ -60,6 +60,7 @@ def test_build_l2_adapter_default_activation(monkeypatch):
     dummy_session_factory = lambda: None
     adapter = build_l2_adapter(s, session_factory=dummy_session_factory)
     assert isinstance(adapter, SubscriptionCliL2Adapter)
+    assert adapter.session_factory is dummy_session_factory
     assert adapter.engine == "codex"
     assert adapter.model == "gpt-6-luna"
 

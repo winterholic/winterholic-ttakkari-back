@@ -338,6 +338,19 @@ ruff (변경된 파이썬 1개): 통과
 - 수정 및 검증 커밋 `491312b8aaf7cec05674dfe90785f4f31d91495b`는 fetch 후 `origin/main`에 새 커밋이 없음을 확인하고 일반 push했다. push 직전 gate도 Ruff 통과, 계약 `87 passed`, 변경 테스트 `13 passed`였다. push 출력은 `eafb7176..491312b8 HEAD -> main`이며 당시 `HEAD`, `origin/main`은 모두 `491312b8aaf7cec05674dfe90785f4f31d91495b`, worktree clean이었다.
 - 그 clean full SHA에 대해 배포 예약을 한 번 접수했다. 응답: ID `5605d589-cca9-42c0-8367-71743aa02e60`, revision `491312b8aaf7cec05674dfe90785f4f31d91495b`, `skip_tests=false`, strategy `generations`, status `requested`. 이는 예약 수락이며 배포 성공을 뜻하지 않는다. 상태 대기·폴링은 하지 않았다. 이 문서-only 예약 기록은 별도 SHA로 보존한다.
 
+## Precise evaluator session factory release fix (2026-11-07)
+
+- `ops_deploy_log(5605d589-cca9-42c0-8367-71743aa02e60, summary)`는 revision `491312b8aaf7cec05674dfe90785f4f31d91495b`의 release controller pytest 실패다. `tests/test_collector_manage.py::test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason`에서 `1 failed, 1246 passed, 9 skipped, 6 subtests passed in 160.14s`였고, 이를 운영 장애로 해석하지 않는다.
+- 호출 경로는 `runner.consume_once()` → `precise_eval.consume_pending_once()` → generation service가 설치한 `collector_precise_runtime` → `_adapter()` → `SubscriptionCliL2Adapter.availability()`다. `db.sessionmaker()`는 `async_sessionmaker`를 반환하지만 `_adapter()`가 accessor `db.sessionmaker` 자체를 넘겨 adapter의 단일 호출 결과를 `async with`에 넣었다. 실제 오류는 `TypeError: 'async_sessionmaker' object does not support the asynchronous context manager protocol` (`l2_adapters.py:173`)다.
+- 먼저 추가한 DB·모델 비의존 RED는 실제 `_adapter()` 및 runtime availability를 실행하고 profile 조회만 가짜로 경계했다. `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_collection_precise_subscription.py::test_precise_runtime_availability_uses_the_factory_returned_by_sessionmaker`는 `TypeError: 'function' object does not support the asynchronous context manager protocol`로 1 failed였다. 이는 accessor를 넘기는 잘못된 호출 경계를 재현했다.
+- `_adapter()`가 `sessionmaker()`에서 얻은 factory를 `SubscriptionCliL2Adapter`에 넘기도록 한 줄을 교정했다. 저장 출처 scope → target pool 계산, 불허 scope의 `scope_capacity_unavailable` 진단, adapter의 account pool 제한은 바꾸지 않았다.
+- 호출자 검색 결과 `build_l2_adapter()`는 전달받은 session factory를 그대로 `SubscriptionCliL2Adapter`에 전달하고 `ExtractingProcessor`는 worker context factory를 공급한다. 오류 계약과 다른 제품 호출자는 발견되지 않았다. 기존 `tests/test_kb_v3_default_activation.py`에 factory identity assertion을 추가해 이 경계를 고정했다.
+- `tests/test_collection_mission_stage2.py`의 autouse `isolated_precise_eval_runtime`은 setup에서 전역 runtime을 비우고 teardown에서 이전 runtime을 복원하며, 해당 테스트의 `install()`은 fixture 범위 밖에 남지 않는다. fixture 변경은 불필요했다.
+- 교정 뒤 `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q unit_tests/test_collection_precise_subscription.py tests/test_kb_v3_default_activation.py`는 `25 passed in 0.06s`였다. 기존 진단 경계는 미허용 provenance 회귀로 확인한다.
+- 표준 gate 첫 실행은 계약 `87 passed`, 변경 테스트 `25 passed`였으나 Ruff가 진단 테스트의 import ordering `I001` 하나를 지적했다. import grouping만 정리하고 같은 고정 커밋에 포함해 재검증했다.
+- 정리 후 표준 검증은 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-precise-runtime-20261107 ./scripts/verify_deploy_gate.sh --commit HEAD --base origin/main`으로 실행했다: Ruff 통과, 계약 `87 passed, 6954 deselected in 16.74s` (87 selective DB resets, full/fallback 0), 변경 테스트 파일 2개 `25 passed in 0.05s`, exit 0. DB 비의존 회귀의 별도 직접 실행도 `25 passed in 0.06s`였다.
+- 이번 단계는 고정 커밋 검토까지다. 후속 전체 release pytest, push, 배포 예약, 배포 상태 폴링은 지시된 범위에 따라 실행하지 않았다. RED는 이전 release controller 로그, GREEN은 지정 표준 gate와 DB 비의존 회귀로 남겼다.
+
 ### Push gate 진단·교정
 
 - 첫 일반 push에서 pre-push 게이트가 `/Users/winterholic/.cache/uv` 초기화를 `Operation not permitted`로 거부했다. 게이트를 생략하지 않고 `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-189-integration`으로 허용된 cache 경로를 지정해 다시 실행했다.

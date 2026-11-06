@@ -33,4 +33,28 @@ Date: 2026-11-07 (Asia/Seoul)
 - Source/test commit: `70907e695a7312a862358e764b65e515bcdc6b53`
 - Base: `a4387faf0b0110ae56364585418dd48a6a0569fe`
 - Diff: `scripts/platform_v2_inventory.py` (+3), `unit_tests/test_platform_v2_inventory.py` (+4); 7 insertions, 0 deletions. This work-history file is committed separately to include the full source commit SHA.
-- No push, deployment request, controller gate, or operational test was performed; those remain the Lead's next step.
+- At the source-correction stage, no push, deployment request, controller gate, or operational test had been performed. Release follow-through is recorded below.
+
+## Release follow-through
+
+Date: 2026-11-07 (Asia/Seoul)
+
+### Identity, candidate, and isolated DB proof
+
+- Required first command `/Users/winterholic/bin/ttk get "/api/runs/$TTAKKARI_RUN_ID"` exited 0. API response: Run `63edc674-30ee-4348-9c30-1d4961c49b83`, engine `codex`, model `gpt-6-luna`, effort `high`, profile `회사 코덱스 ai2 (ai2@hyperez.io)`.
+- `git fetch origin main`; `git rev-parse origin/main` and `git ls-remote origin refs/heads/main` both returned `a4387faf0b0110ae56364585418dd48a6a0569fe`. It is the candidate's ancestor. `git diff --stat origin/main..2cb4257226ea17cddfd11b844d285a35d19823a6`: 3 files changed, 43 insertions, 0 deletions — this work-history, the 3-line classifier mapping, and 4 test lines. `git diff --check` exited 0.
+- `independent-review/` remained untracked in `/private/tmp/platform-v2-inventory-gate-20261107`; no file there was removed, stashed, or included. The release used a separate clean worktree `/private/tmp/platform-v2-inventory-release-20261107`, branch `release/inventory-gate-20261107`, at candidate `2cb4257226ea17cddfd11b844d285a35d19823a6`.
+- Before the pre-push hook, this Run's async SQL proof executed `SET TRANSACTION READ ONLY` and the SQL identity query. The secret URL was not printed. `DB_OWNER_PROOF=PASS`: URL/SQL `postgresql+asyncpg`, `127.0.0.1`, `ttakkari_test`, `ttk_test`, port `54271`; SQL read-only `on`; exact marker `/tmp/ttakkari-run-test-99596-c27e234d/run-test-cluster.marker` had `run_id=63edc674-30ee-4348-9c30-1d4961c49b83`, matching folder and port; marker/folder UID `501` matched current UID `501`.
+
+### Normal hook and push
+
+- GitHub account listing showed active `winterholic`; no account switch. The pre-push hook was executable at `/Users/winterholic/development/projects/winterholic-ttakkari/back/.git/hooks/pre-push`; `TTK_SKIP_GATE` was unset.
+- First normal push attempt exited 1 in the pre-push stage before pytest: `uv sync` could not initialize the default `/Users/winterholic/.cache/uv` (`Operation not permitted`, cache open). No gate was skipped. Using uv's `UV_CACHE_DIR=/private/tmp/uv-cache-63edc674-30ee-4348-9c30-1d4961c49b83`, the same normal `git push origin HEAD:refs/heads/main` ran the full configured pre-push hook and exited 0.
+- Successful hook output: Ruff on 2 Python files passed; contract set `87 passed, 6969 deselected in 17.29s`; changed unit file `57 passed in 81.56s`; stages all passed, total 110s. The hook explicitly reports this is the contracts + changed-tests gate, not the full release/security gate.
+- Push output: `a4387faf..2cb42572 HEAD -> main`. Afterwards `git rev-parse HEAD` and `git ls-remote origin refs/heads/main` both returned `2cb4257226ea17cddfd11b844d285a35d19823a6`; `git status --porcelain` was empty; `git diff --check HEAD^ HEAD` exited 0.
+
+### Backend deployment reservation and remaining verification
+
+- Called the supported `request_backend_deploy(revision="2cb4257226ea17cddfd11b844d285a35d19823a6")`. Actual receipt: id `17623569-4394-4208-89b5-c9e569117926`, status `requested`, revision `2cb4257226ea17cddfd11b844d285a35d19823a6`, `skip_tests=false`, strategy `generations`, error `null`.
+- No deployment polling or active-state claim was made. The controller's full security/release gates are still required; actual active revision remains unverified.
+- Operational ArtCraft R1–R4 remain open: create/edit documents, English search and duplicate ingestion, DeckCraft and PhotoCraft official application, CLI/MCP access, and manual recovery. The inventory boundary acceptance and pre-push gate do not establish product/runtime health.

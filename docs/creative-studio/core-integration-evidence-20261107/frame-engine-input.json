@@ -1,0 +1,292 @@
+{
+  "plan_id": "5ee46ae1-7bad-451b-89ad-7be095c7bf47",
+  "revision": 1,
+  "segment_id": "seg-01",
+  "seconds": 8.0,
+  "aspect": "16:9",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "style_dna": null,
+  "scenes": [
+    {
+      "scene_id": "i0",
+      "title": "",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 8.0,
+      "seconds": 8.0,
+      "start_frame": 0,
+      "end_frame": 240,
+      "duration_state": "stretched",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "장면 1",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "frame_animation_2d",
+      "selected_engine": "skill.frame_animation_2d",
+      "preset": "walk_cycle",
+      "strategy_rationale": {
+        "reason": "승인할 스토리보드의 제작 전략",
+        "source": "llm",
+        "model": "reviewed-fixture",
+        "scope": "fixed character walk cycle only; custom rig/action unsupported",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "generative_video",
+            "engine": "skill.comfy_video_renderer",
+            "scope": "existing managed-generated video playback; no new generation here",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "fixed character walk cycle only; custom rig/action unsupported"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot-0",
+          "action": "프리셋 또는 제공된 영상 사용",
+          "layers": [
+            "visual",
+            "captions",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "i0",
+          "index": 0,
+          "strategy": "frame_animation_2d",
+          "selected_providers": [
+            "skill.frame_animation_2d"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.0,
+          "start_time": 0.0,
+          "end_time": 8.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "generative_video",
+              "engine": "skill.comfy_video_renderer",
+              "scope": "existing managed-generated video playback; no new generation here",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "fixed character walk cycle only; custom rig/action unsupported"
+          },
+          "layer_tools": {
+            "visual": "skill.frame_animation_2d",
+            "captions": "tool.ffmpeg",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ],
+      "caption": ""
+    }
+  ],
+  "editorial_scenes": [
+    {
+      "scene_id": "i0",
+      "title": "장면 1",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 8.0,
+      "seconds": 8.0,
+      "start_frame": 0,
+      "end_frame": 240,
+      "duration_state": "stretched",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "장면 1",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "frame_animation_2d",
+      "selected_engine": "skill.frame_animation_2d",
+      "preset": "walk_cycle",
+      "strategy_rationale": {
+        "reason": "승인할 스토리보드의 제작 전략",
+        "source": "llm",
+        "model": "reviewed-fixture",
+        "scope": "fixed character walk cycle only; custom rig/action unsupported",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "generative_video",
+            "engine": "skill.comfy_video_renderer",
+            "scope": "existing managed-generated video playback; no new generation here",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "fixed character walk cycle only; custom rig/action unsupported"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot-0",
+          "action": "프리셋 또는 제공된 영상 사용",
+          "layers": [
+            "visual",
+            "captions",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "i0",
+          "index": 0,
+          "strategy": "frame_animation_2d",
+          "selected_providers": [
+            "skill.frame_animation_2d"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.0,
+          "start_time": 0.0,
+          "end_time": 8.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "generative_video",
+              "engine": "skill.comfy_video_renderer",
+              "scope": "existing managed-generated video playback; no new generation here",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "fixed character walk cycle only; custom rig/action unsupported"
+          },
+          "layer_tools": {
+            "visual": "skill.frame_animation_2d",
+            "captions": "tool.ffmpeg",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ]
+    }
+  ]
+}

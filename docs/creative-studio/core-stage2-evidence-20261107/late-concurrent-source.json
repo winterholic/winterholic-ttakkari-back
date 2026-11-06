@@ -1,0 +1,19 @@
+{
+  "observed_utc": "2026-11-06T16:21:17Z",
+  "late_external_changes": {
+    "src/ttakkari/creative/v2/frame_animation.py": {
+      "snapshot_sha256": "942e97736afc2b8267ade3ad3f42c8ae0e634cb4ecc0ab57e334879276c60bb6",
+      "current_sha256": "f2c1ee2216dde8c9be3e2e8e0a10484c56671e139b47cfff6e90f94508f46cb4"
+    },
+    "scripts/run_frame_animation_benchmark.py": {
+      "snapshot_sha256": "e58e3b1ae48c4d4d842cfd34b3ba40cd334c4e40e40a437e7b2982d35a532baa",
+      "current_sha256": "3368516a8aea5915d3edf97ba3b8591f9918e05fcb9ac4ccf69ded20e398e04d"
+    },
+    "unit_tests/test_creative_v2_frame_animation.py": {
+      "snapshot_sha256": "b29d46c7ec5b6a61e048acf06c2dfd77d26cd30503b79d8f2f06b0e4007510a6",
+      "current_sha256": "449c7cc5b7f338b1dbfe61212ef6b0c6948ed405e1cd2e4d285a658ced416f86"
+    }
+  },
+  "core_final_hashes_match": true,
+  "action": "preserved; no producer edit/render/retest; final-stage2.log predates this concurrent update"
+}

@@ -1,0 +1,58 @@
+{
+  "head": "439472b3bc4665edc04ad1d7fa8ad1a9684a47b4",
+  "core_changed_this_run": [
+    "src/ttakkari/api/creative_v2.py",
+    "src/ttakkari/creative/v2/dispatch.py",
+    "src/ttakkari/creative/v2/engines.py",
+    "src/ttakkari/creative/v2/plans.py"
+  ],
+  "new_files": [
+    "docs/creative-studio/core-stage2-evidence-20261107/run_partial_repair.py",
+    "src/ttakkari/api/creative_v2.py",
+    "src/ttakkari/creative/v2/dispatch.py",
+    "src/ttakkari/creative/v2/engines.py",
+    "src/ttakkari/creative/v2/plans.py",
+    "src/ttakkari/creative/v2/production_review.py",
+    "unit_tests/test_creative_v2_stage2.py"
+  ],
+  "source_sha256": {
+    "docs/creative-studio/core-stage2-evidence-20261107/run_partial_repair.py": "126e0682bb6526c30657d020b2d33e7749a3ef1f1310f20c3a26c974f3777fe6",
+    "src/ttakkari/api/creative_v2.py": "5b7e7bf704f6c712ad75aeb83c3d164eda302d4cf951038d7d5aea50a661ae13",
+    "src/ttakkari/creative/v2/dispatch.py": "e6c3e0c28a6cbb19463f1020e9fbc98eb89c4c571b2c4d97231943abcc307e5d",
+    "src/ttakkari/creative/v2/engines.py": "5e85bfbbba626b82bdd51095de45e2c90a881e1c58c9e227fccc517810b3d69a",
+    "src/ttakkari/creative/v2/plans.py": "278227ce84c4b90cabb2bc9161dec880d53a0eb1915d06ca05793843eefb107b",
+    "src/ttakkari/creative/v2/production_review.py": "24533f67568c9d8188f64dd01641b2a3dca5eeda47384109a5541ec02ebca4ce",
+    "unit_tests/test_creative_v2_stage2.py": "dcab54d81f6ae2afe42b09469b8a102aef43664ca4663b69038dbd06de5940fc"
+  },
+  "unchanged_inherited_files": {
+    "src/ttakkari/creative/v2/intent.py": "619102df7c1cb28ffba780aad11373e7bb2e3ef430829b76e60b7896abad39c7",
+    "src/ttakkari/creative/v2/asset_generation_managed.py": "f668200334259603627647f5bbcb171796958d4aeb8cec2756cd49a8c4eaa057",
+    "src/ttakkari/creative/v2/planner.py": "ee870494d0adc87eb2c7c1eedd5c71199197ce6209c6aeab9dd3395f9e35758d",
+    "src/ttakkari/creative/v2/registry_data.py": "9b97b2ac27a1a560f7c89c4f01b497adca9ec72b5ce06f34c7b0acf09fb2d5e5",
+    "src/ttakkari/creative/v2/registry.py": "97bd25b50e0783dfa1ba96223f04b108ca430905f86552538772835ffa4cf4ab",
+    "src/ttakkari/creative/v2/frame_animation.py": "942e97736afc2b8267ade3ad3f42c8ae0e634cb4ecc0ab57e334879276c60bb6",
+    "src/ttakkari/creative/v2/duration.py": "55c05750777b78ca22dffe2e93a051242c45fbe15a9acc5c14dc451eae06a5c8",
+    "src/ttakkari/creative/v2/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/ttakkari/creative/v2/matching.py": "bb1a84743ec50746dc801f7f352c3866878d36f312239867b10b423fe931540a",
+    "src/ttakkari/creative/v2/extraction.py": "3c35115cad39222e35340872105e1ca8d511d2ec5750557e30a818ed37a1c250",
+    "src/ttakkari/creative/v2/capabilities.py": "c08d4bdb19f815d728e9d02284fa34e4dcc0988f641bb3ea187d415617101965",
+    "src/ttakkari/creative/v2/probe.py": "9798674a54e800644d3d4d8cbd32adc714ecdce15080e18dd6ab1b334e0830b8",
+    "src/ttakkari/creative/v2/run_extraction.py": "a15a30400bb6ea0523d233c55125a368d8adfea027d5521fc20d8d0e043403c3",
+    "src/ttakkari/creative/v2/hyperframes.py": "4bd5579ef68379e75c98d84fe1f2827b593c30745c2e5872ce2506dde6d1c520",
+    "src/ttakkari/creative/v2/scene_3d.py": "b3787d2509d7dcf26e7b4745cb74802ba5ff31c93d96bd4a95ec3905644a9a85",
+    "src/ttakkari/creative/v2/asset_generation.py": "04a22c0680b5eb58a6085c0e2ae0b7fbc1fe8eb6915506f05a04396d2515356c",
+    "src/ttakkari/creative/v2/style_dna.py": "beda0d73af51492d96fe0d1c67564679341576447005701bb05178895df2f4c2",
+    "src/ttakkari/creative/v2/asset_worker.py": "85e361689508f51f14678f59dee82c33db8e235975dc47aa31e38f8be543eff8",
+    "src/ttakkari/creative/v2/quality_worker.py": "711b90370d1cc692d3f1d775030ea712df60a33ffcef95b7292bf618a14e9c90",
+    "src/ttakkari/creative/v2/quality.py": "fa02f91aae7582217dc42577920cce42b2bd494392cf02319b4385d237197a81",
+    "src/ttakkari/creative/v2/report.py": "3bd4c48027f2ebce779936b131b8c0a3df416a5b10e15f16c2461ce92847259d",
+    "src/ttakkari/creative/v2/catalog_data.py": "5b2053d0f268b4a39158220dd72afeac6072766e7131d8ec420c2362993b2936",
+    "scripts/run_frame_animation_benchmark.py": "e58e3b1ae48c4d4d842cfd34b3ba40cd334c4e40e40a437e7b2982d35a532baa",
+    "docs/creative-studio/evidence-frame-animation-20261107.md": "e67a2c074de0d18fda6c0186ccd4b871be2b52488647b189417bbaec32827b05",
+    "unit_tests/test_creative_v2_frame_animation.py": "b29d46c7ec5b6a61e048acf06c2dfd77d26cd30503b79d8f2f06b0e4007510a6"
+  },
+  "notes": [
+    "Producer/quality/frontend not modified. No commit/push/deploy.",
+    "Actual render source separately captured before the fixed-producer guard; see actual-repair-source.json and executed-source/."
+  ]
+}

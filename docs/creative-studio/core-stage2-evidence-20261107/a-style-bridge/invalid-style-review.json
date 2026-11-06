@@ -1,0 +1,19 @@
+{
+  "reviews": [
+    {
+      "engine": "skill.hyperframes",
+      "segment_ids": [
+        "seg-01"
+      ],
+      "phase": "before_render",
+      "unapplied_policy": "allowed_with_disclosure",
+      "status": "invalid",
+      "reason": "Kafka flow가 소비할 수 없는 Style DNA motion_language.params.animation='pop'; 지원값: technical",
+      "contract": null
+    }
+  ],
+  "blockers": [
+    "skill.hyperframes: Kafka flow가 소비할 수 없는 Style DNA motion_language.params.animation='pop'; 지원값: technical"
+  ],
+  "dispatches": []
+}

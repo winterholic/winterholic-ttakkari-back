@@ -1,0 +1,7 @@
+RED: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest unit_tests/test_creative_v2_hyperframes_style_bridge.py -q
+# 8 failed in 0.63s
+GREEN: same command
+# 8 passed in 0.40s
+REGRESSION: PYTHONPATH=src:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run pytest unit_tests/test_creative_v2_hyperframes_style_bridge.py unit_tests/test_creative_v2_stage2.py unit_tests/test_creative_v2_dispatch.py -k 'hyperframes or style_dna_applies_only_what_the_engine_consumes_and_reports_the_rest or real_plan_style_params_reach_the_renderer_defaults or wrapper_delegates_exact_compose_result_without_mutation or invalid_style_is_rejected_before_dispatch_preflight or unapplied_fields_are_visible_before_approval_and_dispatch or valid_contract_is_preserved_in_dispatch_and_revision_review or wrapper_direct_call_rejects_invalid_style_before_delegate' -q
+# 11 passed, 33 deselected in 0.94s
+CAPTURE: PYTHONPATH=src:unit_tests:. UV_CACHE_DIR=/private/tmp/codex-uv-cache uv run python /Volumes/Backup/ttakkari-data/outbox/8024d673-2988-43f3-af02-d058ee178b2c/stage2-a-style/capture_review.py

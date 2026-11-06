@@ -3,8 +3,9 @@
 수직 경로: 계획 승인(렌더 게이트) → 엔진 어댑터 사전 점검 → 계획 구간(render_plan)마다 엔진 프로젝트 실행
 → 구간 결과를 이어 붙인 최종 미디어 → 실제 미디어 QA → 계획 폴더의 `production.json`.
 
-지금 실행되는 엔진은 v1 FFmpeg 슬라이드쇼 하나뿐이다(`engines.ADAPTERS`). 어댑터가 없는 제공자는 디스패치하지 않는다.
-이미지·음악은 사용자가 올린다. 이 모듈은 생성하지 않는다.
+기존 계획은 v1 큐를 유지한다. 검토된 director 계획은 명시한 제작자 프리셋/원본 영상과
+장면 합성기를 사용한다. 필수 registry 게이트와 실행 환경 검사는 어느 경로에서도 생략하지 않는다.
+음악과 managed 생성 영상은 등록된 자산을 소비하며, 모델 생성은 이 모듈에서 시작하지 않는다.
 
 재개 규칙: 구간 실행 키(`run_key`)는 계획 구간 키, 장면 자산 sha256, 음악 구간, 엔진 버전, 적용된 스타일로 정한다.
 키가 같고 산출물이 남은 구간은 다시 실행하지 않고, 키가 바뀐 구간만 새로 실행한다.
@@ -22,10 +23,12 @@ import subprocess
 import tempfile
 import uuid
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from ttakkari import queued_work
 from ttakkari.creative.render import (
     compile_caption_segments,
     dimensions,
@@ -33,7 +36,7 @@ from ttakkari.creative.render import (
     inspect_media,
 )
 from ttakkari.creative.service import ProjectInput, Scene, Studio
-from ttakkari.creative.v2 import engines
+from ttakkari.creative.v2 import engines, quality
 from ttakkari.creative.v2.plans import PlanStore
 
 V1_FORMAT = "music_video"
@@ -41,6 +44,10 @@ V1_FORMAT = "music_video"
 QA_BASE_TOLERANCE = 0.2
 QA_PER_SEGMENT_TOLERANCE = 0.05
 MUSIC_SLICE_PAD = 0.6
+COMPOSITOR_VERSION = hashlib.sha256(
+    Path(__file__).read_bytes() + Path(__file__).parents[1].joinpath("render.py").read_bytes()
+    + Path(__file__).with_name("engines.py").read_bytes()
+).hexdigest()
 
 STYLE_SOURCES = {
     "animation": ("motion_language", "animation"),
@@ -83,14 +90,51 @@ def _providers(plan: dict[str, Any]) -> set[str]:
 # --- 사전 조건 ---------------------------------------------------------------
 
 
-def dispatch_blockers(plan: dict[str, Any]) -> list[str]:
+def producer_style_reviews(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pure pre-dispatch review of selected producers, including unapplied DNA.
+
+    Fixed-value mismatches block dispatch. Other fields remain allowed with
+    disclosure, without claiming that their prose or values affected a render.
+    """
+    selected: dict[str, list[str]] = {}
+    if plan.get("director"):
+        by_id = {scene["scene_id"]: scene for scene in plan["scenes"]}
+        for segment in plan["render_plan"]["segments"]:
+            engine_id = by_id[segment["scene_ids"][0]]["selected_engine"]
+            selected.setdefault(engine_id, []).append(segment["id"])
+    else:
+        adapter = engines.adapter_for(_providers(plan))
+        if adapter:
+            selected[adapter.id] = [segment["id"] for segment in plan["render_plan"]["segments"]]
+    reviews = []
+    for engine_id, segments in selected.items():
+        adapter = engines.adapter_by_id(engine_id)
+        validate = getattr(adapter, "validate_style_dna", None)
+        if not callable(validate):
+            continue
+        review = {"engine": adapter.id, "segment_ids": segments, "phase": "before_render",
+                  "unapplied_policy": "allowed_with_disclosure"}
+        try:
+            contract = validate(plan.get("style"))
+        except ValueError as exc:
+            reviews.append({**review, "status": "invalid", "reason": str(exc), "contract": None})
+        else:
+            if contract is not None:
+                reviews.append({**review, "status": "validated", "contract": deepcopy(contract)})
+    return reviews
+
+
+def dispatch_blockers(plan: dict[str, Any], *, runtime_preflight: bool = True) -> list[str]:
     """이 계획을 엔진으로 보낼 수 없는 이유. 비어 있으면 보낼 수 있다."""
-    reasons: list[str] = []
+    reasons = [f"{review['engine']}: {review['reason']}" for review in producer_style_reviews(plan)
+               if review["status"] == "invalid"]
     if not plan["render_gate"]:
         reasons.append(
             "렌더 게이트가 닫혀 있습니다. 승인, studio_runtime 범위, 필수 능력 충족이 모두 필요합니다."
         )
         return reasons
+    if reasons:
+        return reasons  # Reject style input before any runtime/browser preflight.
     providers = _providers(plan)
     adapter = engines.adapter_for(providers)
     if adapter is None:
@@ -99,8 +143,37 @@ def dispatch_blockers(plan: dict[str, Any]) -> list[str]:
             + ", ".join(sorted(providers))
         )
         return reasons
-    pre = adapter.preflight()
+    pre = adapter.preflight() if runtime_preflight else engines.Preflight(True, "deferred_executor", [])
     reasons += [f"필수 의존성 없음: {m}" for m in pre.missing]
+    if not pre.ok and not pre.missing:
+        reasons.append(f"{adapter.id}: preflight failed without dependency details")
+    if plan.get("director"):
+        for segment in plan["render_plan"]["segments"]:
+            scenes = _segment_scenes(plan, segment)
+            core_capabilities = {"edit.timeline", "edit.captions", "audio.mix", "qa.machine_video"}
+            for scene in scenes:
+                for shot in scene.get("shots", []):
+                    unsupported = set(shot.get("required_capabilities", [])) - core_capabilities
+                    if unsupported:
+                        reasons.append(f"shot {shot['shot_id']}: unsupported required capabilities: {', '.join(sorted(unsupported))}")
+            selected = engines.adapter_by_id(scenes[0]["selected_engine"])
+            if selected is None:
+                reasons.append(f"엔진 어댑터가 없습니다: {scenes[0]['selected_engine']}")
+                continue
+            checked = selected.preflight() if runtime_preflight else engines.Preflight(True, "deferred_executor", [])
+            if not checked.ok:
+                reasons.append(f"{selected.id}: preflight failed: " + ", ".join(checked.missing))
+            validate = getattr(selected, "validate_spec", None)
+            if validate:
+                reasons.extend(validate(scenes))
+            limits = selected.limits
+            minimum_scenes = 1 if selected.id == engines.V1SlideshowAdapter.id else limits.min_scenes
+            if (plan["aspect"] not in limits.aspects
+                or not minimum_scenes <= len(scenes) <= limits.max_scenes
+                or not limits.min_segment_seconds <= segment["seconds"] <= limits.max_segment_seconds
+                or any(s["seconds"] > limits.max_scene_seconds for s in scenes)):
+                reasons.append(f"{selected.id}: aspect/scene/duration limits exceeded")
+        return reasons
     limits = adapter.limits
     if plan["aspect"] not in limits.aspects:
         reasons.append(
@@ -209,12 +282,15 @@ class ProductionStore:
         }
 
     @contextmanager
-    def tx(self, plan_id: str):
+    def tx(self, plan_id: str, *, blocking: bool = True):
         folder = self.folder(plan_id)
         if not (folder / "plan.json").is_file():
             raise FileNotFoundError("제작 계획이 없습니다.")
         with (folder / "production.lock").open("a") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            except BlockingIOError as exc:
+                raise ProductionError("production lease is held by another operation") from exc
             try:
                 data = self.read(plan_id)
                 before = json.dumps(data, sort_keys=True)
@@ -253,6 +329,7 @@ def put_asset(
     source: Path,
     name: str,
     meta: dict[str, Any],
+    preview_source: Path | None = None,
 ) -> dict[str, Any]:
     """이미 검증·정규화된 파일을 계획의 제작 자산으로 등록한다. 같은 내용은 한 번만 저장한다."""
     plan = plans.get(plan_id)
@@ -277,10 +354,19 @@ def put_asset(
             "sha256": sha,
             "file": relative,
             "name": name[:160],
-            "kind": "image" if kind == "scene" else "audio",
+            "kind": ("video" if source.suffix.lower() in {".mp4", ".webm", ".mov"} else "image") if kind == "scene" else "audio",
             "uploaded_at": _now(),
             "meta": meta,
         }
+        if asset["kind"] == "video":
+            asset["source_video_file"] = relative
+            if preview_source is not None:
+                preview_sha = _sha256_file(preview_source)
+                preview_relative = f"assets/{preview_sha}{preview_source.suffix.lower()}"
+                preview_target = store.folder(plan_id) / preview_relative
+                if not preview_target.is_file():
+                    shutil.copyfile(preview_source, preview_target)
+                asset["preview_image_file"] = preview_relative
         if kind == "scene":
             data["assets"]["scenes"][scene_id] = asset
         elif kind == "voice":
@@ -293,7 +379,9 @@ def put_asset(
 def _assets_state(plan: dict[str, Any], data: dict[str, Any], store: ProductionStore) -> dict[str, Any]:
     scenes = data["assets"]["scenes"]
     ids = [s["scene_id"] for s in plan["scenes"]]
-    missing = [i for i in ids if i not in scenes or not store.asset_path(plan["id"], scenes[i]).is_file()]
+    required = {s["scene_id"] for s in plan["scenes"] if s.get("strategy", "slideshow") in {"slideshow", "generative_video"}}
+    missing = [i for i in ids if i in required and (i not in scenes or not store.asset_path(plan["id"], scenes[i]).is_file())]
+    invalid_video = [i for i in ids if i in scenes and next(s for s in plan["scenes"] if s["scene_id"] == i).get("strategy") == "generative_video" and scenes[i]["kind"] != "video"]
     music = data["assets"]["music"]
     music_problem = None
     total = plan["scenes"][-1]["end_time"] if plan["scenes"] else 0.0
@@ -307,13 +395,17 @@ def _assets_state(plan: dict[str, Any], data: dict[str, Any], store: ProductionS
             )
     return {
         "scenes_total": len(ids),
-        "scenes_with_asset": len(ids) - len(missing),
+        "scenes_with_asset": sum(i in scenes for i in ids),
+        "scenes_requiring_upload": len(required),
+        "scenes": {sid: {k: value[k] for k in ("id", "sha256", "name", "kind", "source_video_file", "preview_image_file") if k in value}
+                   for sid, value in scenes.items() if sid in ids},
         "missing_scene_ids": missing,
         "music": None
         if music is None
         else {"id": music["id"], "name": music["name"], "sha256": music["sha256"], "duration": (music.get("meta") or {}).get("duration")},
         "music_problem": music_problem,
-        "complete": not missing and music_problem is None,
+        "invalid_video_scene_ids": invalid_video,
+        "complete": not missing and not invalid_video and music_problem is None,
     }
 
 
@@ -338,11 +430,14 @@ def _run_key(
     return _digest(
         {
             "plan_key": segment["input_sha256"],
-            "assets": [data["assets"]["scenes"][i]["sha256"] for i in segment["scene_ids"]],
+            "assets": [(data["assets"]["scenes"].get(s["scene_id"]) or {}).get("sha256")
+                       if s.get("strategy", "slideshow") in {"slideshow", "generative_video"} else None
+                       for s in _segment_scenes(plan, segment)],
             "music": {"sha256": music["sha256"], "start": round(start, 3), "seconds": segment["seconds"]},
-            "engine": {"id": engine["adapter"], "version": engine["version"]},
+            "engine": {"id": segment.get("engine", engine)["adapter"], "version": segment.get("engine", engine)["version"]},
             "style": style["applied"],
             "caption_mode": caption_mode,
+            "compositor_source": COMPOSITOR_VERSION,
             "voice_assets": {
                 scene_id: {
                     "sha256": (data.get("assets", {}).get("voices", {}).get(scene_id) or {}).get("sha256"),
@@ -398,7 +493,7 @@ def _create_project(
             pid,
             store.asset_path(plan["id"], asset),
             name=asset["name"],
-            kind="image",
+            kind=asset["kind"],
             provenance=f"v2-plan-asset:{asset['sha256']}",
             metadata=asset.get("meta") or {},
         )
@@ -451,9 +546,92 @@ def _create_project(
     return pid
 
 
+def _render_producer(
+    adapter: engines.EngineAdapter, store: ProductionStore, plan: dict[str, Any],
+    segment: dict[str, Any], key: str,
+) -> dict[str, Any]:
+    """Render the declared preset, then pass its video to the existing compositor.
+
+    Work stays inside this plan and the production flock. Neither producer starts
+    a model server; Blender's template explicitly uses Cycles CPU.
+    """
+    workdir = store.folder(plan["id"]) / "engine-work" / key
+    workdir.mkdir(parents=True, exist_ok=True)
+    path = workdir / "source.mp4"
+    scenes = _segment_scenes(plan, segment)
+    width, height = dimensions(plan["aspect"])
+    producer_scenes = scenes
+    if adapter.id == "skill.frame_animation_2d":
+        # Caption timing/voice alignment belongs to the core compositor, once.
+        producer_scenes = [{**s, "title": "", "narration": "", "caption": ""} for s in scenes]
+    spec = {
+        "plan_id": plan["id"], "revision": plan["revision"], "segment_id": segment["id"],
+        "seconds": segment["seconds"], "aspect": plan["aspect"], "width": width, "height": height,
+        "fps": plan["profile"]["fps"], "style_dna": plan.get("style"), "scenes": producer_scenes,
+        "editorial_scenes": scenes,
+    }
+    if adapter.id == "skill.frame_animation_2d" and "interpolation_mode" in scenes[0]:
+        spec["interpolation_mode"] = scenes[0]["interpolation_mode"]
+    (workdir / "input.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2))
+    receipt = adapter.render_segment(spec, output_path=path, workdir=workdir)
+    info = inspect_media(path)
+    if not info["has_video"] or abs(info["duration"] - segment["seconds"]) > 0.35:
+        raise ProductionError(f"{adapter.id}: invalid video/duration from producer")
+    result = {
+        "file": str(path.relative_to(store.folder(plan["id"]))),
+        "sha256": _sha256_file(path), "name": f"{segment['id']}.mp4", "kind": "video", "meta": info,
+        "receipt": receipt,
+    }
+    (workdir / "receipt.json").write_text(json.dumps(receipt, ensure_ascii=False, indent=2))
+    return result
+
+
+def _render_directed_segment(adapter, store, plan, segment, data, style, key, caption_mode):
+    scenes = _segment_scenes(plan, segment)
+    scene = scenes[0]
+    if callable(getattr(adapter, "render_segment", None)):
+        produced = segment.get("producer_output")
+        if not (segment.get("producer_key") == key and produced
+                and store.asset_path(plan["id"], produced).is_file()
+                and _sha256_file(store.asset_path(plan["id"], produced)) == produced["sha256"]):
+            produced = _render_producer(adapter, store, plan, segment, key)
+            segment.update(producer_output=produced, producer_key=key)
+        asset = produced
+    else:
+        asset = data["assets"]["scenes"][scene["scene_id"]]
+    work = store.folder(plan["id"]) / "engine-work" / key
+    work.mkdir(parents=True, exist_ok=True)
+    audio = work / "music.wav"
+    _slice_music(store.asset_path(plan["id"], data["assets"]["music"]),
+                 segment["start_frame"] / plan["profile"]["fps"], segment["seconds"], audio)
+    caption_style = style["applied"].get("caption_style", "bottom_card")
+    cues, cursor = [], 0.0
+    for scene in scenes:
+        voice = data["assets"].get("voices", {}).get(scene["scene_id"], {})
+        voice_seconds = (voice.get("meta") or {}).get("duration")
+        seconds = min(voice_seconds, scene["seconds"]) if voice_seconds else scene["seconds"]
+        text = scene["narration"] if caption_mode == "narration" and scene["narration"] else scene["title"]
+        local = compile_caption_segments(text, seconds, dimensions(plan["aspect"])[0], style=caption_style) if text else []
+        cues += [{**cue, "start": cue["start"] + cursor, "end": cue["end"] + cursor} for cue in local]
+        cursor += scene["seconds"]
+    output = work / "composite.mp4"
+    receipt = engines.compose_segment(store.asset_path(plan["id"], asset), audio, output,
+                                     aspect=plan["aspect"], seconds=segment["seconds"], captions=cues,
+                                     caption_style=caption_style, transition=style["applied"].get("transition", "cut"))
+    segment["compositor_receipt"] = receipt
+    segment.update(status="succeeded", error=None, output={"file": str(output), "sha256": _sha256_file(output),
+                    "size": output.stat().st_size, "media": inspect_media(output)})
+
+
 def _sync_segment(studio: Studio, record: dict[str, Any], segment: dict[str, Any]) -> None:
     """엔진 프로젝트의 실제 작업 상태를 구간 기록에 옮긴다."""
     if not segment.get("project_id") or not segment.get("job_id"):
+        if segment.get("status") == "succeeded":
+            output = segment.get("output") or {}
+            path = Path(output.get("file", ""))
+            if not path.is_file() or _sha256_file(path) != output.get("sha256"):
+                segment.update(status="stale", error="native segment output missing or hash mismatch")
+                _log(record, "segment_stale", segment=segment["id"], error=segment["error"])
         return
     try:
         project = studio.get(segment["project_id"])
@@ -549,7 +727,8 @@ def _assemble(
                 for s in record["segments"]
             ],
             "asset_sha256": sorted(
-                {data["assets"]["scenes"][i]["sha256"] for s in record["segments"] for i in s["scene_ids"]}
+                {data["assets"]["scenes"][i]["sha256"] for s in record["segments"] for i in s["scene_ids"] if i in data["assets"]["scenes"]}
+                | {s["producer_output"]["sha256"] for s in record["segments"] if s.get("producer_output")}
                 | {data["assets"]["music"]["sha256"]}
             ),
         },
@@ -563,6 +742,11 @@ def _assemble(
         },
         "assembled_at": _now(),
     }
+    from ttakkari.creative.v2.production_review import attested_receipts
+    record["quality_report"] = quality.evaluate_production(
+        plan, {**record, "assets": data["assets"], "quality_evidence": attested_receipts(record)}, media_path=final_path
+    )
+    record["repair_plan"] = record["quality_report"]["repair_plan"]
     _log(record, "assembled", sha256=sha, qa_passed=qa["passed"])
 
 
@@ -625,9 +809,12 @@ def _new_record(
     style = _style_defaults(plan, adapter)
     record = {
         "revision": plan["revision"],
+        "scene_snapshot": deepcopy(plan["scenes"]),
         "plan_sha256": plan["approval"]["snapshot"]["plan_sha256"],
         "engine": {"adapter": adapter.id, "version": pre.version, "preflight_at": _now()},
         "style": style,
+        "producer_style_reviews": producer_style_reviews(plan),
+        "rubric": quality.build_rubric(plan),
         "caption_mode": caption_mode,
         "caption_timing": (
             "scene duration; title-only captions"
@@ -666,7 +853,13 @@ def _new_record(
         "final": None,
         "log": [],
     }
-    _log(record, "dispatched", engine=adapter.id, version=pre.version, segments=len(record["segments"]))
+    if plan.get("director"):
+        if "animation" in style["applied"]:
+            style["ignored"].append(f"animation={style['applied'].pop('animation')!r}(native compositor preserves source motion; image camera motion not applied)")
+        record["engine"]["mode"] = "hybrid" if len({s["selected_engine"] for s in plan["scenes"]}) > 1 else "directed"
+        record["engine"]["producers"] = sorted({s["selected_engine"] for s in plan["scenes"]})
+    _log(record, "dispatched", engine=adapter.id, version=pre.version, segments=len(record["segments"]),
+         rubric_sha256=record["rubric"]["sha256"], rubric_timing="before_render")
     return record
 
 
@@ -681,7 +874,8 @@ def dispatch(
     plan = plans.assert_renderable(plan_id, revision)
     if caption_mode not in {"narration", "title_only"}:
         raise ProductionError("caption_mode는 narration 또는 title_only여야 합니다.")
-    blockers = dispatch_blockers(plan)
+    deferred = bool(plan.get("director") and queued_work.delegated())
+    blockers = dispatch_blockers(plan, runtime_preflight=not deferred)
     if blockers:
         raise ProductionError("디스패치할 수 없습니다: " + " / ".join(blockers))
     adapter = engines.adapter_for(_providers(plan))
@@ -690,7 +884,7 @@ def dispatch(
     with store.tx(plan_id) as data:
         existing = _record(data, revision)
         if existing is None:
-            data["dispatches"].append(_new_record(plan, adapter, adapter.preflight(), caption_mode))
+            data["dispatches"].append(_new_record(plan, adapter, engines.Preflight(True, "deferred_executor", []) if deferred else adapter.preflight(), caption_mode))
         view_ = _compose(plans, studio, plan, data, store)
     if existing is not None and existing.get("caption_mode", "narration") != caption_mode:
         # revision당 한 번만 디스패치되므로 뒤늦은 모드 요청은 적용되지 않는다. 조용히 무시하지 않고 알린다.
@@ -704,6 +898,8 @@ def dispatch(
 def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int) -> dict[str, Any]:
     """게이트와 의존성을 다시 확인하고, 실행 키가 달라졌거나 실패한 구간만 엔진에 보낸다."""
     plan = plans.assert_renderable(plan_id, revision)
+    if plan.get("director") and queued_work.delegated():
+        raise ProductionError("native engine render requires the host executor; remote API cannot execute producers")
     blockers = dispatch_blockers(plan)
     if blockers:
         raise ProductionError("렌더할 수 없습니다: " + " / ".join(blockers))
@@ -717,18 +913,50 @@ def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int
             problems = [f"장면 {i}에 이미지가 없습니다." for i in state["missing_scene_ids"]]
             if state["music_problem"]:
                 problems.append(state["music_problem"])
+            problems.extend(f"장면 {i}: generative_video requires a video asset" for i in state["invalid_video_scene_ids"])
             raise ProductionError("렌더할 수 없습니다: " + " / ".join(problems))
         adapter = engines.adapter_for(_providers(plan))
         assert adapter is not None
         pre = adapter.preflight()
-        record["engine"] = {"adapter": adapter.id, "version": pre.version, "preflight_at": _now()}
+        record["engine"] = {**record["engine"], "adapter": adapter.id, "version": pre.version, "preflight_at": _now()}
         style = record["style"]
         for segment in record["segments"]:
+            selected = _segment_scenes(plan, segment)[0].get("selected_engine")
+            segment_adapter = engines.adapter_by_id(selected) if selected else adapter
+            assert segment_adapter is not None
+            if selected:
+                segment_pre = segment_adapter.preflight()
+                segment["engine"] = {"adapter": segment_adapter.id, "version": segment_pre.version}
             _sync_segment(studio, record, segment)
             caption_mode = record.get("caption_mode", "narration")
             key = _run_key(plan, segment, data, record["engine"], style, caption_mode)
             reusable = segment["run_key"] == key and segment["status"] in ("succeeded", *SEGMENT_ACTIVE)
             if reusable:
+                continue
+            # Same content in a newly approved revision keeps the successful media/cache.
+            previous = next((s for d in reversed(data["dispatches"]) if d is not record
+                             for s in d["segments"] if s.get("run_key") == key
+                             and s["status"] == "succeeded" and Path((s.get("output") or {}).get("file", "")).is_file()
+                             and _sha256_file(Path(s["output"]["file"])) == s["output"]["sha256"]), None)
+            if previous:
+                segment.update({k: previous[k] for k in ("run_key", "project_id", "job_id", "status", "attempts", "output")})
+                segment["metrics"] = previous.get("metrics")
+                segment["cached_from_previous_revision"] = True
+                _log(record, "segment_reused", segment=segment["id"], run_key=key)
+                continue
+            if selected:
+                segment.update(run_key=key, job_id=str(uuid.uuid4()), project_id=None,
+                               attempts=segment["attempts"] + 1, status="running", output=None, error=None)
+                record["final"] = None
+                record.pop("quality_report", None)
+                record.pop("repair_plan", None)
+                try:
+                    _render_directed_segment(segment_adapter, store, plan, segment, data, style, key, caption_mode)
+                    plans.assert_renderable(plan_id, revision)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+                    segment.update(status="failed", error=f"{segment_adapter.id}: {type(exc).__name__}: {exc}", output=None)
+                _log(record, f"segment_{segment['status']}", segment=segment["id"], engine=segment_adapter.id,
+                     run_key=key, error=segment.get("error"))
                 continue
             retry_same = (
                 segment["run_key"] == key
@@ -761,6 +989,144 @@ def view(plans: PlanStore, studio: Studio, plan_id: str) -> dict[str, Any]:
         return _compose(plans, studio, plan, data, store)
 
 
+def plan_repair(plans: PlanStore, plan_id: str, revision: int, defects: list[dict[str, Any]]) -> dict[str, Any]:
+    """Persist a bounded proposal; generation assets and successful outputs stay intact.
+
+    Applying direction/scene changes still requires normal edit→approval→dispatch.
+    """
+    plan = plans.assert_renderable(plan_id, revision)
+    store = ProductionStore(plans)
+    with store.tx(plan_id) as data:
+        record = _record(data, revision)
+        if record is None:
+            raise ProductionError("먼저 이 계획 revision을 디스패치해 주세요.")
+        result = quality.plan_partial_repair(plan, {**record, "assets": data["assets"]}, defects)
+        result.update(plan_revision=revision, output_sha256=(record.get("final") or {}).get("sha256"),
+                      plan_sha256=record["plan_sha256"], caption_mode=record.get("caption_mode", "narration"))
+        result["proposal_sha256"] = _digest(result)
+        record["repair_plan"] = result
+        _log(record, "repair_proposed", scene_ids=result["invalidate"]["scene_ids"], output_sha256=result["output_sha256"])
+        return result
+
+
+
+def apply_repair(plans: PlanStore, plan_id: str, revision: int, proposal_sha256: str,
+                 updates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply bounded caption edits; leave approval and execution to existing gates.
+
+    The production flock is the CPU composition lease. No model/GPU generation
+    is requested here; unsupported layers cannot bypass their managed leases.
+    """
+    store = ProductionStore(plans)
+    with store.tx(plan_id, blocking=False) as data:
+        plan = plans.assert_renderable(plan_id, revision)
+        record = _record(data, revision)
+        proposal = (record or {}).get("repair_plan") or {}
+        body = {k: v for k, v in proposal.items() if k != "proposal_sha256"}
+        if (not record or proposal.get("proposal_sha256") != proposal_sha256
+                or _digest(body) != proposal_sha256
+                or proposal.get("plan_revision") != revision
+                or proposal.get("plan_sha256") != plan["approval"]["snapshot"]["plan_sha256"]):
+            raise ProductionError("stale or unknown repair proposal; propose again")
+        final = record.get("final") or {}
+        source = store.folder(plan_id) / final.get("file", "")
+        if (not final.get("sha256") or proposal.get("output_sha256") != final["sha256"]
+                or not source.is_file() or _sha256_file(source) != final["sha256"]):
+            raise ProductionError("repair output changed; propose against the current output")
+        if (any(s["status"] in SEGMENT_ACTIVE for s in record["segments"])
+                or any(g.get("status") in {"queued", "running"} for g in data.get("asset_generations", []))):
+            raise ProductionError("production generation/render lease is active")
+        blocked = deepcopy(proposal.get("blocked", []))
+        by_id = {scene["scene_id"]: scene for scene in plan["scenes"]}
+        for action in proposal.get("actions", []):
+            if by_id[action["scene_id"]].get("strategy") in {"frame_animation_2d", "scene_3d", "code_motion"}:
+                blocked.append({"action": action, "reason": "fixed producer output reuse is not connected for caption repair; refusing to restart a successful producer"})
+            if action["layer"] != "captions" or action["code"] not in {"text_legibility", "fake_text"}:
+                blocked.append({"action": action, "reason": "only explicit captions text repair is executable; other layers require their producer/managed lease"})
+        if blocked:
+            return {"status": "blocked", "blocked": blocked, "revision": revision}
+        actions = proposal.get("actions", [])
+        targets = {(a["scene_id"], a.get("shot_id"), a["layer"]) for a in actions}
+        supplied = {(u["scene_id"], u.get("shot_id"), u["layer"]) for u in updates}
+        if not targets or targets != supplied or len(updates) != len(targets):
+            raise ProductionError("updates must exactly match proposed scene/shot/layer targets")
+        by_id = {s["scene_id"]: s for s in plan["scenes"]}
+        caption_updates, changes = {}, []
+        for update in updates:
+            sid, field, text = update["scene_id"], update["field"], update["text"]
+            scene = by_id[sid]
+            consumed = "title" if record.get("caption_mode") == "title_only" or not scene.get("narration") else "narration"
+            if field != consumed or not isinstance(text, str) or not text.strip() or len(text) > 6000:
+                raise ProductionError("repair must change the consumed caption field with bounded non-empty text")
+            if text == scene[field]:
+                raise ProductionError("repair is a no-op")
+            if field == "narration" and data["assets"].get("voices", {}).get(sid):
+                raise ProductionError("narration repair with a voice requires managed voice regeneration; blocked")
+            caption_updates[sid] = {field: text}
+            changes.append({**update, "before": scene[field], "after": text})
+        # PlanStore owns revision CAS, approval invalidation, durable edit and hash.
+        edited = plans.edit(plan_id, revision, caption_updates=caption_updates)
+        application = {"id": str(uuid.uuid4()), "status": "applied_needs_approval",
+                       "source_revision": revision, "revision": edited["revision"],
+                       "proposal_sha256": proposal_sha256, "source_output_sha256": final["sha256"],
+                       "changes": changes, "preserve": deepcopy(proposal["preserve"]),
+                       "at": _now(), "quality_state": "unknown_until_new_review"}
+        data.setdefault("repairs", []).append(application)
+        _log(record, "repair_applied", application_id=application["id"], next_revision=edited["revision"])
+        return application
+
+
+def _public_result(record: dict[str, Any]) -> dict[str, Any]:
+    final = record.get("final") or {}
+    return {
+        "revision": record["revision"], "scenes": deepcopy(record.get("scene_snapshot")),
+        "snapshot_available": "scene_snapshot" in record,
+        "producer_style_reviews": deepcopy(record.get("producer_style_reviews", [])),
+        "quality_report": deepcopy(record.get("quality_report")),
+        "review_execution": deepcopy(record.get("review_execution")),
+        "final": {k: final.get(k) for k in ("id", "status", "sha256", "name")},
+        "segments": [{"id": s["id"], "scene_ids": s["scene_ids"], "run_key": s["run_key"],
+                      "status": s["status"], "sha256": (s.get("output") or {}).get("sha256")}
+                     for s in record["segments"]],
+    }
+
+
+def revision_result(plans: PlanStore, plan_id: str, revision: int) -> dict[str, Any]:
+    plans.get(plan_id)
+    data = ProductionStore(plans).read(plan_id)
+    record = _record(data, revision)
+    if record is None:
+        raise FileNotFoundError("production revision does not exist")
+    return {**_public_result(record), "plan_id": plan_id,
+            "repairs": [r for r in data.get("repairs", []) if revision in {r["source_revision"], r["revision"]}]}
+
+
+def result_media(plans: PlanStore, plan_id: str, revision: int, result_id: str) -> tuple[Path, str, str]:
+    """Resolve only recorded final/segment IDs, including retained earlier outputs."""
+    plans.get(plan_id)
+    store = ProductionStore(plans)
+    record = _record(store.read(plan_id), revision)
+    if record is None:
+        raise FileNotFoundError("production revision does not exist")
+    if result_id == "final":
+        result = record.get("final") or {}
+        path = store.folder(plan_id) / result.get("file", "")
+        good = result.get("status") in {"qa_passed", "qa_failed"}
+    else:
+        segment = next((s for s in record["segments"] if s["id"] == result_id), {})
+        result = segment.get("output") or {}
+        path = Path(result.get("file", ""))
+        good = segment.get("status") == "succeeded"
+    if not good or not result.get("sha256"):
+        raise FileNotFoundError("recorded result is not available")
+    path = path.resolve()
+    if not path.is_relative_to(store.folder(plan_id).resolve()):
+        raise ProductionError("result is outside this plan")
+    if not path.is_file() or _sha256_file(path) != result["sha256"]:
+        raise ProductionError("result is missing or its hash changed")
+    return path, result.get("name", f"r{revision}-{result_id}.mp4"), result["sha256"]
+
+
 def _compose(
     plans: PlanStore,
     studio: Studio,
@@ -773,10 +1139,15 @@ def _compose(
     base = {
         "plan_id": plan["id"],
         "plan_revision": plan["revision"],
+        "producer_style_reviews": producer_style_reviews(plan),
+        "render_request": deepcopy(record.get("render_request")) if record else None,
         "caption_mode": record.get("caption_mode") if record else None,
         "caption_timing": record.get("caption_timing") if record else None,
         "caption_sources": record.get("caption_sources") if record else None,
         "caption_contract": record.get("caption_contract") if record else None,
+        "rubric": record.get("rubric") if record else None,
+        "quality_report": record.get("quality_report") if record else None,
+        "repair_plan": record.get("repair_plan") if record else None,
         "assets": assets,
         "asset_generation_blockers": (
             []
@@ -793,13 +1164,16 @@ def _compose(
             ),
             None,
         ),
+        "repairs": deepcopy(data.get("repairs", [])),
+        "review_execution": record.get("review_execution") if record else None,
         "history": [
-            {"revision": d["revision"], "dispatched_at": d["dispatched_at"], "final": (d.get("final") or {}).get("status")}
+            {"revision": d["revision"], "dispatched_at": d["dispatched_at"], "final": (d.get("final") or {}).get("status"),
+             "final_sha256": (d.get("final") or {}).get("sha256"), "snapshot_available": "scene_snapshot" in d}
             for d in data["dispatches"]
         ],
     }
     if record is None:
-        reasons = dispatch_blockers(plan)
+        reasons = dispatch_blockers(plan, runtime_preflight=not bool(plan.get("director") and queued_work.delegated()))
         return base | {
             "state": "stale_revision" if data["dispatches"] else "not_dispatched",
             "dispatchable": not reasons,
@@ -851,8 +1225,13 @@ def _compose(
             reasons.append(assets["music_problem"])
     else:
         state = "ready_to_render"
+    request = record.get("render_request") or {}
+    if not final and request.get("status") in {"queued", "running"}:
+        state = "queued" if request["status"] == "queued" else "rendering"
     return base | {
         "state": state,
+        "quality_report": record.get("quality_report"),
+        "repair_plan": record.get("repair_plan"),
         "dispatchable": False,
         "reasons": reasons,
         "engine": record["engine"],
@@ -863,7 +1242,11 @@ def _compose(
                 "id": s["id"], "scene_ids": s["scene_ids"], "seconds": s["seconds"],
                 "status": s["status"], "attempts": s["attempts"], "error": s["error"],
                 "project_id": s["project_id"], "job_id": s["job_id"], "run_key": s["run_key"],
+                "output_sha256": (s.get("output") or {}).get("sha256"),
+                "result_id": s["id"] if s.get("output") else None,
                 "metrics": s.get("metrics"),
+                "engine": s.get("engine", record["engine"]),
+                "cached_from_previous_revision": s.get("cached_from_previous_revision", False),
             }
             for s in segments
         ],

@@ -1,0 +1,19 @@
+F
+=================================== FAILURES ===================================
+_____________ test_repair_changes_only_target_and_closes_approval ______________
+
+dispatched = (<ttakkari.creative.v2.plans.PlanStore object at 0x10e320980>, <ttakkari.creative.service.Studio object at 0x10e320ad0...revision': 1, 'created_at': '2026-11-06T16:02:55.965516+00:00', 'updated_at': '2026-11-06T16:02:55.968784+00:00', ...})
+
+    def test_repair_changes_only_target_and_closes_approval(dispatched):
+        plans, studio, plan = dispatched
+        repair = proposal(plans, plan)
+        before = dispatch.ProductionStore(plans).read(plan['id'])
+>       result = dispatch.apply_repair(plans, plan['id'], 1, repair['proposal_sha256'], update())
+                 ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'ttakkari.creative.v2.dispatch' has no attribute 'apply_repair'. Did you mean: 'plan_repair'?
+
+unit_tests/test_creative_v2_stage2.py:56: AttributeError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage2.py::test_repair_changes_only_target_and_closes_approval
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.88s

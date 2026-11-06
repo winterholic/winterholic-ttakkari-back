@@ -1,0 +1,134 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+__ test_storyboard_requires_grounded_sources_alternatives_and_explicit_review __
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10bf0bb60>, <ttakkari.creative.service.Studio object at 0x10bf0bcb0>)
+
+    def test_storyboard_requires_grounded_sources_alternatives_and_explicit_review(stores):
+>       from ttakkari.creative.v2 import storyboard as sb
+E       ImportError: cannot import name 'storyboard' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:38: ImportError
+_____________ test_render_consumer_admission_is_fenced[unapproved] _____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10be1e710>, <ttakkari.creative.service.Studio object at 0x10c178190>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c17c9d0>
+case = 'unapproved'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_______________ test_render_consumer_admission_is_fenced[stale] ________________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c178b90>, <ttakkari.creative.service.Studio object at 0x10c178cd0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c185130>
+case = 'stale'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_____________ test_render_consumer_admission_is_fenced[cancelled] ______________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c17d5b0>, <ttakkari.creative.service.Studio object at 0x10c17d6e0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c19d7b0>
+case = 'cancelled'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_____________ test_render_consumer_admission_is_fenced[duplicate] ______________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c17e060>, <ttakkari.creative.service.Studio object at 0x10c17e190>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c156750>
+case = 'duplicate'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+___________ test_render_consumer_admission_is_fenced[asset_changed] ____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c185fd0>, <ttakkari.creative.service.Studio object at 0x10c1860f0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1e17c0>
+case = 'asset_changed'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_______________ test_render_consumer_admission_is_fenced[lease] ________________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c0e7f00>, <ttakkari.creative.service.Studio object at 0x10c0e7bd0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1b7d90>
+case = 'lease'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_______________ test_render_consumer_admission_is_fenced[remote] _______________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c19e7a0>, <ttakkari.creative.service.Studio object at 0x10c19e030>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_render_consumer_admission6')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1aff50>
+case = 'remote'
+
+    @pytest.mark.parametrize('case',['unapproved','stale','cancelled','duplicate','asset_changed','lease','remote'])
+    async def test_render_consumer_admission_is_fenced(stores,tmp_path,monkeypatch,case):
+>       from ttakkari.creative.v2 import render_worker as rw
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:59: ImportError
+_______________ test_existing_asset_consumer_reaches_render_work _______________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c155b50>, <ttakkari.creative.service.Studio object at 0x10c155850>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6831/test_existing_asset_consumer_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1cc470>
+
+    async def test_existing_asset_consumer_reaches_render_work(stores,tmp_path,monkeypatch):
+>       from ttakkari.creative.v2 import asset_worker,render_worker
+E       ImportError: cannot import name 'render_worker' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:93: ImportError
+_____ test_storyboard_run_reuses_queue_and_resume_preserves_source_context _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1bdef0>
+
+    async def test_storyboard_run_reuses_queue_and_resume_preserves_source_context(monkeypatch):
+>       from ttakkari.creative.v2 import storyboard_runs as life
+E       ImportError: cannot import name 'storyboard_runs' from 'ttakkari.creative.v2' (/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/src/ttakkari/creative/v2/__init__.py)
+
+unit_tests/test_creative_v2_stage3.py:104: ImportError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage3.py::test_storyboard_requires_grounded_sources_alternatives_and_explicit_review
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[unapproved]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[stale]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[cancelled]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[duplicate]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[asset_changed]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[lease]
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[remote]
+FAILED unit_tests/test_creative_v2_stage3.py::test_existing_asset_consumer_reaches_render_work
+FAILED unit_tests/test_creative_v2_stage3.py::test_storyboard_run_reuses_queue_and_resume_preserves_source_context
+10 failed in 0.51s

@@ -1,0 +1,101 @@
+--- before/src/ttakkari/creative/v2/engines.py
++++ after/src/ttakkari/creative/v2/engines.py
+@@ -151,6 +151,11 @@
+             _FAILED_PREFLIGHTS[failure_key] = result
+         return result
+ 
++    def validate_style_dna(self, style_dna: dict[str, Any] | None) -> dict[str, Any] | None:
++        """Delegate pure producer validation without preflight or rendering."""
++        validate = getattr(self.delegate, "validate_style_dna", None)
++        return validate(style_dna) if callable(validate) else None
++
+     def validate_spec(self, scenes: list[dict[str, Any]]) -> list[str]:
+         reasons = []
+         preset = {"frame_animation": "walk_cycle", "scene_3d": "crystal_orbit"}.get(self.module)
+@@ -170,6 +175,7 @@
+         reasons = self.validate_spec(spec["scenes"])
+         if reasons:
+             raise ValueError(" / ".join(reasons))
++        self.validate_style_dna(spec.get("style_dna"))
+         payload = spec
+         if self.module == "scene_3d":
+             # The producer now rejects all unconsumed editorial fields. Core
+--- before/src/ttakkari/creative/v2/dispatch.py
++++ after/src/ttakkari/creative/v2/dispatch.py
+@@ -90,14 +90,51 @@
+ # --- 사전 조건 ---------------------------------------------------------------
+ 
+ 
++def producer_style_reviews(plan: dict[str, Any]) -> list[dict[str, Any]]:
++    """Pure pre-dispatch review of selected producers, including unapplied DNA.
++
++    Fixed-value mismatches block dispatch. Other fields remain allowed with
++    disclosure, without claiming that their prose or values affected a render.
++    """
++    selected: dict[str, list[str]] = {}
++    if plan.get("director"):
++        by_id = {scene["scene_id"]: scene for scene in plan["scenes"]}
++        for segment in plan["render_plan"]["segments"]:
++            engine_id = by_id[segment["scene_ids"][0]]["selected_engine"]
++            selected.setdefault(engine_id, []).append(segment["id"])
++    else:
++        adapter = engines.adapter_for(_providers(plan))
++        if adapter:
++            selected[adapter.id] = [segment["id"] for segment in plan["render_plan"]["segments"]]
++    reviews = []
++    for engine_id, segments in selected.items():
++        adapter = engines.adapter_by_id(engine_id)
++        validate = getattr(adapter, "validate_style_dna", None)
++        if not callable(validate):
++            continue
++        review = {"engine": adapter.id, "segment_ids": segments, "phase": "before_render",
++                  "unapplied_policy": "allowed_with_disclosure"}
++        try:
++            contract = validate(plan.get("style"))
++        except ValueError as exc:
++            reviews.append({**review, "status": "invalid", "reason": str(exc), "contract": None})
++        else:
++            if contract is not None:
++                reviews.append({**review, "status": "validated", "contract": deepcopy(contract)})
++    return reviews
++
++
+ def dispatch_blockers(plan: dict[str, Any]) -> list[str]:
+     """이 계획을 엔진으로 보낼 수 없는 이유. 비어 있으면 보낼 수 있다."""
+-    reasons: list[str] = []
++    reasons = [f"{review['engine']}: {review['reason']}" for review in producer_style_reviews(plan)
++               if review["status"] == "invalid"]
+     if not plan["render_gate"]:
+         reasons.append(
+             "렌더 게이트가 닫혀 있습니다. 승인, studio_runtime 범위, 필수 능력 충족이 모두 필요합니다."
+         )
+         return reasons
++    if reasons:
++        return reasons  # Reject style input before any runtime/browser preflight.
+     providers = _providers(plan)
+     adapter = engines.adapter_for(providers)
+     if adapter is None:
+@@ -774,6 +811,7 @@
+         "plan_sha256": plan["approval"]["snapshot"]["plan_sha256"],
+         "engine": {"adapter": adapter.id, "version": pre.version, "preflight_at": _now()},
+         "style": style,
++        "producer_style_reviews": producer_style_reviews(plan),
+         "rubric": quality.build_rubric(plan),
+         "caption_mode": caption_mode,
+         "caption_timing": (
+@@ -1040,6 +1078,7 @@
+     return {
+         "revision": record["revision"], "scenes": deepcopy(record.get("scene_snapshot")),
+         "snapshot_available": "scene_snapshot" in record,
++        "producer_style_reviews": deepcopy(record.get("producer_style_reviews", [])),
+         "quality_report": deepcopy(record.get("quality_report")),
+         "review_execution": deepcopy(record.get("review_execution")),
+         "final": {k: final.get(k) for k in ("id", "status", "sha256", "name")},
+@@ -1097,6 +1136,7 @@
+     base = {
+         "plan_id": plan["id"],
+         "plan_revision": plan["revision"],
++        "producer_style_reviews": producer_style_reviews(plan),
+         "caption_mode": record.get("caption_mode") if record else None,
+         "caption_timing": record.get("caption_timing") if record else None,
+         "caption_sources": record.get("caption_sources") if record else None,

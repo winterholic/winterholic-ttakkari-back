@@ -1,0 +1,43 @@
+{
+  "changed_existing_paths": [
+    "src/ttakkari/creative/v2/planner.py",
+    "src/ttakkari/creative/v2/dispatch.py",
+    "src/ttakkari/creative/v2/frame_animation.py"
+  ],
+  "b_renderer_ast_unchanged": true,
+  "ruff_baseline": [
+    [
+      "I001",
+      "Import block is un-sorted or un-formatted"
+    ],
+    [
+      "F401",
+      "`copy` imported but unused"
+    ],
+    [
+      "F401",
+      "`os` imported but unused"
+    ],
+    [
+      "F401",
+      "`shutil` imported but unused"
+    ],
+    [
+      "BLE001",
+      "Do not catch blind exception: `Exception`"
+    ],
+    [
+      "BLE001",
+      "Do not catch blind exception: `Exception`"
+    ],
+    [
+      "RUF046",
+      "Value being cast to `int` is already an integer"
+    ],
+    [
+      "RUF046",
+      "Value being cast to `int` is already an integer"
+    ]
+  ],
+  "ruff_added": 0
+}

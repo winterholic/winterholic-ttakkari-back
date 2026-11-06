@@ -1,0 +1,41 @@
+[
+  {
+    "attempt": "attempt1",
+    "run_id": "eb6ce21a-ca7e-4f5e-bb51-7777301316e8",
+    "session_id": "61e01d32-001d-4dd9-b262-6d62f16cd561",
+    "status": "succeeded",
+    "selected_model": "gpt-6-luna",
+    "engine": "codex",
+    "profile": "회사 코덱스 ai2 (ai2@hyperez.io)",
+    "prompt_sha256": "811aaf271bfcc5ff7e2b51e392557f7329b4c855924703b8693524d7e04a0c86",
+    "output_sha256": "bb1d3c34f9b83d25717a1f1a657d4ac51d326c2662c347f0db890502c9f62a9d",
+    "cost_usd": null,
+    "validation_outcome": "invalid_output: unknown required capability"
+  },
+  {
+    "attempt": "attempt2",
+    "run_id": "ea791aa5-500c-4a76-aa63-6feaef13eb9a",
+    "session_id": "61e01d32-001d-4dd9-b262-6d62f16cd561",
+    "status": "succeeded",
+    "selected_model": "gpt-6-luna",
+    "engine": "codex",
+    "profile": "내 codex (iuholic83@gmail.com)",
+    "prompt_sha256": "c8747cb1e2f9d9da9ff736da8701b50440ca1b3efef0c03a3b7b4d8aa21f8e27",
+    "output_sha256": "3c419e976cb96923d91410da73aa99f8e3091dcf570d03b11bb82dd4b16325a1",
+    "cost_usd": null,
+    "validation_outcome": "plan blocked: lab_manual 3D requirements not met"
+  },
+  {
+    "attempt": "attempt3",
+    "run_id": "90bddc9c-fb91-44fc-8364-fd67c61d21a7",
+    "session_id": "61e01d32-001d-4dd9-b262-6d62f16cd561",
+    "status": "succeeded",
+    "selected_model": "gpt-6-luna",
+    "engine": "codex",
+    "profile": "내 codex (iuholic83@gmail.com)",
+    "prompt_sha256": "4a80b9d1bc0bbb15b2a21a68552b2fb2a93b826a1fc0aff4279e814c2ae4b9f1",
+    "output_sha256": "2ee5207a0ff51bbafaac7eb8739a8c30ab8c8b371b0c395fd590032e2b8d5b9d",
+    "cost_usd": null,
+    "validation_outcome": "validated -> reviewed -> approved -> local durable consumer -> rendered"
+  }
+]

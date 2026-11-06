@@ -1,0 +1,77 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_render_consumer_admission_is_fenced[file_tampered] ____________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10a47ba10>, <ttakkari.creative.service.Studio object at 0x10a47bcb0>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6865/test_render_consumer_admission0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a6f8b00>
+case = 'file_tampered'
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "unapproved",
+            "stale",
+            "cancelled",
+            "duplicate",
+            "asset_changed",
+            "file_tampered",
+            "lease",
+            "remote",
+        ],
+    )
+    async def test_render_consumer_admission_is_fenced(stores, tmp_path, monkeypatch, case):
+        from ttakkari.creative.v2 import render_worker as rw
+    
+        plans, studio = stores
+        plan = approved(
+            plans,
+            director=ProductionDirection.model_validate(direction(("slideshow",) * 3)),
+        )
+        upload_all(plans, plan, tmp_path)
+        dispatch.dispatch(plans, studio, plan["id"], 1)
+        if case == "unapproved":
+            plans.edit(plan["id"], 1, caption_updates={"i0": {"title": "수정"}})
+            with pytest.raises(ValueError):
+                rw.enqueue(plans, plan["id"], 2)
+            return
+        first = rw.enqueue(plans, plan["id"], 1)
+        assert rw.enqueue(plans, plan["id"], 1)["id"] == first["id"]
+        called = []
+    
+        def render(*args):
+            called.append(1)
+            return {"state": "succeeded", "final": {"sha256": "fixture"}}
+    
+        monkeypatch.setattr(dispatch, "request_render", render)
+        held = None
+        if case == "stale":
+            plans.edit(plan["id"], 1, caption_updates={"i0": {"title": "수정"}})
+        elif case == "cancelled":
+            rw.cancel(plans, plan["id"], 1)
+        elif case == "asset_changed":
+            with dispatch.ProductionStore(plans).tx(plan["id"]) as data:
+                data["assets"]["music"]["sha256"] = "tampered"
+        elif case == "file_tampered":
+            store = dispatch.ProductionStore(plans)
+            data = store.read(plan["id"])
+            store.asset_path(plan["id"], data["assets"]["music"]).write_bytes(b"tampered")
+        elif case == "lease":
+            held = (plans._folder(plan["id"]) / "render-consumer.lock").open("a")
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        elif case == "remote":
+            monkeypatch.setattr(rw.queued_work, "delegated", lambda: True)
+        try:
+            await rw.consume_once(plans=plans, studio=studio)
+            await rw.consume_once(plans=plans, studio=studio)
+        finally:
+            if held:
+                held.close()
+>       assert len(called) == (1 if case == "duplicate" else 0)
+E       assert 1 == 0
+E        +  where 1 = len([1])
+
+unit_tests/test_creative_v2_stage3.py:191: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage3.py::test_render_consumer_admission_is_fenced[file_tampered]
+1 failed, 17 deselected in 0.63s

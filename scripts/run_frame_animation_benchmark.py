@@ -68,7 +68,7 @@ def build_benchmark_spec(title: str, arm_swing_ease: bool = True) -> AnimationPr
     wave_poses = make_wave_poses(
         start_time=0.0,
         duration=3.0,
-        waves=3,
+        waves=2,
         char_x=char_x,
         char_y=0.0,
     )
@@ -113,10 +113,10 @@ def build_benchmark_spec(title: str, arm_swing_ease: bool = True) -> AnimationPr
         target_duration=10.0,
         production_fps=12,
         playback_fps=24,
-        interpolation_mode="hold",
+        interpolation_mode="linear",
         interpolation_reason=(
-            "2D 셀 애니메이션 고유의 스냅과 리듬감을 온전히 보존하고, "
-            "Optical Flow/AI 프레임 보간 시 발생하는 캐릭터 외곽선 번짐(ghosting) 및 젤리 왜곡을 방지하기 위해 hold 선택"
+            "12fps 키포즈 사이의 구조화된 수치 관절 변환을 24fps 재생 시각에 선형 보간합니다. "
+            "표정·레이어 변형은 키포즈 경계에서 유지/전환하며 Optical Flow는 사용하지 않습니다."
         ),
         scenes=[scene_1, scene_2, scene_3],
     )
@@ -188,8 +188,8 @@ def main():
     with open(run1_dir / "defect_analysis.json", "w", encoding="utf-8") as f:
         json.dump(defect_log, f, indent=2, ensure_ascii=False)
 
-    # 4. 2차 렌더링 (Run 2: 결함 수정 및 품질 개선 적용 - 어깨 피벗 오프셋 -24px 보정 완료)
-    print("[4/6] Run 2 (결함 수정 및 품질 개선 최종 렌더) 시작...")
+    # 4. 2차 렌더링 (Run 2: 어깨 피벗 파라미터 변경; 시각적 개선은 미검증)
+    print("[4/6] Run 2 (어깨 피벗 변경 렌더, 시각적 개선 미검증) 시작...")
     run2_dir = work_base / "run_02_remediated"
     renderer_run2 = FrameAnimationRenderer(character_builder=char_builder, arm_pivot_offset_y=-24.0)
     spec_run2 = build_benchmark_spec("Benchmark-B Run 2 (Remediated Final)")
@@ -200,7 +200,7 @@ def main():
         save_keyframes=True,
         save_continuous_samples=True,
     )
-    print(f"  -> Run 2 최종 렌더 완료: {manifest_run2['output_mp4']}")
+    print(f"  -> Run 2 렌더 완료: {manifest_run2['output_mp4']}")
 
     # 5. 오디오 및 모션 최종 평가 보고서 작성
     eval_report = {
@@ -212,7 +212,7 @@ def main():
         "fps_config": {
             "production_fps": 12,
             "playback_fps": 24,
-            "interpolation_mode": "hold",
+            "interpolation_mode": manifest_run2["interpolation_mode"],
             "interpolation_reason": spec_run2.interpolation_reason,
         },
         "character_assets": {
@@ -220,7 +220,6 @@ def main():
             "same_source_layer_assets_reused": True,
             "identity_comparison": "not_performed",
         },
-        "motion_eval": manifest_run2.get("motion_eval", {}),
         "motion_breakdown": [
             {"time_range": "0.0s - 4.0s", "action": "걷기 동작 (Walk cycle, 사지 교차 스윙, 수직 바운스, 수평 이동)"},
             {"time_range": "4.0s - 7.0s", "action": "인사 및 윙크 (Wave & Wink, 팔 흔들기, 표정 전환 Normal->Wink->Smile)"},
@@ -248,6 +247,7 @@ def main():
 - **재생 시간**: {manifest_run2['qa']['probe']['duration']}초 (목표: 10.0초, 기준 범위: 8~15초 충족)
 - **해상도**: {manifest_run2['qa']['probe']['width']}x{manifest_run2['qa']['probe']['height']} (16:9)
 - **제작 FPS**: 12 FPS / **재생 FPS**: 24 FPS
+- 키포즈는 12 FPS 기준으로 제작하고, 관절 수치 변환은 24 FPS 재생 시각에서 선형 보간함. Optical Flow 미사용.
 - **프레임 보간 모드**: `{manifest_run2['interpolation_mode']}`
   - 이유: {manifest_run2['interpolation_reason']}
 
@@ -266,7 +266,9 @@ def main():
 - 오디오 트랙: {manifest_run2['qa']['probe']['has_audio']}
 - 검은 화면 비율: 통과
 - 음량 레벨: 통과
-- 최종 판정: **{manifest_run2['qa']['passed']}**
+- 기계 검사 판정 (스트림·길이·화면·검은 화면·음량): **{manifest_run2['qa']['passed']}**
+- 시청 평가: **미평가** (자동 True는 기계 검사 결과이며 모션 품질 판정이 아님)
+- 청감 평가: **미평가** (음량 측정은 청취를 대신하지 않음)
 """)
 
     # 6. 아웃박스로 산출물 복사

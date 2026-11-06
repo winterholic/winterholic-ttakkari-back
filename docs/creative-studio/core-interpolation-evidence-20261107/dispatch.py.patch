@@ -1,0 +1,11 @@
+--- before/dispatch.py
++++ after/dispatch.py
+@@ -570,6 +570,8 @@
+         "fps": plan["profile"]["fps"], "style_dna": plan.get("style"), "scenes": producer_scenes,
+         "editorial_scenes": scenes,
+     }
++    if adapter.id == "skill.frame_animation_2d" and "interpolation_mode" in scenes[0]:
++        spec["interpolation_mode"] = scenes[0]["interpolation_mode"]
+     (workdir / "input.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2))
+     receipt = adapter.render_segment(spec, output_path=path, workdir=workdir)
+     info = inspect_media(path)

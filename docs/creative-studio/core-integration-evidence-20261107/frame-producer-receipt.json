@@ -1,0 +1,98 @@
+{
+  "file": "engine-work/f609dc240aa5531ec4af3ce79efc7d79a439e82fcb74b39c329f0b9023f3d4db/source.mp4",
+  "sha256": "a027591e6a3c3b9d4f5e4d2ed183bf564b24b871a82f55dc4c95440f1d4116b7",
+  "name": "seg-01.mp4",
+  "kind": "video",
+  "meta": {
+    "duration": 8.0,
+    "has_audio": true,
+    "has_video": true
+  },
+  "receipt": {
+    "output_path": "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-frame-integration/test_real_frame_producer_is_ca0/plans/5ee46ae1-7bad-451b-89ad-7be095c7bf47/engine-work/f609dc240aa5531ec4af3ce79efc7d79a439e82fcb74b39c329f0b9023f3d4db/source.mp4",
+    "sha256": "a027591e6a3c3b9d4f5e4d2ed183bf564b24b871a82f55dc4c95440f1d4116b7",
+    "duration": 8.0,
+    "fps": 24,
+    "width": 1280,
+    "height": 720,
+    "engine": "frame_animation",
+    "version": "2.0.0",
+    "real_execution": true,
+    "metrics": {
+      "elapsed_seconds": 2.485,
+      "total_frames": 192
+    },
+    "receipt": {
+      "project_id": "5ee46ae1-7bad-451b-89ad-7be095c7bf47",
+      "scenes": [
+        "i0"
+      ],
+      "keyframes_count": 16
+    },
+    "qa": {
+      "passed": true,
+      "checks": [
+        {
+          "id": "video_track",
+          "passed": true,
+          "detail": "영상 트랙",
+          "measured": true
+        },
+        {
+          "id": "audio_track",
+          "passed": true,
+          "detail": "오디오 트랙",
+          "measured": true
+        },
+        {
+          "id": "resolution",
+          "passed": true,
+          "detail": "기대 1280x720",
+          "measured": "1280x720"
+        },
+        {
+          "id": "duration",
+          "passed": true,
+          "detail": "계획 8초 ±0.4초",
+          "measured": 8.0
+        },
+        {
+          "id": "not_black",
+          "passed": true,
+          "detail": "검은 화면 비율 90% 미만",
+          "measured": 0.0
+        },
+        {
+          "id": "audible",
+          "passed": true,
+          "detail": "오디오 최대 음량 -60 dB 초과",
+          "measured": {
+            "mean_db": -14.5,
+            "max_db": -1.7
+          }
+        }
+      ],
+      "probe": {
+        "duration": 8.0,
+        "width": 1280,
+        "height": 720,
+        "fps": 24.0,
+        "has_video": true,
+        "has_audio": true
+      }
+    },
+    "motion_eval": {
+      "same_source_layer_assets_reused": true,
+      "identity_comparison": "not_performed",
+      "motion_continuity_score": null,
+      "motion_continuity_rating": "not_evaluated",
+      "average_displacement_per_prod_frame": 2.14,
+      "max_displacement_per_prod_frame": 51.42,
+      "total_production_frames_calculated": 96,
+      "displacement_basis": "root_transform_heuristic",
+      "teleport_threshold_px": 120.0,
+      "teleport_glitch_detected": false,
+      "evaluation_verdict": "NOT_RATED: 변위 통계와 원본 레이어 재사용 사실만 기록했으며 지각 품질 평가는 수행하지 않음"
+    }
+  }
+}

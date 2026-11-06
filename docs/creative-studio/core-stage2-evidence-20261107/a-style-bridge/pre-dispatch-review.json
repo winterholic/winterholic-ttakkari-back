@@ -1,0 +1,81 @@
+{
+  "plan_id": "956d49cb-75f5-43c0-8c3e-5bf98bfce20f",
+  "plan_revision": 1,
+  "producer_style_reviews": [
+    {
+      "engine": "skill.hyperframes",
+      "segment_ids": [
+        "seg-01"
+      ],
+      "phase": "before_render",
+      "unapplied_policy": "allowed_with_disclosure",
+      "status": "validated",
+      "contract": {
+        "status": "partial_match",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "matched_params": {
+          "theme": "dark",
+          "animation": "technical",
+          "transition": "cut",
+          "caption_style": "bottom_card"
+        },
+        "unapplied_fields": [
+          {
+            "path": "motion_language.text",
+            "value": "precise motion"
+          },
+          {
+            "path": "palette",
+            "value": [
+              {
+                "hex": "#123456",
+                "role": "background"
+              }
+            ]
+          },
+          {
+            "path": "visual_identity.params.density",
+            "value": "dense"
+          },
+          {
+            "path": "visual_identity.text",
+            "value": "technical cards"
+          }
+        ]
+      }
+    }
+  ],
+  "caption_mode": null,
+  "caption_timing": null,
+  "caption_sources": null,
+  "caption_contract": null,
+  "rubric": null,
+  "quality_report": null,
+  "repair_plan": null,
+  "assets": {
+    "scenes_total": 3,
+    "scenes_with_asset": 0,
+    "scenes_requiring_upload": 0,
+    "scenes": {},
+    "missing_scene_ids": [],
+    "music": null,
+    "music_problem": "음악 자산이 없습니다.",
+    "invalid_video_scene_ids": [],
+    "complete": false
+  },
+  "asset_generation_blockers": [],
+  "asset_generation": null,
+  "repairs": [],
+  "review_execution": null,
+  "history": [],
+  "state": "not_dispatched",
+  "dispatchable": false,
+  "reasons": [
+    "렌더 게이트가 닫혀 있습니다. 승인, studio_runtime 범위, 필수 능력 충족이 모두 필요합니다."
+  ],
+  "engine": null,
+  "outdated_segments": [],
+  "segments": [],
+  "final": null,
+  "log": []
+}

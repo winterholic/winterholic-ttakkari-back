@@ -1,0 +1,52 @@
+{
+  "worker_id": "86c93b9b-7d99-4814-b83c-0dd77c453b2c",
+  "original_and_pending_instructions": [
+    {
+      "run_id": "c12a7f78-1650-421f-8568-3adc871430f7",
+      "status": "running",
+      "engine": "codex",
+      "model": "gpt-6.1-sol",
+      "profile": "내 codex (iuholic83@gmail.com)",
+      "prompt": "[작업 카드]\n목표: 기존 v2 제작 감독·도구 선택·dispatch를 실제 다중 제작 엔진 경로로 확장하고 영상 모션 손실과 고정 화풍을 교정한다.\n작업 위치: /Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107\n먼저 읽을 것:\n- AGENTS.md\n- docs/design/creative-studio-v2-requirements.md\n- docs/design/creative-studio-v2-design.md\n- docs/adr/0065-creative-studio-catalog-and-longform.md\n- src/ttakkari/creative/v2/dispatch.py\n- src/ttakkari/creative/v2/engines.py\n- src/ttakkari/creative/v2/asset_generation_managed.py\n범위와 금지:\n- 사용자 승인 범위는 약 3시간 집중 전면 리팩토링이며 신규 유료 결제는 금지. 기존 계약과 자산을 재사용하고 미실행을 완료라고 하지 마세요. 공유 격리 worktree이므로 지정 파일만 변경하고 git commit/push는 하지 마세요. 다른 담당자 파일을 편집하지 말고 필요한 연결 계약은 즉시 총괄에 보고하세요. TDD는 의미 있는 동작 변경에 적용하고 실제 제작을 테스트로 대체하지 마세요. 환경 실패는 환경·명령·단계·오류 범위로 기록하고 우회 재시도하지 마세요. 산출물은 /Volumes/Backup/ttakkari-data/outbox/83968b68-3f2f-4e0e-89c7-2a87aeb5a6ee 하위 전용 폴더에 저장하고 share_file 하세요.\n- 소유권: dispatch.py, engines.py, asset_generation*.py, plans.py, matching.py, registry*.py, capabilities.py, intent.py, 관련 tests, api/creative_v2.py, api/creative_mcp.py. QA 전용 quality.py 및 프론트·신규 엔진 모듈은 다른 담당자 소유.\n- HyperFrames 담당 hyperframes.py, 2D 담당 frame_animation.py, 3D 담당 scene_3d.py를 작성한다. 각 모듈은 preflight 및 render 함수/어댑터를 제공할 예정. 15분 안에 공통 엔진 렌더 계약을 총괄에 먼저 전달하고 실제 통합 담당.\n- 실제 자원 lease·인가·승인·경로 보안 유지. 엔진 실패 시 묵시적 슬라이드쇼 대체 금지.\n완료 기준:\n1. 원래 설계 대조와 C01~12/R01~21·레지스트리·Style DNA·장면계층 상태를 코드 증거로 짧게 기록\n2. ComfyUI 원본 영상이 동영상 자산으로 보존되고 실제 렌더가 모션을 사용하는 회귀 재현·교정\n3. 콘텐츠별 전략·필수 능력·실행 가능성·비용/지연/품질의 근거와 대안이 장면/샷 단위로 기록\n4. 새 엔진을 계획 승인→dispatch→실행→산출물→상태 경로에 연결. CLI 단독 샘플만으로 완료 처리 금지\n5. 기존 구형 계획/URL/레지스트리 데이터 호환과 관련 회귀 검사\n6. 공통 인터페이스를 먼저 보고하고 모듈 담당자 결과를 확인해 통합\n검증 방법:\n- 기존 creative v2 관련 좁은 테스트 후 대표 통합 회귀\n- 실제 스튜디오 PlanStore/ProductionStore 경로의 다중 엔진 실행 receipt\n배경과 결정된 것:\n사용자 승인 범위는 약 3시간 집중 전면 리팩토링이며 신규 유료 결제는 금지. 기존 계약과 자산을 재사용하고 미실행을 완료라고 하지 마세요. 공유 격리 worktree이므로 지정 파일만 변경하고 git commit/push는 하지 마세요. 다른 담당자 파일을 편집하지 말고 필요한 연결 계약은 즉시 총괄에 보고하세요. TDD는 의미 있는 동작 변경에 적용하고 실제 제작을 테스트로 대체하지 마세요. 환경 실패는 환경·명령·단계·오류 범위로 기록하고 우회 재시도하지 마세요. 산출물은 /Volumes/Backup/ttakkari-data/outbox/83968b68-3f2f-4e0e-89c7-2a87aeb5a6ee 하위 전용 폴더에 저장하고 share_file 하세요.\n보고 형식: 마지막 메시지의 첫 줄에 `상태: 완료 | 부분 | 막힘` 중 하나를 쓰고, 완료 기준 항목마다 결과 한 줄과 실행 증거(명령과 출력 1~3줄)를 적는다. 하지 않은 항목은 빼지 말고 '하지 않음'과 이유를 적는다. 막혔으면 시도한 것, 관찰한 오류, 다음 후보를 적는다."
+    },
+    {
+      "run_id": "004150f5-cb19-4527-b673-de8bd49d347c",
+      "status": "queued",
+      "engine": "auto",
+      "model": "gpt-6.1-sol",
+      "profile": null,
+      "prompt": "담당자 목록: {\"core\":\"86c93b9b-7d99-4814-b83c-0dd77c453b2c\",\"hyperframes\":\"789099f7-b78c-41e5-b0c1-d8d6b677cc5f\",\"animation\":\"20b17b35-bc48-4060-a25b-8a3ce7d2b3fd\",\"threeD\":\"b213f49b-8db7-4327-af8a-0629d8c208f5\",\"quality\":\"ece739f8-5b65-44e0-a977-abfbead42d74\",\"ui\":\"9f82d70e-5836-4e2b-9c94-f35f77f7b2d7\"}. 통합 소유자는 당신이며 다른 담당자와 message_worker로 짧은 계약 조율은 가능하나 새 구현 작업자 증식은 하지 마세요. 신규 모듈 파일이 나타나기 전에도 영상 보존/프롬프트/선택 로직을 진행하세요. 주어진 3시간 중 실제 A/B 제작과 API 경로 연결 우선. 파일 소유권을 지키고 총괄의 승인 없이 남의 파일에 구현하지 마세요."
+    },
+    {
+      "run_id": "a5b7f52b-eb01-4ea4-8029-3460010681e7",
+      "status": "queued",
+      "engine": "auto",
+      "model": "gpt-6.1-sol",
+      "profile": null,
+      "prompt": "감사 인계 증거 조건 추가입니다. 현재 맡은 구현 범위와 파일 소유권을 유지하세요. 구현에 참여하지 않는 별도 감사 세션 4b2802ba-c13f-4068-a2bf-18faacfbc229에 통합·배포·자체 검증 뒤 총괄이 인계합니다. 자신의 최종 보고에는 전체 커밋 SHA, 실행 명령과 실제 관측 결과, 미완료·알려진 결함을 구분하고 증거 색인을 자신의 소유 범위 문서에 보존하세요. 다른 Run outbox 원본만 가리키지 말고 소스·입력·스토리보드·엔진 제작 이력·프레임·오디오 검수 기록은 권한 있는 프로젝트 저장소의 자신의 문서/예제 경로에 보존하거나 지원되는 공유 파일 경로와 ID로 접근 가능하게 남기세요. 영상 산출물은 본인 Run outbox에 저장하고 share_file을 호출하세요. 감사자 역할을 대신하지 말고 기존 구현을 계속 진행하세요."
+    },
+    {
+      "run_id": "f9205110-44b3-4495-b467-243afecfd094",
+      "status": "queued",
+      "engine": "auto",
+      "model": "gpt-6.1-sol",
+      "profile": null,
+      "prompt": "2D B Flash 보고 도착: src/ttakkari/creative/v2/frame_animation.py, scripts/run_frame_animation_benchmark.py, unit_tests/test_creative_v2_frame_animation.py, 저장소 outbox/benchmark_b_work에 소스·보고가 있습니다. 독립 실행 검증은 GPT 담당 8be03a5d-5215-4645-8660-7e5f69b2eb03에 배정했습니다. 실제 ENG/PD 통합은 계속 진행하세요. adapter 등록과 호출을 구분해 FrameAnimationAdapter의 실제 render 시그니처를 확인하고 스튜디오 경로로 연결하세요. B 작업자에게 테스트 종료 출력·자산 증거·품질 점수 근거 보완을 요구했습니다. 원본 보고 숫자를 검증된 품질로 인용하지 마세요. 소유권 유지하며 검증 담당을 기다리지 말고 독립 변경을 진행하세요."
+    },
+    {
+      "run_id": "5875c2c0-8963-40ce-8812-28773673ece9",
+      "status": "queued",
+      "engine": "auto",
+      "model": "gpt-6.1-sol",
+      "profile": null,
+      "prompt": "3D C 보고 수신. 신규 scene_3d.py는 모듈 render와 Scene3DAdapter.render_segment 계약을 제공하며 실제 ID는 skill.studio-3d-cinematic입니다. 독립 검증은 9ccc44c5-1263-45ec-95a3-2e075dc87d2d 담당. 현재 unit_tests/test_scene_3d.py의 통합 테스트는 mock_adapter_for만 검사하므로 실제 engines.dispatch 증거가 아닙니다. 현재 spec.scenes가 receipt에만 기록되고 고정 Blender 프리셋을 렌더하는 것으로 읽혀 입력 적용과 사전 차단 보완을 C 담당에게 요청했습니다. 등록을 실제 장면 지시 수행으로 과장하지 말고, 지원하는 프리셋/제작 범위가 명시된 경로로 연결해 주세요. 통합 담당의 ENG/PD/V1 구현은 계속 진행하며 독립 검증 대기로 멈추지 마세요."
+    }
+  ],
+  "pending_run_ids": [
+    "c12a7f78-1650-421f-8568-3adc871430f7",
+    "004150f5-cb19-4527-b673-de8bd49d347c",
+    "a5b7f52b-eb01-4ea4-8029-3460010681e7",
+    "f9205110-44b3-4495-b467-243afecfd094",
+    "5875c2c0-8963-40ce-8812-28773673ece9"
+  ]
+}

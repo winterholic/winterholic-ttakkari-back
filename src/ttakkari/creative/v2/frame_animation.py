@@ -37,6 +37,30 @@ MIN_ANIMATION_SECONDS = 8.0
 MAX_ANIMATION_SECONDS = 15.0
 DEFAULT_PRODUCTION_FPS = 12
 DEFAULT_PLAYBACK_FPS = 24
+MOTION_TELEPORT_THRESHOLD_PX = 120.0
+
+
+def _lerp(start: float, end: float, progress: float) -> float:
+    return start + (end - start) * progress
+
+
+def _build_motion_eval(
+    *, average_displacement: float, max_displacement: float, production_frames: int
+) -> dict[str, Any]:
+    """기계적 변위 휴리스틱을 시청 품질 판정과 분리해 기록한다."""
+    return {
+        "same_source_layer_assets_reused": True,
+        "identity_comparison": "not_performed",
+        "motion_continuity_score": None,
+        "motion_continuity_rating": "not_evaluated",
+        "average_displacement_per_prod_frame": round(average_displacement, 2),
+        "max_displacement_per_prod_frame": round(max_displacement, 2),
+        "total_production_frames_calculated": production_frames,
+        "displacement_basis": "root_transform_heuristic",
+        "teleport_threshold_px": MOTION_TELEPORT_THRESHOLD_PX,
+        "teleport_glitch_detected": max_displacement >= MOTION_TELEPORT_THRESHOLD_PX,
+        "evaluation_verdict": "NOT_RATED: 변위 통계와 원본 레이어 재사용 사실만 기록했으며 지각 품질 평가는 수행하지 않음",
+    }
 
 FRAME_ANIMATION_LIMITS = Limits(
     aspects=("16:9", "9:16", "1:1"),
@@ -213,6 +237,11 @@ class FrameAnimationAdapter:
         workdir: Path | str | None = None,
     ) -> dict[str, Any]:
         """Core 통합 계약에 따른 세그먼트/프로젝트 렌더링 실행."""
+        interpolation_mode = spec.get("interpolation_mode", "hold")
+        if interpolation_mode not in ("hold", "linear"):
+            raise ValueError(
+                f"interpolation_mode={interpolation_mode!r}: allowed values are hold, linear"
+            )
         start_t = time.perf_counter()
         out_p = Path(output_path)
         out_p.parent.mkdir(parents=True, exist_ok=True)
@@ -284,9 +313,13 @@ class FrameAnimationAdapter:
             target_duration=duration,
             production_fps=int(spec.get("production_fps") or DEFAULT_PRODUCTION_FPS),
             playback_fps=int(spec.get("playback_fps") or DEFAULT_PLAYBACK_FPS),
-            interpolation_mode="hold",
+            interpolation_mode=interpolation_mode,
             scenes=parsed_scenes,
         )
+        if interpolation_mode == "linear":
+            proj_spec.interpolation_reason = (
+                "승인된 감독 계획의 명시적 linear 선택: 키포즈 수치 필드 선형 보간"
+            )
 
         renderer = FrameAnimationRenderer()
         manifest = renderer.render_project(
@@ -330,7 +363,8 @@ class FrameAnimationAdapter:
 class CharacterLayerBuilder:
     """일관된 캐릭터 레이어(머리, 몸통, 사지, 표정)를 절차적으로 생성·보관하는 빌더.
 
-    모든 프레임에서 동일한 선화 굵기, 팔레트, 크기 비율을 보장한다.
+    프레임마다 동일한 소스 레이어 이미지를 재사용한다. 실제 렌더의 시각적
+    일관성이나 조인트 결합 상태는 별도 비교·검수 없이 보장하지 않는다.
     """
 
     COLOR_SKIN = (255, 224, 189)
@@ -638,19 +672,44 @@ class FrameAnimationRenderer:
         time_sec: float,
         mode: str = "hold",
     ) -> RiggedPose:
-        """시간에 따른 키포즈 계산."""
+        """시간에 따른 키포즈 계산. linear는 수치 변환만 보간하고 표정 등은 직전 키포즈를 유지한다."""
         if not keyframes:
             return RiggedPose(pose_id="default")
         if len(keyframes) == 1:
             return keyframes[0][1]
 
-        chosen_pose = keyframes[0][1]
-        for t, p in keyframes:
-            if t <= time_sec:
-                chosen_pose = p
-            else:
-                break
-        return chosen_pose
+        left_time, left_pose = keyframes[0]
+        for right_time, right_pose in keyframes[1:]:
+            if time_sec < right_time:
+                if mode != "linear" or right_time <= left_time or time_sec <= left_time:
+                    return left_pose
+                progress = (time_sec - left_time) / (right_time - left_time)
+                parts: dict[str, LayerTransform] = {}
+                for name in left_pose.parts.keys() | right_pose.parts.keys():
+                    left = left_pose.parts.get(name, LayerTransform())
+                    right = right_pose.parts.get(name, left)
+                    parts[name] = LayerTransform(
+                        pivot_x=_lerp(left.pivot_x, right.pivot_x, progress),
+                        pivot_y=_lerp(left.pivot_y, right.pivot_y, progress),
+                        offset_x=_lerp(left.offset_x, right.offset_x, progress),
+                        offset_y=_lerp(left.offset_y, right.offset_y, progress),
+                        rotation_deg=_lerp(left.rotation_deg, right.rotation_deg, progress),
+                        scale_x=_lerp(left.scale_x, right.scale_x, progress),
+                        scale_y=_lerp(left.scale_y, right.scale_y, progress),
+                        alpha=_lerp(left.alpha, right.alpha, progress),
+                        z_order=left.z_order,
+                        variant=left.variant,
+                    )
+                return RiggedPose(
+                    pose_id=f"{left_pose.pose_id}->{right_pose.pose_id}",
+                    parts=parts,
+                    expression=left_pose.expression,
+                    root_x=_lerp(left_pose.root_x, right_pose.root_x, progress),
+                    root_y=_lerp(left_pose.root_y, right_pose.root_y, progress),
+                    root_scale=_lerp(left_pose.root_scale, right_pose.root_scale, progress),
+                )
+            left_time, left_pose = right_time, right_pose
+        return left_pose
 
     def render_project(
         self,
@@ -709,7 +768,7 @@ class FrameAnimationRenderer:
 
             scene_local_t = t - next(st for st, et, sc in scene_ranges if sc == active_scene)
 
-            if prod_frame_idx != last_prod_frame_idx or last_rendered_canvas is None:
+            if spec.interpolation_mode == "linear" or prod_frame_idx != last_prod_frame_idx or last_rendered_canvas is None:
                 cam = self.evaluate_camera(active_scene.camera_keyframes, scene_local_t)
                 pose = self.evaluate_pose(active_scene.keyframes, scene_local_t, mode=spec.interpolation_mode)
 
@@ -802,18 +861,11 @@ class FrameAnimationRenderer:
 
         avg_disp = sum(motion_displacements) / max(1, len(motion_displacements))
         max_disp = max(motion_displacements) if motion_displacements else 0.0
-        motion_eval = {
-            "same_source_layer_assets_reused": True,
-            "identity_comparison": "not_performed",
-            "motion_continuity_score": None,
-            "motion_continuity_rating": "not_evaluated",
-            "average_displacement_per_prod_frame": round(avg_disp, 2),
-            "max_displacement_per_prod_frame": round(max_disp, 2),
-            "total_production_frames_calculated": last_prod_frame_idx + 1,
-            "teleport_threshold_px": 120.0,
-            "teleport_glitch_detected": max_disp >= 120.0,
-            "evaluation_verdict": "NOT_RATED: 변위 통계만 계산했으며 지각 품질 평가는 수행하지 않음",
-        }
+        motion_eval = _build_motion_eval(
+            average_displacement=avg_disp,
+            max_displacement=max_disp,
+            production_frames=last_prod_frame_idx + 1,
+        )
 
         spec_dict = asdict(spec)
         with open(output_dir / "animation_spec.json", "w", encoding="utf-8") as f:

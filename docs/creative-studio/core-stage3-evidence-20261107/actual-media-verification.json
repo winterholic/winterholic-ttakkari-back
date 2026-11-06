@@ -1,0 +1,13 @@
+{
+  "media": {
+    "duration": 9.03,
+    "has_audio": true,
+    "has_video": true
+  },
+  "top_crop_frame_md5": [
+    "MD5=11658a5deb61e923d8a2fa17fa264496",
+    "MD5=8380df97e696a3b02be9dcc031bbb5dd"
+  ],
+  "motion_not_flattened": true,
+  "independent_quality_review": false
+}

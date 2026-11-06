@@ -1,0 +1,47 @@
+{
+  "result": {
+    "id": "74d74bec-7756-4e9c-8a15-4a830d08421e",
+    "status": "applied_needs_approval",
+    "source_revision": 2,
+    "revision": 3,
+    "proposal_sha256": "94c452f6e96853a9e578d01200f03862a40ddda7671a45900157e0b84b471387",
+    "source_output_sha256": "b2ac667fcc3bdf542c0802a31ad5618d5ea6461881b35ecdf1b6cc8e58a99e6d",
+    "changes": [
+      {
+        "scene_id": "i2",
+        "shot_id": "shot-2",
+        "layer": "captions",
+        "field": "title",
+        "text": "원본 동작을 보존한 부분 수정",
+        "before": "시험용 오기: 동작 정지",
+        "after": "원본 동작을 보존한 부분 수정"
+      }
+    ],
+    "preserve": {
+      "scene_ids": [
+        "i0",
+        "i1"
+      ],
+      "shot_ids": [
+        "shot-0",
+        "shot-1"
+      ],
+      "segment_run_keys": {
+        "seg-01": "5a79b25ad3b301004861b7498d1453329fab4f94f11547f81e3c526ba1f819c5",
+        "seg-02": "ad3c62efca2d992640bb1f2d8358bc58b6d2804443f349272445fbe09aeace66"
+      },
+      "asset_groups": [
+        "music"
+      ],
+      "asset_keys": [
+        "scenes.i0",
+        "scenes.i1",
+        "scenes.i2"
+      ]
+    },
+    "at": "2026-11-06T16:18:24.339621+00:00",
+    "quality_state": "unknown_until_new_review"
+  },
+  "compositor_version": "83c9390984e2f8729bec5173b72668b368195110a97cbf6224379edc613d5c05",
+  "render_repeated": false
+}

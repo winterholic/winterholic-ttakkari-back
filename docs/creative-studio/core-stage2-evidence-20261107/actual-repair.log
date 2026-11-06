@@ -1,0 +1,3 @@
+preserved_segments=2 assets_equal=True source_sha256=9719e2388cfd3d1b0467c92fdb00c68c051111244b73b1ffdf270eec9cace00f
+changed_frames=144..215 (72/216) target=i2/captions; original motion retained
+review=not_connected semantic=unknown viewing=unknown; new_2d_render=False

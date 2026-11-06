@@ -1,0 +1,32 @@
+FF..                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_technical_narration_cannot_select_documentary_or_inject_map_data[False] _
+
+structured = False
+
+    @pytest.mark.parametrize("structured", [False, True])
+    def test_technical_narration_cannot_select_documentary_or_inject_map_data(structured):
+        intent = IntentSpec(selections=[Selection(entry_id=c) for c in
+                                      ["C01.tech_explainer", "C09.narration", "C10.subtitles"]]) if structured else None
+        plan = build_plan(BRIEF, intent, duration=DurationRequest(mode="preferred", seconds=16))
+>       assert plan["match"]["primary_recipe"] not in {"R16", "R21"}
+E       AssertionError: assert 'R16' not in {'R16', 'R21'}
+
+unit_tests/test_creative_v2_kafka_recipe_scope.py:23: AssertionError
+_ test_technical_narration_cannot_select_documentary_or_inject_map_data[True] __
+
+structured = True
+
+    @pytest.mark.parametrize("structured", [False, True])
+    def test_technical_narration_cannot_select_documentary_or_inject_map_data(structured):
+        intent = IntentSpec(selections=[Selection(entry_id=c) for c in
+                                      ["C01.tech_explainer", "C09.narration", "C10.subtitles"]]) if structured else None
+        plan = build_plan(BRIEF, intent, duration=DurationRequest(mode="preferred", seconds=16))
+>       assert plan["match"]["primary_recipe"] not in {"R16", "R21"}
+E       AssertionError: assert 'R16' not in {'R16', 'R21'}
+
+unit_tests/test_creative_v2_kafka_recipe_scope.py:23: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_kafka_recipe_scope.py::test_technical_narration_cannot_select_documentary_or_inject_map_data[False]
+FAILED unit_tests/test_creative_v2_kafka_recipe_scope.py::test_technical_narration_cannot_select_documentary_or_inject_map_data[True]
+2 failed, 2 passed in 0.09s

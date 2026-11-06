@@ -42,3 +42,16 @@ Outbox: `/Volumes/Backup/ttakkari-data/outbox/01b88080-f64a-4a92-b55f-24df92644f
 - 재현된 프리셋 테스트는 걷기에서 회전 폭 40° 이상 및 수직 바운스 10px 이상, 인사에서 3개 이상의 팔 각도와 30° 이상 변화 폭을 검사합니다.
 - 자동 미디어 QA는 6개 검사 모두 통과했습니다. 청감 품질과 전체 프레임 수동 리뷰는 미실행입니다.
 - `message_worker`를 통해 통합 담당자 `86c93b9b-7d99-4814-b83c-0dd77c453b2c`에게 계약을 전달하려 했으나 이 세션의 하위 작업이 아니라며 `404 not_found`가 반환됐습니다. 재시도하지 않았습니다. 실제 입력/출력 계약은 위 소스와 engine-contract 문서에서 확인할 수 있습니다.
+
+## 2026-11-07 보간 교정 — 긴 정지 포즈 후속 결과
+
+이전 항목은 hold 렌더의 역사적 증거로 유지한다. 이번 B 결과는 `outbox/benchmark_b_work/pose_interpolation_20261107/`에 새로 저장했으며, 위 기존 `corrected_20261107/` 산출물은 수정하지 않았다.
+
+- `frame_animation.py`에서 `hold`를 보존하고 `linear` 수치 변환 보간을 구현했다. storyboard/benchmark는 12fps 키포즈와 24fps 재생을 분리해 구조화 관절을 보간하고, 표정 변형은 단계 전환한다. Optical Flow 미사용.
+- 프레임 애니메이션 회귀 9건 통과, 관련 Python 파일 `py_compile` 통과. 실행 세부와 출력은 이번 Run outbox의 `benchmark_b_execution_evidence.md`에 있다.
+- 새 기본 10초 linear MP4 SHA-256 `bc1b02234910b9625522b0d4e0c710c57b131288f2da718726a64160ecf94dac`; 같은 입력 hold 참조 MP4 SHA-256 `6ce178c512ef09d60d9d536b029322454ad6ca253b0fa34fc2995fe9c0a817b8`. 비교 접촉 시트, 24fps 연속 프레임 ZIP, 카메라/관절 구조값 trace도 Run outbox에 있다.
+- 이전 저장소 비교 MP4는 시작/종료 때 SHA-256 `c4b292c5a9b7db78d2c743c21706c15449c23d9b82c5f6f2733e75d9fe5bc6dc` 및 `9719e2388cfd3d1b0467c92fdb00c68c051111244b73b1ffdf270eec9cace00f`로 보존됐다. 새 생성 레이어 9개, 음원 SHA-256 `5a3547051ac00882cb946d14269e7e1a859682e38e6130402b0558d387334d70`, 점프 입력 구조는 이전 corrected Run 2와 일치한다.
+- MP4는 각 240프레임으로 디코드했다. 구조 변환값은 걷기에서 1초 고정이 줄고 waves=2 인사에서 팔 회전이 움직임을 보인다. 접촉 시트 표본에서는 자막 잘림이나 명백한 관절 틈이 보이지 않았다. 전체 프레임 지각 품질·청감은 미평가이며 기계 QA True는 미디어 구조/범위 판정이다.
+- 기존 수정 MP4(`9719e238…`)와 새 MP4는 각각 디코드하여 11개 동일 시각 접촉 시트로 비교했다. 같은 입력 hold/linear 접촉 시트도 따로 제공한다.
+- 최종 SHA-256 — `src/ttakkari/creative/v2/frame_animation.py` `f2c1ee2216dde8c9be3e2e8e0a10484c56671e139b47cfff6e90f94508f46cb4`; `templates/frame_animation/benchmark_b_storyboard.json` `e61823f4b374f4c627f40bfd83c914069129540be7b529d02e8b74c38e1e29b0`; `scripts/run_frame_animation_benchmark.py` `223b4038a3153bd9ff369242e45a111f07f4a075ec128d9261e0592be856f0d2`; `unit_tests/test_creative_v2_frame_animation.py` `449c7cc5b7f338b1dbfe61212ef6b0c6948ed405e1cd2e4d285a658ced416f86`; 이 증거 문서 `ea15a3643e1258876e63d85e7f704b3a5285d44a0a78cba04f6a8443df285dab`.
+- 실행 증거 핵심 출력: pytest `9 passed in 2.61s`; py_compile exit 0; 렌더 preflight `ok=True`, 수정본/hold 참조 각 10초; 실제 MP4 디코드 `240 frames`씩. 명령과 출력 원문은 이번 Run outbox의 JSON/Markdown 증거에 기록했다.

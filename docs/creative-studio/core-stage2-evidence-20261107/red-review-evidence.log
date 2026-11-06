@@ -1,0 +1,24 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_review_rejects_altered_modality_and_concurrent_edit ___________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x10c929160>, <ttakkari.creative.service.Studio object at 0x10c929400>)
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-6716/test_review_rejects_altered_mo0')
+
+    def test_review_rejects_altered_modality_and_concurrent_edit(stores,tmp_path):
+        from ttakkari.creative.v2 import production_review as reviews
+        plans,studio=stores
+        plan,_=make_real_production(plans,studio,tmp_path)
+        def wrong_modality(package,payloads):
+            receipt=fixture_evaluator(package,payloads)
+            receipt['criteria'][0]['evidence'][0]['kind']='audio'
+            return receipt
+        binding=reviews.EvaluatorBinding('fixture','1','contract test',True,wrong_modality)
+>       with pytest.raises(ValueError,match='evidence'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/test_creative_v2_stage2.py:251: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_stage2.py::test_review_rejects_altered_modality_and_concurrent_edit
+1 failed, 12 deselected in 3.25s

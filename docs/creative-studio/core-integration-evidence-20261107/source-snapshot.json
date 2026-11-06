@@ -1,0 +1,24 @@
+{
+  "observed_at": "2026-11-06T15:55:04.079614+00:00",
+  "head": "439472b3bc4665edc04ad1d7fa8ad1a9684a47b4",
+  "owned_files": {
+    "src/ttakkari/creative/v2/engines.py": "f1f0221c23d26c9ef21464365300dfd3f96034f5ca81d864f5983cad30f0743a",
+    "src/ttakkari/creative/v2/dispatch.py": "b32683da74d6546bd2066314c27ce1a3dba88366572e26d1e71d6d273367f6d4",
+    "src/ttakkari/creative/v2/plans.py": "f54a41e0ba1d458d3a21db3011912200422991fe7ee706d0d4074d954a4e80a6",
+    "src/ttakkari/creative/v2/planner.py": "ee870494d0adc87eb2c7c1eedd5c71199197ce6209c6aeab9dd3395f9e35758d",
+    "src/ttakkari/creative/v2/asset_generation.py": "04a22c0680b5eb58a6085c0e2ae0b7fbc1fe8eb6915506f05a04396d2515356c",
+    "src/ttakkari/creative/v2/asset_generation_managed.py": "f668200334259603627647f5bbcb171796958d4aeb8cec2756cd49a8c4eaa057",
+    "src/ttakkari/api/creative_v2.py": "ba9e3e54569722197720756e0503bcd2ee2692eea480544fa7f3c94929976844",
+    "unit_tests/test_creative_v2_core_integration.py": "ab9d131fd15ade34724c65cef06e1d5545885fe3ad430a9365c50d59bbeceef0",
+    "unit_tests/test_creative_v2_core_api.py": "d37dcf3b64fc6d7ae749cd2671da5ba1ba62226f3feb8838e34617b958d28a55",
+    "docs/creative-studio/core-engine-blocker-probe-20261107.py": "252a60302222f5c90856c67c37485a03e34153476fef7a1b748224520d6436d6"
+  },
+  "producer_files_read_only": {
+    "src/ttakkari/creative/v2/frame_animation.py": "942e97736afc2b8267ade3ad3f42c8ae0e634cb4ecc0ab57e334879276c60bb6",
+    "src/ttakkari/creative/v2/hyperframes.py": "6804f2af88243cf8665d2aaa16050201d53cebd937c63947d259601765ccc086",
+    "src/ttakkari/creative/v2/scene_3d.py": "b3787d2509d7dcf26e7b4745cb74802ba5ff31c93d96bd4a95ec3905644a9a85",
+    "src/ttakkari/creative/v2/quality.py": "fa02f91aae7582217dc42577920cce42b2bd494392cf02319b4385d237197a81"
+  },
+  "git_status": " M docs/creative-studio/evidence-frame-animation-20261107.md\n M scripts/run_frame_animation_benchmark.py\n M src/ttakkari/api/creative_v2.py\n M src/ttakkari/creative/v2/asset_generation.py\n M src/ttakkari/creative/v2/asset_generation_managed.py\n M src/ttakkari/creative/v2/dispatch.py\n M src/ttakkari/creative/v2/engines.py\n M src/ttakkari/creative/v2/frame_animation.py\n M src/ttakkari/creative/v2/plans.py\n M unit_tests/test_creative_v2_frame_animation.py\n?? bench/scene_3d_blender/\n?? benchmark_tests/test_hf_minimal/\n?? docs/creative-studio/account-reassignment-20261107.json\n?? docs/creative-studio/account-reassignment-receipts-20261107.json\n?? docs/creative-studio/b-pending-after-correction-20261107.json\n?? docs/creative-studio/benchmark-a-20261107.md\n?? docs/creative-studio/benchmark-c-20261107.md\n?? docs/creative-studio/core-engine-blocker-probe-20261107.py\n?? docs/creative-studio/core-integration-20261107.md\n?? docs/creative-studio/core-integration-evidence-20261107/\n?? docs/creative-studio/engine-contract-20261107.md\n?? docs/creative-studio/lead-handoff-20261107.md\n?? docs/creative-studio/quality-production-20261107.md\n?? docs/creative-studio/scene-3d-module-spec.md\n?? docs/creative-studio/ui-handoff-20261107.md\n?? docs/creative-studio/ui-pending-instructions-20261107.json\n?? docs/creative-studio/verification-b-20261107.md\n?? docs/creative-studio/verification-c-20261107.md\n?? docs/creative-studio/worker-owners-20261107.json\n?? scripts/render_3d_benchmark.py\n?? scripts/render_hyperframes_benchmark.py\n?? src/ttakkari/creative/v2/hyperframes.py\n?? src/ttakkari/creative/v2/planner.py\n?? src/ttakkari/creative/v2/quality.py\n?? src/ttakkari/creative/v2/quality_worker.py\n?? src/ttakkari/creative/v2/scene_3d.py\n?? templates/__init__.py\n?? templates/hyperframes/\n?? templates/scene_3d/\n?? tests/test_scene_3d.py\n?? unit_tests/test_creative_v2_core_api.py\n?? unit_tests/test_creative_v2_core_integration.py\n?? unit_tests/test_creative_v2_quality.py\n?? unit_tests/test_hyperframes.py\n?? unit_tests/test_scene_3d.py\n",
+  "note": "Dirty shared worktree; no commit, push or deployment performed by core continuation. Executions are sandbox/test observations, not deployed release verification."
+}

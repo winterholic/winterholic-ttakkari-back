@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>Apache Kafka Message Flow · 아파치 카프카 분산 메시지 흐름</title>
+  <script src="vendor/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Pretendard";
+      src: local("Pretendard"), local("Apple SD Gothic Neo");
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: #080c14;
+      color: #e2e8f0;
+      font-family: "Pretendard", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+    }
+    .clip {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* Background styling */
+    #bg-layer {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 25%, #152238 0%, #080c14 70%);
+    }
+    .grid-lines {
+      position: absolute;
+      inset: 0;
+      background-size: 60px 60px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+
+    /* Header */
+    .header-bar {
+      position: absolute;
+      top: 48px;
+      left: 80px;
+      right: 80px;
+      height: 90px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 20px;
+    }
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .badge-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(0, 242, 254, 0.12);
+      color: #00f2fe;
+      border: 1px solid rgba(0, 242, 254, 0.3);
+    }
+    .pill-badge.sub {
+      background: rgba(179, 136, 255, 0.12);
+      color: #b388ff;
+      border-color: rgba(179, 136, 255, 0.3);
+    }
+    .main-title {
+      font-size: 38px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+    }
+    .main-subtitle {
+      font-size: 18px;
+      color: #94a3b8;
+      font-weight: 400;
+    }
+
+    /* 3-Column Architecture */
+    .diagram-stage {
+      position: absolute;
+      top: 170px;
+      left: 80px;
+      right: 80px;
+      height: 680px;
+      display: grid;
+      grid-template-columns: 420px 1fr 420px;
+      gap: 50px;
+      align-items: center;
+    }
+
+    /* Cards */
+    .node-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px);
+      position: relative;
+      opacity: 0;
+    }
+    .node-card.glow-producer {
+      border-color: rgba(79, 172, 254, 0.4);
+      box-shadow: 0 0 35px rgba(79, 172, 254, 0.15);
+    }
+    .node-card.glow-cluster {
+      border-color: rgba(0, 242, 254, 0.4);
+      box-shadow: 0 0 45px rgba(0, 242, 254, 0.18);
+    }
+    .node-card.glow-consumer {
+      border-color: rgba(0, 230, 118, 0.4);
+      box-shadow: 0 0 35px rgba(0, 230, 118, 0.15);
+    }
+
+    .card-tag {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .card-title {
+      font-size: 26px;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .card-desc {
+      font-size: 15px;
+      color: #94a3b8;
+      margin-bottom: 24px;
+    }
+
+    /* Producer Inner */
+    .record-box {
+      background: #0d1527;
+      border: 1px solid rgba(79, 172, 254, 0.3);
+      border-radius: 12px;
+      padding: 18px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #38bdf8;
+      margin-bottom: 16px;
+    }
+    .record-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .record-row:last-child {
+      margin-bottom: 0;
+    }
+    .routing-pill {
+      background: rgba(79, 172, 254, 0.15);
+      border: 1px dashed rgba(79, 172, 254, 0.5);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: #7dd3fc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Cluster Partitions */
+    .topic-header {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .partition-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .partition-row {
+      background: #090e1a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .partition-row.active-p1 {
+      border-color: rgba(0, 242, 254, 0.6);
+      background: rgba(0, 242, 254, 0.06);
+    }
+    .partition-label {
+      width: 110px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .offset-track {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+    }
+    .offset-block {
+      width: 48px;
+      height: 38px;
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-family: monospace;
+      color: #94a3b8;
+    }
+    .offset-block.committed {
+      background: rgba(0, 230, 118, 0.18);
+      color: #4ade80;
+      border: 1px solid rgba(0, 230, 118, 0.4);
+    }
+    .offset-block.new-record {
+      background: rgba(0, 242, 254, 0.3);
+      color: #00f2fe;
+      border: 1px solid #00f2fe;
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.5);
+      opacity: 0;
+    }
+
+    /* Consumer Group Inner */
+    .consumer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .consumer-item {
+      background: #0b1322;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .consumer-item.active-c2 {
+      border-color: rgba(0, 230, 118, 0.5);
+      background: rgba(0, 230, 118, 0.06);
+    }
+    .consumer-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .consumer-sub {
+      font-size: 13px;
+      color: #64748b;
+    }
+    .consumer-badge {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 230, 118, 0.15);
+      color: #4ade80;
+      font-weight: 600;
+    }
+
+    /* Animated Flying Packet */
+    #packet {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #00f2fe;
+      box-shadow: 0 0 25px #00f2fe, 0 0 50px #00f2fe;
+      z-index: 100;
+      opacity: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    /* Bottom Caption Banner */
+    .caption-banner-container {
+      position: absolute;
+      bottom: 40px;
+      left: 80px;
+      right: 80px;
+      height: 100px;
+      position: relative;
+    }
+    .caption-banner {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 20px 36px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+    }
+    .step-indicator {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #00f2fe, #4facfe);
+      color: #080c14;
+      font-weight: 900;
+      font-size: 22px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .step-indicator.step2 {
+      background: linear-gradient(135deg, #00f2fe, #00e676);
+    }
+    .step-indicator.step3 {
+      background: linear-gradient(135deg, #00e676, #a3e635);
+    }
+    .caption-texts {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .caption-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .caption-body {
+      font-size: 16px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div
+    id="root"
+    data-composition-id="main"
+    data-width="1920"
+    data-height="1080"
+    data-duration="16"
+    data-fps="30"
+  >
+    <!-- Direct audio child owned by HyperFrames -->
+    <audio id="bgm" src="audio.wav" data-start="0" data-duration="16"></audio>
+
+    <!-- Background Clip -->
+    <div id="bg-clip" class="clip" data-start="0" data-duration="16" data-track-index="0">
+      <div id="bg-layer"></div>
+      <div class="grid-lines"></div>
+    </div>
+
+    <!-- Main Architecture Stage Clip -->
+    <div id="stage-clip" class="clip" data-start="0" data-duration="16" data-track-index="1">
+      <!-- Header -->
+      <header class="header-bar">
+        <div class="title-group">
+          <div class="badge-row">
+            <span class="pill-badge">Apache Kafka Architecture</span>
+            <span class="pill-badge sub">Event Streaming</span>
+          </div>
+          <h1 class="main-title">분산 메시지 흐름 및 커밋 로그 파이프라인</h1>
+        </div>
+        <div class="main-subtitle">High-Throughput Partitioning &amp; Zero Data Loss</div>
+      </header>
+
+      <!-- 3 Columns Architecture -->
+      <main class="diagram-stage">
+        <!-- 1. Producer Card -->
+        <section id="card-producer" class="node-card glow-producer">
+          <div class="card-tag" style="color: #38bdf8;">01 · Event Producer</div>
+          <h2 class="card-title">프로듀서 (Producer)</h2>
+          <p class="card-desc">이벤트 생성 및 키 기반 파티션 라우팅</p>
+          <div class="record-box">
+            <div class="record-row"><span style="color: #94a3b8;">Topic:</span> <span>orders.v1</span></div>
+            <div class="record-row"><span style="color: #94a3b8;">Key:</span> <span style="color: #facc15;">"usr-902"</span></div>
+            <div class="record-row"><span style="color: #94a3b8;">Payload:</span> <span style="color: #4ade80;">{"order": 50000}</span></div>
+          </div>
+          <div class="routing-pill">
+            <span>Partitioner: murmur2(key)</span>
+            <strong style="color: #00f2fe;">→ Partition 1</strong>
+          </div>
+        </section>
+
+        <!-- 2. Cluster Card -->
+        <section id="card-cluster" class="node-card glow-cluster">
+          <div class="card-tag" style="color: #00f2fe;">02 · Distributed Broker Cluster</div>
+          <h2 class="card-title">카프카 클러스터 (Brokers)</h2>
+          <p class="card-desc">순차 디스크 쓰기(Append-Only Log) 및 복제(ISR)</p>
+          <div class="topic-header">
+            <span>Topic: orders.v1 (3 Partitions, RF=3)</span>
+            <span style="color: #4ade80; font-size: 13px;">● In-Sync Replicas</span>
+          </div>
+          <div class="partition-list">
+            <div class="partition-row">
+              <span class="partition-label">Partition 0</span>
+              <div class="offset-track">
+                <div class="offset-block committed">0</div>
+                <div class="offset-block committed">1</div>
+                <div class="offset-block committed">2</div>
+                <div class="offset-block committed">3</div>
+              </div>
+            </div>
+            <div id="row-p1" class="partition-row active-p1">
+              <span class="partition-label" style="color: #00f2fe;">Partition 1</span>
+              <div class="offset-track">
+                <div class="offset-block committed">0</div>
+                <div class="offset-block committed">1</div>
+                <div class="offset-block committed">2</div>
+                <div id="block-p1-new" class="offset-block new-record">3</div>
+              </div>
+            </div>
+            <div class="partition-row">
+              <span class="partition-label">Partition 2</span>
+              <div class="offset-track">
+                <div class="offset-block committed">0</div>
+                <div class="offset-block committed">1</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Consumer Group Card -->
+        <section id="card-consumer" class="node-card glow-consumer">
+          <div class="card-tag" style="color: #4ade80;">03 · Consumer Group</div>
+          <h2 class="card-title">컨슈머 그룹 (Consumers)</h2>
+          <p class="card-desc">오프셋 기반 분산 병렬 구독 및 장애 복구</p>
+          <div class="consumer-list">
+            <div class="consumer-item">
+              <div>
+                <div class="consumer-name">Consumer 1 (결제 서비스)</div>
+                <div class="consumer-sub">Subscribing Partition 0</div>
+              </div>
+              <span class="consumer-badge">Offset 3</span>
+            </div>
+            <div id="item-c2" class="consumer-item active-c2">
+              <div>
+                <div class="consumer-name" style="color: #4ade80;">Consumer 2 (재고 서비스)</div>
+                <div class="consumer-sub">Subscribing Partition 1</div>
+              </div>
+              <span id="badge-c2" class="consumer-badge">Offset 3</span>
+            </div>
+            <div class="consumer-item">
+              <div>
+                <div class="consumer-name">Consumer 3 (알림 서비스)</div>
+                <div class="consumer-sub">Subscribing Partition 2</div>
+              </div>
+              <span class="consumer-badge">Offset 1</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Dynamic Moving Packet Element -->
+      <div id="packet">●</div>
+
+      <!-- Bottom Bilingual Narration Cards (Deterministic per Act) -->
+      <div class="caption-banner-container">
+        <!-- Act 1 Caption -->
+        <div id="caption-act1" class="caption-banner">
+          <div class="step-indicator">1</div>
+          <div class="caption-texts">
+            <div class="caption-title">01. 프로듀서의 이벤트 발행 및 해시 라우팅 (Event Ingestion)</div>
+            <div class="caption-body">프로듀서는 레코드 Key의 해시값(murmur2)을 계산하여 지정된 토픽 파티션(Partition 1)으로 직렬화 전송합니다.</div>
+          </div>
+        </div>
+
+        <!-- Act 2 Caption -->
+        <div id="caption-act2" class="caption-banner">
+          <div class="step-indicator step2">2</div>
+          <div class="caption-texts">
+            <div class="caption-title">02. 브로커의 순차 디스크 커밋 및 고가용성 복제 (Commit Log &amp; ISR)</div>
+            <div class="caption-body">브로커는 파티션 세그먼트에 O(1) 순차 디스크 쓰기(Append-Only)를 수행하고 ISR 팔로워 브로커로 무손실 동기화합니다.</div>
+          </div>
+        </div>
+
+        <!-- Act 3 Caption -->
+        <div id="caption-act3" class="caption-banner">
+          <div class="step-indicator step3">3</div>
+          <div class="caption-texts">
+            <div class="caption-title">03. 컨슈머 그룹의 병렬 읽기 및 오프셋 커밋 (Parallel Consumption)</div>
+            <div class="caption-body">컨슈머 2가 파티션 1의 새 레코드를 즉시 구독 및 처리한 후 오프셋(Offset 3)을 커밋하여 정확히 한 번 처리를 유지합니다.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    // === ACT 1: 0.0s - 4.5s (Producer Entrance & Caption 1) ===
+    tl.fromTo("#caption-act1", 
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" },
+      0.1
+    );
+
+    tl.fromTo("#card-producer",
+      { x: -60, opacity: 0 },
+      { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" },
+      0.3
+    );
+
+    tl.fromTo("#card-cluster",
+      { y: 40, opacity: 0 },
+      { y: 0, opacity: 1, duration: 1.0, ease: "power3.out" },
+      0.7
+    );
+
+    tl.fromTo("#card-consumer",
+      { x: 60, opacity: 0 },
+      { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" },
+      1.1
+    );
+
+    // Packet launches from Producer toward Cluster
+    tl.fromTo("#packet", 
+      { opacity: 0, x: 440, y: 480, scale: 0.6 },
+      { opacity: 1, x: 730, y: 480, scale: 1.2, duration: 2.0, ease: "power2.inOut" },
+      2.0
+    );
+
+    // Fade out Caption 1 at end of Act 1
+    tl.to("#caption-act1", { opacity: 0, y: -10, duration: 0.4 }, 4.1);
+
+    // === ACT 2: 4.5s - 10.5s (Cluster Commit Log & Sequential Append) ===
+    tl.fromTo("#caption-act2",
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" },
+      4.5
+    );
+
+    // Packet reaches Partition 1
+    tl.to("#packet", {
+      x: 930,
+      y: 472,
+      scale: 1.4,
+      duration: 1.1,
+      ease: "power2.out"
+    }, 4.5);
+
+    // Block appears with a pop/pulse
+    tl.fromTo("#block-p1-new",
+      { scale: 0.2, opacity: 0 },
+      { scale: 1.1, opacity: 1, duration: 0.7, ease: "back.out(1.7)" },
+      5.6
+    );
+    tl.to("#block-p1-new", { scale: 1.0, duration: 0.3 }, 6.3);
+    tl.to("#packet", { opacity: 0, duration: 0.3 }, 5.8);
+
+    // Highlight row P1
+    tl.to("#row-p1", {
+      boxShadow: "0 0 25px rgba(0, 242, 254, 0.4)",
+      duration: 0.8,
+      yoyo: true,
+      repeat: 2
+    }, 6.5);
+
+    // Fade out Caption 2 at end of Act 2
+    tl.to("#caption-act2", { opacity: 0, y: -10, duration: 0.4 }, 10.1);
+
+    // === ACT 3: 10.5s - 16.0s (Consumer Group Pull & Offset Commit) ===
+    tl.fromTo("#caption-act3",
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" },
+      10.5
+    );
+
+    // Second packet moves from Partition 1 to Consumer 2
+    tl.fromTo("#packet",
+      { opacity: 0, x: 1180, y: 472, scale: 1.0 },
+      { opacity: 1, x: 1480, y: 472, scale: 1.3, duration: 1.8, ease: "power2.inOut", immediateRender: false },
+      10.8
+    );
+    tl.to("#packet", { opacity: 0, duration: 0.4 }, 12.6);
+
+    // Consumer 2 pulse & badge update
+    tl.to("#item-c2", {
+      borderColor: "#00e676",
+      boxShadow: "0 0 30px rgba(0, 230, 118, 0.5)",
+      duration: 0.8,
+      repeat: 1,
+      yoyo: true
+    }, 12.6);
+
+    tl.to("#badge-c2", {
+      scale: 1.25,
+      backgroundColor: "rgba(0, 230, 118, 0.35)",
+      duration: 0.4,
+      yoyo: true,
+      repeat: 1
+    }, 12.8);
+
+    window.__timelines["main"] = tl;
+  </script>
+</body>
+</html>

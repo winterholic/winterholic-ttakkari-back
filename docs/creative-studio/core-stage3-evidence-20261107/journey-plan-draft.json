@@ -1,0 +1,1399 @@
+{
+  "id": "501a5af3-eb0c-5ca5-81e1-70efeb13bc72",
+  "revision": 2,
+  "created_at": "2026-11-06T16:51:59.496460+00:00",
+  "updated_at": "2026-11-06T16:51:59.499983+00:00",
+  "name": "이미 제작된 B 2D 영상을 재사용하는 9초 16:9 소개 영상을 기획해줘. 세 장면을 각각 3초로 만들고,",
+  "brief": "이미 제작된 B 2D 영상을 재사용하는 9초 16:9 소개 영상을 기획해줘. 세 장면을 각각 3초로 만들고, 원본 동작을 그대로 재생하며 장면 제목 자막만 넣는다. 새 영상이나 음성 생성은 하지 않는다. 각 장면의 제목, 실행 전략과 근거, 다른 전략을 고르지 않은 이유를 작성해줘.",
+  "brief_sha256": "efd530d554d54a6b2ba0993efe2ee608941ec7f129c65b4f84ed38c4aa05e13b",
+  "aspect": "16:9",
+  "intent": {
+    "schema_version": 1,
+    "selections": [
+      {
+        "entry_id": "C08.three_act",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.5,
+        "source": "llm_inferred",
+        "evidence": []
+      }
+    ],
+    "constraints": [],
+    "duration": {
+      "mode": "preferred",
+      "seconds": 9.0,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "aspect": "16:9",
+    "info_items": [
+      {
+        "id": "scene_01",
+        "title": "B를 만나다",
+        "narration": "",
+        "weight": 1.0,
+        "essential": false,
+        "evidence": []
+      },
+      {
+        "id": "scene_02",
+        "title": "B와 함께",
+        "narration": "",
+        "weight": 1.0,
+        "essential": false,
+        "evidence": []
+      },
+      {
+        "id": "scene_03",
+        "title": "지금, B",
+        "narration": "",
+        "weight": 1.0,
+        "essential": false,
+        "evidence": []
+      }
+    ],
+    "music_seconds": null,
+    "open_questions": [],
+    "extraction": {
+      "method": "user_structured",
+      "model": "gpt-6-luna"
+    }
+  },
+  "intent_status": "confirmed",
+  "validation": {
+    "valid": true,
+    "needs_confirmation": false,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "no_content_type",
+        "message": "콘텐츠 유형(C01)이 없습니다. 계획 전에 확인이 필요합니다.",
+        "path": "selections"
+      }
+    ]
+  },
+  "match": {
+    "matching_version": "2026-10-22.1",
+    "status": "ready",
+    "execution_scope": "studio_runtime",
+    "selections": [
+      {
+        "entry_id": "C08.three_act",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.5,
+        "source": "llm_inferred",
+        "evidence": []
+      }
+    ],
+    "dropped": [],
+    "conflicts": [],
+    "needs": [
+      {
+        "options": [
+          "edit.timeline"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.timeline",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-shorts-9-16(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.timeline",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+              "record:three-filmcraft-assembly(completed, 검수 unreviewed)"
+            ]
+          },
+          {
+            "entry_id": "tool.artcraft",
+            "capability": "edit.timeline",
+            "level": "installed",
+            "integration": "none",
+            "evidence": []
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.machine_video"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "tool.ffmpeg",
+          "capability": "qa.machine_video",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:remotion-intro-v1-v2(completed, 검수 conditional)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "skill.ttakkari-video-qa",
+            "capability": "qa.machine_video",
+            "level": "executed",
+            "integration": "lab_only",
+            "evidence": [
+              "record:remotion-intro-v1-v2(completed, 검수 conditional)",
+              "record:remotion-beat-v1-v2(completed, 검수 conditional)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "orch.checkpoint_resume"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.studio-pipeline-checkpoints",
+          "capability": "orch.checkpoint_resume",
+          "level": "executed",
+          "integration": "lab_only",
+          "evidence": [
+            "record:pipeline-checkpoints-demo(completed, 검수 pass)"
+          ]
+        },
+        "alternatives": [],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "missing",
+        "best": {
+          "entry_id": "model.multimodal_judge",
+          "capability": "qa.visual_semantic",
+          "level": "missing",
+          "integration": "none",
+          "evidence": []
+        },
+        "alternatives": [],
+        "status": "missing"
+      },
+      {
+        "options": [
+          "edit.captions"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.captions",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.captions",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+            ]
+          }
+        ],
+        "status": "executed"
+      }
+    ],
+    "candidates": [
+      {
+        "recipe_id": "R21",
+        "name": "정지 이미지 슬라이드쇼(기준선)",
+        "score": 0.7,
+        "fit": 1.0,
+        "coverage": 0.0,
+        "executability": 1.0,
+        "verdict": "studio_executable",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C08.three_act",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 studio_executable"
+        ]
+      },
+      {
+        "recipe_id": "R19",
+        "name": "뮤직비디오",
+        "score": 0.24,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.8,
+        "verdict": "recipe_demonstrated",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 recipe_demonstrated"
+        ]
+      },
+      {
+        "recipe_id": "R06",
+        "name": "한국형 웹툰",
+        "score": 0.18,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.6,
+        "verdict": "capabilities_executed",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 capabilities_executed"
+        ]
+      },
+      {
+        "recipe_id": "R01",
+        "name": "게임틱한 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R02",
+        "name": "SF 공상영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R03",
+        "name": "React 컴포넌트 조립",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R09",
+        "name": "귀여운 생활형 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R11",
+        "name": "옛날 전쟁영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R12",
+        "name": "판타지 영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R14",
+        "name": "스톱모션·클레이",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R18",
+        "name": "제품 광고",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R04",
+        "name": "일본 애니메이션",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R05",
+        "name": "2D 만화·모션코믹",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R07",
+        "name": "서양식 카툰",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R08",
+        "name": "시뮬레이션 게임",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R10",
+        "name": "사극·역사 재현",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R13",
+        "name": "픽셀아트 게임",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R15",
+        "name": "수묵화·회화",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R16",
+        "name": "다큐멘터리",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R17",
+        "name": "과학·기술 교육",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R20",
+        "name": "공포·스릴러",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      }
+    ],
+    "primary_recipe": "R21",
+    "auxiliary_recipes": [],
+    "gaps": [
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "status": "missing",
+        "why": "이 능력을 제공하는 항목이 없다",
+        "alternatives": []
+      }
+    ],
+    "style_resolution_needed": [],
+    "trace": [
+      {
+        "step": "intent",
+        "summary": "선택 1개, 제약 0개, 추출 방식 user_structured",
+        "data": {
+          "warnings": [
+            "no_content_type"
+          ]
+        }
+      },
+      {
+        "step": "conflicts",
+        "summary": "충돌 0건, 제외 0건",
+        "data": {
+          "resolutions": []
+        }
+      },
+      {
+        "step": "needs",
+        "summary": "필요 능력 묶음 4개(must 2, should 0, prefer 2)",
+        "data": {
+          "notes": []
+        }
+      },
+      {
+        "step": "recipes",
+        "summary": "주 레시피 R21 정지 이미지 슬라이드쇼(기준선)(점수 0.7), 보조 없음",
+        "data": {
+          "top": [
+            [
+              "R21",
+              0.7
+            ],
+            [
+              "R19",
+              0.24
+            ],
+            [
+              "R06",
+              0.18
+            ],
+            [
+              "R01",
+              0.06
+            ],
+            [
+              "R02",
+              0.06
+            ]
+          ]
+        }
+      },
+      {
+        "step": "decision",
+        "summary": "결정 ready, 실행 범위 studio_runtime",
+        "data": {
+          "missing_must": [],
+          "unverified_must": [],
+          "blocking_conflicts": []
+        }
+      }
+    ],
+    "fingerprint": "d087cafde43563a663a700506dea78d07530c3d6be730f8544a7feb9fcee9d8a"
+  },
+  "style": null,
+  "profile": {
+    "beats": [
+      {
+        "id": "scene_01",
+        "title": "B를 만나다",
+        "narration": "",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "scene_02",
+        "title": "B와 함께",
+        "narration": "",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "scene_03",
+        "title": "지금, B",
+        "narration": "",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      }
+    ],
+    "music_seconds": null,
+    "fps": 30,
+    "min_scene_seconds": 1.0
+  },
+  "basis": "user_edited",
+  "duration": {
+    "policy_version": "2026-10-22.1",
+    "status": "target_met",
+    "deviation_level": "none",
+    "request": {
+      "mode": "preferred",
+      "seconds": 9.0,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "fps": 30,
+    "needed": {
+      "min_seconds": 3.0,
+      "ideal_seconds": 15.0,
+      "max_seconds": 24.0,
+      "speech_seconds": 0.0,
+      "music_seconds": null,
+      "beats": [
+        {
+          "beat_id": "scene_01",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        },
+        {
+          "beat_id": "scene_02",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        },
+        {
+          "beat_id": "scene_03",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        }
+      ],
+      "reasons": [
+        "장면 3개: 발화 바닥 합 3.0초, 이상 15.0초, 반복 없이 늘릴 수 있는 한계 24.0초."
+      ]
+    },
+    "planned_seconds": 9.0,
+    "planned_frames": 270,
+    "scenes": [
+      {
+        "beat_id": "scene_01",
+        "start_frame": 0,
+        "end_frame": 90,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "scene_02",
+        "start_frame": 90,
+        "end_frame": 180,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "scene_03",
+        "start_frame": 180,
+        "end_frame": 270,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      }
+    ],
+    "reasons": [
+      "장면 3개: 발화 바닥 합 3.0초, 이상 15.0초, 반복 없이 늘릴 수 있는 한계 24.0초.",
+      "희망 9초는 콘텐츠 범위(3.0~24.0초) 안이라 장면 길이를 맞췄습니다."
+    ],
+    "warnings": [
+      "이상 길이(15.0초)와 40% 차이라 일부 장면이 압축졌습니다. 장면별 상태를 확인해 주세요."
+    ],
+    "alternatives": [],
+    "estimator": {
+      "speech_syllables_per_second": 4.4,
+      "latin_words_per_second": 2.4,
+      "digits_per_second": 3.0,
+      "lead_tail_seconds": 0.4
+    },
+    "basis_sha256": "1700359da73d502fa8f2ea253ca4f4a3d4c82014eec72f75b198ae44ddca8c55"
+  },
+  "duration_check": {
+    "status": "ok",
+    "total_frames": 270,
+    "total_seconds": 9.0,
+    "fps": 30,
+    "needed": {
+      "min_seconds": 3.0,
+      "ideal_seconds": 15.0,
+      "max_seconds": 24.0,
+      "speech_seconds": 0.0,
+      "music_seconds": null,
+      "beats": [
+        {
+          "beat_id": "scene_01",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        },
+        {
+          "beat_id": "scene_02",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        },
+        {
+          "beat_id": "scene_03",
+          "speech_seconds": 0.0,
+          "speech_source": "none",
+          "floor": 1.0,
+          "ideal": 5.0,
+          "ceiling": 8.0,
+          "essential": true
+        }
+      ],
+      "reasons": [
+        "장면 3개: 발화 바닥 합 3.0초, 이상 15.0초, 반복 없이 늘릴 수 있는 한계 24.0초."
+      ]
+    },
+    "request": {
+      "mode": "preferred",
+      "seconds": 9.0,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "target_delta_seconds": 0.0,
+    "scenes": [
+      {
+        "beat_id": "scene_01",
+        "start_frame": 0,
+        "end_frame": 90,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "scene_02",
+        "start_frame": 90,
+        "end_frame": 180,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      },
+      {
+        "beat_id": "scene_03",
+        "start_frame": 180,
+        "end_frame": 270,
+        "seconds": 3.0,
+        "floor": 1.0,
+        "ideal": 5.0,
+        "ceiling": 8.0,
+        "speech_seconds": 0.0,
+        "state": "compressed"
+      }
+    ],
+    "errors": [],
+    "warnings": [],
+    "fit_suggestion": null
+  },
+  "scenes": [
+    {
+      "scene_id": "scene_01",
+      "title": "B를 만나다",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 3.0,
+      "seconds": 3.0,
+      "start_frame": 0,
+      "end_frame": 90,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "B를 만나다",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "slideshow",
+      "selected_engine": "skill.v1_ffmpeg_slideshow",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "R21의 업로드 동영상 재생은 원본 프레임 보존과 제목 자막 표시를 지원한다. 선택한 연속 9초 구간의 첫 3초를 도입으로 사용한다. 16:9 타임라인에 원본 비율을 유지해 배치하며, 원본이 다른 비율이면 여백으로 맞추는 계획이다.",
+        "source": "llm",
+        "model": "gpt-6-luna",
+        "scope": "uploaded image/video composition; captions and master audio",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "frame_animation_2d",
+            "engine": "skill.frame_animation_2d",
+            "reason": "고정 걷기 사이클만 지원하므로 B 원본의 동작을 그대로 재생하는 요구를 충족하지 못한다.",
+            "scope": "fixed character walk cycle only; custom rig/action unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "generative_video",
+            "engine": "skill.comfy_video_renderer",
+            "reason": "기존 관리형 생성 영상 재생용이며 B가 해당 자산이라는 근거가 없다. 업로드 파일 재사용은 R21의 slideshow로 지원된다.",
+            "scope": "existing managed-generated video playback; no new generation here",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "uploaded image/video composition; captions and master audio"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot_01",
+          "action": "선택 구간의 0초 이상 3초 미만을 실제 동영상 프레임으로 원래 속도로 재생한다. 제목 'B를 만나다'를 하단 안전 영역에 3초간 고정 표시한다. 원본 화면을 자르거나 늘리지 않고 16:9 캔버스에 배치한다.",
+          "layers": [
+            "visual",
+            "captions"
+          ],
+          "required_capabilities": [
+            "edit.timeline",
+            "edit.captions"
+          ],
+          "scene_id": "scene_01",
+          "index": 0,
+          "strategy": "slideshow",
+          "selected_providers": [
+            "skill.v1_ffmpeg_slideshow"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 3.0,
+          "start_time": 0.0,
+          "end_time": 3.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "frame_animation_2d",
+              "engine": "skill.frame_animation_2d",
+              "reason": "고정 걷기 사이클만 지원하므로 B 원본의 동작을 그대로 재생하는 요구를 충족하지 못한다.",
+              "scope": "fixed character walk cycle only; custom rig/action unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "generative_video",
+              "engine": "skill.comfy_video_renderer",
+              "reason": "기존 관리형 생성 영상 재생용이며 B가 해당 자산이라는 근거가 없다. 업로드 파일 재사용은 R21의 slideshow로 지원된다.",
+              "scope": "existing managed-generated video playback; no new generation here",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "uploaded image/video composition; captions and master audio"
+          },
+          "layer_tools": {
+            "visual": "skill.v1_ffmpeg_slideshow",
+            "captions": "tool.ffmpeg"
+          }
+        }
+      ]
+    },
+    {
+      "scene_id": "scene_02",
+      "title": "B와 함께",
+      "narration": "",
+      "start_time": 3.0,
+      "end_time": 6.0,
+      "seconds": 3.0,
+      "start_frame": 90,
+      "end_frame": 180,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "B와 함께",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [
+        "scene_01"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "slideshow",
+      "selected_engine": "skill.v1_ffmpeg_slideshow",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "R21에서 첫 장면 직후의 원본 3초를 이어 재생하여 동작의 연속성을 유지한다. 장면 경계에서는 제목만 교체하며 속도 변경이나 추가 시각 효과를 요구하지 않는다.",
+        "source": "llm",
+        "model": "gpt-6-luna",
+        "scope": "uploaded image/video composition; captions and master audio",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "reason": "고정 크리스털·오비트만 지원하여 기존 B 2D 영상의 원본 동작 재생에 맞지 않는다.",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "frame_animation_2d",
+            "engine": "skill.frame_animation_2d",
+            "reason": "고정 걷기 사이클 재제작은 원본 동작 프레임을 보존하는 방식이 아니므로 선택하지 않는다.",
+            "scope": "fixed character walk cycle only; custom rig/action unsupported",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "uploaded image/video composition; captions and master audio"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot_02",
+          "action": "선택 구간의 3초 이상 6초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목을 'B와 함께'로 교체하고 첫 장면과 동일한 위치·서체·크기로 3초간 표시한다. 원본 프레임의 순서와 화면 비율을 유지한다.",
+          "layers": [
+            "visual",
+            "captions"
+          ],
+          "required_capabilities": [
+            "edit.timeline",
+            "edit.captions"
+          ],
+          "scene_id": "scene_02",
+          "index": 0,
+          "strategy": "slideshow",
+          "selected_providers": [
+            "skill.v1_ffmpeg_slideshow"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 3.0,
+          "start_time": 3.0,
+          "end_time": 6.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "reason": "고정 크리스털·오비트만 지원하여 기존 B 2D 영상의 원본 동작 재생에 맞지 않는다.",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "frame_animation_2d",
+              "engine": "skill.frame_animation_2d",
+              "reason": "고정 걷기 사이클 재제작은 원본 동작 프레임을 보존하는 방식이 아니므로 선택하지 않는다.",
+              "scope": "fixed character walk cycle only; custom rig/action unsupported",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "uploaded image/video composition; captions and master audio"
+          },
+          "layer_tools": {
+            "visual": "skill.v1_ffmpeg_slideshow",
+            "captions": "tool.ffmpeg"
+          }
+        }
+      ]
+    },
+    {
+      "scene_id": "scene_03",
+      "title": "지금, B",
+      "narration": "",
+      "start_time": 6.0,
+      "end_time": 9.0,
+      "seconds": 3.0,
+      "start_frame": 180,
+      "end_frame": 270,
+      "duration_state": "compressed",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "지금, B",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [
+        "scene_02"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "slideshow",
+      "selected_engine": "skill.v1_ffmpeg_slideshow",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "R21에서 이어지는 원본 3초를 재생해 전체 길이를 9초로 맞춘다. 마무리 제목만 표시하며 정지 이미지나 새로운 동작으로 대체하지 않는다.",
+        "source": "llm",
+        "model": "gpt-6-luna",
+        "scope": "uploaded image/video composition; captions and master audio",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "reason": "3장면·16:9 조건은 맞지만 Kafka 흐름 템플릿만 지원하므로 B 영상 재사용에 적합하지 않다. 이 환경에서는 렌더도 차단되어 있다.",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "reason": "고정 크리스털·오비트 장면은 B 원본 재생 요구를 충족하지 못하며 불필요한 3D 제작 경로를 요구한다.",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "uploaded image/video composition; captions and master audio"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot_03",
+          "action": "선택 구간의 6초 이상 9초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목 '지금, B'를 동일한 자막 스타일로 3초간 표시하고 전체 타임라인 9초에서 종료한다. 추가 엔딩 화면이나 생성 음성을 넣지 않는다.",
+          "layers": [
+            "visual",
+            "captions"
+          ],
+          "required_capabilities": [
+            "edit.timeline",
+            "edit.captions"
+          ],
+          "scene_id": "scene_03",
+          "index": 0,
+          "strategy": "slideshow",
+          "selected_providers": [
+            "skill.v1_ffmpeg_slideshow"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 3.0,
+          "start_time": 6.0,
+          "end_time": 9.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "reason": "3장면·16:9 조건은 맞지만 Kafka 흐름 템플릿만 지원하므로 B 영상 재사용에 적합하지 않다. 이 환경에서는 렌더도 차단되어 있다.",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "reason": "고정 크리스털·오비트 장면은 B 원본 재생 요구를 충족하지 못하며 불필요한 3D 제작 경로를 요구한다.",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "uploaded image/video composition; captions and master audio"
+          },
+          "layer_tools": {
+            "visual": "skill.v1_ffmpeg_slideshow",
+            "captions": "tool.ffmpeg"
+          }
+        }
+      ]
+    }
+  ],
+  "director": {
+    "source": "llm",
+    "model": "gpt-6-luna",
+    "reviewed": true,
+    "run_id": "90bddc9c-fb91-44fc-8364-fd67c61d21a7",
+    "output_sha256": "2ee5207a0ff51bbafaac7eb8739a8c30ab8c8b371b0c395fd590032e2b8d5b9d",
+    "intent": "R21 업로드 재사용 경로로 기존 B 2D 영상의 연속된 9초를 원래 속도로 재생하는 16:9 소개 영상 계획이다. 도입·전개·마무리 세 장면을 각각 3초로 구성하고 장면 제목 자막만 추가한다. 실행 가능한 구조 카탈로그 C08.three_act만 선택하며, 기존 파일 재생을 새 2D·3D 생성으로 분류하지 않는다. 원본에 디코드 가능한 연속 9초 구간이 있다는 전제다. 원본 내용과 규격은 확인하지 않았으며, 의미와 시청 품질은 독립 평가 전까지 unknown이다. 새 영상·음성 생성이나 렌더는 실행하지 않았다.",
+    "domain_knowledge": [
+      "reuse-policy: 기존 B 영상 또는 업로드 소스를 재사용한다. 원본 동작 프레임은 동영상으로 디코드하여 보존한다. 장면 제목 자막은 합성할 수 있다. -> 세 장면 모두 R21의 slideshow 업로드 동영상 재생으로 구성한다. 연속된 원본 구간을 3초씩 배치하고 edit.timeline과 edit.captions만 요구하여 원본 동작 재생과 제목 표시를 구현하도록 계획한다.",
+      "reuse-policy: 새로운 2D 원샘플을 재제작하지 않는다. 의미와 시청 품질은 독립 평가 전에는 unknown이다. -> 고정 걷기 사이클이나 새로운 생성 영상으로 원본을 대체하지 않는다. 원본 내용을 추측하지 않는 중립적 제목을 사용하고 최종 품질은 미검증으로 남긴다."
+    ],
+    "scenes": [
+      {
+        "scene_id": "scene_01",
+        "strategy": "slideshow",
+        "preset": null,
+        "rationale": "R21의 업로드 동영상 재생은 원본 프레임 보존과 제목 자막 표시를 지원한다. 선택한 연속 9초 구간의 첫 3초를 도입으로 사용한다. 16:9 타임라인에 원본 비율을 유지해 배치하며, 원본이 다른 비율이면 여백으로 맞추는 계획이다.",
+        "alternatives": [
+          {
+            "strategy": "frame_animation_2d",
+            "rationale": "고정 걷기 사이클만 지원하므로 B 원본의 동작을 그대로 재생하는 요구를 충족하지 못한다."
+          },
+          {
+            "strategy": "generative_video",
+            "rationale": "기존 관리형 생성 영상 재생용이며 B가 해당 자산이라는 근거가 없다. 업로드 파일 재사용은 R21의 slideshow로 지원된다."
+          }
+        ],
+        "shots": [
+          {
+            "shot_id": "shot_01",
+            "action": "선택 구간의 0초 이상 3초 미만을 실제 동영상 프레임으로 원래 속도로 재생한다. 제목 'B를 만나다'를 하단 안전 영역에 3초간 고정 표시한다. 원본 화면을 자르거나 늘리지 않고 16:9 캔버스에 배치한다.",
+            "layers": [
+              "visual",
+              "captions"
+            ],
+            "required_capabilities": [
+              "edit.timeline",
+              "edit.captions"
+            ]
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_02",
+        "strategy": "slideshow",
+        "preset": null,
+        "rationale": "R21에서 첫 장면 직후의 원본 3초를 이어 재생하여 동작의 연속성을 유지한다. 장면 경계에서는 제목만 교체하며 속도 변경이나 추가 시각 효과를 요구하지 않는다.",
+        "alternatives": [
+          {
+            "strategy": "scene_3d",
+            "rationale": "고정 크리스털·오비트만 지원하여 기존 B 2D 영상의 원본 동작 재생에 맞지 않는다."
+          },
+          {
+            "strategy": "frame_animation_2d",
+            "rationale": "고정 걷기 사이클 재제작은 원본 동작 프레임을 보존하는 방식이 아니므로 선택하지 않는다."
+          }
+        ],
+        "shots": [
+          {
+            "shot_id": "shot_02",
+            "action": "선택 구간의 3초 이상 6초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목을 'B와 함께'로 교체하고 첫 장면과 동일한 위치·서체·크기로 3초간 표시한다. 원본 프레임의 순서와 화면 비율을 유지한다.",
+            "layers": [
+              "visual",
+              "captions"
+            ],
+            "required_capabilities": [
+              "edit.timeline",
+              "edit.captions"
+            ]
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_03",
+        "strategy": "slideshow",
+        "preset": null,
+        "rationale": "R21에서 이어지는 원본 3초를 재생해 전체 길이를 9초로 맞춘다. 마무리 제목만 표시하며 정지 이미지나 새로운 동작으로 대체하지 않는다.",
+        "alternatives": [
+          {
+            "strategy": "code_motion",
+            "rationale": "3장면·16:9 조건은 맞지만 Kafka 흐름 템플릿만 지원하므로 B 영상 재사용에 적합하지 않다. 이 환경에서는 렌더도 차단되어 있다."
+          },
+          {
+            "strategy": "scene_3d",
+            "rationale": "고정 크리스털·오비트 장면은 B 원본 재생 요구를 충족하지 못하며 불필요한 3D 제작 경로를 요구한다."
+          }
+        ],
+        "shots": [
+          {
+            "shot_id": "shot_03",
+            "action": "선택 구간의 6초 이상 9초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목 '지금, B'를 동일한 자막 스타일로 3초간 표시하고 전체 타임라인 9초에서 종료한다. 추가 엔딩 화면이나 생성 음성을 넣지 않는다.",
+            "layers": [
+              "visual",
+              "captions"
+            ],
+            "required_capabilities": [
+              "edit.timeline",
+              "edit.captions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [],
+  "approval": null,
+  "history": [
+    {
+      "revision": 1,
+      "at": "2026-11-06T16:51:59.496522+00:00",
+      "kind": "created",
+      "total_seconds": 9.0,
+      "status": "target_met"
+    },
+    {
+      "revision": 2,
+      "at": "2026-11-06T16:51:59.499977+00:00",
+      "kind": "scenes_edited",
+      "total_seconds": 9.0,
+      "status": "ok"
+    }
+  ],
+  "render_blockers": [],
+  "render_gate": false,
+  "render_gate_reasons": [
+    "이 revision은 아직 승인되지 않았습니다."
+  ],
+  "render_plan": {
+    "segment_target_seconds": 60.0,
+    "requires_split": false,
+    "segments": [
+      {
+        "id": "seg-01",
+        "scene_ids": [
+          "scene_01"
+        ],
+        "start_frame": 0,
+        "end_frame": 90,
+        "seconds": 3.0,
+        "input_sha256": "a48c9fe076e8b7712e20c68bf9547769e00ce2c3041a9d46bf0c7dd3a216e9f7"
+      },
+      {
+        "id": "seg-02",
+        "scene_ids": [
+          "scene_02"
+        ],
+        "start_frame": 90,
+        "end_frame": 180,
+        "seconds": 3.0,
+        "input_sha256": "aef05038c3a4fbfd58b17bab78d5a5341e34cd6daf477cbbc45dafbb608d1a67"
+      },
+      {
+        "id": "seg-03",
+        "scene_ids": [
+          "scene_03"
+        ],
+        "start_frame": 180,
+        "end_frame": 270,
+        "seconds": 3.0,
+        "input_sha256": "b422222bdb589fcfdd0898e693d828266446605fbf199c9d68606bb30644116f"
+      }
+    ],
+    "join": {
+      "method": "concat_in_order",
+      "inputs": [
+        "seg-01",
+        "seg-02",
+        "seg-03"
+      ]
+    },
+    "resume": "구간의 input_sha256이 같고 산출물이 남아 있으면 그 구간은 다시 렌더하지 않는다.",
+    "executed": false,
+    "warnings": []
+  }
+}

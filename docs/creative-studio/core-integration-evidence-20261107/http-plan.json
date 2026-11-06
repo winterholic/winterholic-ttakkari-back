@@ -1,0 +1,1385 @@
+{
+  "id": "1621db59-0d78-4f6c-b613-aad983ff8f9f",
+  "revision": 1,
+  "created_at": "2026-11-06T15:48:29.315095+00:00",
+  "updated_at": "2026-11-06T15:48:29.561104+00:00",
+  "name": "사진으로 영상",
+  "brief": "사진으로 영상",
+  "brief_sha256": "82462c42d8163f2863cbed06dd2f8870922126032d53377e61bbd8aa116b5c88",
+  "aspect": "16:9",
+  "intent": {
+    "schema_version": 1,
+    "selections": [
+      {
+        "entry_id": "C08.three_act",
+        "role": "primary",
+        "strength": "soft",
+        "confidence": 0.8,
+        "source": "llm_inferred",
+        "evidence": []
+      },
+      {
+        "entry_id": "C10.dissolve",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.8,
+        "source": "llm_inferred",
+        "evidence": []
+      }
+    ],
+    "constraints": [],
+    "duration": {
+      "mode": "auto",
+      "seconds": null,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "aspect": null,
+    "info_items": [
+      {
+        "id": "i0",
+        "title": "장면 1",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "weight": 1.0,
+        "essential": true,
+        "evidence": []
+      },
+      {
+        "id": "i1",
+        "title": "장면 2",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "weight": 1.0,
+        "essential": true,
+        "evidence": []
+      },
+      {
+        "id": "i2",
+        "title": "장면 3",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "weight": 1.0,
+        "essential": true,
+        "evidence": []
+      }
+    ],
+    "music_seconds": null,
+    "open_questions": [],
+    "extraction": {
+      "method": "user_structured",
+      "model": null
+    }
+  },
+  "intent_status": "confirmed",
+  "validation": {
+    "valid": true,
+    "needs_confirmation": false,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "no_content_type",
+        "message": "콘텐츠 유형(C01)이 없습니다. 계획 전에 확인이 필요합니다.",
+        "path": "selections"
+      }
+    ]
+  },
+  "match": {
+    "matching_version": "2026-10-22.1",
+    "status": "ready",
+    "execution_scope": "studio_runtime",
+    "selections": [
+      {
+        "entry_id": "C08.three_act",
+        "role": "primary",
+        "strength": "soft",
+        "confidence": 0.8,
+        "source": "llm_inferred",
+        "evidence": []
+      },
+      {
+        "entry_id": "C10.dissolve",
+        "role": "secondary",
+        "strength": "soft",
+        "confidence": 0.8,
+        "source": "llm_inferred",
+        "evidence": []
+      }
+    ],
+    "dropped": [],
+    "conflicts": [],
+    "needs": [
+      {
+        "options": [
+          "edit.timeline"
+        ],
+        "priority": "must",
+        "sources": [
+          {
+            "entry_id": "C10.dissolve",
+            "relation": "requires"
+          }
+        ],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.timeline",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+            "record:legacy-catalog-sample-shorts-9-16(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.timeline",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-music-video(completed, 검수 unreviewed)",
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)",
+              "record:three-filmcraft-assembly(completed, 검수 unreviewed)"
+            ]
+          },
+          {
+            "entry_id": "tool.artcraft",
+            "capability": "edit.timeline",
+            "level": "installed",
+            "integration": "none",
+            "evidence": []
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.machine_video"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "tool.ffmpeg",
+          "capability": "qa.machine_video",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:remotion-intro-v1-v2(completed, 검수 conditional)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "skill.ttakkari-video-qa",
+            "capability": "qa.machine_video",
+            "level": "executed",
+            "integration": "lab_only",
+            "evidence": [
+              "record:remotion-intro-v1-v2(completed, 검수 conditional)",
+              "record:remotion-beat-v1-v2(completed, 검수 conditional)"
+            ]
+          }
+        ],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "orch.checkpoint_resume"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.studio-pipeline-checkpoints",
+          "capability": "orch.checkpoint_resume",
+          "level": "executed",
+          "integration": "lab_only",
+          "evidence": [
+            "record:pipeline-checkpoints-demo(completed, 검수 pass)"
+          ]
+        },
+        "alternatives": [],
+        "status": "executed"
+      },
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "sources": [],
+        "level": "missing",
+        "best": {
+          "entry_id": "model.multimodal_judge",
+          "capability": "qa.visual_semantic",
+          "level": "missing",
+          "integration": "none",
+          "evidence": []
+        },
+        "alternatives": [],
+        "status": "missing"
+      },
+      {
+        "options": [
+          "edit.captions"
+        ],
+        "priority": "must",
+        "sources": [],
+        "level": "executed",
+        "best": {
+          "entry_id": "skill.v1_ffmpeg_slideshow",
+          "capability": "edit.captions",
+          "level": "executed",
+          "integration": "creative_runtime",
+          "evidence": [
+            "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+          ]
+        },
+        "alternatives": [
+          {
+            "entry_id": "tool.ffmpeg",
+            "capability": "edit.captions",
+            "level": "executed",
+            "integration": "creative_runtime",
+            "evidence": [
+              "record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed)"
+            ]
+          }
+        ],
+        "status": "executed"
+      }
+    ],
+    "candidates": [
+      {
+        "recipe_id": "R21",
+        "name": "정지 이미지 슬라이드쇼(기준선)",
+        "score": 0.7,
+        "fit": 1.0,
+        "coverage": 0.0,
+        "executability": 1.0,
+        "verdict": "studio_executable",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: C08.three_act, C10.dissolve",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 studio_executable"
+        ]
+      },
+      {
+        "recipe_id": "R19",
+        "name": "뮤직비디오",
+        "score": 0.24,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.8,
+        "verdict": "recipe_demonstrated",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 recipe_demonstrated"
+        ]
+      },
+      {
+        "recipe_id": "R06",
+        "name": "한국형 웹툰",
+        "score": 0.18,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.6,
+        "verdict": "capabilities_executed",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 capabilities_executed"
+        ]
+      },
+      {
+        "recipe_id": "R01",
+        "name": "게임틱한 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R02",
+        "name": "SF 공상영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R03",
+        "name": "React 컴포넌트 조립",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R09",
+        "name": "귀여운 생활형 3D",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R11",
+        "name": "옛날 전쟁영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R12",
+        "name": "판타지 영화",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R14",
+        "name": "스톱모션·클레이",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R18",
+        "name": "제품 광고",
+        "score": 0.06,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.2,
+        "verdict": "unverified",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 unverified"
+        ]
+      },
+      {
+        "recipe_id": "R04",
+        "name": "일본 애니메이션",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R05",
+        "name": "2D 만화·모션코믹",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R07",
+        "name": "서양식 카툰",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R08",
+        "name": "시뮬레이션 게임",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R10",
+        "name": "사극·역사 재현",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R13",
+        "name": "픽셀아트 게임",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R15",
+        "name": "수묵화·회화",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R16",
+        "name": "다큐멘터리",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R17",
+        "name": "과학·기술 교육",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      },
+      {
+        "recipe_id": "R20",
+        "name": "공포·스릴러",
+        "score": 0.0,
+        "fit": 0.0,
+        "coverage": 0.0,
+        "executability": 0.0,
+        "verdict": "blocked",
+        "disqualified": null,
+        "reasons": [
+          "맞는 선택: 없음",
+          "필요 능력 0/4개를 이 레시피가 다룬다",
+          "실행 판정 blocked"
+        ]
+      }
+    ],
+    "primary_recipe": "R21",
+    "auxiliary_recipes": [],
+    "gaps": [
+      {
+        "options": [
+          "qa.visual_semantic"
+        ],
+        "priority": "prefer",
+        "status": "missing",
+        "why": "이 능력을 제공하는 항목이 없다",
+        "alternatives": []
+      }
+    ],
+    "style_resolution_needed": [],
+    "trace": [
+      {
+        "step": "intent",
+        "summary": "선택 2개, 제약 0개, 추출 방식 user_structured",
+        "data": {
+          "warnings": [
+            "no_content_type"
+          ]
+        }
+      },
+      {
+        "step": "conflicts",
+        "summary": "충돌 0건, 제외 0건",
+        "data": {
+          "resolutions": []
+        }
+      },
+      {
+        "step": "needs",
+        "summary": "필요 능력 묶음 4개(must 2, should 0, prefer 2)",
+        "data": {
+          "notes": []
+        }
+      },
+      {
+        "step": "recipes",
+        "summary": "주 레시피 R21 정지 이미지 슬라이드쇼(기준선)(점수 0.7), 보조 없음",
+        "data": {
+          "top": [
+            [
+              "R21",
+              0.7
+            ],
+            [
+              "R19",
+              0.24
+            ],
+            [
+              "R06",
+              0.18
+            ],
+            [
+              "R01",
+              0.06
+            ],
+            [
+              "R02",
+              0.06
+            ]
+          ]
+        }
+      },
+      {
+        "step": "decision",
+        "summary": "결정 ready, 실행 범위 studio_runtime",
+        "data": {
+          "missing_must": [],
+          "unverified_must": [],
+          "blocking_conflicts": []
+        }
+      }
+    ],
+    "fingerprint": "38d65f46e7a250b1821e2b644cc6a29d9a2c8e40c09bff60dc109aad0e3a0d74"
+  },
+  "style": null,
+  "profile": {
+    "beats": [
+      {
+        "id": "i0",
+        "title": "장면 1",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "i1",
+        "title": "장면 2",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      },
+      {
+        "id": "i2",
+        "title": "장면 3",
+        "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+        "info_weight": 1.0,
+        "essential": true,
+        "min_seconds": null,
+        "ideal_seconds": null,
+        "max_seconds": null,
+        "measured_speech_seconds": null
+      }
+    ],
+    "music_seconds": null,
+    "fps": 30,
+    "min_scene_seconds": 1.0
+  },
+  "basis": "info_items",
+  "duration": {
+    "policy_version": "2026-10-22.1",
+    "status": "auto",
+    "deviation_level": "none",
+    "request": {
+      "mode": "auto",
+      "seconds": null,
+      "platform": null,
+      "source": null,
+      "as_of": null
+    },
+    "fps": 30,
+    "needed": {
+      "min_seconds": 23.4,
+      "ideal_seconds": 25.8,
+      "max_seconds": 41.2,
+      "speech_seconds": 22.185,
+      "music_seconds": null,
+      "beats": [
+        {
+          "beat_id": "i0",
+          "speech_seconds": 7.395,
+          "speech_source": "estimate",
+          "floor": 7.795,
+          "ideal": 8.595,
+          "ceiling": 13.752,
+          "essential": true
+        },
+        {
+          "beat_id": "i1",
+          "speech_seconds": 7.395,
+          "speech_source": "estimate",
+          "floor": 7.795,
+          "ideal": 8.595,
+          "ceiling": 13.752,
+          "essential": true
+        },
+        {
+          "beat_id": "i2",
+          "speech_seconds": 7.395,
+          "speech_source": "estimate",
+          "floor": 7.795,
+          "ideal": 8.595,
+          "ceiling": 13.752,
+          "essential": true
+        }
+      ],
+      "reasons": [
+        "장면 3개: 발화 바닥 합 23.4초, 이상 25.8초, 반복 없이 늘릴 수 있는 한계 41.2초.",
+        "발화 22.2초(0/3개 실측, 나머지는 4.4음절/초 추정)."
+      ]
+    },
+    "planned_seconds": 25.8,
+    "planned_frames": 774,
+    "scenes": [
+      {
+        "beat_id": "i0",
+        "start_frame": 0,
+        "end_frame": 258,
+        "seconds": 8.6,
+        "floor": 7.795,
+        "ideal": 8.595,
+        "ceiling": 13.752,
+        "speech_seconds": 7.395,
+        "state": "ok"
+      },
+      {
+        "beat_id": "i1",
+        "start_frame": 258,
+        "end_frame": 516,
+        "seconds": 8.6,
+        "floor": 7.795,
+        "ideal": 8.595,
+        "ceiling": 13.752,
+        "speech_seconds": 7.395,
+        "state": "ok"
+      },
+      {
+        "beat_id": "i2",
+        "start_frame": 516,
+        "end_frame": 774,
+        "seconds": 8.6,
+        "floor": 7.795,
+        "ideal": 8.595,
+        "ceiling": 13.752,
+        "speech_seconds": 7.395,
+        "state": "ok"
+      }
+    ],
+    "reasons": [
+      "장면 3개: 발화 바닥 합 23.4초, 이상 25.8초, 반복 없이 늘릴 수 있는 한계 41.2초.",
+      "발화 22.2초(0/3개 실측, 나머지는 4.4음절/초 추정).",
+      "희망 시간이 없어 콘텐츠 기준 25.8초로 정했습니다."
+    ],
+    "warnings": [],
+    "alternatives": [],
+    "estimator": {
+      "speech_syllables_per_second": 4.4,
+      "latin_words_per_second": 2.4,
+      "digits_per_second": 3.0,
+      "lead_tail_seconds": 0.4
+    },
+    "basis_sha256": "226cd881d9d8b4ce12672fa6f523d7d8be5cba3970d174d67bf98a4337f572d2"
+  },
+  "duration_check": null,
+  "scenes": [
+    {
+      "scene_id": "i0",
+      "title": "장면 1",
+      "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+      "start_time": 0.0,
+      "end_time": 8.6,
+      "seconds": 8.6,
+      "start_frame": 0,
+      "end_frame": 258,
+      "duration_state": "ok",
+      "floor": 7.795,
+      "ideal": 8.595,
+      "ceiling": 13.752,
+      "speech_seconds": 7.395,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "장면 1",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "generative_video",
+      "selected_engine": "skill.comfy_video_renderer",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "승인할 스토리보드의 제작 전략",
+        "source": "llm",
+        "model": "reviewed-fixture",
+        "scope": "existing managed-generated video playback; no new generation here",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "frame_animation_2d",
+            "engine": "skill.frame_animation_2d",
+            "scope": "fixed character walk cycle only; custom rig/action unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "existing managed-generated video playback; no new generation here"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot-0",
+          "action": "프리셋 또는 제공된 영상 사용",
+          "layers": [
+            "visual",
+            "captions",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "i0",
+          "index": 0,
+          "strategy": "generative_video",
+          "selected_providers": [
+            "skill.comfy_video_renderer"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.6,
+          "start_time": 0.0,
+          "end_time": 8.6,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "frame_animation_2d",
+              "engine": "skill.frame_animation_2d",
+              "scope": "fixed character walk cycle only; custom rig/action unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "existing managed-generated video playback; no new generation here"
+          },
+          "layer_tools": {
+            "visual": "skill.comfy_video_renderer",
+            "captions": "tool.ffmpeg",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ]
+    },
+    {
+      "scene_id": "i1",
+      "title": "장면 2",
+      "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+      "start_time": 8.6,
+      "end_time": 17.2,
+      "seconds": 8.6,
+      "start_frame": 258,
+      "end_frame": 516,
+      "duration_state": "ok",
+      "floor": 7.795,
+      "ideal": 8.595,
+      "ceiling": 13.752,
+      "speech_seconds": 7.395,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "장면 2",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [
+        "i0"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "generative_video",
+      "selected_engine": "skill.comfy_video_renderer",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "승인할 스토리보드의 제작 전략",
+        "source": "llm",
+        "model": "reviewed-fixture",
+        "scope": "existing managed-generated video playback; no new generation here",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "frame_animation_2d",
+            "engine": "skill.frame_animation_2d",
+            "scope": "fixed character walk cycle only; custom rig/action unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "existing managed-generated video playback; no new generation here"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot-1",
+          "action": "프리셋 또는 제공된 영상 사용",
+          "layers": [
+            "visual",
+            "captions",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "i1",
+          "index": 0,
+          "strategy": "generative_video",
+          "selected_providers": [
+            "skill.comfy_video_renderer"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.6,
+          "start_time": 8.6,
+          "end_time": 17.2,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "frame_animation_2d",
+              "engine": "skill.frame_animation_2d",
+              "scope": "fixed character walk cycle only; custom rig/action unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "existing managed-generated video playback; no new generation here"
+          },
+          "layer_tools": {
+            "visual": "skill.comfy_video_renderer",
+            "captions": "tool.ffmpeg",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ]
+    },
+    {
+      "scene_id": "i2",
+      "title": "장면 3",
+      "narration": "첫 번째 장면에서는 준비한 사진을 천천히 보여 주고 핵심만 짧게 설명합니다.",
+      "start_time": 17.2,
+      "end_time": 25.8,
+      "seconds": 8.6,
+      "start_frame": 516,
+      "end_frame": 774,
+      "duration_state": "ok",
+      "floor": 7.795,
+      "ideal": 8.595,
+      "ceiling": 13.752,
+      "speech_seconds": 7.395,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "장면 3",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [
+        "i1"
+      ],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "strategy": "generative_video",
+      "selected_engine": "skill.comfy_video_renderer",
+      "preset": null,
+      "strategy_rationale": {
+        "reason": "승인할 스토리보드의 제작 전략",
+        "source": "llm",
+        "model": "reviewed-fixture",
+        "scope": "existing managed-generated video playback; no new generation here",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "frame_animation_2d",
+            "engine": "skill.frame_animation_2d",
+            "scope": "fixed character walk cycle only; custom rig/action unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "existing managed-generated video playback; no new generation here"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "shot-2",
+          "action": "프리셋 또는 제공된 영상 사용",
+          "layers": [
+            "visual",
+            "captions",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "i2",
+          "index": 0,
+          "strategy": "generative_video",
+          "selected_providers": [
+            "skill.comfy_video_renderer"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.6,
+          "start_time": 17.2,
+          "end_time": 25.8,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "frame_animation_2d",
+              "engine": "skill.frame_animation_2d",
+              "scope": "fixed character walk cycle only; custom rig/action unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "existing managed-generated video playback; no new generation here"
+          },
+          "layer_tools": {
+            "visual": "skill.comfy_video_renderer",
+            "captions": "tool.ffmpeg",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ]
+    }
+  ],
+  "director": {
+    "source": "llm",
+    "model": "reviewed-fixture",
+    "reviewed": true,
+    "intent": "명시한 프리셋과 원본 모션을 섞어 조립한다",
+    "domain_knowledge": [
+      "걷기는 홀드 프레임, 공간 모션은 3D, 원본 영상은 재생한다"
+    ],
+    "scenes": [
+      {
+        "scene_id": "i0",
+        "strategy": "generative_video",
+        "preset": null,
+        "rationale": "승인할 스토리보드의 제작 전략",
+        "shots": [
+          {
+            "shot_id": "shot-0",
+            "action": "프리셋 또는 제공된 영상 사용",
+            "layers": [
+              "visual",
+              "captions",
+              "audio"
+            ],
+            "required_capabilities": []
+          }
+        ]
+      },
+      {
+        "scene_id": "i1",
+        "strategy": "generative_video",
+        "preset": null,
+        "rationale": "승인할 스토리보드의 제작 전략",
+        "shots": [
+          {
+            "shot_id": "shot-1",
+            "action": "프리셋 또는 제공된 영상 사용",
+            "layers": [
+              "visual",
+              "captions",
+              "audio"
+            ],
+            "required_capabilities": []
+          }
+        ]
+      },
+      {
+        "scene_id": "i2",
+        "strategy": "generative_video",
+        "preset": null,
+        "rationale": "승인할 스토리보드의 제작 전략",
+        "shots": [
+          {
+            "shot_id": "shot-2",
+            "action": "프리셋 또는 제공된 영상 사용",
+            "layers": [
+              "visual",
+              "captions",
+              "audio"
+            ],
+            "required_capabilities": []
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [],
+  "approval": {
+    "revision": 1,
+    "planned_frames": 774,
+    "planned_seconds": 25.8,
+    "fps": 30,
+    "approved_at": "2026-11-06T15:48:29.560892+00:00",
+    "by": "user",
+    "scenes_sha256": "420885dd8283fd52d8f130418dcf78bfa9620beb7852ec5c694864b6536bb50d",
+    "snapshot": {
+      "revision": 1,
+      "plan_sha256": "c34ef50a3c1cdf6f90340d96b64113fd39c656dd2397e3c7ad48c02edd563ef9",
+      "capabilities": {
+        "execution_scope": "studio_runtime",
+        "status": "ready",
+        "fingerprint": "38d65f46e7a250b1821e2b644cc6a29d9a2c8e40c09bff60dc109aad0e3a0d74",
+        "needs": [
+          {
+            "options": [
+              "edit.timeline"
+            ],
+            "priority": "must",
+            "status": "executed",
+            "level": "executed",
+            "best": {
+              "entry_id": "skill.v1_ffmpeg_slideshow",
+              "capability": "edit.timeline",
+              "level": "executed",
+              "integration": "creative_runtime"
+            }
+          },
+          {
+            "options": [
+              "qa.machine_video"
+            ],
+            "priority": "must",
+            "status": "executed",
+            "level": "executed",
+            "best": {
+              "entry_id": "tool.ffmpeg",
+              "capability": "qa.machine_video",
+              "level": "executed",
+              "integration": "creative_runtime"
+            }
+          },
+          {
+            "options": [
+              "orch.checkpoint_resume"
+            ],
+            "priority": "prefer",
+            "status": "executed",
+            "level": "executed",
+            "best": {
+              "entry_id": "skill.studio-pipeline-checkpoints",
+              "capability": "orch.checkpoint_resume",
+              "level": "executed",
+              "integration": "lab_only"
+            }
+          },
+          {
+            "options": [
+              "qa.visual_semantic"
+            ],
+            "priority": "prefer",
+            "status": "missing",
+            "level": "missing",
+            "best": {
+              "entry_id": "model.multimodal_judge",
+              "capability": "qa.visual_semantic",
+              "level": "missing",
+              "integration": "none"
+            }
+          },
+          {
+            "options": [
+              "edit.captions"
+            ],
+            "priority": "must",
+            "status": "executed",
+            "level": "executed",
+            "best": {
+              "entry_id": "skill.v1_ffmpeg_slideshow",
+              "capability": "edit.captions",
+              "level": "executed",
+              "integration": "creative_runtime"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "history": [
+    {
+      "revision": 1,
+      "at": "2026-11-06T15:48:29.315176+00:00",
+      "kind": "created",
+      "total_seconds": 25.8,
+      "status": "auto"
+    },
+    {
+      "revision": 1,
+      "at": "2026-11-06T15:48:29.561100+00:00",
+      "kind": "approved",
+      "total_seconds": 25.8,
+      "status": "approved"
+    }
+  ]
+}

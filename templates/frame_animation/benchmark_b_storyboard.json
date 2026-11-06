@@ -5,8 +5,8 @@
   "aspect_ratio": "16:9",
   "production_fps": 12,
   "playback_fps": 24,
-  "interpolation_mode": "hold",
-  "interpolation_reason": "2D 셀 애니메이션 고유의 스냅과 리듬감을 온전히 보존하고, Optical Flow/AI 프레임 보간 시 발생하는 캐릭터 외곽선 번짐(ghosting) 및 젤리 왜곡을 방지하기 위해 hold 선택",
+  "interpolation_mode": "linear",
+  "interpolation_reason": "12fps 키포즈 사이의 구조화된 수치 관절 변환을 24fps 재생 시각에 선형 보간합니다. 표정·레이어 변형은 키포즈 경계에서 유지/전환하며 Optical Flow는 사용하지 않습니다.",
   "storyboard": [
     {
       "scene_id": "scene_01_walk",
@@ -26,7 +26,7 @@
       "title": "인사와 윙크 (Greeting & Wave)",
       "duration_seconds": 3.0,
       "time_range": "4.0s - 7.0s",
-      "action_description": "무대에 정지하여 한 손을 머리 위(-140도)로 번쩍 들어 좌우로 3회 흔들며 인사. 표정이 Smile -> Wink -> Smile로 전환.",
+      "action_description": "무대에 정지하여 한 손을 머리 위(-140도)로 번쩍 들어 좌우로 2회 흔들며 인사. 표정이 Smile -> Wink -> Smile로 전환.",
       "camera": {
         "start": {"center_x": 0.50, "zoom": 1.05},
         "end": {"center_x": 0.52, "zoom": 1.18}

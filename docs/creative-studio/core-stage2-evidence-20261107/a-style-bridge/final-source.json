@@ -1,0 +1,18 @@
+{
+  "head": "439472b3bc4665edc04ad1d7fa8ad1a9684a47b4",
+  "sha256": {
+    "src/ttakkari/creative/v2/engines.py": "b4e58c5e9b6cce32c2888421970daa36e28e97453eb97ddcddc809c0bb4d2984",
+    "src/ttakkari/creative/v2/dispatch.py": "d3cbdd14e1db0df7d551303014a02add2baa65710a70939add2f5eebec087667",
+    "src/ttakkari/creative/v2/hyperframes.py": "4bd5579ef68379e75c98d84fe1f2827b593c30745c2e5872ce2506dde6d1c520",
+    "src/ttakkari/creative/v2/frame_animation.py": "f2c1ee2216dde8c9be3e2e8e0a10484c56671e139b47cfff6e90f94508f46cb4",
+    "src/ttakkari/creative/v2/scene_3d.py": "b3787d2509d7dcf26e7b4745cb74802ba5ff31c93d96bd4a95ec3905644a9a85",
+    "src/ttakkari/creative/v2/quality.py": "fa02f91aae7582217dc42577920cce42b2bd494392cf02319b4385d237197a81",
+    "src/ttakkari/creative/v2/quality_worker.py": "711b90370d1cc692d3f1d775030ea712df60a33ffcef95b7292bf618a14e9c90"
+  },
+  "changed": [
+    "src/ttakkari/creative/v2/engines.py",
+    "src/ttakkari/creative/v2/dispatch.py"
+  ],
+  "producer_quality_unchanged": true,
+  "new_test_sha256": "ea1bfa57eba6c6cdb2387ed98f9cb4cadf3e2f3967b7492d7e0ab15f8faa6e22"
+}

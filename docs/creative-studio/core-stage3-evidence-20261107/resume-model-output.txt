@@ -1,0 +1,102 @@
+{
+  "summary": "R21 업로드 재사용 경로로 기존 B 2D 영상의 연속된 9초를 원래 속도로 재생하는 16:9 소개 영상 계획이다. 도입·전개·마무리 세 장면을 각각 3초로 구성하고 장면 제목 자막만 추가한다. 실행 가능한 구조 카탈로그 C08.three_act만 선택하며, 기존 파일 재생을 새 2D·3D 생성으로 분류하지 않는다. 원본에 디코드 가능한 연속 9초 구간이 있다는 전제다. 원본 내용과 규격은 확인하지 않았으며, 의미와 시청 품질은 독립 평가 전까지 unknown이다. 새 영상·음성 생성이나 렌더는 실행하지 않았다.",
+  "catalog_ids": ["C08.three_act"],
+  "knowledge": [
+    {
+      "source_id": "reuse-policy",
+      "quote": "기존 B 영상 또는 업로드 소스를 재사용한다. 원본 동작 프레임은 동영상으로 디코드하여 보존한다. 장면 제목 자막은 합성할 수 있다.",
+      "application": "세 장면 모두 R21의 slideshow 업로드 동영상 재생으로 구성한다. 연속된 원본 구간을 3초씩 배치하고 edit.timeline과 edit.captions만 요구하여 원본 동작 재생과 제목 표시를 구현하도록 계획한다."
+    },
+    {
+      "source_id": "reuse-policy",
+      "quote": "새로운 2D 원샘플을 재제작하지 않는다. 의미와 시청 품질은 독립 평가 전에는 unknown이다.",
+      "application": "고정 걷기 사이클이나 새로운 생성 영상으로 원본을 대체하지 않는다. 원본 내용을 추측하지 않는 중립적 제목을 사용하고 최종 품질은 미검증으로 남긴다."
+    }
+  ],
+  "scenes": [
+    {
+      "scene_id": "scene_01",
+      "title": "B를 만나다",
+      "narration": "",
+      "seconds": 3,
+      "strategy": "slideshow",
+      "preset": null,
+      "rationale": "R21의 업로드 동영상 재생은 원본 프레임 보존과 제목 자막 표시를 지원한다. 선택한 연속 9초 구간의 첫 3초를 도입으로 사용한다. 16:9 타임라인에 원본 비율을 유지해 배치하며, 원본이 다른 비율이면 여백으로 맞추는 계획이다.",
+      "source_ids": ["reuse-policy"],
+      "alternatives": [
+        {
+          "strategy": "frame_animation_2d",
+          "rationale": "고정 걷기 사이클만 지원하므로 B 원본의 동작을 그대로 재생하는 요구를 충족하지 못한다."
+        },
+        {
+          "strategy": "generative_video",
+          "rationale": "기존 관리형 생성 영상 재생용이며 B가 해당 자산이라는 근거가 없다. 업로드 파일 재사용은 R21의 slideshow로 지원된다."
+        }
+      ],
+      "shots": [
+        {
+          "shot_id": "shot_01",
+          "action": "선택 구간의 0초 이상 3초 미만을 실제 동영상 프레임으로 원래 속도로 재생한다. 제목 'B를 만나다'를 하단 안전 영역에 3초간 고정 표시한다. 원본 화면을 자르거나 늘리지 않고 16:9 캔버스에 배치한다.",
+          "layers": ["visual", "captions"],
+          "required_capabilities": ["edit.timeline", "edit.captions"]
+        }
+      ]
+    },
+    {
+      "scene_id": "scene_02",
+      "title": "B와 함께",
+      "narration": "",
+      "seconds": 3,
+      "strategy": "slideshow",
+      "preset": null,
+      "rationale": "R21에서 첫 장면 직후의 원본 3초를 이어 재생하여 동작의 연속성을 유지한다. 장면 경계에서는 제목만 교체하며 속도 변경이나 추가 시각 효과를 요구하지 않는다.",
+      "source_ids": ["reuse-policy"],
+      "alternatives": [
+        {
+          "strategy": "scene_3d",
+          "rationale": "고정 크리스털·오비트만 지원하여 기존 B 2D 영상의 원본 동작 재생에 맞지 않는다."
+        },
+        {
+          "strategy": "frame_animation_2d",
+          "rationale": "고정 걷기 사이클 재제작은 원본 동작 프레임을 보존하는 방식이 아니므로 선택하지 않는다."
+        }
+      ],
+      "shots": [
+        {
+          "shot_id": "shot_02",
+          "action": "선택 구간의 3초 이상 6초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목을 'B와 함께'로 교체하고 첫 장면과 동일한 위치·서체·크기로 3초간 표시한다. 원본 프레임의 순서와 화면 비율을 유지한다.",
+          "layers": ["visual", "captions"],
+          "required_capabilities": ["edit.timeline", "edit.captions"]
+        }
+      ]
+    },
+    {
+      "scene_id": "scene_03",
+      "title": "지금, B",
+      "narration": "",
+      "seconds": 3,
+      "strategy": "slideshow",
+      "preset": null,
+      "rationale": "R21에서 이어지는 원본 3초를 재생해 전체 길이를 9초로 맞춘다. 마무리 제목만 표시하며 정지 이미지나 새로운 동작으로 대체하지 않는다.",
+      "source_ids": ["reuse-policy"],
+      "alternatives": [
+        {
+          "strategy": "code_motion",
+          "rationale": "3장면·16:9 조건은 맞지만 Kafka 흐름 템플릿만 지원하므로 B 영상 재사용에 적합하지 않다. 이 환경에서는 렌더도 차단되어 있다."
+        },
+        {
+          "strategy": "scene_3d",
+          "rationale": "고정 크리스털·오비트 장면은 B 원본 재생 요구를 충족하지 못하며 불필요한 3D 제작 경로를 요구한다."
+        }
+      ],
+      "shots": [
+        {
+          "shot_id": "shot_03",
+          "action": "선택 구간의 6초 이상 9초 미만을 앞 장면에 연속하여 원래 속도로 재생한다. 제목 '지금, B'를 동일한 자막 스타일로 3초간 표시하고 전체 타임라인 9초에서 종료한다. 추가 엔딩 화면이나 생성 음성을 넣지 않는다.",
+          "layers": ["visual", "captions"],
+          "required_capabilities": ["edit.timeline", "edit.captions"]
+        }
+      ]
+    }
+  ]
+}

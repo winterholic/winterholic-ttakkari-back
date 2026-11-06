@@ -1,0 +1,45 @@
+{
+  "run_id": "957d7be1-028b-4562-8f69-6dd86b875a12",
+  "artifacts": [
+    {
+      "name": "scene-before.mp4",
+      "id": "4f96d7b2-e115-4487-87dc-fc861373ced0",
+      "sha256": "0a34ef03e263a63c23911fcf29dec21286b00e143963731f5922c4d754fb06dc"
+    },
+    {
+      "name": "scene-after.mp4",
+      "id": "08836207-9f59-4b01-b944-abd6de8f9cc3",
+      "sha256": "98f9e1a1a060b730b33575e1e474dbc6200efb3c73fbadc8c5d7482264333e16"
+    },
+    {
+      "name": "core-stage2-evidence.zip",
+      "id": "b3d8fa07-1861-42d2-9730-8c921cadd7be",
+      "sha256": "10bc77b316535b04aa24e04d53ab0bb30bb16e5a90cd8f080e100b3df0113166"
+    },
+    {
+      "name": "core-stage2-20261107-final.md",
+      "id": "319345a8-05f1-4e7f-b68f-c924419630d7",
+      "sha256": "a8f6652885599bd1f43487ccbbe14d573859467107cfd225b86133169f853695",
+      "supersedes_id": "dc095b93-8a1e-4475-a7cf-17f1afdbd131"
+    }
+  ],
+  "late_concurrent_source": {
+    "observed_utc": "2026-11-06T16:21:17Z",
+    "late_external_changes": {
+      "src/ttakkari/creative/v2/frame_animation.py": {
+        "snapshot_sha256": "942e97736afc2b8267ade3ad3f42c8ae0e634cb4ecc0ab57e334879276c60bb6",
+        "current_sha256": "f2c1ee2216dde8c9be3e2e8e0a10484c56671e139b47cfff6e90f94508f46cb4"
+      },
+      "scripts/run_frame_animation_benchmark.py": {
+        "snapshot_sha256": "e58e3b1ae48c4d4d842cfd34b3ba40cd334c4e40e40a437e7b2982d35a532baa",
+        "current_sha256": "3368516a8aea5915d3edf97ba3b8591f9918e05fcb9ac4ccf69ded20e398e04d"
+      },
+      "unit_tests/test_creative_v2_frame_animation.py": {
+        "snapshot_sha256": "b29d46c7ec5b6a61e048acf06c2dfd77d26cd30503b79d8f2f06b0e4007510a6",
+        "current_sha256": "449c7cc5b7f338b1dbfe61212ef6b0c6948ed405e1cd2e4d285a658ced416f86"
+      }
+    },
+    "core_final_hashes_match": true,
+    "action": "preserved; no producer edit/render/retest; final-stage2.log predates this concurrent update"
+  }
+}

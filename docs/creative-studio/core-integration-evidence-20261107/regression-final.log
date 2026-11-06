@@ -1,0 +1,57 @@
+........................................................................ [ 88%]
+...F.....                                                                [100%]
+=================================== FAILURES ===================================
+_________ test_producer_runtime_failure_never_falls_back_to_slideshow __________
+
+stores = (<ttakkari.creative.v2.plans.PlanStore object at 0x110a53c50>, <ttakkari.creative.service.Studio object at 0x110bbfc00>)
+tmp_path = PosixPath('/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-final/test_producer_runtime_failure_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110978550>
+
+    def test_producer_runtime_failure_never_falls_back_to_slideshow(
+        stores, tmp_path, monkeypatch
+    ):
+        from ttakkari.creative.v2.planner import ProductionDirection
+    
+        plans, studio = stores
+        plan = approved(
+            plans,
+            director=ProductionDirection.model_validate(
+                direction(("frame_animation_2d", "slideshow", "slideshow"))
+            ),
+        )
+        upload_all(plans, plan, tmp_path)
+    
+        def fail(*args, **kwargs):
+            raise RuntimeError("producer failed deliberately")
+    
+        monkeypatch.setattr(engines.ModuleAdapter, "render_segment", fail)
+>       dispatch.dispatch(plans, studio, plan["id"], 1)
+
+unit_tests/test_creative_v2_core_integration.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plans = <ttakkari.creative.v2.plans.PlanStore object at 0x110a53c50>
+studio = <ttakkari.creative.service.Studio object at 0x110bbfc00>
+plan_id = 'a2ffcd8e-c3ea-48a2-9478-d6c8e7347921', revision = 1
+caption_mode = 'narration'
+
+    def dispatch(
+        plans: PlanStore,
+        studio: Studio,
+        plan_id: str,
+        revision: int,
+        caption_mode: Literal["narration", "title_only"] = "narration",
+    ) -> dict[str, Any]:
+        """승인된 계획 revision의 실행 기록을 만든다. 게이트·엔진·의존성이 맞을 때만, revision당 한 번."""
+        plan = plans.assert_renderable(plan_id, revision)
+        if caption_mode not in {"narration", "title_only"}:
+            raise ProductionError("caption_mode는 narration 또는 title_only여야 합니다.")
+        blockers = dispatch_blockers(plan)
+        if blockers:
+>           raise ProductionError("디스패치할 수 없습니다: " + " / ".join(blockers))
+E           ttakkari.creative.v2.dispatch.ProductionError: 디스패치할 수 없습니다: skill.frame_animation_2d: preflight failed: 자막 글꼴을 찾을 수 없습니다: /Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-final/test_missing_required_font_blo0/no-such-font.ttc
+
+src/ttakkari/creative/v2/dispatch.py:830: ProductionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_creative_v2_core_integration.py::test_producer_runtime_failure_never_falls_back_to_slideshow
+1 failed, 80 passed, 1 deselected in 154.19s (0:02:34)

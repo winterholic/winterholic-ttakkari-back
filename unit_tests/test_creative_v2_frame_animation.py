@@ -18,6 +18,7 @@ from ttakkari.creative.v2.frame_animation import (
     RiggedPose,
     SubtitleCue,
     transform_and_paste,
+    _build_motion_eval,
 )
 from templates.frame_animation.presets import (
     make_jump_and_cheer_poses,
@@ -185,9 +186,51 @@ def test_walk_cycle_has_measurable_limb_swing_and_bounce():
     assert max(vertical_offsets) - min(vertical_offsets) >= 10.0
 
 
+def test_risky_root_displacement_is_not_reported_as_viewing_quality_pass():
+    motion_eval = _build_motion_eval(
+        average_displacement=42.5,
+        max_displacement=180.0,
+        production_frames=120,
+    )
+
+    assert motion_eval["teleport_glitch_detected"] is True
+    assert motion_eval["motion_continuity_score"] is None
+    assert motion_eval["motion_continuity_rating"] == "not_evaluated"
+    assert motion_eval["evaluation_verdict"].startswith("NOT_RATED")
+    assert motion_eval["identity_comparison"] == "not_performed"
+
+
 def test_wave_cycle_has_multiple_arm_angles():
     poses = make_wave_poses(0.0, 3.0, waves=2)
     arm_angles = [pose.parts["arm_left"].rotation_deg for _, pose in poses]
 
     assert len(set(arm_angles)) >= 3
     assert max(arm_angles) - min(arm_angles) >= 30.0
+
+
+def test_pose_linear_mode_interpolates_joint_rotation_but_keeps_discrete_face():
+    renderer = FrameAnimationRenderer()
+    start = RiggedPose(
+        pose_id="start",
+        parts={
+            "arm_left": LayerTransform(rotation_deg=-20.0),
+            "face": LayerTransform(variant="smile"),
+        },
+    )
+    end = RiggedPose(
+        pose_id="end",
+        root_x=100.0,
+        parts={
+            "arm_left": LayerTransform(rotation_deg=-140.0),
+            "face": LayerTransform(variant="wink"),
+        },
+    )
+    frames = [(0.0, start), (1.0, end)]
+
+    middle = renderer.evaluate_pose(frames, 0.5, mode="linear")
+    held = renderer.evaluate_pose(frames, 0.5, mode="hold")
+
+    assert middle.parts["arm_left"].rotation_deg == pytest.approx(-80.0)
+    assert middle.root_x == pytest.approx(50.0)
+    assert middle.parts["face"].variant == "smile"
+    assert held is start

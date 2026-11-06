@@ -1,0 +1,1493 @@
+{
+  "plan_id": "1621db59-0d78-4f6c-b613-aad983ff8f9f",
+  "assets": {
+    "scenes": {
+      "i0": {
+        "id": "c1c89891-3ca2-423c-9818-c493dbf95f75",
+        "sha256": "c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc",
+        "file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+        "name": "sample.mp4",
+        "kind": "video",
+        "uploaded_at": "2026-11-06T15:48:29.378529+00:00",
+        "meta": {
+          "duration": 1.0,
+          "has_audio": false,
+          "has_video": true
+        },
+        "source_video_file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4"
+      },
+      "i1": {
+        "id": "cbc0ed19-dc15-43dc-854a-d3c2fcd40e46",
+        "sha256": "c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc",
+        "file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+        "name": "sample.mp4",
+        "kind": "video",
+        "uploaded_at": "2026-11-06T15:48:29.423123+00:00",
+        "meta": {
+          "duration": 1.0,
+          "has_audio": false,
+          "has_video": true
+        },
+        "source_video_file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4"
+      },
+      "i2": {
+        "id": "4fd03bf8-767d-43b9-9d5c-a1d70197374a",
+        "sha256": "c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc",
+        "file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+        "name": "sample.mp4",
+        "kind": "video",
+        "uploaded_at": "2026-11-06T15:48:29.453707+00:00",
+        "meta": {
+          "duration": 1.0,
+          "has_audio": false,
+          "has_video": true
+        },
+        "source_video_file": "assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4"
+      }
+    },
+    "voices": {},
+    "music": {
+      "id": "06b55296-f4c0-4e28-88ed-fda398991433",
+      "sha256": "69e72dd2cf3cc65df085a0045b3678ae9ca4ff78a718e1bd1268136af5439a5c",
+      "file": "assets/69e72dd2cf3cc65df085a0045b3678ae9ca4ff78a718e1bd1268136af5439a5c.wav",
+      "name": "music.wav",
+      "kind": "audio",
+      "uploaded_at": "2026-11-06T15:48:29.557485+00:00",
+      "meta": {
+        "duration": 26.8,
+        "has_audio": true,
+        "has_video": false
+      }
+    }
+  },
+  "dispatches": [
+    {
+      "revision": 1,
+      "plan_sha256": "c34ef50a3c1cdf6f90340d96b64113fd39c656dd2397e3c7ad48c02edd563ef9",
+      "engine": {
+        "adapter": "skill.v1_ffmpeg_slideshow",
+        "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers",
+        "preflight_at": "2026-11-06T15:48:29.667764+00:00",
+        "mode": "directed",
+        "producers": [
+          "skill.comfy_video_renderer"
+        ]
+      },
+      "style": {
+        "style_dna": null,
+        "applied": {},
+        "ignored": []
+      },
+      "rubric": {
+        "schema_version": 1,
+        "policy": "evidence-bound-quality-v1",
+        "phase": "pre_render",
+        "plan_id": "1621db59-0d78-4f6c-b613-aad983ff8f9f",
+        "revision": 1,
+        "plan_sha256": "284d7ce52eaa65899efced1b205103a38864cce74292f3fa5ec87f9cded02e27",
+        "genres": [
+          "generic"
+        ],
+        "max_pass_uncertainty": 0.25,
+        "criteria": [
+          {
+            "id": "intent_alignment",
+            "stage": "semantic_qa",
+            "modalities": [
+              "frame"
+            ],
+            "requirement": "장면의 서사 목표와 시각 내용이 일치한다",
+            "required": true
+          },
+          {
+            "id": "text_legibility",
+            "stage": "semantic_qa",
+            "modalities": [
+              "frame"
+            ],
+            "requirement": "문자·자막이 정확하고 안전영역에서 읽힌다; 문자 없음도 관측해 기록한다",
+            "required": true
+          },
+          {
+            "id": "style_continuity",
+            "stage": "semantic_qa",
+            "modalities": [
+              "frame"
+            ],
+            "requirement": "장면 사이 Style DNA·공간·색·재질이 일관된다",
+            "required": true
+          },
+          {
+            "id": "motion",
+            "stage": "viewing_qa",
+            "modalities": [
+              "video"
+            ],
+            "requirement": "동작·카메라 움직임·연기가 자연스럽고 의도에 맞는다",
+            "required": true
+          },
+          {
+            "id": "transition",
+            "stage": "viewing_qa",
+            "modalities": [
+              "video"
+            ],
+            "requirement": "경계 전후에서 겹침·점프·의도치 않은 끊김이 없다",
+            "required": true
+          },
+          {
+            "id": "audio_sync",
+            "stage": "viewing_qa",
+            "modalities": [
+              "video",
+              "audio"
+            ],
+            "requirement": "발화·자막·효과음·음악과 화면의 타이밍이 맞는다",
+            "required": true
+          },
+          {
+            "id": "audio_quality",
+            "stage": "viewing_qa",
+            "modalities": [
+              "audio"
+            ],
+            "requirement": "발음·음악·효과음의 청감과 균형이 좋다; 무음 의도도 관측한다",
+            "required": true
+          },
+          {
+            "id": "pacing",
+            "stage": "viewing_qa",
+            "modalities": [
+              "video",
+              "audio"
+            ],
+            "requirement": "정보를 이해할 시간·서사 리듬·전체 길이가 적절하다",
+            "required": true
+          },
+          {
+            "id": "viewing_value",
+            "stage": "viewing_qa",
+            "modalities": [
+              "video",
+              "audio"
+            ],
+            "requirement": "완성 영상을 실제 재생해 목적 달성과 시청 가치를 판단한다",
+            "required": true
+          }
+        ],
+        "targets": [
+          {
+            "scene_id": "i0",
+            "start_time": 0.0,
+            "end_time": 8.6,
+            "narrative_goal": "장면 1",
+            "shots": [
+              {
+                "shot_id": "shot-0",
+                "action": "프리셋 또는 제공된 영상 사용",
+                "layers": [
+                  "visual",
+                  "captions",
+                  "audio"
+                ],
+                "required_capabilities": [],
+                "scene_id": "i0",
+                "index": 0,
+                "strategy": "generative_video",
+                "selected_providers": [
+                  "skill.comfy_video_renderer"
+                ],
+                "camera": [],
+                "motion": [],
+                "seconds": 8.6,
+                "start_time": 0.0,
+                "end_time": 8.6,
+                "fallback_alternatives": [
+                  {
+                    "strategy": "slideshow",
+                    "engine": "skill.v1_ffmpeg_slideshow",
+                    "scope": "uploaded image/video composition; captions and master audio",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "frame_animation_2d",
+                    "engine": "skill.frame_animation_2d",
+                    "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "scene_3d",
+                    "engine": "skill.studio-3d-cinematic",
+                    "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "code_motion",
+                    "engine": "skill.hyperframes_motion",
+                    "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                    "automatic": false
+                  }
+                ],
+                "cost_latency_quality": {
+                  "measured": false,
+                  "cost": "no new paid purchase; generation cost not estimated",
+                  "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                  "quality": "existing managed-generated video playback; no new generation here"
+                },
+                "layer_tools": {
+                  "visual": "skill.comfy_video_renderer",
+                  "captions": "tool.ffmpeg",
+                  "audio": "tool.ffmpeg"
+                }
+              }
+            ]
+          },
+          {
+            "scene_id": "i1",
+            "start_time": 8.6,
+            "end_time": 17.2,
+            "narrative_goal": "장면 2",
+            "shots": [
+              {
+                "shot_id": "shot-1",
+                "action": "프리셋 또는 제공된 영상 사용",
+                "layers": [
+                  "visual",
+                  "captions",
+                  "audio"
+                ],
+                "required_capabilities": [],
+                "scene_id": "i1",
+                "index": 0,
+                "strategy": "generative_video",
+                "selected_providers": [
+                  "skill.comfy_video_renderer"
+                ],
+                "camera": [],
+                "motion": [],
+                "seconds": 8.6,
+                "start_time": 8.6,
+                "end_time": 17.2,
+                "fallback_alternatives": [
+                  {
+                    "strategy": "slideshow",
+                    "engine": "skill.v1_ffmpeg_slideshow",
+                    "scope": "uploaded image/video composition; captions and master audio",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "frame_animation_2d",
+                    "engine": "skill.frame_animation_2d",
+                    "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "scene_3d",
+                    "engine": "skill.studio-3d-cinematic",
+                    "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "code_motion",
+                    "engine": "skill.hyperframes_motion",
+                    "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                    "automatic": false
+                  }
+                ],
+                "cost_latency_quality": {
+                  "measured": false,
+                  "cost": "no new paid purchase; generation cost not estimated",
+                  "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                  "quality": "existing managed-generated video playback; no new generation here"
+                },
+                "layer_tools": {
+                  "visual": "skill.comfy_video_renderer",
+                  "captions": "tool.ffmpeg",
+                  "audio": "tool.ffmpeg"
+                }
+              }
+            ]
+          },
+          {
+            "scene_id": "i2",
+            "start_time": 17.2,
+            "end_time": 25.8,
+            "narrative_goal": "장면 3",
+            "shots": [
+              {
+                "shot_id": "shot-2",
+                "action": "프리셋 또는 제공된 영상 사용",
+                "layers": [
+                  "visual",
+                  "captions",
+                  "audio"
+                ],
+                "required_capabilities": [],
+                "scene_id": "i2",
+                "index": 0,
+                "strategy": "generative_video",
+                "selected_providers": [
+                  "skill.comfy_video_renderer"
+                ],
+                "camera": [],
+                "motion": [],
+                "seconds": 8.6,
+                "start_time": 17.2,
+                "end_time": 25.8,
+                "fallback_alternatives": [
+                  {
+                    "strategy": "slideshow",
+                    "engine": "skill.v1_ffmpeg_slideshow",
+                    "scope": "uploaded image/video composition; captions and master audio",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "frame_animation_2d",
+                    "engine": "skill.frame_animation_2d",
+                    "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "scene_3d",
+                    "engine": "skill.studio-3d-cinematic",
+                    "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                    "automatic": false
+                  },
+                  {
+                    "strategy": "code_motion",
+                    "engine": "skill.hyperframes_motion",
+                    "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                    "automatic": false
+                  }
+                ],
+                "cost_latency_quality": {
+                  "measured": false,
+                  "cost": "no new paid purchase; generation cost not estimated",
+                  "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                  "quality": "existing managed-generated video playback; no new generation here"
+                },
+                "layer_tools": {
+                  "visual": "skill.comfy_video_renderer",
+                  "captions": "tool.ffmpeg",
+                  "audio": "tool.ffmpeg"
+                }
+              }
+            ]
+          }
+        ],
+        "sha256": "98f330ee85679fe21c176ac55389cdffbfeb526423dc7aaf5669a1498db60356"
+      },
+      "caption_mode": "narration",
+      "caption_timing": "estimated from synthesized voice asset duration; no word-level alignment",
+      "caption_sources": {
+        "i0": "narration",
+        "i1": "narration",
+        "i2": "narration"
+      },
+      "caption_contract": {
+        "mode": "narration",
+        "plan_selects_subtitles": false,
+        "narration_scene_ids": [
+          "i0",
+          "i1",
+          "i2"
+        ],
+        "title_caption_scene_ids": [],
+        "notices": []
+      },
+      "dispatched_at": "2026-11-06T15:48:29.615764+00:00",
+      "segments": [
+        {
+          "id": "seg-01",
+          "scene_ids": [
+            "i0"
+          ],
+          "start_frame": 0,
+          "end_frame": 258,
+          "seconds": 8.6,
+          "plan_key": "c398fdf77783a180494256f3f1b11d591c19c2f1950985b0c2312fef4c56d39e",
+          "input_sha256": "c398fdf77783a180494256f3f1b11d591c19c2f1950985b0c2312fef4c56d39e",
+          "run_key": "2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37",
+          "project_id": null,
+          "job_id": "67387458-3179-44b2-b642-ae26b4b0beb3",
+          "status": "succeeded",
+          "attempts": 1,
+          "error": null,
+          "output": {
+            "file": "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37/composite.mp4",
+            "sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82",
+            "size": 1777815,
+            "media": {
+              "duration": 8.6,
+              "has_audio": true,
+              "has_video": true
+            }
+          },
+          "engine": {
+            "adapter": "skill.comfy_video_renderer",
+            "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers"
+          },
+          "compositor_receipt": {
+            "commands": [
+              [
+                "/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-stream_loop",
+                "-1",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37/music.wav",
+                "-loop",
+                "1",
+                "-framerate",
+                "24",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37/caption-0.png",
+                "-filter_complex_threads",
+                "1",
+                "-filter_complex",
+                "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1,fps=24,format=yuv420p[v0];[v0][2:v]overlay=0:0:enable='between(t,0.000000,8.600000)'[v1];[v1]null[out]",
+                "-map",
+                "[out]",
+                "-map",
+                "1:a:0",
+                "-t",
+                "8.600000",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ar",
+                "48000",
+                "-movflags",
+                "+faststart",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37/composite.mp4"
+              ]
+            ],
+            "real_execution": true,
+            "video_motion": "source video decoded; no still extraction"
+          }
+        },
+        {
+          "id": "seg-02",
+          "scene_ids": [
+            "i1"
+          ],
+          "start_frame": 258,
+          "end_frame": 516,
+          "seconds": 8.6,
+          "plan_key": "23bdd00c170ad1be0d55ba414b4477c3ffa2e4acdcd345eaca2f49132638b5a4",
+          "input_sha256": "23bdd00c170ad1be0d55ba414b4477c3ffa2e4acdcd345eaca2f49132638b5a4",
+          "run_key": "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+          "project_id": null,
+          "job_id": "175770f8-e59a-4a8e-8abc-2e8a153ba381",
+          "status": "succeeded",
+          "attempts": 1,
+          "error": null,
+          "output": {
+            "file": "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6/composite.mp4",
+            "sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82",
+            "size": 1777815,
+            "media": {
+              "duration": 8.6,
+              "has_audio": true,
+              "has_video": true
+            }
+          },
+          "engine": {
+            "adapter": "skill.comfy_video_renderer",
+            "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers"
+          },
+          "compositor_receipt": {
+            "commands": [
+              [
+                "/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-stream_loop",
+                "-1",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6/music.wav",
+                "-loop",
+                "1",
+                "-framerate",
+                "24",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6/caption-0.png",
+                "-filter_complex_threads",
+                "1",
+                "-filter_complex",
+                "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1,fps=24,format=yuv420p[v0];[v0][2:v]overlay=0:0:enable='between(t,0.000000,8.600000)'[v1];[v1]null[out]",
+                "-map",
+                "[out]",
+                "-map",
+                "1:a:0",
+                "-t",
+                "8.600000",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ar",
+                "48000",
+                "-movflags",
+                "+faststart",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6/composite.mp4"
+              ]
+            ],
+            "real_execution": true,
+            "video_motion": "source video decoded; no still extraction"
+          }
+        },
+        {
+          "id": "seg-03",
+          "scene_ids": [
+            "i2"
+          ],
+          "start_frame": 516,
+          "end_frame": 774,
+          "seconds": 8.6,
+          "plan_key": "8392bd5cf6e01fe17d756add5853bb9cce63701cf3deb8e08b1f0d392bf968f2",
+          "input_sha256": "8392bd5cf6e01fe17d756add5853bb9cce63701cf3deb8e08b1f0d392bf968f2",
+          "run_key": "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704",
+          "project_id": null,
+          "job_id": "602a30e4-1f9f-4882-a9e6-59294d469eee",
+          "status": "succeeded",
+          "attempts": 1,
+          "error": null,
+          "output": {
+            "file": "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704/composite.mp4",
+            "sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82",
+            "size": 1777815,
+            "media": {
+              "duration": 8.6,
+              "has_audio": true,
+              "has_video": true
+            }
+          },
+          "engine": {
+            "adapter": "skill.comfy_video_renderer",
+            "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers"
+          },
+          "compositor_receipt": {
+            "commands": [
+              [
+                "/Users/winterholic/development/projects/winterholic-ttakkari/back-creative-production-20261107/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-stream_loop",
+                "-1",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/assets/c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc.mp4",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704/music.wav",
+                "-loop",
+                "1",
+                "-framerate",
+                "24",
+                "-i",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704/caption-0.png",
+                "-filter_complex_threads",
+                "1",
+                "-filter_complex",
+                "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1,fps=24,format=yuv420p[v0];[v0][2:v]overlay=0:0:enable='between(t,0.000000,8.600000)'[v1];[v1]null[out]",
+                "-map",
+                "[out]",
+                "-map",
+                "1:a:0",
+                "-t",
+                "8.600000",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ar",
+                "48000",
+                "-movflags",
+                "+faststart",
+                "/Volumes/Backup/ttakkari-data/outbox/62b89b5b-23cb-4b71-8858-06ed027e1ba7/core-integration/pytest-addendum/test_reviewed_director_and_vid0/plans/1621db59-0d78-4f6c-b613-aad983ff8f9f/engine-work/7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704/composite.mp4"
+              ]
+            ],
+            "real_execution": true,
+            "video_motion": "source video decoded; no still extraction"
+          }
+        }
+      ],
+      "final": {
+        "status": "qa_passed",
+        "id": "e31968d8-467c-3283-4df3-ced80274934e",
+        "file": "media/r1/final-e31968d8467c3283.mp4",
+        "sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e",
+        "size": 5456754,
+        "name": "사진으로 영상.mp4",
+        "qa": {
+          "passed": true,
+          "checks": [
+            {
+              "id": "video_track",
+              "passed": true,
+              "detail": "영상 트랙",
+              "measured": true
+            },
+            {
+              "id": "audio_track",
+              "passed": true,
+              "detail": "오디오 트랙",
+              "measured": true
+            },
+            {
+              "id": "resolution",
+              "passed": true,
+              "detail": "기대 1280x720",
+              "measured": "1280x720"
+            },
+            {
+              "id": "duration",
+              "passed": true,
+              "detail": "계획 25.8초 ±0.35초",
+              "measured": 25.84
+            },
+            {
+              "id": "not_black",
+              "passed": true,
+              "detail": "검은 화면 비율 90% 미만",
+              "measured": 0.0
+            },
+            {
+              "id": "audible",
+              "passed": true,
+              "detail": "오디오 최대 음량 -60 dB 초과",
+              "measured": {
+                "mean_db": -14.3,
+                "max_db": -8.4
+              }
+            }
+          ],
+          "probe": {
+            "duration": 25.84,
+            "width": 1280,
+            "height": 720,
+            "fps": 23.97,
+            "has_video": true,
+            "has_audio": true
+          }
+        },
+        "engine": {
+          "adapter": "skill.v1_ffmpeg_slideshow",
+          "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers",
+          "preflight_at": "2026-11-06T15:48:29.667764+00:00",
+          "mode": "directed",
+          "producers": [
+            "skill.comfy_video_renderer"
+          ]
+        },
+        "inputs": {
+          "segments": [
+            {
+              "id": "seg-01",
+              "project_id": null,
+              "job_id": "67387458-3179-44b2-b642-ae26b4b0beb3",
+              "run_key": "2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37",
+              "output_sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82"
+            },
+            {
+              "id": "seg-02",
+              "project_id": null,
+              "job_id": "175770f8-e59a-4a8e-8abc-2e8a153ba381",
+              "run_key": "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+              "output_sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82"
+            },
+            {
+              "id": "seg-03",
+              "project_id": null,
+              "job_id": "602a30e4-1f9f-4882-a9e6-59294d469eee",
+              "run_key": "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704",
+              "output_sha256": "ad921d3de84b9cdc521d1bf7f22ca3dff0e85dec139f7bf7d2abcab6d1b38c82"
+            }
+          ],
+          "asset_sha256": [
+            "69e72dd2cf3cc65df085a0045b3678ae9ca4ff78a718e1bd1268136af5439a5c",
+            "c45083f8137c7629387af34c776a914227e906e1062425a60eaa0a74442c84bc"
+          ]
+        },
+        "planned_seconds": 25.799999999999997,
+        "duration": {
+          "requested": {
+            "mode": "auto",
+            "seconds": null,
+            "platform": null,
+            "source": null,
+            "as_of": null
+          },
+          "plan_status": "auto",
+          "planned_seconds": 25.799999999999997,
+          "measured_seconds": 25.84
+        },
+        "assembled_at": "2026-11-06T15:48:32.697975+00:00",
+        "keys": [
+          "2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37",
+          "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+          "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704"
+        ]
+      },
+      "log": [
+        {
+          "at": "2026-11-06T15:48:29.615773+00:00",
+          "event": "dispatched",
+          "engine": "skill.v1_ffmpeg_slideshow",
+          "version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers",
+          "segments": 3,
+          "rubric_sha256": "98f330ee85679fe21c176ac55389cdffbfeb526423dc7aaf5669a1498db60356",
+          "rubric_timing": "before_render"
+        },
+        {
+          "at": "2026-11-06T15:48:30.557019+00:00",
+          "event": "segment_succeeded",
+          "segment": "seg-01",
+          "engine": "skill.comfy_video_renderer",
+          "run_key": "2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37",
+          "error": null
+        },
+        {
+          "at": "2026-11-06T15:48:31.378539+00:00",
+          "event": "segment_succeeded",
+          "segment": "seg-02",
+          "engine": "skill.comfy_video_renderer",
+          "run_key": "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+          "error": null
+        },
+        {
+          "at": "2026-11-06T15:48:32.195425+00:00",
+          "event": "segment_succeeded",
+          "segment": "seg-03",
+          "engine": "skill.comfy_video_renderer",
+          "run_key": "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704",
+          "error": null
+        },
+        {
+          "at": "2026-11-06T15:48:32.820310+00:00",
+          "event": "assembled",
+          "sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e",
+          "qa_passed": true
+        },
+        {
+          "at": "2026-11-06T15:48:32.827044+00:00",
+          "event": "repair_proposed",
+          "scene_ids": [
+            "i0"
+          ],
+          "output_sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e"
+        }
+      ],
+      "quality_report": {
+        "schema_version": 1,
+        "rubric": {
+          "schema_version": 1,
+          "policy": "evidence-bound-quality-v1",
+          "phase": "pre_render",
+          "plan_id": "1621db59-0d78-4f6c-b613-aad983ff8f9f",
+          "revision": 1,
+          "plan_sha256": "284d7ce52eaa65899efced1b205103a38864cce74292f3fa5ec87f9cded02e27",
+          "genres": [
+            "generic"
+          ],
+          "max_pass_uncertainty": 0.25,
+          "criteria": [
+            {
+              "id": "intent_alignment",
+              "stage": "semantic_qa",
+              "modalities": [
+                "frame"
+              ],
+              "requirement": "장면의 서사 목표와 시각 내용이 일치한다",
+              "required": true
+            },
+            {
+              "id": "text_legibility",
+              "stage": "semantic_qa",
+              "modalities": [
+                "frame"
+              ],
+              "requirement": "문자·자막이 정확하고 안전영역에서 읽힌다; 문자 없음도 관측해 기록한다",
+              "required": true
+            },
+            {
+              "id": "style_continuity",
+              "stage": "semantic_qa",
+              "modalities": [
+                "frame"
+              ],
+              "requirement": "장면 사이 Style DNA·공간·색·재질이 일관된다",
+              "required": true
+            },
+            {
+              "id": "motion",
+              "stage": "viewing_qa",
+              "modalities": [
+                "video"
+              ],
+              "requirement": "동작·카메라 움직임·연기가 자연스럽고 의도에 맞는다",
+              "required": true
+            },
+            {
+              "id": "transition",
+              "stage": "viewing_qa",
+              "modalities": [
+                "video"
+              ],
+              "requirement": "경계 전후에서 겹침·점프·의도치 않은 끊김이 없다",
+              "required": true
+            },
+            {
+              "id": "audio_sync",
+              "stage": "viewing_qa",
+              "modalities": [
+                "video",
+                "audio"
+              ],
+              "requirement": "발화·자막·효과음·음악과 화면의 타이밍이 맞는다",
+              "required": true
+            },
+            {
+              "id": "audio_quality",
+              "stage": "viewing_qa",
+              "modalities": [
+                "audio"
+              ],
+              "requirement": "발음·음악·효과음의 청감과 균형이 좋다; 무음 의도도 관측한다",
+              "required": true
+            },
+            {
+              "id": "pacing",
+              "stage": "viewing_qa",
+              "modalities": [
+                "video",
+                "audio"
+              ],
+              "requirement": "정보를 이해할 시간·서사 리듬·전체 길이가 적절하다",
+              "required": true
+            },
+            {
+              "id": "viewing_value",
+              "stage": "viewing_qa",
+              "modalities": [
+                "video",
+                "audio"
+              ],
+              "requirement": "완성 영상을 실제 재생해 목적 달성과 시청 가치를 판단한다",
+              "required": true
+            }
+          ],
+          "targets": [
+            {
+              "scene_id": "i0",
+              "start_time": 0.0,
+              "end_time": 8.6,
+              "narrative_goal": "장면 1",
+              "shots": [
+                {
+                  "shot_id": "shot-0",
+                  "action": "프리셋 또는 제공된 영상 사용",
+                  "layers": [
+                    "visual",
+                    "captions",
+                    "audio"
+                  ],
+                  "required_capabilities": [],
+                  "scene_id": "i0",
+                  "index": 0,
+                  "strategy": "generative_video",
+                  "selected_providers": [
+                    "skill.comfy_video_renderer"
+                  ],
+                  "camera": [],
+                  "motion": [],
+                  "seconds": 8.6,
+                  "start_time": 0.0,
+                  "end_time": 8.6,
+                  "fallback_alternatives": [
+                    {
+                      "strategy": "slideshow",
+                      "engine": "skill.v1_ffmpeg_slideshow",
+                      "scope": "uploaded image/video composition; captions and master audio",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "frame_animation_2d",
+                      "engine": "skill.frame_animation_2d",
+                      "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "scene_3d",
+                      "engine": "skill.studio-3d-cinematic",
+                      "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "code_motion",
+                      "engine": "skill.hyperframes_motion",
+                      "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                      "automatic": false
+                    }
+                  ],
+                  "cost_latency_quality": {
+                    "measured": false,
+                    "cost": "no new paid purchase; generation cost not estimated",
+                    "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                    "quality": "existing managed-generated video playback; no new generation here"
+                  },
+                  "layer_tools": {
+                    "visual": "skill.comfy_video_renderer",
+                    "captions": "tool.ffmpeg",
+                    "audio": "tool.ffmpeg"
+                  }
+                }
+              ]
+            },
+            {
+              "scene_id": "i1",
+              "start_time": 8.6,
+              "end_time": 17.2,
+              "narrative_goal": "장면 2",
+              "shots": [
+                {
+                  "shot_id": "shot-1",
+                  "action": "프리셋 또는 제공된 영상 사용",
+                  "layers": [
+                    "visual",
+                    "captions",
+                    "audio"
+                  ],
+                  "required_capabilities": [],
+                  "scene_id": "i1",
+                  "index": 0,
+                  "strategy": "generative_video",
+                  "selected_providers": [
+                    "skill.comfy_video_renderer"
+                  ],
+                  "camera": [],
+                  "motion": [],
+                  "seconds": 8.6,
+                  "start_time": 8.6,
+                  "end_time": 17.2,
+                  "fallback_alternatives": [
+                    {
+                      "strategy": "slideshow",
+                      "engine": "skill.v1_ffmpeg_slideshow",
+                      "scope": "uploaded image/video composition; captions and master audio",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "frame_animation_2d",
+                      "engine": "skill.frame_animation_2d",
+                      "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "scene_3d",
+                      "engine": "skill.studio-3d-cinematic",
+                      "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "code_motion",
+                      "engine": "skill.hyperframes_motion",
+                      "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                      "automatic": false
+                    }
+                  ],
+                  "cost_latency_quality": {
+                    "measured": false,
+                    "cost": "no new paid purchase; generation cost not estimated",
+                    "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                    "quality": "existing managed-generated video playback; no new generation here"
+                  },
+                  "layer_tools": {
+                    "visual": "skill.comfy_video_renderer",
+                    "captions": "tool.ffmpeg",
+                    "audio": "tool.ffmpeg"
+                  }
+                }
+              ]
+            },
+            {
+              "scene_id": "i2",
+              "start_time": 17.2,
+              "end_time": 25.8,
+              "narrative_goal": "장면 3",
+              "shots": [
+                {
+                  "shot_id": "shot-2",
+                  "action": "프리셋 또는 제공된 영상 사용",
+                  "layers": [
+                    "visual",
+                    "captions",
+                    "audio"
+                  ],
+                  "required_capabilities": [],
+                  "scene_id": "i2",
+                  "index": 0,
+                  "strategy": "generative_video",
+                  "selected_providers": [
+                    "skill.comfy_video_renderer"
+                  ],
+                  "camera": [],
+                  "motion": [],
+                  "seconds": 8.6,
+                  "start_time": 17.2,
+                  "end_time": 25.8,
+                  "fallback_alternatives": [
+                    {
+                      "strategy": "slideshow",
+                      "engine": "skill.v1_ffmpeg_slideshow",
+                      "scope": "uploaded image/video composition; captions and master audio",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "frame_animation_2d",
+                      "engine": "skill.frame_animation_2d",
+                      "scope": "fixed character walk cycle only; custom rig/action unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "scene_3d",
+                      "engine": "skill.studio-3d-cinematic",
+                      "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+                      "automatic": false
+                    },
+                    {
+                      "strategy": "code_motion",
+                      "engine": "skill.hyperframes_motion",
+                      "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+                      "automatic": false
+                    }
+                  ],
+                  "cost_latency_quality": {
+                    "measured": false,
+                    "cost": "no new paid purchase; generation cost not estimated",
+                    "latency": "unmeasured; offline 3D/frame rendering may dominate",
+                    "quality": "existing managed-generated video playback; no new generation here"
+                  },
+                  "layer_tools": {
+                    "visual": "skill.comfy_video_renderer",
+                    "captions": "tool.ffmpeg",
+                    "audio": "tool.ffmpeg"
+                  }
+                }
+              ]
+            }
+          ],
+          "sha256": "98f330ee85679fe21c176ac55389cdffbfeb526423dc7aaf5669a1498db60356"
+        },
+        "output_sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e",
+        "rubric_matches_record": true,
+        "rubric_timing": "not_attested_by_evaluator",
+        "machine_qa": {
+          "passed": true,
+          "checks": [
+            {
+              "id": "video_track",
+              "passed": true,
+              "detail": "영상 트랙",
+              "measured": true
+            },
+            {
+              "id": "audio_track",
+              "passed": true,
+              "detail": "오디오 트랙",
+              "measured": true
+            },
+            {
+              "id": "resolution",
+              "passed": true,
+              "detail": "기대 1280x720",
+              "measured": "1280x720"
+            },
+            {
+              "id": "duration",
+              "passed": true,
+              "detail": "계획 25.8초 ±0.35초",
+              "measured": 25.84
+            },
+            {
+              "id": "not_black",
+              "passed": true,
+              "detail": "검은 화면 비율 90% 미만",
+              "measured": 0.0
+            },
+            {
+              "id": "audible",
+              "passed": true,
+              "detail": "오디오 최대 음량 -60 dB 초과",
+              "measured": {
+                "mean_db": -14.3,
+                "max_db": -8.4
+              }
+            }
+          ],
+          "probe": {
+            "duration": 25.84,
+            "width": 1280,
+            "height": 720,
+            "fps": 23.97,
+            "has_video": true,
+            "has_audio": true
+          },
+          "verdict": "pass",
+          "uncertainty": 0.0,
+          "evaluator": {
+            "id": "engines.qa_media",
+            "source": "ffmpeg measurements"
+          },
+          "output_sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e"
+        },
+        "semantic_qa": {
+          "verdict": "unknown",
+          "uncertainty": 1.0,
+          "checks": [
+            {
+              "criterion_id": "intent_alignment",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "intent_alignment",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "intent_alignment",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "text_legibility",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "text_legibility",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "text_legibility",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "style_continuity",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "style_continuity",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "style_continuity",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            }
+          ],
+          "evaluators": [],
+          "rejected_receipts": [],
+          "reason": "independent review not executed for current output/rubric"
+        },
+        "viewing_qa": {
+          "verdict": "unknown",
+          "uncertainty": 1.0,
+          "checks": [
+            {
+              "criterion_id": "motion",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "motion",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "motion",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "transition",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "transition",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "transition",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_sync",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_sync",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_sync",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_quality",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_quality",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "audio_quality",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "pacing",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "pacing",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "pacing",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "viewing_value",
+              "scene_id": "i0",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "viewing_value",
+              "scene_id": "i1",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            },
+            {
+              "criterion_id": "viewing_value",
+              "scene_id": "i2",
+              "verdict": "unknown",
+              "uncertainty": 1.0,
+              "observations": []
+            }
+          ],
+          "evaluators": [],
+          "rejected_receipts": [],
+          "reason": "independent review not executed for current output/rubric"
+        },
+        "defects": [],
+        "repair_plan": {
+          "schema_version": 1,
+          "status": "not_needed",
+          "actions": [],
+          "blocked": [],
+          "invalidate": {
+            "scene_ids": [],
+            "shot_ids": [],
+            "layers": [],
+            "asset_keys": [],
+            "segment_ids": [],
+            "final": false,
+            "quality_evidence": false
+          },
+          "preserve": {
+            "scene_ids": [
+              "i0",
+              "i1",
+              "i2"
+            ],
+            "shot_ids": [
+              "shot-0",
+              "shot-1",
+              "shot-2"
+            ],
+            "segment_run_keys": {
+              "seg-01": "2503a32122dbea4e34a16ba7c20ccf47ef0850e48541b5d804de0c3107765e37",
+              "seg-02": "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+              "seg-03": "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704"
+            },
+            "asset_groups": [
+              "music"
+            ],
+            "asset_keys": [
+              "scenes.i0",
+              "scenes.i1",
+              "scenes.i2"
+            ]
+          },
+          "cache_contract": "invalidate only listed generation layers; recompose affected segments; preserve other assets/run keys; bind all new reviews to new output hash"
+        },
+        "overall_verdict": "unknown"
+      },
+      "repair_plan": {
+        "schema_version": 1,
+        "status": "planned",
+        "actions": [
+          {
+            "scene_id": "i0",
+            "shot_id": "shot-0",
+            "code": "motion",
+            "layer": "motion",
+            "strategy": "retime_and_reanimate_shot",
+            "strategy_switched": false,
+            "prior_failures": 0,
+            "evidence": [],
+            "requires_reevaluation": [
+              "machine_qa",
+              "semantic_qa",
+              "viewing_qa"
+            ]
+          }
+        ],
+        "blocked": [],
+        "invalidate": {
+          "scene_ids": [
+            "i0"
+          ],
+          "shot_ids": [
+            "shot-0"
+          ],
+          "layers": [
+            "motion"
+          ],
+          "asset_keys": [],
+          "segment_ids": [
+            "seg-01"
+          ],
+          "final": true,
+          "quality_evidence": true
+        },
+        "preserve": {
+          "scene_ids": [
+            "i1",
+            "i2"
+          ],
+          "shot_ids": [
+            "shot-1",
+            "shot-2"
+          ],
+          "segment_run_keys": {
+            "seg-02": "57dae1c2c6c0c0c87261f5979d5e0e92f21b7f988353639dc314c16ff88077d6",
+            "seg-03": "7369cd96a5cd5ee7ede7431e68684de07b94f3b462030b7b132d58050ffff704"
+          },
+          "asset_groups": [
+            "music"
+          ],
+          "asset_keys": [
+            "scenes.i0",
+            "scenes.i1",
+            "scenes.i2"
+          ]
+        },
+        "cache_contract": "invalidate only listed generation layers; recompose affected segments; preserve other assets/run keys; bind all new reviews to new output hash",
+        "plan_revision": 1,
+        "output_sha256": "e31968d8467c32834df3ced80274934e937b326137e54eb6b8b1d094fb69f74e"
+      }
+    }
+  ]
+}

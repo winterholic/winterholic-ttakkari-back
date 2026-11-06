@@ -296,16 +296,19 @@ def _generate_assets_locked(
         for scene in plan["scenes"]:
             scene_id = scene["scene_id"]
             asset = scenes[scene_id]
+            source_path = Path(asset["path"])
+            default_ext = source_path.suffix.lower() or ".png"
             saved = put_asset(
                 plans,
                 plan_id,
                 kind="scene",
                 scene_id=scene_id,
-                source=Path(asset["path"]),
-                name=str(asset.get("name") or f"{scene_id}.png"),
+                source=source_path,
+                name=str(asset.get("name") or f"{scene_id}{default_ext}"),
                 meta={**(asset.get("meta") or {}), "generation_id": record_id},
+                preview_source=Path(asset["preview_path"]) if asset.get("preview_path") else None,
             )
-            saved_scenes[scene_id] = {k: saved[k] for k in ("id", "sha256", "file", "name", "kind", "meta")}
+            saved_scenes[scene_id] = {k: saved[k] for k in ("id", "sha256", "file", "name", "kind", "meta", "source_video_file", "preview_image_file") if k in saved}
         saved_voices: dict[str, Any] = {}
         for scene in plan["scenes"]:
             scene_id = scene["scene_id"]

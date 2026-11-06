@@ -1,0 +1,291 @@
+{
+  "plan_id": "0972b033-84e0-4b98-9b82-9068526fc839",
+  "revision": 1,
+  "segment_id": "seg-01",
+  "seconds": 8.0,
+  "aspect": "16:9",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "style_dna": null,
+  "scenes": [
+    {
+      "scene_id": "walk",
+      "title": "",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 8.0,
+      "seconds": 8.0,
+      "start_frame": 0,
+      "end_frame": 240,
+      "duration_state": "stretched",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "명시적 linear 보간",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "interpolation_mode": "linear",
+      "strategy": "frame_animation_2d",
+      "selected_engine": "skill.frame_animation_2d",
+      "preset": "walk_cycle",
+      "strategy_rationale": {
+        "reason": "관절 키포즈 사이 수치 선형 보간을 명시적으로 선택",
+        "source": "user_structured",
+        "model": null,
+        "scope": "fixed character walk cycle only; custom rig/action unsupported",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "generative_video",
+            "engine": "skill.comfy_video_renderer",
+            "scope": "existing managed-generated video playback; no new generation here",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "fixed character walk cycle only; custom rig/action unsupported"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "walk-shot",
+          "action": "지원 걷기 프리셋 사용",
+          "layers": [
+            "visual",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "walk",
+          "index": 0,
+          "strategy": "frame_animation_2d",
+          "selected_providers": [
+            "skill.frame_animation_2d"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.0,
+          "start_time": 0.0,
+          "end_time": 8.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "generative_video",
+              "engine": "skill.comfy_video_renderer",
+              "scope": "existing managed-generated video playback; no new generation here",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "fixed character walk cycle only; custom rig/action unsupported"
+          },
+          "layer_tools": {
+            "visual": "skill.frame_animation_2d",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ],
+      "caption": ""
+    }
+  ],
+  "editorial_scenes": [
+    {
+      "scene_id": "walk",
+      "title": "명시적 linear 보간",
+      "narration": "",
+      "start_time": 0.0,
+      "end_time": 8.0,
+      "seconds": 8.0,
+      "start_frame": 0,
+      "end_frame": 240,
+      "duration_state": "stretched",
+      "floor": 1.0,
+      "ideal": 5.0,
+      "ceiling": 8.0,
+      "speech_seconds": 0.0,
+      "info_weight": 1.0,
+      "essential": true,
+      "narrative_goal": "명시적 linear 보간",
+      "style_dna": null,
+      "characters": [],
+      "environment": [],
+      "camera": [],
+      "motion": [],
+      "audio": [],
+      "required_skills": [
+        "skill.v1_ffmpeg_slideshow"
+      ],
+      "selected_tools": [
+        "tool.ffmpeg"
+      ],
+      "selected_models": [],
+      "dependencies": [],
+      "output_assets": [],
+      "quality_checks": [
+        "qa.machine_video"
+      ],
+      "interpolation_mode": "linear",
+      "strategy": "frame_animation_2d",
+      "selected_engine": "skill.frame_animation_2d",
+      "preset": "walk_cycle",
+      "strategy_rationale": {
+        "reason": "관절 키포즈 사이 수치 선형 보간을 명시적으로 선택",
+        "source": "user_structured",
+        "model": null,
+        "scope": "fixed character walk cycle only; custom rig/action unsupported",
+        "feasibility": "requires registry gate, engine preflight and spec validation",
+        "alternatives": [
+          {
+            "strategy": "slideshow",
+            "engine": "skill.v1_ffmpeg_slideshow",
+            "scope": "uploaded image/video composition; captions and master audio",
+            "automatic": false
+          },
+          {
+            "strategy": "generative_video",
+            "engine": "skill.comfy_video_renderer",
+            "scope": "existing managed-generated video playback; no new generation here",
+            "automatic": false
+          },
+          {
+            "strategy": "scene_3d",
+            "engine": "skill.studio-3d-cinematic",
+            "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+            "automatic": false
+          },
+          {
+            "strategy": "code_motion",
+            "engine": "skill.hyperframes_motion",
+            "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+            "automatic": false
+          }
+        ],
+        "cost_latency_quality": {
+          "measured": false,
+          "cost": "no new paid purchase; generation cost not estimated",
+          "latency": "unmeasured; offline 3D/frame rendering may dominate",
+          "quality": "fixed character walk cycle only; custom rig/action unsupported"
+        }
+      },
+      "shots": [
+        {
+          "shot_id": "walk-shot",
+          "action": "지원 걷기 프리셋 사용",
+          "layers": [
+            "visual",
+            "audio"
+          ],
+          "required_capabilities": [],
+          "scene_id": "walk",
+          "index": 0,
+          "strategy": "frame_animation_2d",
+          "selected_providers": [
+            "skill.frame_animation_2d"
+          ],
+          "camera": [],
+          "motion": [],
+          "seconds": 8.0,
+          "start_time": 0.0,
+          "end_time": 8.0,
+          "fallback_alternatives": [
+            {
+              "strategy": "slideshow",
+              "engine": "skill.v1_ffmpeg_slideshow",
+              "scope": "uploaded image/video composition; captions and master audio",
+              "automatic": false
+            },
+            {
+              "strategy": "generative_video",
+              "engine": "skill.comfy_video_renderer",
+              "scope": "existing managed-generated video playback; no new generation here",
+              "automatic": false
+            },
+            {
+              "strategy": "scene_3d",
+              "engine": "skill.studio-3d-cinematic",
+              "scope": "fixed Blender crystal/orbit only; custom world/acting unsupported",
+              "automatic": false
+            },
+            {
+              "strategy": "code_motion",
+              "engine": "skill.hyperframes_motion",
+              "scope": "three-scene Kafka flow template only; browser IPC preflight required",
+              "automatic": false
+            }
+          ],
+          "cost_latency_quality": {
+            "measured": false,
+            "cost": "no new paid purchase; generation cost not estimated",
+            "latency": "unmeasured; offline 3D/frame rendering may dominate",
+            "quality": "fixed character walk cycle only; custom rig/action unsupported"
+          },
+          "layer_tools": {
+            "visual": "skill.frame_animation_2d",
+            "audio": "tool.ffmpeg"
+          }
+        }
+      ]
+    }
+  ],
+  "interpolation_mode": "linear"
+}

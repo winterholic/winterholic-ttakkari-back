@@ -12,7 +12,7 @@ import math
 # Unknown fields remain conditions; a research_* prefix alone grants no exemption.
 _EXECUTION_RECEIPT_FIELDS = frozenset({
     "research_execution_owner", "research_external_resource", "research_model_workers",
-    "research_memory_guard", "research_resource_recovery",
+    "research_memory_guard", "research_resource_recovery", "research_adapter_receipt",
 })
 
 

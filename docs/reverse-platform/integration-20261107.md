@@ -621,17 +621,24 @@ TTK_GATE_KEEP=1 UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-b05-schema-20261107 
 - 근거는 기존 `/private/tmp/reverse-full-b05c9053-20261107.log`의 Research 상세 L371–1353에서 필요한 traceback만 읽었다. 전체 검사나 해당 RED 재생성은 하지 않았다.
 - `R-TIME` 4건: `start_experiment_runs()`에서 최초 Experiment `FOR UPDATE` 뒤 `_lock_experiment_admission()`가 같은 DB 세션/트랜잭션으로 다시 같은 행을 잠근다. retry도 `_lock_experiment_admission()`가 Experiment 행을 잠근 다음 plan 검증 후 commit한다. PostgreSQL row lock은 트랜잭션 종료까지 유지하고 같은 트랜잭션이 같은 행에 잠금을 보유할 수 있지만, 테스트 fake는 매 조회마다 비재진입 `asyncio.Lock.acquire()`를 호출해 자기 자신을 기다렸다. fake만 같은 트랜잭션 재획득을 모델링하도록 고쳤다. 별도 fake 세션은 공유 lock으로 상호 배제하며 queued/running 시 409, owner 취득 전 plan 검증, 원본 Run 불변 및 retry의 configuration·repeat_index·seed·retry 링크를 검증한다.
 - `R-PAGE` 1건: `/studies/{id}/resume`의 `pagination.totals` 계약은 `nodes`, `relations`, `experiments`, `configurations`, `runs`, `best_results`, `timeline` 일곱 키다. 500개 후 순회·페이지 크기·전체 ID 유일성·마지막 페이지 quote 보존은 그대로 두고 테스트가 초기 응답부터 일곱 컬렉션을 정확히 계산하도록 고쳤다.
-- `R-SELECT` 1건: 원시 실패는 `retrieval_eval.py:407`의 `doc["text"]`에서 `KeyError`이며 실제 failed run/receipt를 보존한다. 재선택 시 declared environment가 `{"dataset":"A"}`이고 요청도 dataset A일 때 실패 적용 가능성은 `applicable`이어야 하며, B는 `incompatible`, dataset 미지정은 `unknown`이다. 현재 `rules.py`는 `research_adapter_receipt`를 observed environment 조건에서 제거하지 않아 실행 메타데이터가 누락 조건이 되고 A 결과를 `unknown`으로 만든다. 테스트 기대값은 바꾸지 않았다. 제품 변경 제안: `research_adapter_receipt`를 `_EXECUTION_RECEIPT_FIELDS`에 추가해 execution metadata로 걸러낸다. 이 제품 수정은 이 카드의 쓰기 범위 밖이므로 미적용이며 기획 검토 대상으로 보고한다.
+- `R-SELECT` 1건: 원시 실패는 `retrieval_eval.py:407`의 `doc["text"]` `KeyError`이며 실제 failed run/receipt를 보존한다. 후속 카드에서 승인된 최소 수정은 `research_adapter_receipt` 하나를 `_EXECUTION_RECEIPT_FIELDS`에 추가해 observed conditions에서만 제외하는 것이다. receipt 원본과 status는 selection 결과에 유지한다. 테스트는 A=`applicable`, B=`incompatible`, 미지정=`unknown`과 알 수 없는 조건 및 충돌·입력 불변성을 검증한다.
 - `R-RECEIPT` 4건: 실패 경로 계약은 environment snapshot의 기존 `engine` 및 `ExecutionOwner`와 함께 `research_adapter_receipt`를 보존한다. after-register는 RuntimeError, during-copy는 OSError, during-flush/commit은 `research_artifacts_study_id_fkey` IntegrityError receipt를 구별해 검증한다. cancellation에는 adapter failure receipt가 없다. 기존 measurement 0.2 보존, ResearchArtifact·Artifact DB row 롤백, 이번 실행이 만든 사본만 정리, 원래 marker·입력 파일 보존 assertion은 유지했다.
 - 변경 범위: 소유 테스트 3개(`test_research_retry_admission_unit.py`, `test_research_resume_pagination.py`, `test_scenario_b_artifacts.py`)와 이 기록뿐이다. selection 테스트는 계약 기대값과 재선택 동작을 유지했고, 제품 `src/`는 바꾸지 않았다. host49·기타 비Research4·원격 `88a79c4c`는 범위 밖이다.
-- 이번 고정 커밋의 표준 기본 gate:
+- 2da297b3 실행에서 기록된 표준 기본 gate 결과는 총 49초였다. 이 시간은 뒤이은 0cbd5b9c 고정 커밋 실행이 아니라 2da297b3의 과거 관측이다:
 
 ```text
-UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-research-b05-20261107 ./scripts/verify_deploy_gate.sh --commit HEAD --base 114fba47ca5857a83b30f7da271367b56a61f07c
+UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-research-b05-20261107 ./scripts/verify_deploy_gate.sh --commit 2da297b34fea7f6681dde65b1c7ec9ecd1db5843 --base 114fba47ca5857a83b30f7da271367b56a61f07c
 통과  ruff (변경된 파이썬 3개)
 계약 묶음: 87 passed, 6957 deselected in 24.76s; db reset 87 selective, full/fallback 0
 바뀐 테스트 파일: 27 passed in 2.31s; db reset 27 selective, full/fallback 0
 총 49초 (계약 묶음 30초 목표 초과 경고); exit 0
 ```
 
-- 이 기본 gate는 변경된 세 테스트 파일만 실행했으므로 `test_research_selection_failures.py`의 기존 `R-SELECT` 재현을 다시 실행하지 않았다. 그 RED는 고정 b05 로그 L847–866의 기존 실패를 근거로 남겼으며 전체 검사·직접 initdb·별도 pytest는 실행하지 않았다.
+- 이 과거 gate는 변경된 세 테스트 파일만 실행했으므로 `test_research_selection_failures.py`의 기존 `R-SELECT` 재현을 실행하지 않았다. RED 근거는 b05 로그 L847–866이다.
+
+### R-SELECT receipt metadata 교정 (후속 카드)
+
+- 시작점: clean HEAD `0cbd5b9c862a3cbca3849925e2046a7c640fbb83`. 지원 gate events 82/83의 결과는 계약 `87 passed`(16.27s), 변경 테스트 `27 passed`(2.18s), 총 31초, exit 0이다. 이는 0cbd 고정 커밋의 관측이며 2da297b3의 49초와 구분한다.
+- 제품 변경은 `rules.py`의 server-owned `_EXECUTION_RECEIPT_FIELDS`에 정확히 `research_adapter_receipt`를 더하는 한 항목이다. `research_*` 접두사 일반화, `observed_environment`, 원본 receipt/error/status 변경은 없다.
+- 추가한 regression은 실제 v2 API 실패가 반환한 `KeyError` receipt가 selection context에 보존되는지 확인한다. 별도 반례는 dataset A=`applicable`, B=`incompatible`, 미지정=`unknown`; receipt-only=`unknown`; 기존 hardware/research_custom_condition unknown, 선언·관측 충돌, `affects_selection`, `causal_status`, scope 경계 및 입력 불변성 반례를 유지한다.
+- 이번 후속 커밋의 지원 기본 gate 결과는 아래에 별도 기입한다. 전체 `--full`/운영 E2E는 범위 밖이다.

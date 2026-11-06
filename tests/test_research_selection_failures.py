@@ -48,6 +48,10 @@ async def test_real_failure_reappears_in_followup_selection_without_global_exclu
         assert fresh.status_code == 200, fresh.text
         run = fresh.json()["runs"][0]
         assert run["status"] == "failed", run
+        adapter_receipt = run["environment_snapshot"]["research_adapter_receipt"]
+        assert adapter_receipt["status"] == "failed"
+        assert adapter_receipt["error_type"] == "KeyError"
+        assert adapter_receipt["error_message"] == "'text'"
         failure_id = run["id"]
     else:
         failed = await post(f"/experiments/{exp['id']}/execute", {})
@@ -67,6 +71,8 @@ async def test_real_failure_reappears_in_followup_selection_without_global_exclu
         failure = failures[0]
         assert failure["run_id" if v2 else "experiment_id"] == failure_id
         assert failure["declared_environment"] == {"dataset": "A"}
+        if v2:
+            assert failure["observed_environment"]["research_adapter_receipt"] == adapter_receipt
         assert failure["applicability"]["status"] == fit
         assert failure["affects_selection"] == (dataset != "B")
         assert failure["causal_status"] == "unassessed"
@@ -185,12 +191,20 @@ async def test_registry_source_node_lineage_exposes_failed_run_only_once(compare
 
 
 @pytest.mark.parametrize('dataset,expected', [('A', 'applicable'), ('B', 'incompatible'), (None, 'unknown')])
-@pytest.mark.parametrize('metadata_key', [
-    'research_execution_owner', 'research_external_resource', 'research_model_workers',
-    'research_memory_guard', 'research_resource_recovery',
+@pytest.mark.parametrize('metadata_key,metadata_value', [
+    ('research_execution_owner', {'contract': 1, 'token': 'run-specific-identity'}),
+    ('research_external_resource', {'contract': 1, 'token': 'run-specific-identity'}),
+    ('research_model_workers', {'contract': 1, 'token': 'run-specific-identity'}),
+    ('research_memory_guard', {'contract': 1, 'token': 'run-specific-identity'}),
+    ('research_resource_recovery', {'contract': 1, 'token': 'run-specific-identity'}),
+    ('research_adapter_receipt', {
+        'status': 'failed', 'error_type': 'KeyError', 'error_message': "'text'",
+    }),
 ])
-def test_failure_selection_preserves_execution_receipts_without_treating_them_as_conditions(dataset, expected, metadata_key):
-    observed = {metadata_key: {'contract': 1, 'token': 'run-specific-identity'}}
+def test_failure_selection_preserves_execution_receipts_without_treating_them_as_conditions(
+    dataset, expected, metadata_key, metadata_value,
+):
+    observed = {metadata_key: metadata_value}
     failure = {'declared_environment': {'dataset': 'A'}, 'observed_environment': observed}
     before = deepcopy(failure)
     method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
@@ -216,7 +230,9 @@ def test_failure_selection_retains_unrecognized_observation_conditions(observed)
 
 
 def test_execution_receipts_alone_do_not_establish_failure_conditions():
-    observed = {'research_execution_owner': {'contract': 1, 'token': 'identity'}}
+    observed = {'research_adapter_receipt': {
+        'status': 'failed', 'error_type': 'KeyError', 'error_message': "'text'",
+    }}
     for declared in ({}, {'research_execution_owner': 'explicit-condition'}):
         method = {'id': 'method', 'title': 'Method', 'conditions': {'backend': 'cpu'}, 'cost_seconds': 1,
                   'research_context': {'failures': [{'declared_environment': declared,

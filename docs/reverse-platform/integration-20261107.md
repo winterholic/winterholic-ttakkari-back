@@ -335,6 +335,8 @@ ruff (변경된 파이썬 1개): 통과
 ```
 
 - 이 검증은 Codex 표준 deploy gate의 계약 및 변경 파일 범위다. 예약의 release 전체 pytest, 운영 DB/health, 실제 배포 결과는 이 실행으로 검증하지 않았다.
+- 수정 및 검증 커밋 `491312b8aaf7cec05674dfe90785f4f31d91495b`는 fetch 후 `origin/main`에 새 커밋이 없음을 확인하고 일반 push했다. push 직전 gate도 Ruff 통과, 계약 `87 passed`, 변경 테스트 `13 passed`였다. push 출력은 `eafb7176..491312b8 HEAD -> main`이며 당시 `HEAD`, `origin/main`은 모두 `491312b8aaf7cec05674dfe90785f4f31d91495b`, worktree clean이었다.
+- 그 clean full SHA에 대해 배포 예약을 한 번 접수했다. 응답: ID `5605d589-cca9-42c0-8367-71743aa02e60`, revision `491312b8aaf7cec05674dfe90785f4f31d91495b`, `skip_tests=false`, strategy `generations`, status `requested`. 이는 예약 수락이며 배포 성공을 뜻하지 않는다. 상태 대기·폴링은 하지 않았다. 이 문서-only 예약 기록은 별도 SHA로 보존한다.
 
 ### Push gate 진단·교정
 

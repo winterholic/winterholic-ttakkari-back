@@ -18,7 +18,7 @@ import math
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -86,6 +86,12 @@ def budget_day(now: datetime | None = None) -> str:
     return (now or datetime.now(UTC)).astimezone(KST).date().isoformat()
 
 
+def next_budget_day_start(now: datetime | None = None) -> float:
+    """Unix time for the next Asia/Seoul daily budget window."""
+    next_day = (now or datetime.now(UTC)).astimezone(KST).date() + timedelta(days=1)
+    return datetime.combine(next_day, datetime.min.time(), tzinfo=KST).timestamp()
+
+
 def worst_case(engine: EngineBound, input_tokens: int) -> tuple[int, int]:
     s = get_settings()
     output = s.collector_budget_request_output_tokens
@@ -112,12 +118,13 @@ def _limits(kind: str) -> tuple[int, int, int]:
 
 
 async def reserve(db, *, request_key: str, purpose: str, engine: EngineBound, input_tokens: int,
-                  job_id: uuid.UUID | str | None = None, now: datetime | None = None) -> Reservation:
+                  job_id: uuid.UUID | str | None = None, now: datetime | None = None,
+                  require_teacher_enabled: bool = True) -> Reservation:
     """Reserve the worst case. The caller MUST commit before calling the provider. Idempotent per request_key."""
     s = get_settings()
     if purpose not in PURPOSES:
         raise BudgetDenied("unknown_purpose", purpose)
-    if not s.collector_teacher_enabled:
+    if require_teacher_enabled and not s.collector_teacher_enabled:
         raise BudgetDenied("teacher_disabled")
     if not engine.bounded:
         raise BudgetDenied("engine_unbounded", engine.name)
@@ -231,12 +238,14 @@ async def snapshot(db, now: datetime | None = None) -> dict:
 async def guarded_call(*, request_key: str, purpose: str, engine: EngineBound, input_tokens: int,
                        call: Callable[[], Awaitable[tuple[object, CallUsage]]],
                        job_id: uuid.UUID | str | None = None,
-                       replay_result_key: str | None = None) -> object:
+                       replay_result_key: str | None = None,
+                       require_teacher_enabled: bool = True) -> object:
     """reserve+commit -> provider call -> settle. The only sanctioned way to spend. A BudgetDenied escapes before
     the call; any failure after it leaves the reservation occupied as `unknown`."""
     async with sessionmaker()() as db:
         reservation = await reserve(db, request_key=request_key, purpose=purpose, engine=engine,
-                                    input_tokens=input_tokens, job_id=job_id)
+                                    input_tokens=input_tokens, job_id=job_id,
+                                    require_teacher_enabled=require_teacher_enabled)
         await db.commit()
     if reservation.replay:
         # An earlier attempt may still be running or may have crashed after the provider charged; never call twice.
@@ -267,7 +276,8 @@ async def _mark(request_key: str) -> None:
 
 
 async def recover_settled_result(
-    *, request_key: str, purpose: str, engine: EngineBound, job_id: uuid.UUID | str | None, result_key: str
+    *, request_key: str, purpose: str, engine: EngineBound, job_id: uuid.UUID | str | None, result_key: str,
+    legacy_engine_name: str | None = None, legacy_job_id: uuid.UUID | str | None = None,
 ) -> tuple[bool, object | None]:
     """Read a result durably coupled to a settled usage receipt; unresolved attempts remain fenced."""
     async with sessionmaker()() as db:
@@ -277,7 +287,14 @@ async def recover_settled_result(
         if row is None:
             return False, None
         job = str(job_id) if job_id is not None else None
-        if (row.job_id, row.purpose, row.engine) != (job, purpose, engine.name):
+        current = (row.job_id, row.purpose, row.engine) == (job, purpose, engine.name)
+        legacy = (
+            legacy_engine_name is not None
+            and row.job_id == (str(legacy_job_id) if legacy_job_id is not None else None)
+            and row.purpose == purpose
+            and row.engine == legacy_engine_name
+        )
+        if not (current or legacy):
             raise BudgetConflict("request_key reused with different parameters")
         if row.state == "settled":
             result = (row.receipt or {}).get(result_key)

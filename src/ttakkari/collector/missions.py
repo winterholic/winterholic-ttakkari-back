@@ -737,7 +737,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
             # A completed attempt with no material is a failed collection, even if preparation exited cleanly.
             state = "failed"
 
-    engine_state = precise_eval.view_engine_status()  # never probes the harness qwen slot
+    engine_state = precise_eval.view_engine_status()  # profile capacity is checked by the bounded subscription call
     triage_summary = {
         "accepted": counts["auto_accepted"],
         "review_needed": counts["review_needed"],
@@ -754,7 +754,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         "precise_eval": {
             **precise_counts, "cap_per_job": get_settings().collector_triage_precise_queue_cap,
             "engine": engine_state.get("status", "unavailable"), "engine_detail": engine_state.get("detail"),
-            "note": "bounded local qwen evaluator for uncertain candidates",
+            "engine_info": {key: engine_state[key] for key in ("engine", "provider_engine", "model") if engine_state.get(key)},
+            "note": "bounded subscription agent evaluator for uncertain candidates",
         },
     }
 

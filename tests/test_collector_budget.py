@@ -216,3 +216,22 @@ async def test_lowering_a_limit_takes_effect_immediately(limits, monkeypatch):
     assert (await try_reserve("l2")).code == "day_budget"
 
 pytestmark = pytest.mark.security
+
+
+async def test_subscription_can_recover_legacy_qwen_settled_result(limits):
+    legacy = EngineBound("qwen-local", True, True, True, 100, 400)
+    async with sessionmaker()() as db:
+        await budget.reserve(db, request_key="legacy-precise", purpose="judge", engine=legacy,
+                             input_tokens=100, job_id="job-a")
+        await db.commit()
+    async with sessionmaker()() as db:
+        await budget.settle(db, "legacy-precise", CallUsage(
+            tokens=50, micro_usd=0, receipt={"precise_eval_result": {"recommendation": "accept"}}
+        ))
+        await db.commit()
+
+    found, result = await budget.recover_settled_result(
+        request_key="legacy-precise", purpose="judge", engine=GOOD, job_id=None,
+        result_key="precise_eval_result", legacy_engine_name="qwen-local", legacy_job_id="job-a",
+    )
+    assert found and result == {"recommendation": "accept"}

@@ -1,30 +1,27 @@
 """Stage 3 Bounded Precise Evaluation Engine (C4).
 
-Consumes persisted signals.triage.precise_eval pending items using a bounded
-local model (Qwen 3.5 via loopback llama-server /v1/chat/completions).
+Consumes persisted signals.triage.precise_eval pending items through the bounded
+Ttakkari subscription CLI transport.
 
 Enforces:
 1. EngineBound contract (input/output cap, usage reporting, micro_usd bounds)
 2. budget.guarded_call: worst-case pre-reservation -> call -> post-settle
 3. Untrusted document handling: strict JSON schema response_format, no tool execution,
    prompt injection resistance, conservative review/hold on malformed responses
-4. Transparent engine status: ready, unavailable, or busy (respecting qwen_slot lock)
+4. Transparent engine status: subscription profile and quota availability
 5. Zero data loss rescue: recovering falsely held documents into accepted with review flag
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
 from sqlalchemy import select
 
 from ttakkari.collector import budget, textproc
@@ -36,10 +33,10 @@ from ttakkari.db import sessionmaker
 
 log = logging.getLogger(__name__)
 
-PRECISE_EVAL_VERSION = "qwen-precise-v1"
+PRECISE_EVAL_VERSION = "subscription-precise-v1"
 
-LOCAL_QWEN_ENGINE = EngineBound(
-    name="qwen-local",
+SUBSCRIPTION_ENGINE = EngineBound(
+    name="subscription-cli",
     enforces_input_cap=True,
     enforces_output_cap=True,
     returns_usage=True,
@@ -56,6 +53,7 @@ PRECISE_EVAL_SCHEMA: dict[str, Any] = {
         },
         "relevance_explanation": {
             "type": "string",
+            "maxLength": 800,
             "description": "관련성 판단의 핵심 근거 요약 (1~2문장)",
         },
         "information_depth": {
@@ -64,7 +62,8 @@ PRECISE_EVAL_SCHEMA: dict[str, Any] = {
         },
         "low_quality_signals": {
             "type": "array",
-            "items": {"type": "string"},
+            "maxItems": 32,
+            "items": {"type": "string", "minLength": 1, "maxLength": 80},
             "description": "감지된 결함 신호 목록 (예: spam, truncated, noisy, boilerplate, none)",
         },
         "recommendation": {
@@ -99,11 +98,11 @@ SYSTEM_PROMPT = (
 
 @dataclass(frozen=True)
 class EvaluatorRuntime:
-    """Engine readiness and machine-wide slot operations supplied from outside the collector package."""
+    """Subscription readiness and bounded JSON execution supplied outside the collector package."""
 
     status: Callable[[], dict[str, Any]]
-    acquire_process_lock: Callable[[], int | None]
-    release_process_lock: Callable[[int], None]
+    evaluate: Callable[..., Any]
+    availability: Callable[..., Any] | None = None
 
 
 _runtime: EvaluatorRuntime | None = None
@@ -114,28 +113,13 @@ def register_runtime(runtime: EvaluatorRuntime | None) -> None:
     _runtime = runtime
 
 
-BUSY_MEMORY_SECONDS = 30.0
-_busy_seen_at: float | None = None
-
-
-def _note_busy() -> None:
-    global _busy_seen_at
-    _busy_seen_at = time.monotonic()
-
-
 def view_engine_status() -> dict[str, Any]:
-    """Status for views and queue records: endpoint readiness plus the busy outcome of the last real claim, kept in
-    process for a short time. It never probes the slot."""
-    st = engine_status()
-    seen = _busy_seen_at
-    if st.get("status") == "ready" and seen is not None and time.monotonic() - seen < BUSY_MEMORY_SECONDS:
-        return {"status": "busy", "detail": "local qwen slot was occupied at the last evaluation attempt",
-                "model": st.get("model")}
-    return {k: v for k, v in st.items() if k != "endpoint"}
+    """Status for views and queue records; profile capacity is checked again at claim time."""
+    return dict(engine_status())
 
 
 def engine_status() -> dict[str, Any]:
-    """Readiness of the bounded evaluator; unavailable until a runtime registers itself."""
+    """Readiness of the bounded subscription evaluator."""
     if _runtime is None:
         return {"status": "unavailable", "detail": "evaluator runtime was not registered"}
     return _runtime.status()
@@ -144,9 +128,9 @@ def engine_status() -> dict[str, Any]:
 class EvaluatorUnavailable(Exception):
     """Engine is not currently capable of serving bounded evaluation."""
 
-
-class EvaluatorBusy(EvaluatorUnavailable):
-    """The shared Qwen slot was claimed after the readiness probe."""
+    def __init__(self, detail: str, retry_after: float | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after
 
 
 class MalformedEvaluatorOutput(Exception):
@@ -189,7 +173,7 @@ def _build_user_prompt(
     )
 
 
-def _validate_evaluator_result(parsed: Any) -> dict[str, Any]:
+def validate_evaluator_result(parsed: Any) -> dict[str, Any]:
     fields = set(PRECISE_EVAL_SCHEMA["required"])
     if not isinstance(parsed, dict) or set(parsed) != fields:
         raise MalformedEvaluatorOutput(
@@ -228,103 +212,6 @@ def _validate_evaluator_result(parsed: Any) -> dict[str, Any]:
     return parsed
 
 
-async def _call_qwen_api(
-    client: httpx.AsyncClient,
-    endpoint: str,
-    model: str,
-    prompt: str,
-    max_output_tokens: int,
-    max_input_tokens: int | None = None,
-    timeout_seconds: float = 30.0,
-) -> tuple[dict[str, Any], CallUsage]:
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0,
-        "max_tokens": max_output_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "precise_eval",
-                "strict": True,
-                "schema": PRECISE_EVAL_SCHEMA,
-            },
-        },
-    }
-    url = endpoint.rstrip("/") + "/v1/chat/completions"
-    r = await client.post(url, json=payload, timeout=timeout_seconds)
-    r.raise_for_status()
-    if len(r.content) > 128_000:
-        raise MalformedEvaluatorOutput("response exceeds the 128 KB size limit")
-    try:
-        resp_data = r.json()
-    except ValueError as exc:
-        raise MalformedEvaluatorOutput("response body is not valid JSON") from exc
-    if not isinstance(resp_data, dict):
-        raise MalformedEvaluatorOutput("response body must be a JSON object")
-    usage_data = resp_data.get("usage")
-    if not isinstance(usage_data, dict):
-        raise MalformedEvaluatorOutput("provider usage receipt is missing or malformed")
-    prompt_tokens = usage_data.get("prompt_tokens")
-    completion_tokens = usage_data.get("completion_tokens")
-    total_tokens = usage_data.get("total_tokens")
-    if (
-        isinstance(prompt_tokens, bool)
-        or not isinstance(prompt_tokens, int)
-        or prompt_tokens <= 0
-        or isinstance(completion_tokens, bool)
-        or not isinstance(completion_tokens, int)
-        or completion_tokens < 0
-    ):
-        raise MalformedEvaluatorOutput(
-            "provider usage must include non-negative prompt_tokens and completion_tokens"
-        )
-    if completion_tokens > max_output_tokens:
-        raise MalformedEvaluatorOutput(
-            "provider completion usage exceeded the output token cap"
-        )
-    if max_input_tokens is not None and prompt_tokens > max_input_tokens:
-        raise MalformedEvaluatorOutput(
-            "provider prompt usage exceeded the input token cap"
-        )
-    if total_tokens is not None and (
-        isinstance(total_tokens, bool)
-        or not isinstance(total_tokens, int)
-        or total_tokens != prompt_tokens + completion_tokens
-    ):
-        raise MalformedEvaluatorOutput(
-            "provider total_tokens does not match prompt and completion usage"
-        )
-    total_tokens = prompt_tokens + completion_tokens
-
-    usage = CallUsage(
-        tokens=total_tokens,
-        micro_usd=0,
-        receipt={
-            "provider": "qwen-local",
-            "model": model,
-            "usage": usage_data,
-        },
-    )
-    choices = resp_data.get("choices")
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise MalformedEvaluatorOutput("empty choices in model response")
-    message = choices[0].get("message")
-    if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-        raise MalformedEvaluatorOutput("choice message content is missing or malformed")
-    content = message["content"]
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise MalformedEvaluatorOutput(f"json decode error: {exc}") from exc
-
-    return _validate_evaluator_result(parsed), usage
-
-
 async def evaluate_document_guarded(
     *,
     goal: str,
@@ -332,96 +219,82 @@ async def evaluate_document_guarded(
     text: str,
     request_key: str,
     job_id: uuid.UUID | str | None = None,
-    client: httpx.AsyncClient | None = None,
-    engine: dict[str, Any] | None = None,
-    acquire_process_lock: Callable[[], int | None] | None = None,
-    release_process_lock: Callable[[int], None] | None = None,
+    scope: str = "personal",
 ) -> dict[str, Any]:
-    """Execute bounded precise evaluation through injected runtime capabilities."""
+    """Run the schema-bounded subscription agent through the persisted collector budget."""
     recovered, stored = await budget.recover_settled_result(
-        request_key=request_key,
-        purpose="judge",
-        engine=LOCAL_QWEN_ENGINE,
-        job_id=job_id,
-        result_key="precise_eval_result",
+        request_key=request_key, purpose="judge", engine=SUBSCRIPTION_ENGINE, job_id=None,
+        result_key="precise_eval_result", legacy_engine_name="qwen-local", legacy_job_id=job_id,
     )
     if recovered:
         if not isinstance(stored, dict) or not isinstance(stored.get("_receipt"), dict):
             raise MalformedEvaluatorOutput("stored precise result is malformed")
-        verdict = _validate_evaluator_result({k: v for k, v in stored.items() if k != "_receipt"})
+        verdict = validate_evaluator_result({k: v for k, v in stored.items() if k != "_receipt"})
         return {**verdict, "_receipt": stored["_receipt"]}
 
-    st = engine if engine is not None else engine_status()
-    if st["status"] != "ready":
-        raise EvaluatorUnavailable(st["detail"])
-    if acquire_process_lock is None or release_process_lock is None:
-        if _runtime is None:
-            raise EvaluatorUnavailable("Qwen process-slot adapter was not provided")
-        acquire_process_lock = _runtime.acquire_process_lock
-        release_process_lock = _runtime.release_process_lock
+    if _runtime is None:
+        raise EvaluatorUnavailable("subscription evaluator runtime was not registered")
+    st = _runtime.status()
+    if st.get("status") != "ready":
+        raise EvaluatorUnavailable(str(st.get("detail") or "subscription evaluator unavailable"))
+    if _runtime.availability is not None:
+        available, detail, retry_after = await _runtime.availability(scope=scope)
+        if not available:
+            raise EvaluatorUnavailable(str(detail or "scope_capacity_unavailable"), retry_after=retry_after)
 
     s = get_settings()
-    endpoint = st["endpoint"]
-    model = st["model"]
-    max_output = s.collector_budget_request_output_tokens
-    prompt = _build_user_prompt(
-        goal, title, text, max_input_tokens=s.collector_budget_request_input_tokens
-    )
+    prompt = _build_user_prompt(goal, title, text, max_input_tokens=s.collector_budget_request_input_tokens)
     input_tokens = len((SYSTEM_PROMPT + prompt).encode("utf-8")) + 64
+    max_output = s.collector_budget_request_output_tokens
 
     async def _execute() -> tuple[dict[str, Any], CallUsage]:
-        if client is not None:
-            parsed, usage = await _call_qwen_api(
-                client,
-                endpoint,
-                model,
-                prompt,
-                max_output,
-                max_input_tokens=input_tokens,
-            )
-        else:
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as c:
-                parsed, usage = await _call_qwen_api(
-                    c,
-                    endpoint,
-                    model,
-                    prompt,
-                    max_output,
-                    max_input_tokens=input_tokens,
-                )
-        result = {
-            **parsed,
-            "_receipt": {"tokens": usage.tokens, **usage.receipt},
+        verdict, account = await _runtime.evaluate(
+            goal=goal, title=title, text=text, prompt=prompt, schema=PRECISE_EVAL_SCHEMA,
+            system_prompt=SYSTEM_PROMPT, scope=scope,
+        )
+        verdict = validate_evaluator_result(verdict)
+        receipt = {
+            "provider": "ttakkari-subscription-agent",
+            **account,
+            "usage_source": "reserved_cap_estimate",
+            "input_tokens_reserved": input_tokens,
+            "output_tokens_reserved": max_output,
         }
-        durable_usage = CallUsage(
-            tokens=usage.tokens,
-            micro_usd=usage.micro_usd,
-            receipt={**usage.receipt, "precise_eval_result": result},
+        result = {**verdict, "_receipt": receipt}
+        usage = CallUsage(
+            tokens=input_tokens + max_output, micro_usd=0,
+            receipt={"precise_eval_result": result, **receipt},
         )
-        return result, durable_usage
+        return result, usage
 
-    process_lock_fd = acquire_process_lock()
-    if process_lock_fd is None:
-        raise EvaluatorBusy("local qwen slot was claimed after readiness check")
-    try:
-        return await budget.guarded_call(
-            request_key=request_key,
-            purpose="judge",
-            engine=LOCAL_QWEN_ENGINE,
-            input_tokens=input_tokens,
-            call=_execute,
-            job_id=job_id,
-            replay_result_key="precise_eval_result",
-        )
-    finally:
-        release_process_lock(process_lock_fd)
+    return await budget.guarded_call(
+        request_key=request_key, purpose="judge", engine=SUBSCRIPTION_ENGINE,
+        input_tokens=input_tokens, call=_execute, job_id=None,
+        replay_result_key="precise_eval_result", require_teacher_enabled=False,
+    )
 
+
+def precise_eval_pool(scope: str) -> str:
+    """Map stored document scope to an existing subscription account pool without widening access."""
+    if scope in ("personal", "work"):
+        return scope
+    from ttakkari.kb_pipeline.subscription_transport import (
+        DIAG_SCOPE_CAPACITY_UNAVAILABLE,
+        L2TransportError,
+    )
+    raise L2TransportError(DIAG_SCOPE_CAPACITY_UNAVAILABLE, "document provenance has no allowed account pool", consumed=False)
+
+
+def precise_request_key(item_id: uuid.UUID | str, job_id: uuid.UUID | str, attempt: int) -> str:
+    """Keep the original first-attempt key so a settled pre-migration result stays recoverable."""
+    base = f"precise:{item_id}:{job_id}"
+    return base if attempt <= 0 else f"{base}:{attempt}"
 
 def apply_precise_result(
     item: Any,
     result: dict[str, Any],
     *,
-    engine_name: str = "qwen-local",
+    engine_name: str = "subscription-cli",
     receipt: dict[str, Any] | None = None,
 ) -> bool:
     """Record precise evaluation results in item signals and rescue if warranted.
@@ -491,12 +364,19 @@ def apply_precise_result(
     return rescued
 
 
-PRECISE_CLAIM_LEASE_SECONDS = 120
+PRECISE_CLAIM_LEASE_SECONDS = 240
+
+
+def precise_claim_lease_seconds() -> int:
+    """Cover the adapter's semaphore wait and CLI call timeout, plus a small scheduling margin."""
+    timeout = max(1, math.ceil(get_settings().kb_l2_subscription_timeout_seconds))
+    return max(PRECISE_CLAIM_LEASE_SECONDS, timeout * 2 + 60)
 
 
 def _claimable(precise: dict[str, Any], now: datetime) -> bool:
     if precise.get("state") == "pending":
-        return True
+        retry_after = precise.get("retry_after")
+        return not (isinstance(retry_after, (int, float)) and retry_after > now.timestamp())
     if precise.get("state") != "processing":
         return False
     expires = precise.get("claim_expires_at")
@@ -569,35 +449,70 @@ async def consume_pending_once(
                 "state": "processing",
                 "claim_token": claim_token,
                 "claim_owner": owner,
-                "claim_expires_at": (now + timedelta(seconds=PRECISE_CLAIM_LEASE_SECONDS)).isoformat(),
+                "claim_expires_at": (now + timedelta(seconds=precise_claim_lease_seconds())).isoformat(),
             })
             row.signals = {**row.signals, "triage": {**row.signals["triage"], "precise_eval": precise}}
             claimed_id = row.id
             await db.commit()
 
-        request_key = f"precise:{claimed_id}:{row.job_id}"
+        precise_attempt = int((row.signals.get("triage", {}).get("precise_eval") or {}).get("subscription_attempt", 0))
+        request_key = precise_request_key(claimed_id, row.job_id, precise_attempt)
         try:
             evaluate = evaluator or evaluate_document_guarded
             result = await evaluate(
-                goal=goal, title=title, text=text, request_key=request_key, job_id=row.job_id
+                goal=goal, title=title, text=text, request_key=request_key, job_id=row.job_id, scope=row.scope
             )
-        except EvaluatorBusy as exc:
-            _note_busy()
-            await _finish_pending_claim(claimed_id, claim_token, state="pending", detail=str(exc), status="busy")
-            continue
         except EvaluatorUnavailable as exc:
-            await _finish_pending_claim(claimed_id, claim_token, state="pending", detail=str(exc), status="unavailable")
+            configured = engine_status()
+            engine_info = {k: configured[k] for k in ("provider_engine", "model") if configured.get(k)}
+            await _finish_pending_claim(
+                claimed_id, claim_token, state="pending", detail=str(exc), status="waiting",
+                retry_after=exc.retry_after, engine_info=engine_info,
+            )
             break
         except BudgetDenied as exc:
-            state = "unresolved" if exc.code == "already_attempted" else "budget_denied"
-            await _finish_pending_claim(claimed_id, claim_token, state=state, detail=exc.code, status="budget_denied")
-            continue
-        except (httpx.HTTPError, MalformedEvaluatorOutput, ValueError, KeyError, OSError, RuntimeError) as exc:
-            log.warning("precise evaluation unresolved for item %s: %s", claimed_id, exc)
+            if exc.code == "day_budget":
+                configured = engine_status()
+                engine_info = {k: configured[k] for k in ("provider_engine", "model") if configured.get(k)}
+                await _finish_pending_claim(
+                    claimed_id, claim_token, state="pending", detail=exc.code, status="budget_wait",
+                    retry_after=budget.next_budget_day_start(), engine_info=engine_info,
+                )
+                break
             await _finish_pending_claim(
-                claimed_id, claim_token, state="unresolved", detail=type(exc).__name__, status="failed"
+                claimed_id, claim_token, state="unresolved", detail=exc.code, status="budget_denied"
             )
             continue
+        except Exception as exc:
+            from ttakkari.kb_pipeline.subscription_transport import (
+                DIAG_SCOPE_CAPACITY_UNAVAILABLE,
+                DIAG_USAGE_LIMIT,
+                L2TransportError,
+            )
+            if isinstance(exc, L2TransportError):
+                retryable = exc.diagnosis in (DIAG_SCOPE_CAPACITY_UNAVAILABLE, DIAG_USAGE_LIMIT) or not exc.consumed
+                state = "pending" if retryable else "unresolved"
+                engine_info = {k: v for k, v in {
+                    "engine": exc.engine, "account": exc.account,
+                    "requested_model": exc.model,
+                }.items() if v is not None}
+                if not engine_info.get("engine"):
+                    configured = engine_status()
+                    engine_info.update({k: configured[k] for k in ("provider_engine", "model") if configured.get(k)})
+                await _finish_pending_claim(
+                    claimed_id, claim_token, state=state, detail=exc.diagnosis, status="limited" if exc.diagnosis == DIAG_USAGE_LIMIT else "waiting",
+                    retry=retryable, retry_after=exc.retry_after,
+                    engine_info=engine_info,
+                )
+                if exc.diagnosis == DIAG_SCOPE_CAPACITY_UNAVAILABLE:
+                    break
+                continue
+            if isinstance(exc, (MalformedEvaluatorOutput, ValueError, KeyError, OSError, RuntimeError)):
+                log.warning("precise evaluation unresolved for item %s: %s", claimed_id, type(exc).__name__)
+                await _finish_pending_claim(claimed_id, claim_token, state="unresolved", detail=type(exc).__name__, status="failed")
+                continue
+            raise
+
 
         async with sessionmaker()() as db:
             row = await db.scalar(select(CollectorItem).where(CollectorItem.id == claimed_id).with_for_update())
@@ -609,11 +524,14 @@ async def consume_pending_once(
                 await db.rollback()
                 continue
 
-            rescued = apply_precise_result(row, result)
+            receipt = result.get("_receipt") if isinstance(result, dict) else None
+            engine_name = (receipt or {}).get("account") or (receipt or {}).get("provider") or "subscription-cli"
+            rescued = apply_precise_result(row, result, engine_name=engine_name, receipt=receipt)
             precise = dict(row.signals["triage"]["precise_eval"])
             precise.pop("claim_token", None)
             precise.pop("claim_owner", None)
             precise.pop("claim_expires_at", None)
+            precise.pop("retry_after", None)
             row.signals = {**row.signals, "triage": {**row.signals["triage"], "precise_eval": precise}}
             if rescued:
                 envelope = row.envelope or {}
@@ -668,7 +586,9 @@ async def consume_pending_once(
 
 
 async def _finish_pending_claim(
-    item_id: uuid.UUID, claim_token: str, *, state: str, detail: str, status: str
+    item_id: uuid.UUID, claim_token: str, *, state: str, detail: str, status: str,
+    retry: bool = False, retry_after: float | None = None,
+    engine_info: dict[str, str] | None = None,
 ) -> None:
     async with sessionmaker()() as db:
         row = await db.scalar(select(CollectorItem).where(CollectorItem.id == item_id).with_for_update())
@@ -681,7 +601,11 @@ async def _finish_pending_claim(
         if precise.get("claim_token") != claim_token:
             await db.rollback()
             return
-        precise.update({"state": state, "engine": {"status": status, "detail": detail[:200]}})
+        precise.update({"state": state, "engine": {"status": status, "detail": detail[:200], **(engine_info or {})}})
+        if retry:
+            precise["subscription_attempt"] = int(precise.get("subscription_attempt", 0)) + 1
+        if retry_after is not None:
+            precise["retry_after"] = retry_after
         precise.pop("claim_token", None)
         precise.pop("claim_owner", None)
         precise.pop("claim_expires_at", None)

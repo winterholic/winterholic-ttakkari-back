@@ -497,10 +497,26 @@ async def test_mcp_initialize_accepts_valid_success_result(fake_artcraft_root: P
 # ---------------------------------------------------------------- 완료 기준 1: 실제 Job 경로 자기 자신 제외 회귀 테스트
 
 @pytest.mark.asyncio
-async def test_start_update_job_actual_path_self_exclusion(fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_start_update_job_actual_path_self_exclusion(
+    fake_artcraft_root: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+):
     """실제 start_update_job -> _start -> runner -> apply_update -> check_busy 경로에서 자기 자신을 제외하여 성공해야 함."""
-    from ttakkari import artcraft_tasks
+    from ttakkari import artcraft_tasks, background_consumers, db as db_module
     from ttakkari.artcraft_update import start_rollback_job, start_update_job
+
+    consumers = background_consumers.consumers
+    consumers_were_paused = consumers.claiming_paused
+    original_sessionmaker = db_module.sessionmaker
+    consumers.pause_claiming()
+    while consumers.pumping:
+        await asyncio.sleep(0.01)
+
+    def restore_test_dependencies() -> None:
+        db_module.sessionmaker = original_sessionmaker
+        if not consumers_were_paused:
+            consumers.resume_claiming()
+
+    request.addfinalizer(restore_test_dependencies)
 
     new_bin_script = _make_fake_cli_script("0.10.0")
     zip_bytes = _make_zip({"photocraft-cli": new_bin_script})

@@ -360,6 +360,7 @@ def test_temporary_priority_can_select_supported_account_ahead_of_task_stage():
 
 @pytest.mark.parametrize("reverse_candidates", [False, True])
 def test_temporary_priority_preserves_general_model_stage_with_same_account(reverse_candidates):
+    """RED: Sonnet-first selected Flash; GREEN requires Sonnet for either candidate order."""
     from ttakkari.runs import worker_routing as routing
 
     account_id = uuid.uuid4()

@@ -17,10 +17,10 @@ from ttakkari.runs import desk as desk_module
 from ttakkari.runs import instructions, profiles
 
 
-async def _desk(client, auth, make_dir) -> dict:
+async def _desk(client, auth, make_dir, *, pool="personal") -> dict:
     root = make_dir()
     ws = (await client.post("/api/workspaces", json={"name": root.name, "root_path": str(root)}, headers=auth)).json()
-    r = await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "desk"}, headers=auth)
+    r = await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "desk", "pool": pool}, headers=auth)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -170,6 +170,112 @@ async def test_desk_falls_back_to_haiku_on_limit_and_cools_down_account(client, 
     await wait_run(client, auth, (await start_run(client, auth, desk["id"], "또 DESK_ANSWER"))["id"])
     assert [c["engine"] for c in _desk_calls()[before:]] == ["claude"]
     profiles.reset_cooldowns()
+
+
+async def test_desk_honors_active_temporary_account_priority(client, auth, make_dir):
+    from datetime import UTC, datetime, timedelta
+
+    accounts = (await client.get("/api/accounts", headers=auth)).json()
+    claude = next(account for account in accounts if account["engine"] == "claude")
+    until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    response = await client.put("/api/accounts/override", json={"ids": [claude["id"]], "until": until}, headers=auth)
+    assert response.status_code == 200, response.text
+
+    desk = await _desk(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+
+    assert run["status"] == "succeeded" and run["profile"] == claude["name"]
+    assert (await _route(client, auth, run["id"]))["engine"] == "claude"
+
+
+async def test_desk_tries_next_policy_candidate_after_prioritized_account_limit(
+    client, auth, make_dir, monkeypatch,
+):
+    from datetime import UTC, datetime, timedelta
+
+    accounts = (await client.get("/api/accounts", headers=auth)).json()
+    claude = next(account for account in accounts if account["engine"] == "claude")
+    until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    response = await client.put("/api/accounts/override", json={"ids": [claude["id"]], "until": until}, headers=auth)
+    assert response.status_code == 200, response.text
+    calls = []
+    original_ask = desk_module._ask
+
+    async def limited_claude_then_default(profile, system, prompt, **kwargs):
+        calls.append(profile.engine)
+        if profile.engine == "claude":
+            return desk_module.Attempt(None, "usage limit", 0)
+        return await original_ask(profile, system, prompt, **kwargs)
+
+    monkeypatch.setattr(desk_module, "_ask", limited_claude_then_default)
+    desk = await _desk(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+
+    assert run["status"] == "succeeded" and run["profile"] == "codex"
+    assert calls == ["claude", "codex"]
+    retries = [event["payload"] for event in await run_events(client, auth, run["id"])
+               if event["type"] == "desk.retry"]
+    assert retries[0]["reason"] == "usage_limit"
+    profiles.reset_cooldowns()
+
+
+@pytest.mark.parametrize("state", ["missing", "expired"])
+async def test_desk_uses_default_engine_order_without_active_temporary_priority(
+    client, auth, make_dir, state,
+):
+    from datetime import UTC, datetime, timedelta
+
+    accounts = (await client.get("/api/accounts", headers=auth)).json()
+    claude = next(account for account in accounts if account["engine"] == "claude")
+    if state == "expired":
+        from ttakkari.db import sessionmaker
+        from ttakkari.models import AppSetting
+        from ttakkari.runs import profiles as profiles_module
+
+        async with sessionmaker()() as db:
+            db.add(AppSetting(key=profiles_module.OVERRIDE_KEY,
+                              value={"ids": [claude["id"]],
+                                     "until": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}))
+            await db.commit()
+
+    desk = await _desk(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+
+    assert run["status"] == "succeeded" and run["profile"] == "codex"
+    assert (await _route(client, auth, run["id"]))["engine"] == "codex"
+
+
+async def test_desk_uses_pool_specific_temporary_account_priority(client, auth, make_dir):
+    from datetime import UTC, datetime, timedelta
+
+    accounts = (await client.get("/api/accounts", headers=auth)).json()
+    personal_claude = next(account for account in accounts if account["engine"] == "claude")
+    work_codex_response = await client.post("/api/accounts", json={
+        "name": "work codex", "engine": "codex", "pool": "work",
+    }, headers=auth)
+    work_claude = (await client.post("/api/accounts", json={
+        "name": "work claude", "engine": "claude", "pool": "work",
+    }, headers=auth)).json()
+    assert work_codex_response.status_code == 201
+    until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    personal_override = await client.put(
+        "/api/accounts/override", json={"ids": [personal_claude["id"]], "until": until}, headers=auth,
+    )
+    work_override = await client.put(
+        "/api/accounts/override", params={"pool": "work"},
+        json={"ids": [work_claude["id"]], "until": until}, headers=auth,
+    )
+    assert personal_override.status_code == work_override.status_code == 200
+
+    personal_desk = await _desk(client, auth, make_dir)
+    work_desk = await _desk(client, auth, make_dir, pool="work")
+    personal_started = await start_run(client, auth, personal_desk["id"], "DESK_ANSWER")
+    work_started = await start_run(client, auth, work_desk["id"], "DESK_ANSWER")
+    personal_run = await wait_run(client, auth, personal_started["id"])
+    work_run = await wait_run(client, auth, work_started["id"])
+
+    assert personal_run["profile"] == personal_claude["name"]
+    assert work_run["profile"] == work_claude["name"]
 
 
 async def test_bad_output_and_timeout_still_delegate(client, auth, make_dir, monkeypatch):

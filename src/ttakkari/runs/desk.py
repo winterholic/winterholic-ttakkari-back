@@ -4,7 +4,7 @@
   도구 없음으로 띄운다. 지침은 비서 관리 > 지침 > 접수만 쓴다.
 - 도구 없이 한 번에 고르게 한다. 작업판(기획 세션 상태)과 최근 대화는 백엔드가 미리 넣는다. 작은 모델은 여러 번 오가는
   도구 호출에 약하다(2026-10-13 실측).
-- 계정은 엔진 순서(desk_engine_order, 기본 luna → haiku) 안에서 사용 상한까지 여유가 큰 순서로. 한도·시간 초과·출력 오류면 다음 계정으로,
+- 활성 임시 계정 순서가 있으면 그 순서부터 시도하고, 나머지는 엔진 순서(desk_engine_order, 기본 luna → haiku) 안에서 사용 상한까지 여유가 큰 순서로. 한도·시간 초과·출력 오류면 다음 계정으로,
   다 실패하면 기획으로 넘긴다. 접수 때문에 사용자 메시지가 멈추는 일은 없게 한다.
 """
 
@@ -80,6 +80,8 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     """run(접수 세션의 사용자 메시지)을 처리하고 결과를 run 에 적는다. 끝내기(_finish)는 부른 쪽이 한다."""
     s = get_settings()
     order = {e: i for i, e in enumerate(s.desk_engine_order)}
+    override = await profiles_mod.get_override(db, sess.pool)
+    priority_ids = override["ids"] if override else None
     profiles, _blocked = await profiles_mod.availability(db, "auto", sess.pool)
     pool = sorted((p for p in profiles if p.engine in order), key=lambda p: order[p.engine])
     leads = await _leads(db, sess)
@@ -92,9 +94,16 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         # choose_async 는 generation 모드에서 안쪽 연결을 새로 연다. 바깥 세션이 앞선 조회로 연결을 쥔 채면 교착한다.
         await _release_connection(db, run)
     for _ in range(0 if decision is not None else min(MAX_ATTEMPTS, len(pool))):
-        # 접수도 같은 엔진의 계정끼리 사용량을 비교한다. 다른 엔진의 미측정값은 이 비교를 끄지 않는다.
-        candidates = [p for p in pool if p.engine == pool[0].engine]
-        prof = await profiles_mod.choose_async(candidates, run.id, balance_usage=True)
+        prioritized = [p for p in pool if priority_ids and str(p.id) in priority_ids]
+        if prioritized:
+            # 현재 pool 에서 사용 가능한 임시 순서 계정을 먼저 소진하고, 그 뒤 기존 Desk 순서로 돌아간다.
+            prof = await profiles_mod.choose_async(
+                prioritized, run.id, balance_usage=True, priority_ids=priority_ids,
+            )
+        else:
+            # 기본 Desk 정책은 같은 엔진 안에서만 사용량을 비교하고 엔진 순서는 유지한다.
+            candidates = [p for p in pool if p.engine == pool[0].engine]
+            prof = await profiles_mod.choose_async(candidates, run.id, balance_usage=True)
         pool.remove(prof)
         run.engine, run.profile = prof.engine, prof.name
         run.model = (s.desk_models.get(prof.engine) or {}).get("model")

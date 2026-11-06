@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pg_sandbox
@@ -156,7 +157,37 @@ async def dirty_tables(db) -> set[str]:
     return {r[0] for r in rows} & set(_TABLE_NAMES)
 
 
+@asynccontextmanager
+async def quiescent_consumers():
+    """시험용 전역 소비자의 DB 접근을 마친 뒤에만 초기화를 시작한다."""
+    from ttakkari import background_consumers
+    from ttakkari.kb_pipeline import get_default_worker
+
+    consumers = background_consumers.consumers
+    worker = get_default_worker()
+    was_paused, worker_was_paused = consumers.claiming_paused, worker.claiming_paused
+    consumers.pause_claiming()
+    try:
+        async with asyncio.timeout(30):
+            while consumers.pumping:
+                await asyncio.sleep(0.001)
+        assert await consumers.drain(30), "시험 소비자의 이전 작업이 초기화 전에 끝나지 않았다"
+        yield
+    finally:
+        if not was_paused:
+            consumers.resume_claiming()
+        if worker_was_paused:
+            worker.pause_claiming()
+        else:
+            worker.resume_claiming()
+
+
 async def reset_database(db) -> None:
+    async with quiescent_consumers():
+        await _reset_database(db)
+
+
+async def _reset_database(db) -> None:
     """모델 테이블을 시험 시작 상태(비어 있고 시퀀스 처음, 계정 1개)로 되돌린다.
 
     건드린 테이블만 비운다. 건드린 테이블을 읽는 데 실패하면 예전처럼 전부 비운다(fail-safe).

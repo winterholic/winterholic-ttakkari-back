@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib.util
 import re
 import uuid
@@ -104,6 +105,65 @@ async def test_clean_state_has_only_the_seeded_credential():
     async with sessionmaker()() as db:
         assert await conftest.dirty_tables(db) == {CRED}
         assert (await db.execute(text("SELECT password_hash FROM credentials"))).scalar_one() == conftest.PASSWORD_HASH
+
+
+async def test_reset_waits_for_an_active_consumer_before_taking_truncate_locks(monkeypatch):
+    from ttakkari import background_consumers
+
+    consumers = background_consumers.consumers
+    await consumers.stop(drain_seconds=0)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def pump():
+        async with sessionmaker()() as db:
+            await db.execute(text("SELECT * FROM credentials"))
+            entered.set()
+            await release.wait()
+        return 0
+
+    monkeypatch.setattr(background_consumers, "PUMPS", (("reset-lock-probe", pump),))
+    await consumers.start()
+    await asyncio.wait_for(entered.wait(), 5)
+    # 기존 초기화는 소비자의 읽기 락이 살아 있는 동안 TRUNCATE를 시도해 실패한다.
+    async def finish_after_pause():
+        async with asyncio.timeout(5):
+            while not consumers.claiming_paused:
+                await asyncio.sleep(0.001)
+        release.set()
+
+    finisher = asyncio.create_task(finish_after_pause())
+    try:
+        async with sessionmaker()() as db:
+            await db.execute(text("SET LOCAL lock_timeout = '50ms'"))
+            await conftest.reset_database(db)
+            assert await conftest.dirty_tables(db) == {CRED}
+    finally:
+        finisher.cancel()
+        await asyncio.gather(finisher, return_exceptions=True)
+        release.set()
+        await consumers.stop(drain_seconds=5)
+
+
+@pytest.mark.parametrize("consumer_paused,worker_paused", [(False, False), (False, True), (True, False), (True, True)])
+async def test_quiescent_consumers_restores_independent_pause_states(consumer_paused, worker_paused):
+    from ttakkari import background_consumers
+    from ttakkari.kb_pipeline import get_default_worker
+
+    consumers, worker = background_consumers.consumers, get_default_worker()
+    previous = consumers.claiming_paused, worker.claiming_paused
+
+    def set_states(c, w):
+        (consumers.pause_claiming if c else consumers.resume_claiming)()
+        (worker.pause_claiming if w else worker.resume_claiming)()
+
+    try:
+        set_states(consumer_paused, worker_paused)
+        async with conftest.quiescent_consumers():
+            assert consumers.claiming_paused and worker.claiming_paused
+            assert consumers.pumping == 0
+        assert (consumers.claiming_paused, worker.claiming_paused) == (consumer_paused, worker_paused)
+    finally:
+        set_states(*previous)
 
 
 async def _owned_sequences(db) -> list[tuple[str, str]]:

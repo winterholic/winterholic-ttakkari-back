@@ -37,3 +37,14 @@
 - 라이선스 교정: 인식된 Creative Commons URL만 HTTPS 형태로 사용하고 `reported_url`에 공급자 원문을 보존한다. 임의 출판사 URL을 바꾸거나 권한을 추정하지 않는다. 개별 문서의 정책 등록이 거부되면 savepoint로 격리하고 `paper_policy_invalid` gap과 서지 정보만 남겨 다른 논문 준비를 계속한다.
 - 추가 재현 검사는 수정 전 실패를 확인했다. 변경 후 국소·임시 DB 검사 **101 passed, 1 deselected**, ruff 및 diff 검사 통과. 제외한 기존 SPA 실브라우저 검사는 위 기록과 동일하게 이 환경에서 미해결이다. 직접 지정한 URL의 링크 탐색과 옛 검색 출처 재실행의 캐시 격리도 별도로 확인한다.
 - 다음 실행: 추가 수정본 배포 후 원래 지시문으로 `request_key=scope-repair-v2:<최초 임무 ID>`를 사용해 새 복구 임무 두 건을 시작한다. 실제 주제에 맞는 적재 문서와 KB 검색을 확인하기 전에는 목표를 완료로 표시하지 않는다.
+
+## 배포 검사 교착 교정 (10:28Z~)
+
+- 추가 수정 `d68947942060c1024c8ce9035e579f1751cb7612`의 배포 `ecf6536c`는 TTS의 최종 `drain_ready` 기대값 실패로 중단됐다. 같은 SHA 재검증 `d2f0f91e-8a2c-4e51-a45b-d3f4ac889a30`도 실패했으나 이번 원인은 다르다. 공식 `ops_deploy_log(errors)`에서 테스트 초기화의 `TRUNCATE credentials, ctx_sources, engine_accounts`와 다른 연결 간 락 순환을 확인했다. **703 passed, 2 skipped, 1 error / 108.40s**이며 이후 검사는 실행되지 않았다.
+- 10:28Z `host_operation_start(runtime_report)`의 운영 활성 revision은 여전히 `3e40791c6a3890511ac8284c3858bc584c890089`다. 새 복구 임무는 만들지 않았다. 네 임무는 cancelled이며 첫 복구 로보틱스 적재는 당시 134건으로 관측됐다(09:11Z의 33건은 과거 시점 값). 자료는 보존됐다.
+- 테스트 fixture 원인: `remote_api`가 종료 시 전역 소비자를 다시 시작하지만 다음 시험의 `reset_database`는 소비자 pump와 이미 실행 중인 일을 기다리지 않았다. 전체 테이블을 읽고 TRUNCATE하는 트랜잭션에 동시 접근이 겹칠 수 있다. 정확히 어느 pump가 위 배포의 상대 연결이었는지는 미확인이다.
+- 임시 PostgreSQL에서 소비자가 credentials 읽기 락을 유지한 채 초기화가 들어가는 회귀 검사를 먼저 실행했다. 변경 전 `LockNotAvailableError: canceling statement due to lock timeout` 및 `TRUNCATE credentials, engine_accounts`에서 **1 failed**를 확인했다. 이후 회귀 검사는 고정 지연 대신 claim 중지 관측 이벤트로 락 해제를 동기화했다.
+- `tests/conftest.py`에서 초기화 동안 claim을 잠시 멈추고 진행 중 pump와 작업을 기다린다. 대기 상한을 넘으면 초기화를 진행하지 않고 검사에 실패한다. 종료 시 전역 소비자와 KB 워커의 원래 pause 상태를 각각 복원한다. 네 조합 중 한 복원 오류도 검사에서 검출하고 교정했다. 제품 코드·검사 게이트·TTS 단언 조건은 변경하지 않았다.
+- TTS 실패는 이 환경에서 재현되지 않았다. 기존 실패 단언에 실제 ready 상태를 출력하도록 진단만 보강했다. TTS 문제까지 해결했다고 주장하지 않는다.
+- 최종 국소 검증: `PYTHONPATH=src:. .venv/bin/python -m pytest -q tests/test_fixture_reset.py tests/test_background_consumers.py tests/test_tts_queue.py tests/test_kb_v3_fixes_realdb.py tests/test_kb_v3_integration_flow.py --timeout=60 --tb=short` → **111 passed / 24.21s**. 변경 3개 Python 파일 ruff와 `git diff --check`도 통과했다.
+- 다음 실행은 이 교정과 기존 수집 수정을 함께 배포하여 전체 게이트 결과를 확인하는 것이다. 활성화 후 위 `scope-repair-v2` 생성·실제 적재·KB 검색 검증을 이어간다. TTS가 다시 실패하면 새 진단 상태로 원인을 추적한다.

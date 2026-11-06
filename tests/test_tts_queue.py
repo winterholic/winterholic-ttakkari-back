@@ -311,7 +311,8 @@ async def test_drain_ready_is_false_for_whole_window_until_cleanup(two_generatio
     assert await status_of(jid) == "succeeded"
     assert observed and not any(observed)
     await wait_for(lambda: _not_guard())
-    assert (await generation_service.ready(a))["drain_ready"] is True
+    ready = await generation_service.ready(a)
+    assert ready["drain_ready"] is True, ready
 
 
 async def test_running_job_blocks_retirement_and_finishes_in_draining_generation(two_generations, tts_env):

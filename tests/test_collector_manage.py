@@ -202,7 +202,10 @@ pytestmark = pytest.mark.security
 async def test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason(client, auth, env, monkeypatch):  # noqa: F811
     from collector_support import article_html
 
+    from ttakkari import collector_precise_runtime
+    from ttakkari.collector import precise_eval
     from ttakkari.collector_models import CollectorItem
+    monkeypatch.setattr(precise_eval, "_runtime", None)
     for i in range(5):
         env.server.page(f"/s{i}", article_html(f"짧은 글 {i}", [f"짧다 {i}."]))
     body = source_body(seeds=[env.server.url(f"/s{i}") for i in range(5)], max_pages=5)
@@ -210,6 +213,7 @@ async def test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason(cl
     assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
     source = (await client.get(BASE + "/sources", headers=auth)).json()["items"][0]
     await client.post(BASE + f"/sources/{source['id']}/run", headers=auth)
+    collector_precise_runtime.install()
     await runner.consume_once(limit=1, managed_only=True)
     first = (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 2})).json()
     again = (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 2})).json()

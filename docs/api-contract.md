@@ -684,6 +684,7 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 - `reuse_existing=true`와 `request_key`를 함께 주면 422다. 명시적인 별도 복구 요청은 기존 request_key 계약을 유지하며, 같은 키와 다른 입력은 409다. 별도 복구 시도도 같은 topic_key로 연결된다.
 - 다시 실행·추가·보충 수집은 기존 mission 제어 API를 사용하고 그 mission의 실행 회차에 남긴다. `runs` 상세는 최근 20회차, `run_count`는 전체 회차 수다.
 - 현재 수집의 적재량은 이전 시도와 합산하지 않는다. 과거 오류로 적재된 문서를 현재 수집의 성과로 표시하지 않기 위함이다.
+- precise evaluator의 item `state=pending`은 재시도 대기열에 남아 있음을 뜻한다. item `engine.status=unavailable`은 evaluator가 미등록이거나 준비되지 않은 상태이고, `waiting`은 준비된 evaluator의 처리 용량을 기다리는 상태다. 둘 다 item은 pending으로 유지한다. Mission summary의 engine 상태는 개별 item 기록과 별도로 현재 전역 evaluator 준비 상태를 나타낸다.
 
 ## 게임 스튜디오 연결·후보 검토 (2026-11-07)
 

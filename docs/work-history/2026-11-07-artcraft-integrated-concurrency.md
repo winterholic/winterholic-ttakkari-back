@@ -96,3 +96,35 @@
 - push 결과: `40e88581..55f2a40a HEAD -> main`. 직후 `git fetch origin main`/`git rev-parse HEAD origin/main` → 둘 다 `55f2a40aefb642f7ac5ceef9f7ca8055fcdd1fd3`; branch `release/artcraft-main-20261107...origin/main` clean; `git diff --check origin/main^..HEAD` 출력 없음(exit 0).
 - `request_backend_deploy(revision='55f2a40aefb642f7ac5ceef9f7ca8055fcdd1fd3')` → reservation `09a13bbe-b69f-4efa-859f-d6d7101075ea`, `status=requested`, `strategy=generations`, `skip_tests=false`, `error=null`. 이는 접수이며 실제 배포 완료를 뜻하지 않는다. 요청된 대로 deploy 상태는 polling하지 않았다.
 - 이 추가 문단을 담는 후속 commit은 work-history만 바꾸며, release source와 예약 대상 SHA는 위 `55f2a40a…` 그대로다.
+
+### 최신 main 기반 최종 계정 pin·lookup 통합 및 예약 (2026-11-07)
+
+- 현재 Run 신원: `python3 -c 'import os,uuid; print(uuid.UUID(os.environ["TTAKKARI_RUN_ID"]))'` → `dd332e6e-72ba-4a41-8a3e-8d9724061abe`. `/Users/winterholic/bin/ttk get /api/runs/dd332e6e-72ba-4a41-8a3e-8d9724061abe` → `profile=회사 코덱스 ai2 (ai2@hyperez.io)`, `engine=codex`, `model=gpt-6-luna`. 다른 Run UUID는 현재 profile 근거로 쓰지 않았다.
+- 시작 worktree `release/artcraft-main-20261107`은 clean `293bb8440fb96aaf648a59c7c821a99348ce325c`, 당시 `origin/main`보다 5 commit 뒤였다. `git fetch origin main` 뒤 `origin/main=b44aed06f5ccfd878717fc2e71a1d296f3690d12`였고 release HEAD는 그 조상이라 `git merge --ff-only origin/main`으로 보존 fast-forward했다. 원본 `back/main`과 타 worktree는 수정하지 않았다.
+- 수용 소스: pin `4995d783aa6038aa33d9d5d7557afde619782d53` + 교정 `0a15cecfc7a543bb402fe24208761c70aa90d037`; lookup `7a118088` → `836cb085` → `bb183272ccd5d6937ac67c26a6e462b1e26df5c7`; queued resume 검증 커밋 `2c60f1c7df8a2b403abc522f6037c93920d8fae5`의 테스트와 최종 검증 문서를 통합했다. pin 독립 검증 원문 `docs/artcraft/evidence/2026-11-07-account-pin/{RESULT.md,FINAL-VERIFY.md}` 및 lookup `docs/artcraft/evidence/2026-11-07-followup-lookup/RESULT.md`로 수용 범위와 제한을 연결했다. 기존 `unit_tests/test_artcraft_tasks.py` → `unit_tests/test_artcraft_tasks_unit.py` rename 및 fixture cleanup은 유지했다.
+- 실제 diff 대조에서 충돌한 0077 revision은 없었다: 최신 main의 단일 migration head `0076_kb_v3_collection_merge` 뒤에 `0077_artcraft_account_pin`이 연결된다. 다른 migration source와 의미 충돌은 없었다. resume commit의 `FINAL-VERIFY.md`는 후보에 존재하지 않아 modify/delete conflict로 표시됐고, 수용 근거 원문과 테스트를 함께 보존해 추가했다.
+- 주입 테스트 DB 사전 확인: `TTAKKARI_TEST_DB` 값을 출력하지 않고 URL identity, 현재 Run marker, 실제 접속 identity를 대조했다. 결과 `database=ttakkari_test user=ttk_test host=127.0.0.1 port=51490 owner_run_id=dd332e6e-72ba-4a41-8a3e-8d9724061abe`. 새 cluster/initdb를 만들지 않았다.
+- 집중 검사(직렬): account pin API/manager `6 passed, 70 deselected` 및 invalid UUID 추가 `1 passed, 75 deselected`; queued resume verifier `2 passed`; lookup 출력요건/요약 조회 `37 passed, 39 deselected`; 0076→0077 migration 및 single head `3 passed`; generation 계약 `3 passed`. 모두 `TTAKKARI_TEST_DB`에 selective reset을 사용했고 forced full/fallback은 0이었다.
+- 첫 impacted gate는 Ruff 통과 후 계약 `85 passed, 1 failed`, 변경 테스트 `83 passed, 1 failed`였다. 두 실패 모두 migration test가 archive에서 존재하지 않는 sibling `/private/var/.../back/.venv/bin/alembic` 경로를 호출해 난 `FileNotFoundError`였다. test helper의 Alembic 경로만 `Path(sys.executable).with_name("alembic")`로 바꿨다. helper 선택 회귀는 추가 RED `NameError: _alembic_executable not defined` 뒤 GREEN `1 passed`였고, migration test file은 `4 passed`였다. source migration 계약은 바꾸지 않았다.
+- 최종 source commit `cc9f9dd6da7a0adfa5258f8ec875768af9d916de`에 대한 직접 gate와 첫 push hook은 Python 경로 오류 외에 pass였다. 첫 일반 push hook은 `UV_CACHE_DIR` 미설정으로 `/Users/winterholic/.cache/uv` 쓰기 `Operation not permitted`를 만나 원격 write 없이 실패했다. 허용 경로 `/private/tmp/ttakkari-uv-cache-dd332e6e`를 지정해 일반 push를 재실행했다.
+
+```text
+$ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-dd332e6e ./scripts/verify_deploy_gate.sh --commit fe90547e09136551a482457b18d88082298fd855 --base b44aed06f5ccfd878717fc2e71a1d296f3690d12
+통과 ruff (변경된 Python 9개)
+계약 87 passed, 6884 deselected in 16.54s
+변경 테스트 4개 파일 85 passed in 9.19s
+db reset: selective 85, forced full 0, fallback 0; 전체 suite 검사는 아님
+
+$ UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache-dd332e6e git push origin HEAD:refs/heads/main
+pre-push: 동일 계약 87 passed; 변경 테스트 85 passed
+b44aed06..fe90547e  HEAD -> main
+
+$ git ls-remote origin refs/heads/main
+fe90547e09136551a482457b18d88082298fd855 refs/heads/main
+
+$ request_backend_deploy(revision="fe90547e09136551a482457b18d88082298fd855")
+id=793ee964-872c-4cbe-a543-d9155e43c13e revision=fe90547e09136551a482457b18d88082298fd855
+status=requested skip_tests=false strategy=generations error=null
+```
+
+- 원격 code commit 및 예약 SHA는 `fe90547e09136551a482457b18d88082298fd855`다. 이어지는 이 work-history 기록 commit은 기록만 바꾸며 위 예약 SHA의 제품 코드는 바꾸지 않는다. 요청대로 reservation 이후 status poll과 실제 provider/ArtCraft 운영 설치 작업은 하지 않았다.

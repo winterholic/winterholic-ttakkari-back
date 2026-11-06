@@ -24,6 +24,12 @@ On 2026-11-07 KST, the harness directly ran the real `/usr/bin/basename` against
 
 The local API demo produced four comparisons: successful JSON/state transition, 422 validation, 404 route, and an 8 KiB response. All four matched and the server verifier recomputed all four from hashed raw captures. The configured browser demo recorded the same click, DOM state, and completion state on both pages. The pixel-exact 1280×720 screenshots differ at 2,146 pixels (button color); visual result is `mismatch`. Browser capture is isolated and local; this is not a production-site check.
 
+## Repaired basename sample run
+
+On 2026-11-07 KST, the basename sample was expanded to 16 argv vectors and its replica was repaired from direct `/usr/bin/basename` observations. The before capture recorded 12 matches and four mismatches: `-z` stderr prefix, repeated-slash root, combined `-as`, and missing `-s` argument. The after capture records 16 matches. Both reports were independently recomputed from their SHA-256 raw captures with `scripts/reverse_compare_recheck.py` / `verify_comparisons`; their verifier outputs are beside each report under `docs/reverse-platform/evidence/basename-repaired-20261107/`.
+
+The comparison ran on `macOS-27.0-arm64-arm-64bit-Mach-O`, Python 3.13.15, against `/usr/bin/basename`; the replica subprocess used the existing `back/.venv` Python. The raw captures retain stdout bytes, stderr bytes and exit code for both commands. No output normalization was applied. The test and evidence README are in that evidence directory. This is a direct target-harness comparison and server-side recomputation, not a platform agent E2E.
+
 ## Contract note for platform owners
 
 The report contract has exactly the declared comparison keys, so this harness keeps visual judgement as a distinct `visual_assessment` evidence item inside the allowed `evidence` array rather than adding a top-level field. Consumers that render visual status should read that evidence kind separately from `result`.

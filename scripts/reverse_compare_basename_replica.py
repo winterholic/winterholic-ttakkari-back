@@ -4,13 +4,14 @@ import os
 import sys
 
 USAGE = "usage: basename string [suffix]\n       basename [-a] [-s suffix] string [...]\n"
+ORIGINAL_PROGRAM = "/usr/bin/basename"
 
 
 def _base(value: str) -> str:
-    if value == "/":
+    stripped = value.rstrip("/")
+    if not stripped and value.startswith("/"):
         return "/"
-    result = os.path.basename(value.rstrip("/"))
-    return result
+    return os.path.basename(stripped)
 
 
 def main(argv: list[str]) -> int:
@@ -21,15 +22,26 @@ def main(argv: list[str]) -> int:
         option = args.pop(0)
         if option == "--":
             break
-        if option == "-a":
-            all_args = True
-        elif option == "-s" and args:
-            suffix = args.pop(0)
-            all_args = True
-        else:
-            bad = option[1:2] or "-"
-            sys.stderr.write(f"basename: illegal option -- {bad}\n{USAGE}")
-            return 1
+        chars = option[1:]
+        index = 0
+        while index < len(chars):
+            flag = chars[index]
+            if flag == "a":
+                all_args = True
+                index += 1
+            elif flag == "s":
+                if index + 1 < len(chars):
+                    suffix = chars[index + 1:]
+                elif args:
+                    suffix = args.pop(0)
+                else:
+                    sys.stderr.write(f"{ORIGINAL_PROGRAM}: option requires an argument -- s\n{USAGE}")
+                    return 1
+                all_args = True
+                break
+            else:
+                sys.stderr.write(f"{ORIGINAL_PROGRAM}: illegal option -- {flag}\n{USAGE}")
+                return 1
     if not args or (not all_args and len(args) > 2):
         sys.stderr.write(USAGE)
         return 1

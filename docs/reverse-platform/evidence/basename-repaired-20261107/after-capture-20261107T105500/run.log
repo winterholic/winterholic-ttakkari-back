@@ -1,0 +1,32 @@
+2026-11-07 01:25:38,441 INFO starting case=plain argv=['report.txt']
+2026-11-07 01:25:38,467 INFO finished case=plain result=match difference=None
+2026-11-07 01:25:38,467 INFO starting case=spaces-unicode argv=['폴더 이름/한글 파일.txt', '.txt']
+2026-11-07 01:25:38,485 INFO finished case=spaces-unicode result=match difference=None
+2026-11-07 01:25:38,485 INFO starting case=trailing-slashes argv=['folder///']
+2026-11-07 01:25:38,504 INFO finished case=trailing-slashes result=match difference=None
+2026-11-07 01:25:38,504 INFO starting case=repeated-slash-root argv=['////']
+2026-11-07 01:25:38,522 INFO finished case=repeated-slash-root result=match difference=None
+2026-11-07 01:25:38,522 INFO starting case=root argv=['/']
+2026-11-07 01:25:38,542 INFO finished case=root result=match difference=None
+2026-11-07 01:25:38,542 INFO starting case=empty-string argv=['']
+2026-11-07 01:25:38,559 INFO finished case=empty-string result=match difference=None
+2026-11-07 01:25:38,560 INFO starting case=suffix-option argv=['-s', '.txt', 'hello world.txt']
+2026-11-07 01:25:38,576 INFO finished case=suffix-option result=match difference=None
+2026-11-07 01:25:38,576 INFO starting case=literal-dash argv=['-']
+2026-11-07 01:25:38,593 INFO finished case=literal-dash result=match difference=None
+2026-11-07 01:25:38,593 INFO starting case=option-end-marker argv=['--', '--']
+2026-11-07 01:25:38,610 INFO finished case=option-end-marker result=match difference=None
+2026-11-07 01:25:38,610 INFO starting case=combined-options argv=['-as', '.txt', 'file.txt']
+2026-11-07 01:25:38,627 INFO finished case=combined-options result=match difference=None
+2026-11-07 01:25:38,627 INFO starting case=missing-suffix-argument argv=['-s']
+2026-11-07 01:25:38,644 INFO finished case=missing-suffix-argument result=match difference=None
+2026-11-07 01:25:38,645 INFO starting case=suffix-whole-name argv=['-s', 'foo', 'foo']
+2026-11-07 01:25:38,661 INFO finished case=suffix-whole-name result=match difference=None
+2026-11-07 01:25:38,662 INFO starting case=suffix-multiple-arguments argv=['-s', '.txt', 'one.txt', 'two.txt']
+2026-11-07 01:25:38,678 INFO finished case=suffix-multiple-arguments result=match difference=None
+2026-11-07 01:25:38,678 INFO starting case=all-option argv=['-a', 'one.txt', 'two words.txt']
+2026-11-07 01:25:38,695 INFO finished case=all-option result=match difference=None
+2026-11-07 01:25:38,695 INFO starting case=missing-argument argv=[]
+2026-11-07 01:25:38,712 INFO finished case=missing-argument result=match difference=None
+2026-11-07 01:25:38,712 INFO starting case=invalid-option argv=['-z']
+2026-11-07 01:25:38,729 INFO finished case=invalid-option result=match difference=None

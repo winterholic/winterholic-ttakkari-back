@@ -341,8 +341,8 @@ def _expects_output_file(task: ArtcraftTask, run: Run | None = None) -> bool:
                   "describe", "explain", "identify", "summarize", "read ")
         without_create = re.sub(
             r"\bwithout\s+(?:(?:editing|modifying)\s+or\s+)?(?:creating|create|making|saving|editing|modifying|exporting)\b"
-            r"|\b(?:do\s+not|don't|never)\s+(?:create|make|save|edit|modify|export|render|generate|design|produce)"
-            r"(?:\s+or\s+(?:create|make|save|edit|modify|export|render|generate|design|produce))*\b"
+            r"|\b(?:do\s+not|don't|never)\s+(?:create|make|save|edit|modify|export|render|generate|design|produce|convert)"
+            r"(?:(?:\s*,\s*(?:or\s+)?|\s+or\s+)(?:create|make|save|edit|modify|export|render|generate|design|produce|convert))*\b"
             r"|(?:저장하|만들|제작하|내보내|편집하|수정하?)지\s+(?:말고|마세요|마십시오|말아)",
             " ", prompt,
         )

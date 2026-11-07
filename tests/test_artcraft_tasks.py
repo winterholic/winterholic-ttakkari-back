@@ -22,6 +22,11 @@ from ttakkari.runs import profiles
 from ttakkari.security.guard import GuardConfig, evaluate
 
 REAL_REGISTRY = Path.home() / "development/projects/artcraft/registry.json"
+EXACT_ENGLISH_LOOKUP_PROMPT = (
+    "Read the latest version of this document and tell me its exact title, the total budget for two people, "
+    "and the budget per person. This is a read-only lookup only: do not create, edit, modify, convert, "
+    "or export any file. Reply in English and include only those three values."
+)
 
 
 def _compete_for_file_lock(path: str, contended, acquired) -> None:
@@ -431,15 +436,13 @@ async def test_report_lookup_without_output_has_no_missing_file_error(client, au
     task = await _finish(client, auth, (await _task(
         client, auth, category="doc", template_id="write-report", prompt="Create a report and save it as DOCX."
     )).json())
-    lookup_prompt = (
-        "Without editing or creating a file, summarize the revised report's verification limits and next steps "
-        "in English. Use only the latest saved report and explicitly say when a value is unmeasured."
-    )
     response = await client.post(
-        f"/api/artcraft/tasks/{task['id']}/runs", json={"prompt": lookup_prompt, "use_previous": True}, headers=auth
+        f"/api/artcraft/tasks/{task['id']}/runs",
+        json={"prompt": EXACT_ENGLISH_LOOKUP_PROMPT, "use_previous": True}, headers=auth
     )
     assert response.status_code == 202, response.text
     detail = await _finish(client, auth, response.json())
+    assert detail["rounds"][-1]["use_previous"] is True
     lookup_run_id = detail["rounds"][-1]["id"]
 
     # The fake agent normally emits files for every prompt; remove only this test Run's artifacts to model a text-only answer.
@@ -454,6 +457,28 @@ async def test_report_lookup_without_output_has_no_missing_file_error(client, au
     task_detail = (await client.get(f"/api/artcraft/tasks/{task['id']}", headers=auth)).json()
     assert summary["state"] == "done" and summary["error"] is None
     assert task_detail["rounds"][-1]["error"] is None
+
+
+async def test_file_request_without_output_keeps_missing_file_error(client, auth, platform):
+    from sqlalchemy import delete
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import Artifact
+
+    task = await _finish(client, auth, (await _task(
+        client, auth, category="doc", template_id="write-report", prompt="Create a report and save it as DOCX."
+    )).json())
+    run_id = task["rounds"][-1]["id"]
+    async with sessionmaker()() as db:
+        await db.execute(delete(Artifact).where(Artifact.run_id == run_id, Artifact.source == "agent_output"))
+        await db.commit()
+
+    summary = (await client.get("/api/artcraft/tasks", headers=auth)).json()["items"]
+    summary = next(item for item in summary if item["id"] == task["id"])
+    task_detail = (await client.get(f"/api/artcraft/tasks/{task['id']}", headers=auth)).json()
+    expected = "결과 파일 없음 (산출물이 생성되지 않았습니다)"
+    assert summary["state"] == "done" and summary["error"] == expected
+    assert task_detail["rounds"][-1]["error"] == expected
 
 
 # ---- 목록·갤러리·보관
@@ -954,6 +979,9 @@ def test_follow_up_report_lookup_does_not_require_a_file(template_id):
     ("보고서를 편집하고 변경 사항을 알려 주세요.", True),
     ("Do not create or save a file; summarize the report's verification limits.", False),
     ("Do not create or save a file for this lookup; summarize the report's verification limits, but save the revised report as PDF.", True),
+    (EXACT_ENGLISH_LOOKUP_PROMPT, False),
+    ("Do not create, edit, modify, convert, or export any file; read the saved file and tell me the amount.", False),
+    ("Do not create, edit, modify, convert, or export any file, but create an edited version after the lookup.", True),
     ("파일을 만들지 않고 보고서의 검증 한계를 요약해 주세요.", False),
 ])
 def test_output_requirement_distinguishes_lookup_from_file_creation(template_id, prompt, expected):

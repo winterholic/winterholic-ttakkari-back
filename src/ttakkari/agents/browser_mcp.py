@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 MCP_CLI = Path(__file__).resolve().parents[3] / ".browser-runtime/node_modules/@playwright/mcp/cli.js"
+PHASE_TRACE = Path(__file__).with_name("browser_phase_trace.cjs")
 SERVER_NAME = "ttakkari_browser"
 BROWSER_TOOLS = frozenset({
     "browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_take_screenshot",
@@ -24,9 +25,10 @@ def server_spec(outbox: Path) -> dict | None:
         return None
     return {
         "command": node,
-        "args": [str(MCP_CLI), "--headless", "--isolated", "--sandbox", "--browser", "chrome", "--no-webmcp",
+        "args": ["--require", str(PHASE_TRACE), str(MCP_CLI), "--init-page", str(PHASE_TRACE),
+                 "--headless", "--isolated", "--sandbox", "--browser", "chrome", "--no-webmcp",
                  "--output-dir", str(outbox / "browser"), "--file-paths", "absolute",
                  "--timeout-navigation", "30000", "--idle-timeout", "120000"],
         "cwd": str(outbox),
-        "env": {},
+        "env": {"TTAKKARI_BROWSER_TRACE_FILE": str(outbox / "browser" / "phase-spans.jsonl")},
     }

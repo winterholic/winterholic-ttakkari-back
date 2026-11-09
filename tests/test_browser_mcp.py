@@ -53,6 +53,12 @@ class BrowserMcpTests(unittest.TestCase):
             for tool in tools:
                 self.assertEqual(browser["tools"][tool]["approval_mode"], "approve")
             args = browser["args"]
+            self.assertIn("--require", args)
+            trace_script = args[args.index("--require") + 1]
+            self.assertEqual(Path(trace_script).name, "browser_phase_trace.cjs")
+            self.assertEqual(args[args.index("--init-page") + 1], trace_script)
+            self.assertEqual(browser["env"]["TTAKKARI_BROWSER_TRACE_FILE"],
+                             str(root / "browser" / "phase-spans.jsonl"))
             self.assertIn("--isolated", args)
             self.assertIn("--headless", args)
             self.assertIn("--sandbox", args)

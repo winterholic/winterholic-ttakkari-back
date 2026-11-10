@@ -35,6 +35,7 @@ function emit(event) {
 
 function runtimeIdentity() {
   const identity = { event: 'runtime', node: process.version, instrumentation_sha256: hash(__filename),
+    prepage_instrumentation_sha256: hash(path.join(__dirname, 'browser_prepage_trace.cjs')),
     backend_revision: process.env.TTAKKARI_BROWSER_BACKEND_REVISION || null,
     mcp_version: null, core_version: null, cli_sha256: null, core_sha256: null };
   try {
@@ -110,7 +111,13 @@ function tryActivate() {
     disabled = true;
     process.stderr.write(`browser phase trace disabled: ${error.code || 'mkdir_error'}\n`);
   }
-  if (active) emit(runtimeIdentity());
+  if (active) {
+    emit(runtimeIdentity());
+    require('./browser_prepage_trace.cjs').installPrepageTrace({
+      cli: process.argv[1], emit, isActive: () => active && !disabled,
+      rpcId: () => inFlight.size === 1 ? [...inFlight.values()][0].id : null,
+    });
+  }
 }
 
 if (!disabled) {
@@ -153,7 +160,8 @@ async function initPage({ page }) {
     observed.push(phase);
   }
   emit({ event: 'page_instrumented', phases: observed,
-    unobserved: ['browser_startup', 'internal_settle', 'artifact_write', 'client_receipt'] });
+    unobserved: ['internal_settle', 'artifact_write', 'client_receipt'],
+    prepage_coverage: 'see prepage_coverage events; missing phases remain unmeasured' });
 }
 
 module.exports = { default: initPage };

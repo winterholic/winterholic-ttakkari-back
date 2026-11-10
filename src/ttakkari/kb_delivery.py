@@ -124,6 +124,8 @@ async def deliver_item(db, outbox, item):
         lang=normalized["language"],
         parser_version=normalized["parser_version"][:60], collected_at=collected,
         normalized_body=normalized["text"],
+        # PDF 원본에는 NUL 이 있다. 본문은 수집기가 따로 추출해 NUL 없음을 이미 검증했으므로 원본 바이트는 그대로 보관한다.
+        allow_binary=(env["raw"]["media_type"] or "").lower().startswith("application/pdf"),
         origin_meta={"via": "collector", "tenant_id": item.tenant_id, "pool": pool,
                      "item_id": str(item.id), "raw_handle": env["raw"]["blob_handle"], "rights": rights,
                      "collector_source_key": item.source_key,

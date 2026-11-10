@@ -502,6 +502,8 @@ def test_collector_consume_is_registered_only_when_enabled():
     names = lambda **kw: {n for n, _, _ in generation_service.maintenance_jobs(get_settings().model_copy(update=kw))}
     assert "collector-consume" not in names()
     assert "collector-consume" in names(collector_consume_enabled=True)
+    # 전달은 가져오기 배치와 따로 돌아야 한다. 같은 틱이면 배치가 끝날 때까지 전달이 굶는다.
+    assert "collector-deliver" in names(collector_control_enabled=True) and "collector-deliver" not in names(collector_control_enabled=False)
     assert get_settings().collector_consume_enabled is False
 
 

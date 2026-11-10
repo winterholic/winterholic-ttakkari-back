@@ -316,7 +316,6 @@ async def _collector_consume() -> None:
 
 async def _collector_control() -> None:
     from ttakkari import collector_precise_runtime
-    from ttakkari import kb_delivery as delivery
     from ttakkari.collector import budget, control, pilot, pipeline, runtime
     from ttakkari.collector.runner import consume_once
     async with sessionmaker()() as db:
@@ -330,9 +329,17 @@ async def _collector_control() -> None:
         collector_precise_runtime.install()
         # One job per 10-second tick capped a 1000-page mission at ~6 pages a minute.
         await consume_once(limit=get_settings().collector_batch_size, managed_only=True)
-    # A pause stops new fetching only. Already collected items still reach their permitted sink, which re-checks rights.
-    await delivery.deliver_once()
     await budget.sweep_orphans()
+
+
+async def _collector_deliver() -> None:
+    """수집한 항목을 허용된 출구로 보낸다. 가져오기 배치와 따로 돈다.
+
+    같은 틱에서 돌 때는 작업 5개가 끝나야 20건이 전달돼, 가져오기가 길어지면 약 27분마다 20건(시간당 40건)으로 묶였다.
+    일시정지는 새 수집만 멈춘다. 이미 모은 항목은 전달하고, 전달이 권한을 다시 확인한다."""
+    from ttakkari import kb_delivery as delivery
+    while await delivery.deliver_once(limit=50) >= 50:
+        pass
 
 
 async def _creative_assets() -> None:
@@ -413,6 +420,7 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         jobs.append(("collector-consume", _collector_consume, s.runtime_poll_seconds))
     if s.collector_control_enabled:
         jobs.append(("collector-control", _collector_control, max(10, s.runtime_poll_seconds)))
+        jobs.append(("collector-deliver", _collector_deliver, max(5, s.runtime_poll_seconds)))
     if s.kb_semantic_enabled:
         jobs.append(("kb-vectors", _kb_vectors, 60))
     if s.reminder_scan_seconds > 0:

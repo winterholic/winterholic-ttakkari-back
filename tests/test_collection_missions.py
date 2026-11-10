@@ -1309,7 +1309,8 @@ async def test_pdf_mission_preserves_pages_and_reaches_knowledge_search(client, 
     page[NameObject("/Contents")] = writer._add_object(stream)
     output = BytesIO()
     writer.write(output)
-    env.server.page("/paper.pdf", output.getvalue(), "application/pdf")
+    # 실제 PDF 원본에는 NUL 바이트가 있다. 본문은 수집기가 따로 추출하므로 원본의 NUL 이 적재를 막으면 안 된다.
+    env.server.page("/paper.pdf", output.getvalue() + b"\n%\x00\x01binary\x00\n", "application/pdf")
     url = env.server.url("/paper.pdf")
     body = source_body(seeds=[url], max_pages=1)
     body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)

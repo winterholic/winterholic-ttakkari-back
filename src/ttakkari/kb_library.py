@@ -288,6 +288,22 @@ async def resolve_doc_key(db, new_key: str, legacy_keys: list[str]) -> str:
     return chosen.doc_key
 
 
+async def existing_doc_key_for_url(db, tenant_id: str, pool: str, url: str) -> str | None:
+    """Doc key of the earliest collected document for this URL in the same tenant and pool.
+
+    Missions name their sources differently, so the same page reached from two missions would otherwise become two
+    documents. Reusing the first lineage makes an unchanged page idempotent and a changed page a new revision."""
+    return await db.scalar(
+        select(KbDocument.doc_key)
+        .join(KbRevision, KbRevision.document_id == KbDocument.id)
+        .join(KbSource, KbSource.id == KbRevision.source_id)
+        .where(KbSource.kind == "web", KbSource.locator == url,
+               KbSource.origin_meta["tenant_id"].as_string() == tenant_id,
+               KbSource.origin_meta["pool"].as_string() == pool)
+        .order_by(KbDocument.created_at, KbDocument.id).limit(1)
+    )
+
+
 async def require_document_access(db, document_id, pool="personal"):
     if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, access_filter(pool))):
         raise KbNotFound("document")

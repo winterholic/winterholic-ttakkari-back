@@ -38,7 +38,25 @@ GENERIC_HEADINGS = {
     "details", "description", "definition", "terminology", "design", "implementation", "testing", "verification",
     "decision", "decisions", "rationale", "status", "todo", "faq", "changelog", "history", "contents", "toc",
     "configuration", "settings", "behavior", "operations", "deployment", "rollback", "risks", "errors",
+    # 웹 페이지 템플릿(탐색·바닥글·광고·문서 구조) 제목. 수집 문서 1만 건에서 수백 건씩 반복돼 개념으로 오인됐다.
+    "bookmark", "current browse context", "references & citations", "additional features", "procedure", "expected results",
+    "key features", "use cases", "about", "related skills", "resources", "components", "getting started", "related services",
+    "references and further reading", "deep dives", "props", "primitives", "faqs", "frequently asked questions", "contribute",
+    "content", "default", "explore related toptal services", "patch changes", "major changes", "minor changes", "on this page",
+    "authors and titles for recent submissions", "about this translation", "about this page", "best practices",
+    "read this first", "latest updates", "about this example", "keyboard support", "javascript and css source code",
+    "html source code", "role, property, state, and tabindex attributes", "how we work", "editor's overview", "pages", "do",
+    "don't", "how to guides", "techniques", "sufficient techniques", "page structure", "setup guides", "category", "articles",
+    "formatting", "related resources", "benefits", "interactions", "live demo", "intent", "placement", "in brief", "key terms",
+    "this", "previously at", "states", "tests", "prerequisites", "main elements", "general", "general guidelines", "keyboard",
+    "how to", "namespace", "help users to…", "ask users for…", "ways to get involved", "events and workshops",
+    "what we're working on", "what we’re working on", "talk to one of our client advisors", "the right fit, guaranteed",
+    "work with hand-selected talent", "get 1 powerful email each week", "weekly ux research, insights, and updates",
+    "この章で学ぶこと", "前提知識", "このセクションで学ぶこと", "scenario patterns", "internal components",
 }
+
+# 버전 번호(3.0.0)와 "Works with 26 AI coding agents" 같은 숫자 들어간 홍보 문구는 개념이 아니다.
+_TEMPLATE_PHRASE = re.compile(r"^v?\d+(?:\.\d+)+$|^works with \d+|^hire the top \d+", re.IGNORECASE)
 
 # 문장형 제목: 마침표/물음표 또는 서술 어미. '개요'처럼 '요'로 끝나는 명사는 문장이 아니다.
 _SENTENCE_END = re.compile(r"[.!?。]$|(?:입니다|합니다|이다|한다|된다|있다|없다|해요|이에요|예요)$")
@@ -70,7 +88,7 @@ def is_concept_heading(text: str) -> bool:
         return False
     if len(name.split()) > MAX_HEADING_WORDS:
         return False
-    if name.lower() in GENERIC_HEADINGS:
+    if name.lower() in GENERIC_HEADINGS or _TEMPLATE_PHRASE.search(name):
         return False
     if _SENTENCE_END.search(name) or "?" in name:
         return False

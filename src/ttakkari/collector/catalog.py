@@ -146,11 +146,17 @@ def has_ui_context(text: str) -> bool:
     Motion, feedback, tokens and hierarchy also occur in robotics and agent engineering.
     A domain-specific catalog needs an explicit UI/design signal, independently of topic count.
     """
-    return bool(re.search(
+    haystack = _norm(text)
+    if re.search(
         r"디자인\s*시스템|타이포|패딩|여백|사용자\s*인터페이스|"
-        r"\b(?:ui|ux|typography|design\s+systems?|user\s+interface|interaction\s+design|web\s+design)\b",
-        _norm(text),
-    ))
+        r"\b(?:typography|design\s+systems?|user\s+interface|interaction\s+design|web\s+design)\b",
+        haystack,
+    ):
+        return True
+    # A bare "UI/UX" is a signal only when the text is about UI. A long mobile/OS brief names "UI Thread" or
+    # "Declarative UI" dozens of times without asking for UI/UX design research.
+    bare = len(re.findall(r"\b(?:ui|ux)\b", haystack))
+    return bare > 0 and (len(haystack) <= 300 or (bare >= 3 and bare * 500 >= len(haystack)))
 
 
 def target_for_host(host: str) -> Target | None:

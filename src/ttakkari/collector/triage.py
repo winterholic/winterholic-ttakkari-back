@@ -243,6 +243,39 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
+GOAL_FOCUS_TOKENS = 60
+COVERAGE_DENOM_CAP = 12
+# Words a research brief repeats about the request itself, not about its subject.
+_BRIEF_FILLER = frozenset({
+    "조사", "수집", "연구", "구축", "분야", "자료", "지식", "기술", "정리", "활용", "대상", "범위", "목적", "기준", "방법",
+    "관련", "주요", "핵심", "전반", "최신", "실제", "이상", "이하", "다음", "각각", "모든", "경우", "등", "및", "대한",
+    "것이", "말고", "가능한", "도서관", "백과사전", "해줘", "줘", "하여", "한다", "있는", "있다", "위한", "통해", "대해", "또는",
+    "따까리", "플랫폼", "근거", "사례", "공식", "구현", "기존", "발견한", "보존해줘", "넓혀줘",
+    "research", "collect", "collection", "knowledge", "base", "survey", "topic", "topics", "include", "including",
+    "and", "the", "for", "with", "that", "this", "from", "are", "can", "use", "used", "using",
+})
+
+
+def _focus_tokens(tokens: list[str]) -> list[str]:
+    """Bound a long research brief to the words that carry its subject.
+
+    A 20k-character brief has hundreds of distinct words, so coverage against all of them stays near zero even
+    for an on-topic page and every document lands in review. The most repeated subject words are what the brief is about.
+    """
+    if len(set(tokens)) <= GOAL_FOCUS_TOKENS:
+        return tokens
+    counts = Counter(t for t in tokens if t not in _BRIEF_FILLER and len(t) > 1)
+    keep = {t for t, _ in counts.most_common(GOAL_FOCUS_TOKENS)}
+    return [t for t in tokens if t in keep]
+
+
+def _comparable_goal_words(goal: str, text: str) -> int:
+    """Distinct brief words written in the page's own script. Cross-language pages cannot be judged lexically."""
+    hangul = sum("\uac00" <= c <= "\ud7a3" for c in text[:3000]) > 0.3 * max(1, sum(c.isalpha() for c in text[:3000]))
+    words = set(_focus_tokens(_tokenize(goal)))
+    return sum(any("\uac00" <= c <= "\ud7a3" for c in w) == hangul for w in words)
+
+
 def calculate_relevance(goal: str, title: str, text: str) -> tuple[float, list[str]]:
     """Compute local goal relevance score [0.0, 1.0] and evidence notes.
 
@@ -251,23 +284,26 @@ def calculate_relevance(goal: str, title: str, text: str) -> tuple[float, list[s
     if not goal.strip():
         return 1.0, ["no_goal_specified"]
 
-    goal_tokens = _tokenize(goal)
+    goal_tokens = _focus_tokens(_tokenize(goal))
     if not goal_tokens:
         return 0.5, ["uninformative_goal"]
 
     goal_set = set(goal_tokens)
     goal_counts = Counter(goal_tokens)
+    # One page rarely covers a whole multi-topic brief; judge it against the part of the brief it could plausibly cover.
+    denom = min(len(goal_set), COVERAGE_DENOM_CAP)
 
     # 1. Title match (strong signal)
     title_tokens = _tokenize(title) if title else []
     title_matches = [t for t in title_tokens if t in goal_set]
-    title_score = len(title_matches) / len(goal_set) if goal_set else 0.0
+    title_score = len(set(title_matches)) / denom if goal_set else 0.0
     title_score = min(1.0, title_score * 1.5)  # Boost title overlap
 
     # 2. Leading text / Introduction match (first 1500 chars)
     lead_tokens = _tokenize(text[:1500])
     lead_matches = set(lead_tokens) & goal_set
-    lead_score = len(lead_matches) / len(goal_set) if goal_set else 0.0
+    lead_score = len(lead_matches) / denom if goal_set else 0.0
+    lead_score = min(1.0, lead_score)
 
     # 3. Full body TF / term presence
     body_tokens = _tokenize(text[:30000])
@@ -276,7 +312,7 @@ def calculate_relevance(goal: str, title: str, text: str) -> tuple[float, list[s
 
     body_counts = Counter(body_tokens)
     matched_goal_terms = sum(1 for term in goal_set if body_counts.get(term, 0) > 0)
-    term_coverage = matched_goal_terms / len(goal_set)
+    term_coverage = min(1.0, matched_goal_terms / denom)
 
     # Weighted term frequency (saturation curve)
     tf_sum = 0.0
@@ -401,6 +437,8 @@ class TriageThresholds:
 
     # Auto-hold ceilings (clearly bad)
     max_hold_relevance: float = 0.05
+    # Same-script pages that barely touch a substantive brief (SEO, hiring, unrelated blogs) are held for review.
+    low_relevance_hold: float = 0.06
     max_hold_quality: float = 0.20
 
     # Near-duplicate threshold
@@ -520,6 +558,10 @@ def evaluate_triage(
         action = "hold"
         status = "auto_held"
         reasons.append("triage:irrelevant_to_goal")
+    elif rel_score < t.low_relevance_hold and _comparable_goal_words(goal, text) >= 5:
+        action = "hold"
+        status = "auto_held"
+        reasons.append("triage:low_relevance")
     # Ambiguous / Review Needed conditions (Conservative: keep document, flag review)
     elif (
         rel_score < t.min_accept_relevance

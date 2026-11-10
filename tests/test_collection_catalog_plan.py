@@ -31,6 +31,16 @@ def test_goal_without_named_targets_keeps_the_generic_research_plan():
     assert plan["mode"] == "research" and "targets" not in plan and plan["budget"]["searches"] == 16
 
 
+def test_long_os_brief_that_mentions_ui_threads_is_not_ui_research():
+    brief = "모바일·데스크톱 애플리케이션 엔지니어링 지식 수집\n" + "\n".join(
+        ["- UI Thread와 Event Loop", "- Declarative UI vs Imperative UI", "- Compose UI Testing"] + ["- Memory Management and Scheduling"] * 60
+    )
+    assert not catalog.has_ui_context(brief)
+    plan = missions.plan(brief, max_pages=100, max_depth=2)
+    assert "targets" not in plan and plan["budget"]["searches"] == 16
+    assert catalog.has_ui_context("UI/UX 개선 사례 수집") and catalog.has_ui_context("디자인 시스템 타이포그래피")
+
+
 def test_short_aliases_need_word_boundaries_and_a_design_context():
     assert catalog.targets_in("highlight the garden and spectrum") == []
     assert [t.key for t in catalog.targets_in("Material Design 과 Apple HIG 비교")] == ["material", "hig"]

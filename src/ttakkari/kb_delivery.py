@@ -6,7 +6,9 @@ file can disappear underneath a citation. A delivery receipt is not a quality/fa
 import asyncio
 import hashlib
 import logging
+import re
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -35,10 +37,32 @@ from ttakkari.collector.library import (
 )
 from ttakkari.collector_models import CollectorItem, CollectorJob, CollectorOutbox
 from ttakkari.db import sessionmaker
-from ttakkari.kb_library import resolve_doc_key
+from ttakkari.kb_library import existing_doc_key_for_url, resolve_doc_key
 from ttakkari.kb_store import ingest_source, segment_revision
 
 log = logging.getLogger(__name__)
+
+
+GENERIC_TITLES = frozenset({"software engineering", "learn", "general", "tutorial", "home", "index", "untitled", "nextra: the next docs builder"})
+
+
+def document_title(page_title: str | None, source_title: str | None, url: str, text: str) -> str | None:
+    """A readable title for the page itself.
+
+    The source title is the mission's goal, so it describes the request, not the page. A raw repository file has no
+    HTML title at all, and generic site titles ("Software Engineering") name the site, not the page."""
+    page = (page_title or "").strip()
+    if page and page.casefold() not in GENERIC_TITLES and page != (source_title or "").strip():
+        return page
+    fm = re.match(r"---\n(.*?)\n---", text, re.DOTALL)
+    if fm and (m := re.search(r"^title:\s*['\"]?(.+?)['\"]?\s*$", fm.group(1), re.MULTILINE)):
+        return m.group(1)[:500]
+    if m := re.search(r"^#\s+(.{3,150})$", text, re.MULTILINE):
+        return m.group(1).strip()
+    parts = urlsplit(url).path.strip("/").split("/")
+    if "raw.githubusercontent.com" in url and len(parts) >= 4:
+        return f"{parts[1]} / {'/'.join(parts[3:])}"[:500]
+    return page or None
 
 
 async def deliver_item(db, outbox, item):
@@ -88,11 +112,16 @@ async def deliver_item(db, outbox, item):
         item.tenant_id, item.source_key, env["source"]["url"] or item.url))
     job = await db.get(CollectorJob, item.job_id)
     pool = effective_pool(job.pool if job else None, item.scope)
+    url = env["source"]["url"] or item.url
+    if (known := await existing_doc_key_for_url(db, item.tenant_id, pool, url)) is not None:
+        key = known
     collected = parse_iso_datetime(env["source"]["collected_at"])
     result = await ingest_source(
         db, source_key=key, data=raw, kind="web", locator=env["source"]["url"],
         media_type=env["raw"]["media_type"],
-        title=((env.get("extensions") or {}).get("collector:page") or {}).get("title") or source.title, lang=normalized["language"],
+        title=document_title(((env.get("extensions") or {}).get("collector:page") or {}).get("title"),
+                             source.title, env["source"]["url"] or item.url, normalized["text"]),
+        lang=normalized["language"],
         parser_version=normalized["parser_version"][:60], collected_at=collected,
         normalized_body=normalized["text"],
         origin_meta={"via": "collector", "tenant_id": item.tenant_id, "pool": pool,

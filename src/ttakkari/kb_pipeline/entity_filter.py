@@ -81,6 +81,12 @@ def clean_heading(text: str) -> str:
     return re.sub(r"\s+", " ", value)
 
 
+def is_template_heading(text: str) -> bool:
+    """웹 페이지 틀(탐색·바닥글·버전·홍보 문구)에서 나온 제목인가. 저장된 엔터티를 정리할 때도 같은 기준을 쓴다."""
+    name = clean_heading(text)
+    return name.lower() in GENERIC_HEADINGS or bool(_TEMPLATE_PHRASE.search(name))
+
+
 def is_concept_heading(text: str) -> bool:
     """정리된 제목이 개념 이름으로 쓸 만한가. 일반 제목·문장형·너무 길거나 짧은 제목은 아니다."""
     name = clean_heading(text)

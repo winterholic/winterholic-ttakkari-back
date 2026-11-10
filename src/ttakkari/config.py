@@ -247,6 +247,8 @@ class Settings(BaseSettings):
     collector_consume_enabled: bool = False
     # Managed source loop only handles jobs explicitly registered through the source management API.
     collector_control_enabled: bool = True
+    # 지식 도서관 오염(스팸·중복·주제 밖·틀 제목)을 스스로 찾아 가리는 점검 주기(초). 0 이면 끈다. 모두 되돌릴 수 있다(kb_repair.py).
+    kb_repair_interval_seconds: int = 21600
     # 절대 지출 상한(architecture 6, 제안 기본값). teacher 는 한도를 강제하는 엔진이 연결되기 전까지 꺼 둔다.
     collector_teacher_enabled: bool = False
     # 수집 임무 2단계 경량 ML(e5 임베딩 축). 켜져 있어도 context_embedder 가 e5 가 아니면 자동으로 쓰이지 않는다.

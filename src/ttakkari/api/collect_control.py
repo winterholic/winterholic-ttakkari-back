@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import String, func, select, update
 
+from ttakkari import kb_repair as repair
 from ttakkari.api.collect import _view, user_access
 from ttakkari.api.deps import Db
 from ttakkari.collector import control, jobs, quality_service, store
@@ -532,3 +533,50 @@ async def hold_audit_sample(ctx: Access, db: Db, per_group: int = Query(2, ge=1,
                        "language": i.language, "text_chars": i.text_chars, "signals": i.signals,
                        "can_reprocess": bool(i.raw_handle and i.raw_sha256),
                        "preview": ((i.envelope or {}).get("normalized") or {}).get("text", "")[:1200]} for i, _ in picked]}
+
+
+@router.post("/repair")
+async def repair_scan(ctx: Access, db: Db, apply: bool = Query(False)):
+    """지식 도서관 오염 점검. 기본은 dry-run 이고 apply=true 일 때만 가린다(삭제 없음, run_id 로 되돌림)."""
+    report = await repair.scan(db, apply=apply)
+    await db.commit()
+    return report
+
+
+@router.get("/repair/runs")
+async def repair_runs(ctx: Access, db: Db, limit: int = Query(20, ge=1, le=100)):
+    return {"runs": await repair.runs(db, limit)}
+
+
+@router.post("/repair/{run_id}/revert")
+async def repair_revert(run_id: str, ctx: Access, db: Db):
+    try:
+        result = await repair.revert(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    await db.commit()
+    return result
+
+
+class BlockedHost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    host: str = Field(min_length=3, max_length=253)
+    blocked: bool = True
+
+
+@router.get("/repair/blocked-hosts")
+async def repair_blocked_hosts(ctx: Access, db: Db):
+    return {"hosts": sorted(await repair.blocked_hosts(db))}
+
+
+@router.put("/repair/blocked-hosts")
+async def repair_set_blocked_host(body: BlockedHost, ctx: Access, db: Db):
+    """의심 사이트를 막거나 푼다. 막으면 그 사이트 문서가 점검 때마다 가려지고, 풀면 그 때문에 가려진 문서가 돌아온다."""
+    try:
+        hosts = await repair.set_host_blocked(db, body.host, body.blocked)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await db.commit()
+    return {"hosts": hosts}

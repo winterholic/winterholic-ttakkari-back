@@ -103,6 +103,23 @@ async def _retention_loop() -> None:
         await asyncio.sleep(RETENTION_INTERVAL)
 
 
+async def _kb_repair_loop(interval: int) -> None:
+    """수집이 섞은 오염을 주기적으로 가리고 기록한다. 실패해도 서버와 다음 주기는 계속된다."""
+    from ttakkari import kb_repair as repair
+    await asyncio.sleep(300)  # 부팅 직후 복구·배포 작업과 겹치지 않게 한다
+    while True:
+        try:
+            async with sessionmaker()() as db:
+                report = await repair.scan(db, apply=True)
+                await db.commit()
+            if report.get("hide", {}).get("total") or report.get("retitle", {}).get("total"):
+                log.info("kb repair %s: hide=%s retitle=%s entities=%s", report["run_id"], report["hide"]["total"],
+                         report["retitle"]["total"], report["archive_entities"]["total"])
+        except Exception:
+            log.exception("kb repair failed")
+        await asyncio.sleep(interval)
+
+
 async def _reminder_loop(interval: int) -> None:
     # 시작하자마자 한 번 훑어 꺼져 있던 사이에 지난 알림을 따라잡는다(planner/reminders.py).
     while True:
@@ -230,6 +247,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
+    kb_repair = asyncio.create_task(_kb_repair_loop(s.kb_repair_interval_seconds)) if s.kb_repair_interval_seconds > 0 else None
     from ttakkari import resource_history
     resource_collector = (asyncio.create_task(resource_history.run(s.resource_sample_seconds))
                           if s.resource_sample_seconds > 0 else None)
@@ -266,6 +284,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retention.cancel()
         if collector:
             collector.cancel()
+        if kb_repair:
+            kb_repair.cancel()
         if resource_collector:
             resource_collector.cancel()
             await asyncio.gather(resource_collector, return_exceptions=True)

@@ -23,6 +23,7 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from ttakkari.collector.contracts import (
@@ -269,10 +270,22 @@ def _focus_tokens(tokens: list[str]) -> list[str]:
     return [t for t in tokens if t in keep]
 
 
+@lru_cache(maxsize=4)
+def _body_tokens(text: str) -> list[str]:
+    """같은 문서를 여러 지시문에 견줄 때 본문을 한 번만 토큰화한다."""
+    return _tokenize(text)
+
+
+@lru_cache(maxsize=64)
+def _goal_focus(goal: str) -> tuple[str, ...]:
+    """지시문 하나는 문서마다 다시 토큰화하지 않는다. 같은 지시문을 수만 문서에 견주는 점검이 느려진다."""
+    return tuple(_focus_tokens(_tokenize(goal)))
+
+
 def _comparable_goal_words(goal: str, text: str) -> int:
     """Distinct brief words written in the page's own script. Cross-language pages cannot be judged lexically."""
     hangul = sum("\uac00" <= c <= "\ud7a3" for c in text[:3000]) > 0.3 * max(1, sum(c.isalpha() for c in text[:3000]))
-    words = set(_focus_tokens(_tokenize(goal)))
+    words = set(_goal_focus(goal))
     return sum(any("\uac00" <= c <= "\ud7a3" for c in w) == hangul for w in words)
 
 
@@ -284,7 +297,7 @@ def calculate_relevance(goal: str, title: str, text: str) -> tuple[float, list[s
     if not goal.strip():
         return 1.0, ["no_goal_specified"]
 
-    goal_tokens = _focus_tokens(_tokenize(goal))
+    goal_tokens = list(_goal_focus(goal))
     if not goal_tokens:
         return 0.5, ["uninformative_goal"]
 
@@ -306,7 +319,7 @@ def calculate_relevance(goal: str, title: str, text: str) -> tuple[float, list[s
     lead_score = min(1.0, lead_score)
 
     # 3. Full body TF / term presence
-    body_tokens = _tokenize(text[:30000])
+    body_tokens = _body_tokens(text[:30000])
     if not body_tokens:
         return 0.0, ["empty_body_for_relevance"]
 

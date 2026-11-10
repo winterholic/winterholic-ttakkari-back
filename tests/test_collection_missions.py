@@ -1908,3 +1908,36 @@ async def test_scheduler_and_reconcile_race_keep_one_run_child_within_budget(cli
     assert len(run2_jobs) == 1
     assert all(seq == 2 for _, seq in run2_jobs)
     assert allocated <= run2.page_budget + run2.extra_pages == 3
+
+
+async def test_idle_running_mission_is_settled_and_continues_with_its_remaining_frontier(client, auth, env):  # noqa: F811
+    url = env.server.url("/idle/page1")
+    next_url = env.server.url("/idle/page2")
+    env.server.page("/idle/page1", article_html("Idle", [prose("en", 80, 15)]))
+    body = source_body(seeds=[url], max_pages=2)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0,
+                          max_pages_per_job=2)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = (await client.post(BASE + "/missions", headers=auth,
+                              json={"goal": "멈춘 임무 확정", "urls": [url], "max_pages": 5})).json()
+    mid = uuid.UUID(made["id"])
+    async with sessionmaker()() as db:
+        job = await db.scalar(select(CollectorJob).join(CollectionMissionJob).where(CollectionMissionJob.mission_id == mid))
+        job.status = "failed"  # 마지막 작업이 실패로 끝나 reconcile 이 호출되지 않은 상태
+        job.cursor = {"v": 1, "processed": 2, "frontier": [{"url": next_url, "u": next_url, "d": 1}],
+                      "seen": [url], "counts": {}}
+        (await db.get(CollectionMission, mid)).status = "running"
+        await db.commit()
+    async with sessionmaker()() as db:
+        settled = await missions.settle_idle(db)
+        await db.commit()
+    assert mid in settled
+    async with sessionmaker()() as db:
+        children = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob).where(
+            CollectionMissionJob.mission_id == mid, CollectorJob.request_key.like("split:%"))))
+        paused = await db.get(CollectionMission, mid)
+        assert len(children) == 1 and paused.status == "running"
+        paused.status = "paused"
+        await db.commit()
+    async with sessionmaker()() as db:
+        assert await missions.settle_idle(db) == []  # 정지한 임무는 건드리지 않는다

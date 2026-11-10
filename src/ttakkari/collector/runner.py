@@ -186,7 +186,8 @@ async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
                 stored = await jobs.finish(
                     db, job.id, job.attempt_token, status=result.status, error=result.error, retry_after=result.retry_after
                 )
-                if stored in ("succeeded", "partial"):
+                # 실패·차단으로 끝난 작업도 임무의 다음 단계를 만든다. 호출이 끊기면 임무가 running 으로 멈춘다.
+                if stored in ("succeeded", "partial", "failed", "policy_blocked", "quarantined"):
                     mission_id = await db.scalar(
                         select(CollectionMissionJob.mission_id).where(CollectionMissionJob.job_id == job.id)
                     )

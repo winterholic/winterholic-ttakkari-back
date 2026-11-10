@@ -104,7 +104,7 @@ async def _retention_loop() -> None:
 
 
 async def _kb_repair_loop(interval: int) -> None:
-    """수집이 섞은 오염을 주기적으로 가리고 기록한다. 실패해도 서버와 다음 주기는 계속된다."""
+    """수집이 섞은 오염을 주기적으로 가리고 기록하며, 멈춘 임무를 다시 확정한다. 실패해도 서버와 다음 주기는 계속된다."""
     from ttakkari import kb_repair as repair
     await asyncio.sleep(300)  # 부팅 직후 복구·배포 작업과 겹치지 않게 한다
     while True:
@@ -112,6 +112,12 @@ async def _kb_repair_loop(interval: int) -> None:
             async with sessionmaker()() as db:
                 report = await repair.scan(db, apply=True)
                 await db.commit()
+            from ttakkari.collector import missions
+            async with sessionmaker()() as db:
+                settled = await missions.settle_idle(db)
+                await db.commit()
+            if settled:
+                log.info("settled %d idle collection missions", len(settled))
             if report.get("hide", {}).get("total") or report.get("retitle", {}).get("total"):
                 log.info("kb repair %s: hide=%s retitle=%s entities=%s", report["run_id"], report["hide"]["total"],
                          report["retitle"]["total"], report["archive_entities"]["total"])

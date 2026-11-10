@@ -463,6 +463,20 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     await research_rounds.maybe_queue_round(db, mission, run_seq, linked, queued=queued, active=active_sources)
 
 
+async def settle_idle(db) -> list[uuid.UUID]:
+    """진행 중이라 표시됐지만 처리할 작업이 하나도 없는 임무를 다시 확정한다.
+
+    다음 단계는 작업이 끝날 때 reconcile 이 만든다. 그 호출이 끊기면(재시작, 마지막 작업이 실패로 끝남) 임무가
+    영원히 running 으로 남는다. 정지·취소된 임무는 건드리지 않는다."""
+    active = select(CollectionMissionJob.mission_id).join(CollectorJob, CollectorJob.id == CollectionMissionJob.job_id).where(
+        CollectorJob.status.not_in(tuple(TERMINAL)))
+    stuck = list(await db.scalars(select(CollectionMission).where(
+        CollectionMission.status == "running", CollectionMission.id.not_in(active)).order_by(CollectionMission.created_at)))
+    for mission in stuck:
+        await reconcile_mission(db, mission)
+    return [m.id for m in stuck]
+
+
 async def launch(db, mission: CollectionMission) -> None:
     """Queue existing policy-backed sources without fetching or running models in the API."""
     await reconcile_mission(db, mission)

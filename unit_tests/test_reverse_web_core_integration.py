@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 from PIL import Image
 
@@ -10,6 +11,7 @@ from ttakkari.reverse_web_evidence import create_web_capture
 
 
 def _web_capture(root, *, run_id="run-web", comparison_id="web-case", replica_color=(200, 10, 10), state="done"):
+    captured_at = datetime.now(UTC).isoformat()
     viewport = {"width": 16, "height": 12, "device_scale_factor": 1}
     input_data = {"steps": [{"action": "click", "target": "button#go"}]}
     pre_state = {"ready": False}
@@ -26,7 +28,7 @@ def _web_capture(root, *, run_id="run-web", comparison_id="web-case", replica_co
         return {"path": path.relative_to(root).as_posix(), "sha256": hashlib.sha256(blob).hexdigest(),
                 "size_bytes": len(blob), "viewport": viewport, "format": "png"}
 
-    original = {"run_id": run_id, "observed_at": "2026-11-07T00:00:00Z", "url": "http://127.0.0.1:8101/",
+    original = {"run_id": run_id, "observed_at": captured_at, "url": "http://127.0.0.1:8101/",
                 "input": input_data, "viewport": viewport, "pre_state": pre_state, "environment": environment,
                 "events": [{"type": "click", "target": "button#go"}], "dom": [{"text": "done"}],
                 "state": {"status": "done"}, "network": [], "screenshot": screenshot(original_path),
@@ -37,7 +39,7 @@ def _web_capture(root, *, run_id="run-web", comparison_id="web-case", replica_co
                               original=original, replica=replica, run_id=run_id,
                               expected_viewport=viewport, pre_state=pre_state, environment=environment,
                               origin_map={"http://127.0.0.1:8101": "http://127.0.0.1:8102"},
-                              verified_at="2026-11-07T00:01:00Z")
+                              verified_at=captured_at)
 
 
 def test_core_recomputes_function_and_visual_results_separately(tmp_path):

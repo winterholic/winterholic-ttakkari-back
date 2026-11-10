@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ def _capture(root: Path, *, replica_color=(20, 40, 60), state="done", run_id="ru
     replica = _png(root / ".reverse/web-captures/replica.png", replica_color)
     observation = {
         "run_id": run_id,
-        "observed_at": "2026-11-07T01:00:00Z",
+        "observed_at": datetime.now(UTC).isoformat(),
         "url": "http://127.0.0.1:8101/",
         "input": {"action": "click", "target": "#run", "value": ""},
         "viewport": {"width": 32, "height": 24, "device_scale_factor": 1},

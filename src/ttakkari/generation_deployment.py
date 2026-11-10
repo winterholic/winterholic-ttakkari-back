@@ -402,7 +402,9 @@ class Slots:
         plist.write_bytes(plistlib.dumps({"Label": label, "WorkingDirectory": str(release),
             "ProgramArguments": [str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "serve",
                                   "--host", "127.0.0.1", "--port", str(PORTS[slot])],
+            # NOTE: 자식(임베딩 워커·llama-server)이 상속하므로 CPU 포화 시에도 UI 등 다른 앱이 먼저 돈다.
             "EnvironmentVariables": env, "KeepAlive": True, "ThrottleInterval": 10, "RunAtLoad": True,
+            "Nice": 10,
             "StandardOutPath": str(logs / f"{PORTS[slot]}.log"),
             "StandardErrorPath": str(logs / f"{PORTS[slot]}.log")}))
         await self._launchctl("bootstrap", f"gui/{os.getuid()}", str(plist))

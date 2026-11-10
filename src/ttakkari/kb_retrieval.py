@@ -54,6 +54,8 @@ from ttakkari.model_process import run_json_worker
 from ttakkari.models import EMBED_DIM
 
 _lock = asyncio.Lock()
+# NOTE: 색인·검색·파이프라인이 동시에 임베딩 워커를 띄워 CPU가 포화되던 문제 방지. 워커는 항상 1개만 실행한다.
+_worker_slot = asyncio.Semaphore(1)
 _last_error: str | None = None
 _failed_passages: dict[str, str] = {}
 
@@ -211,19 +213,20 @@ async def embed_complete(texts: list[str], *, query: bool = False) -> list[list[
         raise ValueError("passage_too_long_for_semantic_projection")
     s = get_settings()
     if s.context_embedder == "e5":
-        result = await run_json_worker(
-            module="ttakkari.kb_embedding_worker",
-            request={
-                "texts": texts,
-                "query": query,
-                "model": s.context_model,
-                "cache_dir": str(s.models_dir),
-                "threads": s.context_embedding_cpu_threads,
-                "snapshot": s.kb_embedding_snapshot,
-            },
-            timeout=s.context_embedding_timeout_seconds,
-            error_prefix="kb_embedding",
-        )
+        async with _worker_slot:
+            result = await run_json_worker(
+                module="ttakkari.kb_embedding_worker",
+                request={
+                    "texts": texts,
+                    "query": query,
+                    "model": s.context_model,
+                    "cache_dir": str(s.models_dir),
+                    "threads": s.context_embedding_cpu_threads,
+                    "snapshot": s.kb_embedding_snapshot,
+                },
+                timeout=s.context_embedding_timeout_seconds,
+                error_prefix="kb_embedding",
+            )
         if result.get("coverage") != "full":
             raise ValueError("kb_embedding_incomplete")
         vectors = result["vectors"]

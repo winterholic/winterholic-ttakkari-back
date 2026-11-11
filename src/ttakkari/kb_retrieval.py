@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import fcntl
 import math
+import os
+import time
 import uuid
 from typing import Any
 
@@ -56,6 +59,45 @@ from ttakkari.models import EMBED_DIM
 _lock = asyncio.Lock()
 # NOTE: 색인·검색·파이프라인이 동시에 임베딩 워커를 띄워 CPU가 포화되던 문제 방지. 워커는 항상 1개만 실행한다.
 _worker_slot = asyncio.Semaphore(1)
+# NOTE: 세마포어는 한 프로세스만 막는다. 배포로 세대가 겹치거나 CLI 백필이 함께 돌면 워커가 2개 이상 떠서
+# 프로세스당 2GB·CPU가 겹치므로, 수집 파이프라인(collector.triage_ml)과 같은 파일 락으로 프로세스 간에도 직렬화한다.
+# collector 패키지를 import하지 않으려고 flock을 인라인한다. 락 이름은 triage_ml.EMBED_LOCK_NAME 과 같아야 한다.
+_GATE_NAME = "collector-e5-embed.lock"
+_GATE_WAIT_SECONDS = 120.0
+_GATE_POLL_SECONDS = 0.25
+
+
+def _gate_try_lock(path) -> int | None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+async def _gate_acquire() -> int:
+    path = get_settings().home / "run" / _GATE_NAME
+    deadline = time.monotonic() + _GATE_WAIT_SECONDS
+    while True:
+        fd = _gate_try_lock(path)
+        if fd is not None:
+            return fd
+        if time.monotonic() >= deadline:
+            raise RuntimeError("kb_embedding_gate_busy")
+        await asyncio.sleep(_GATE_POLL_SECONDS)
+
+
+def _gate_release(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 _last_error: str | None = None
 _failed_passages: dict[str, str] = {}
 
@@ -214,19 +256,23 @@ async def embed_complete(texts: list[str], *, query: bool = False) -> list[list[
     s = get_settings()
     if s.context_embedder == "e5":
         async with _worker_slot:
-            result = await run_json_worker(
-                module="ttakkari.kb_embedding_worker",
-                request={
-                    "texts": texts,
-                    "query": query,
-                    "model": s.context_model,
-                    "cache_dir": str(s.models_dir),
-                    "threads": s.context_embedding_cpu_threads,
-                    "snapshot": s.kb_embedding_snapshot,
-                },
-                timeout=s.context_embedding_timeout_seconds,
-                error_prefix="kb_embedding",
-            )
+            gate = await _gate_acquire()
+            try:
+                result = await run_json_worker(
+                    module="ttakkari.kb_embedding_worker",
+                    request={
+                        "texts": texts,
+                        "query": query,
+                        "model": s.context_model,
+                        "cache_dir": str(s.models_dir),
+                        "threads": s.context_embedding_cpu_threads,
+                        "snapshot": s.kb_embedding_snapshot,
+                    },
+                    timeout=s.context_embedding_timeout_seconds,
+                    error_prefix="kb_embedding",
+                )
+            finally:
+                _gate_release(gate)
         if result.get("coverage") != "full":
             raise ValueError("kb_embedding_incomplete")
         vectors = result["vectors"]

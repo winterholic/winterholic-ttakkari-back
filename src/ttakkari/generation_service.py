@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from time import monotonic
 
@@ -354,9 +355,22 @@ async def _game_builds() -> None:
         pass
 
 
+# NOTE: 틱당 8건(분당 8건)이면 미색인 11만 건에 열흘이 걸린다. 1분 load 가 천장 아래일 때만 틱 예산 안에서 이어서 처리해
+# 한가한 자원은 쓰되 맥이 다른 일을 못 할 정도로는 쓰지 않는다. 워커는 kb_retrieval 의 락으로 항상 1개다.
+KB_VECTOR_BATCH = 24
+KB_VECTOR_TICK_SECONDS = 50.0
+KB_VECTOR_LOAD_CEILING = 6.0
+
+
 async def _kb_vectors() -> None:
     from ttakkari.kb_retrieval import index_pending
-    await index_pending(limit=8)
+    deadline = monotonic() + KB_VECTOR_TICK_SECONDS
+    while True:
+        if await index_pending(limit=KB_VECTOR_BATCH) == 0:
+            return
+        if monotonic() >= deadline or os.getloadavg()[0] >= KB_VECTOR_LOAD_CEILING:
+            return
+        await asyncio.sleep(1.0)
 
 
 async def start_api_services(execution_mode: str) -> None:

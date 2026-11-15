@@ -343,6 +343,10 @@ class Settings(BaseSettings):
     # 세션 ID 해시로 percent% 의 세션에만 tokens 상한을 건다(0이면 끈다). 효과는 runs.usage.tool_output_arm 으로 비교한다.
     codex_tool_output_ab_percent: int = Field(default=0, ge=0, le=100)
     codex_tool_output_ab_tokens: int = Field(default=5000, ge=1000, le=20000)
+    # 작업 카드 코드 맵 A/B. 세션 ID 해시로 percent% 세션의 카드에만 코드 맵을 붙인다(0이면 끈다).
+    # 효과는 runs.usage.code_map_arm 으로 비교한다.
+    worker_code_map_ab_percent: int = Field(default=0, ge=0, le=100)
+    worker_code_map_max_chars: int = Field(default=6000, ge=1000, le=20000)
     antigravity_bin: str = "/opt/homebrew/bin/agy"
     # Ask each account's own CLI which models it can run (`agy models`); off in tests.
     antigravity_model_probe: bool = True

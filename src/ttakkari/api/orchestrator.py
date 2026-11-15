@@ -43,7 +43,9 @@ from ttakkari.orchestrator import work
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
 from ttakkari.runs import (
+    code_map,
     context_usage,
+    ctx_ab,
     events,
     luna_benchmark,
     prompt_quality,
@@ -597,17 +599,42 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
                detail={"model": model, "effort": effort, "reason": reason[:500]})
     fit = body.qwen_fit
+    ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, session_id=w.id, workspace_id=w.workspace_id)
 
     def _stash_fit(run) -> None:
         if on_queued is not None:
             on_queued(run)
         if fit is not None:
             run.usage = {**(run.usage or {}), "qwen_fit": fit.model_dump()}
+        if ab_usage:
+            run.usage = {**(run.usage or {}), **ab_usage}
 
-    await queue_run(db, w, prompt, origin=RunOrigin.orchestrator, on_queued=_stash_fit)
+    await queue_run(db, w, prompt + ab_extra, origin=RunOrigin.orchestrator, on_queued=_stash_fit)
     out = await _out(db, w)
     out.read_budget_warnings = await _read_budget_warnings(db, w.workspace_id, body.card)
     return out
+
+
+async def _card_ab_extra(db: Db, *, card: TaskCard | None, session_id: uuid.UUID,
+                         workspace_id: uuid.UUID | None) -> tuple[str, dict]:
+    """카드 A/B(코드 맵) 추가 지시와 usage 기록. percent=0이면 ("", {}) 그대로 둔다."""
+    if card is None:
+        return "", {}
+    s = get_settings()
+    extra, usage = "", {}
+    if (arm := ctx_ab.arm("code_map", str(session_id), ctx_ab.percent_of(s, "worker_code_map_ab_percent"))) != "off":
+        usage["code_map_arm"] = arm
+        chars = 0
+        if arm == "on":
+            ws = await db.get(Workspace, workspace_id) if workspace_id else None
+            if ws is not None:
+                bases = [Path(ws.root_path)] + ([Path(card.location).expanduser()] if card.location else [])
+                if text := code_map.build(code_map.targets_from_card(card, bases), bases,
+                                          s.worker_code_map_max_chars, s.home / "cache"):
+                    extra += "\n\n" + text
+                    chars = len(text)
+        usage["code_map_chars"] = chars
+    return extra, usage
 
 
 async def _read_budget_warnings(db: Db, workspace_id: uuid.UUID | None, card: TaskCard | None) -> list[str]:
@@ -666,7 +693,13 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
     if body.fresh_context:
         await _reset(db, w)
     if body.prompt.strip():
-        await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
+        ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, session_id=w.id, workspace_id=w.workspace_id)
+
+        def _stash_ab(run) -> None:
+            if ab_usage:
+                run.usage = {**(run.usage or {}), **ab_usage}
+
+        await queue_run(db, w, body.prompt + ab_extra, origin=RunOrigin.orchestrator, on_queued=_stash_ab)
     else:
         await db.commit()
     out = await _out(db, w)

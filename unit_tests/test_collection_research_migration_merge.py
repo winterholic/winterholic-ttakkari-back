@@ -10,7 +10,8 @@ from scripts.platform_v2_inventory import classify_migration
 
 ROOT = Path(__file__).resolve().parents[1]
 HEAD_MERGE = "0076_kb_v3_collection_merge"
-CURRENT_HEAD = "0077_artcraft_account_pin"
+PREVIOUS_HEAD = "0077_artcraft_account_pin"
+CURRENT_HEAD = "0078_repo_appraisals"
 MERGE = "0075_collection_research_merge"
 COLLECTION = (
     "0072_collection_missions",
@@ -27,7 +28,8 @@ def scripts():
 def test_single_head_preserves_both_published_branch_identities():
     graph = scripts()
     assert graph.get_heads() == [CURRENT_HEAD]
-    assert graph.get_revision(CURRENT_HEAD).down_revision == HEAD_MERGE
+    assert graph.get_revision(CURRENT_HEAD).down_revision == PREVIOUS_HEAD
+    assert graph.get_revision(PREVIOUS_HEAD).down_revision == HEAD_MERGE
     assert set(graph.get_revision(HEAD_MERGE).down_revision) == {
         "0074_kb_v3_research_merge",
         "0075_collection_research_merge",

@@ -1590,6 +1590,7 @@ def classify_route(method: str, path: str) -> str:
             "/api/agent/memos",
             "/api/agent/events",
             "/api/agent/memo-categories",
+            "/api/repo-appraisals",
         )
     ):
         return "domain.personal_tools"
@@ -1785,6 +1786,7 @@ def classify_table(name: str) -> str:
         "calendar_events",
         "weather_briefings",
         "tossinvest_sync_runs",
+        "repo_appraisals",
     ):
         return "domain.personal_tools"
     if n in ("google_accounts",):
@@ -1895,6 +1897,7 @@ def classify_migration(stem: str) -> str:
             "scope_memo_event",
             "weather",
             "tossinvest",
+            "repo_appraisals",
         )
     ):
         return "domain.personal_tools"
@@ -2051,7 +2054,7 @@ def classify_config(field: str) -> str:
         return "domain.game_studio"
     if any(
         x in f
-        for x in ("weather", "stock", "toss", "memo", "calendar", "reminder_scan")
+        for x in ("weather", "stock", "toss", "memo", "calendar", "reminder_scan", "repo_appraisal")
     ):
         return "domain.personal_tools"
     if any(x in f for x in ("google", "github", "remote_desktop", "vnc")):
@@ -2228,6 +2231,9 @@ def classify_source_file(rel_path: str) -> str:
             "/api/stocks",
             "/api/memos",
             "/api/calendar",
+            "/api/repo-appraisals",
+            "/api/repo_appraisals",
+            "/repo_appraisal/",
         )
     ):
         return "domain.personal_tools"

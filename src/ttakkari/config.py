@@ -347,6 +347,8 @@ class Settings(BaseSettings):
     # 효과는 runs.usage.code_map_arm 으로 비교한다.
     worker_code_map_ab_percent: int = Field(default=0, ge=0, le=100)
     worker_code_map_max_chars: int = Field(default=6000, ge=1000, le=20000)
+    # 초기화 후 첫 Run의 이전 결정·발견 요약 A/B. percent% 세션에만 메모를 붙인다(0이면 끈다).
+    worker_session_memo_ab_percent: int = Field(default=0, ge=0, le=100)
     antigravity_bin: str = "/opt/homebrew/bin/agy"
     # Ask each account's own CLI which models it can run (`agy models`); off in tests.
     antigravity_model_probe: bool = True

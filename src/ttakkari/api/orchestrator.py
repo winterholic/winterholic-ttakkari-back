@@ -27,6 +27,7 @@ from ttakkari.delivery.worktree import (
 )
 from ttakkari.model_catalog import ANTIGRAVITY_MODELS, thinking_level
 from ttakkari.models import (
+    TERMINAL_RUN_STATUSES,
     Artifact,
     ChatSession,
     PmsProject,
@@ -49,6 +50,7 @@ from ttakkari.runs import (
     events,
     luna_benchmark,
     prompt_quality,
+    session_memo,
     task_card,
     worker_routing,
 )
@@ -599,7 +601,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
                detail={"model": model, "effort": effort, "reason": reason[:500]})
     fit = body.qwen_fit
-    ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, session_id=w.id, workspace_id=w.workspace_id)
+    ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, sess=w)
 
     def _stash_fit(run) -> None:
         if on_queued is not None:
@@ -615,18 +617,18 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     return out
 
 
-async def _card_ab_extra(db: Db, *, card: TaskCard | None, session_id: uuid.UUID,
-                         workspace_id: uuid.UUID | None) -> tuple[str, dict]:
-    """카드 A/B(코드 맵) 추가 지시와 usage 기록. percent=0이면 ("", {}) 그대로 둔다."""
+async def _card_ab_extra(db: Db, *, card: TaskCard | None, sess: ChatSession,
+                         fresh_reset: bool = False) -> tuple[str, dict]:
+    """카드 A/B(코드 맵·세션 메모) 추가 지시와 usage 기록. percent=0이면 ("", {}) 그대로 둔다."""
     if card is None:
         return "", {}
     s = get_settings()
     extra, usage = "", {}
-    if (arm := ctx_ab.arm("code_map", str(session_id), ctx_ab.percent_of(s, "worker_code_map_ab_percent"))) != "off":
+    if (arm := ctx_ab.arm("code_map", str(sess.id), ctx_ab.percent_of(s, "worker_code_map_ab_percent"))) != "off":
         usage["code_map_arm"] = arm
         chars = 0
         if arm == "on":
-            ws = await db.get(Workspace, workspace_id) if workspace_id else None
+            ws = await db.get(Workspace, sess.workspace_id) if sess.workspace_id else None
             if ws is not None:
                 bases = [Path(ws.root_path)] + ([Path(card.location).expanduser()] if card.location else [])
                 if text := code_map.build(code_map.targets_from_card(card, bases), bases,
@@ -634,6 +636,28 @@ async def _card_ab_extra(db: Db, *, card: TaskCard | None, session_id: uuid.UUID
                     extra += "\n\n" + text
                     chars = len(text)
         usage["code_map_chars"] = chars
+    if (arm := ctx_ab.arm("session_memo", str(sess.id),
+                          ctx_ab.percent_of(s, "worker_session_memo_ab_percent"))) != "off":
+        usage["session_memo_arm"] = arm
+        chars = 0
+        if arm == "on":
+            priors = list(await db.scalars(
+                select(Run).where(Run.session_id == sess.id, Run.status.in_(TERMINAL_RUN_STATUSES))
+                .order_by(Run.created_at.desc()).limit(session_memo.MAX_RUNS)))
+            latest = max((r.started_at or r.created_at for r in priors), default=None)
+            if priors and session_memo.first_after_reset(
+                    fresh_reset, context_usage.reset_at(sess), latest, True):
+                diffs = await db.execute(
+                    select(RunEvent.run_id, RunEvent.payload).where(
+                        RunEvent.run_id.in_([r.id for r in priors]), RunEvent.type == "run.diff"))
+                changed: dict = {}
+                for rid, payload in diffs:
+                    paths = [f["path"] for f in (payload or {}).get("files", []) if f.get("path")]
+                    changed[rid] = paths + (payload or {}).get("new_files", [])
+                if text := session_memo.build([session_memo.from_run(r, changed.get(r.id, [])) for r in priors]):
+                    extra += "\n\n" + text
+                    chars = len(text)
+        usage["session_memo_chars"] = chars
     return extra, usage
 
 
@@ -693,7 +717,7 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
     if body.fresh_context:
         await _reset(db, w)
     if body.prompt.strip():
-        ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, session_id=w.id, workspace_id=w.workspace_id)
+        ab_extra, ab_usage = await _card_ab_extra(db, card=body.card, sess=w, fresh_reset=body.fresh_context)
 
         def _stash_ab(run) -> None:
             if ab_usage:

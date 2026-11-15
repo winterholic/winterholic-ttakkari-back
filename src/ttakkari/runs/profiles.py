@@ -47,9 +47,12 @@ PERMISSION_ERROR_RE = re.compile(
 AUTH_ERROR_RE = re.compile(
     r"\bunauthorized\b|\b401\b|token expired|not authenticated|login required|"
     r"bad credentials|invalid credentials|device code expired|authentication failed|"
-    r"sign in|re-authenticate|auth_expired|setup_required",
+    r"sign in|re-authenticate|auth_expired|setup_required|"
+    r"failed to authenticate|session expired|could not be refreshed",
     re.IGNORECASE,
 )
+# 만료된 로그인은 재로그인 전까지 같은 계정으로 돌려도 실패한다. 다음 Run 이 같은 계정부터 두드리지 않게 오래 쉬게 한다.
+AUTH_FAILED_COOLDOWN_SECONDS = 1800
 MODEL_CAPACITY_RE = re.compile(r"\bselected model is at capacity\b", re.IGNORECASE)
 MODEL_CAPACITY_COOLDOWN_SECONDS = 120
 

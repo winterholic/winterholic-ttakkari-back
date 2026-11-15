@@ -7,6 +7,7 @@ import unicodedata
 from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
+from ttakkari.kb_parsers import ocr
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
 from ttakkari.kb_parsers.resource_limits import (
     DEFAULT_LIMITS,
@@ -111,6 +112,9 @@ class PdfParser(BaseParser):
         # Scanned PDF check: average characters per page < 20 or total_chars == 0
         avg_chars_per_page = total_chars / max(1, num_pages)
         if total_chars == 0 or avg_chars_per_page < 20:
+            scanned = self._parse_scanned(data, num_pages, filename, limits)
+            if scanned is not None:
+                return scanned
             return ParsedDocument(
                 normalized_body=full_body,
                 metadata={
@@ -134,5 +138,52 @@ class PdfParser(BaseParser):
                 "filename": filename,
             },
             locator_spans=locator_spans,
+            status=ParseStatus.SUCCEEDED.value,
+        )
+
+    def _parse_scanned(
+        self, data: bytes, num_pages: int, filename: str | None, limits: ParserResourceLimits,
+    ) -> ParsedDocument | None:
+        """글자 레이어가 없는 PDF 를 OCR 로 읽는다. 읽지 못하면 None 을 돌려 기존 보류 경로를 탄다."""
+        try:
+            pages = ocr.ocr_pdf(data)
+        except (ocr.OcrUnavailable, ocr.OcrFailed):
+            return None
+
+        parts: list[str] = []
+        spans: list[LocatorSpan] = []
+        pos = 0
+        for page in pages:
+            text = unicodedata.normalize("NFC", page.text.replace("\x00", "")).strip()
+            if not text:
+                continue
+            if parts:
+                parts.append("\n\n")
+                pos += 2
+            parts.append(text)
+            spans.append(
+                LocatorSpan(
+                    start_offset=pos, end_offset=pos + len(text), section_path=[f"Page {page.page_no}"],
+                    page_no=page.page_no, chunk_kind="prose", extra={"exact_text": text},
+                )
+            )
+            pos += len(text)
+        body = "".join(parts)
+        if not body or len(body) > limits.max_text_chars:
+            return None
+        read = [p for p in pages if p.text.strip()]
+        return ParsedDocument(
+            normalized_body=body,
+            metadata={
+                "parser": "pdf_ocr_v1",
+                "version": "1.0",
+                "page_count": num_pages,
+                "ocr_pages": len(pages),
+                "ocr_truncated": len(pages) < num_pages,
+                "ocr_mean_confidence": round(sum(p.confidence for p in read) / len(read), 3),
+                "char_count": len(body),
+                "filename": filename,
+            },
+            locator_spans=spans,
             status=ParseStatus.SUCCEEDED.value,
         )

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import posixpath
@@ -56,7 +57,7 @@ STATUS_FAILED = "failed"
 
 # 보류 사유 -> 사용자에게 보여 줄 한국어 문구(본문 스텁과 응답에 쓴다)
 HOLD_REASON_TEXT = {
-    "ocr_required": "스캔 이미지라 글자를 읽으려면 OCR이 필요한데 아직 지원하지 않아요",
+    "ocr_required": "스캔 이미지라 글자를 읽으려면 OCR이 필요한데 이 환경에서는 읽지 못했어요",
     "stt_runtime_unavailable": "음성·영상 전사에 필요한 로컬 STT 런타임이 설치되어 있지 않아요",
     "unsupported_legacy_office": "구형 Office 형식(.doc/.ppt/.xls/.hwp)은 아직 지원하지 않아요",
     "unsupported_format": "이 파일 형식은 아직 지원하지 않아요",
@@ -379,7 +380,10 @@ async def ingest_item(
         return outcome
 
     # 지원 파서(PDF/Office/CSV/코드/자막/마크다운·텍스트). 레지스트리가 크기 제한과 파서 예외를 FAILED 로 바꿔 준다.
-    parsed = create_default_registry().parse(item.data, filename=detected.filename, content_type=detected.content_type)
+    # 스캔 PDF 의 OCR 은 수 초~수 분 걸리는 블로킹 호출이라 이벤트 루프 밖 스레드에서 돌린다.
+    parsed = await asyncio.to_thread(
+        create_default_registry().parse, item.data, filename=detected.filename, content_type=detected.content_type,
+    )
     if parsed.status == ParseStatus.HELD.value:
         return await _register_held(
             db, item=item, reason=parsed.hold_reason or "unsupported_format", detected=detected, title=doc_title,

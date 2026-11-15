@@ -28,6 +28,9 @@ for _d in (HOME, ALLOWED, OUTSIDE, ALLOWED / "default-root", ALLOWED / "default-
     _d.mkdir()
 FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
+# 스캔 PDF OCR 은 느리고 macOS 전용이라 시험 기본값은 끈다. 필요한 시험이 직접 켠다.
+os.environ.setdefault("TTAKKARI_PDF_OCR", "off")
+
 # 동시에 여러 작업이 pytest 를 돌릴 수 있다. TTAKKARI_TEST_DB 를 지정하지 않으면 이 프로세스가
 # /tmp/ttakkari-test-<pid>-<난수>/ 아래에 임시 PostgreSQL 클러스터를 띄워 쓰고 끝나면 폴더째 지운다.
 # 공유 PostgreSQL 에는 DB 를 만들지 않으므로 프로세스가 비정상 종료돼도 공유 서버에 잔재가 없고,

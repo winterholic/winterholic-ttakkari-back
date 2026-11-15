@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from ttakkari.kb_parsers import (
     ParserResourceLimits,
     ParseStatus,
     create_default_registry,
+    validate_parsed_document,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "kb_v3"
@@ -104,13 +106,62 @@ class TestPdfParser:
             slice_text = parsed.normalized_body[span.start_offset : span.end_offset]
             assert f"Page {idx + 1}:" in slice_text
 
-    def test_scanned_pdf_held_ocr_required(self):
+    def test_scanned_pdf_held_ocr_required(self, monkeypatch):
+        monkeypatch.setenv("TTAKKARI_PDF_OCR", "off")
         registry = create_default_registry()
         scan_bytes = (FIXTURES_DIR / "scanned_empty.pdf").read_bytes()
 
         parsed = registry.parse(scan_bytes, filename="scanned_empty.pdf")
         assert parsed.status == ParseStatus.HELD.value
         assert parsed.hold_reason == "ocr_required"
+
+    def test_scanned_pdf_read_by_ocr(self, monkeypatch):
+        monkeypatch.setenv("TTAKKARI_PDF_OCR", "on")
+        from ttakkari.kb_parsers import ocr
+
+        pages = [ocr.OcrPage(1, "제1조 목적", 0.9), ocr.OcrPage(2, "", 0.0), ocr.OcrPage(3, "제3조 기간", 0.7)]
+        monkeypatch.setattr(ocr, "ocr_pdf", lambda data, **kw: pages)
+        scan_bytes = (FIXTURES_DIR / "scanned_empty.pdf").read_bytes()
+
+        parsed = validate_parsed_document(create_default_registry().parse(scan_bytes, filename="scan.pdf"))
+        assert parsed.status == ParseStatus.SUCCEEDED.value
+        assert parsed.metadata["parser"] == "pdf_ocr_v1"
+        assert parsed.metadata["ocr_mean_confidence"] == 0.8
+        assert [s.page_no for s in parsed.locator_spans] == [1, 3]
+        assert parsed.normalized_body == "제1조 목적\n\n제3조 기간"
+
+    def test_scanned_pdf_stays_held_when_ocr_fails_or_empty(self, monkeypatch):
+        monkeypatch.setenv("TTAKKARI_PDF_OCR", "on")
+        from ttakkari.kb_parsers import ocr
+
+        scan_bytes = (FIXTURES_DIR / "scanned_empty.pdf").read_bytes()
+        for result in (ocr.OcrFailed("ocr_timeout"), ocr.OcrUnavailable("swiftc_missing"), [ocr.OcrPage(1, "  ", 0.0)]):
+            def fake(data, _r=result, **kw):
+                if isinstance(_r, Exception):
+                    raise _r
+                return _r
+
+            monkeypatch.setattr(ocr, "ocr_pdf", fake)
+            parsed = create_default_registry().parse(scan_bytes, filename="scan.pdf")
+            assert parsed.status == ParseStatus.HELD.value
+            assert parsed.hold_reason == "ocr_required"
+
+    @pytest.mark.skipif(sys.platform != "darwin", reason="macOS Vision 필요")
+    def test_scanned_pdf_real_ocr_korean(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TTAKKARI_PDF_OCR", "on")
+        from PIL import Image, ImageDraw, ImageFont
+
+        font_path = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+        if not Path(font_path).is_file():
+            pytest.skip("한글 글꼴 없음")
+        img = Image.new("RGB", (1240, 900), "white")
+        ImageDraw.Draw(img).text((80, 120), "제3조 계약기간은 2026년 12월 31일까지로 한다", font=ImageFont.truetype(font_path, 40), fill="black")
+        pdf = tmp_path / "scan.pdf"
+        img.save(pdf, resolution=150)
+
+        parsed = create_default_registry().parse(pdf.read_bytes(), filename="scan.pdf")
+        assert parsed.status == ParseStatus.SUCCEEDED.value
+        assert "계약기간" in parsed.normalized_body and "2026" in parsed.normalized_body
 
     def test_corrupt_pdf_failure_isolation(self):
         registry = create_default_registry()

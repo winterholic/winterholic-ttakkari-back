@@ -626,6 +626,24 @@ def cool_down(account_id: uuid.UUID, seconds: int | None = None) -> None:
     _persist()
 
 
+# 로그인 만료로 실행이 거절된 계정. 계정 화면이 "로그인됨"으로 남지 않게 재로그인 안내를 띄우는 근거다(프로세스 메모리, 재시작 뒤엔 사용량 조회 오류가 대신한다).
+_auth_failed: dict[uuid.UUID, float] = {}
+
+
+def mark_auth_failed(account_id: uuid.UUID) -> None:
+    _auth_failed[account_id] = time.time()
+
+
+def auth_failed(account_id: uuid.UUID) -> bool:
+    return account_id in _auth_failed
+
+
+def clear_auth_failed(account_id: uuid.UUID) -> None:
+    """재로그인이 확인되면 표식과, 인증 실패로 건 쉬기를 함께 푼다."""
+    if _auth_failed.pop(account_id, None) is not None:
+        clear_cooldown(account_id)
+
+
 def cooldown_until(account_id: uuid.UUID) -> float | None:
     until = _cooldown.get(account_id, 0)
     return until if until > time.time() else None

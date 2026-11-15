@@ -103,7 +103,7 @@ class AccountOut(BaseModel):
     # 회사 모드의 켜기·순서(pool=work 일 때만 의미). 개인 모드의 enabled·priority 와 독립이다.
     work_enabled: bool
     work_priority: int
-    # ok(로그인 확인) | unknown(확인 못 함) | missing(계정 폴더 없음)
+    # ok(로그인 확인) | unknown(확인 못 함) | missing(계정 폴더 없음) | expired(폴더는 있으나 토큰 만료·거절)
     login: str
     login_label: str | None
     cooldown_seconds: int
@@ -152,8 +152,23 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
     return max((r.work_priority for r in rows if r.pool == "work"), default=-1) + 1
 
 
+_LOGIN_LOST_MARKERS = ("로그인 토큰을 찾지 못했어요", "갱신하지 못했어요")
+
+
+def _login_lost(a: EngineAccount) -> bool:
+    """폴더에 로그인 흔적이 남아 있어도 실제 토큰이 죽었으면 True. 이때 "로그인됨"으로 보이면 재로그인할 방법이 없다."""
+    if a.engine not in ("claude", "codex"):
+        return False
+    if profiles.auth_failed(a.id):
+        return True
+    cached = usage_mod.cached(a.id)
+    return bool(cached and cached.error and any(m in cached.error for m in _LOGIN_LOST_MARKERS))
+
+
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
+    if login == "ok" and _login_lost(a):
+        login = "expired"
     if a.engine == "muse":
         # Authentication is observed even when usage/read has no quota snapshot.
         observed = usage_mod.cached(a.id)
@@ -426,6 +441,8 @@ def _age_text(seconds: float) -> str:
 def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
+    if login == "ok" and _login_lost(a):
+        login = "expired"
     now = time.time()
     is_muse = a.engine == "muse"
     # 비API 출처(fallback/세션로그), Muse 계정은 초기화 시각이 지났는데 한도까지 쓴 창을 제외한다.
@@ -495,6 +512,8 @@ async def _live_usage(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int],
     except TimeoutError:
         last = usage_mod.cached(a.id) or usage_mod.Usage()
         return _usage_out(i, a, work_rank, last, refreshing=True, error="새 사용량을 읽는 중이에요 · 마지막 관측값")
+    if refresh and u.windows and not u.error and u.source == "api" and profiles.auth_failed(a.id):
+        profiles.clear_auth_failed(a.id)  # 직접 새로고침으로 로그인 회복이 확인됐다
     return _usage_out(i, a, work_rank, u, refreshing=usage_mod.fetching(a.id))
 
 

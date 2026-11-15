@@ -112,6 +112,8 @@ class Collector:
             # 실패 판단: API 로 못 읽었다(스트림·세션 로그 대용이거나 값이 없음).
             ok = u.source in ("api", "antigravity_cli", "muse_cli") and bool(u.windows) and not u.error
             is_muse_reset_idle = engine == "muse" and u.login == "ok" and bool(u.error and "초기화 시각 경과" in u.error)
+            if ok and profiles.auth_failed(aid):
+                profiles.clear_auth_failed(aid)  # 사용량을 다시 읽었다면 로그인이 되살아난 것이다
             if not ok and u.error:
                 # 실패 사유가 로그에 남아야 운영에서 왜 낡았는지 본다(토큰·응답 본문은 담지 않은 문구다).
                 log.warning("usage fetch failed (%s, failures=%d): %s", engine, st.failures + 1, u.error[:200])

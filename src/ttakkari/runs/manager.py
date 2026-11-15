@@ -1651,6 +1651,7 @@ class RunManager:
                 # 인증 만료/실패한 계정은 재시도 대상에서 즉시 제외하고 다음 계정으로 폴백
                 remaining = [p for p in remaining if p.id != prof.id]
                 profiles_mod.cool_down(prof.limit_key, profiles_mod.AUTH_FAILED_COOLDOWN_SECONDS)
+                profiles_mod.mark_auth_failed(prof.id)
                 events.append(db, run, "account.auth_failed", {
                     "account": prof.name, "engine": prof.engine, "model": model,
                     "detail": (state.error or tail or "")[:300],

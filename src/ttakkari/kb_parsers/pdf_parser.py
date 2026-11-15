@@ -6,8 +6,9 @@ import io
 import unicodedata
 from typing import Any, ClassVar
 
+from ttakkari.common import pdf_layout
 from ttakkari.common.chunking import LocatorSpan
-from ttakkari.kb_parsers import ocr, pdf_layout
+from ttakkari.kb_parsers import ocr
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
 from ttakkari.kb_parsers.resource_limits import (
     DEFAULT_LIMITS,

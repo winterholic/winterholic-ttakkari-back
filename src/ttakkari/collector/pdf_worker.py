@@ -21,7 +21,7 @@ def _layout_pages(reader, plain: dict[int, str], total: int) -> dict[int, str] |
     if total > LAYOUT_MAX_PAGES or time.process_time() > LAYOUT_START_CPU:
         return None
     try:
-        from ttakkari.kb_parsers import pdf_layout
+        from ttakkari.common import pdf_layout
 
         table_pages = pdf_layout.structure_table_pages(reader)
         out: dict[int, str] = {}

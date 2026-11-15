@@ -7,11 +7,8 @@ import io
 import pypdf
 from pypdf.generic import ArrayObject, BooleanObject, DictionaryObject, NameObject
 
-from ttakkari.kb_parsers import (
-    create_default_registry,
-    pdf_layout,
-    validate_parsed_document,
-)
+from ttakkari.common import pdf_layout
+from ttakkari.kb_parsers import create_default_registry, validate_parsed_document
 
 
 def make_pdf(pages: list[list[tuple[float, float, float, str]]]) -> bytes:
@@ -196,6 +193,7 @@ def test_collector_worker_falls_back_to_plain_when_cpu_budget_is_spent(monkeypat
 
     reader = pypdf.PdfReader(io.BytesIO(make_pdf([two_column_ops()])))
     plain = {0: reader.pages[0].extract_text()}
+    monkeypatch.setattr(time, "process_time", lambda: 0.0)  # 시험 프로세스가 쓴 누적 CPU 와 무관하게 예산 안으로 고정
     assert pdf_worker._layout_pages(reader, plain, 1) is not None
     monkeypatch.setattr(time, "process_time", lambda: pdf_worker.LAYOUT_START_CPU + 1)
     assert pdf_worker._layout_pages(reader, plain, 1) is None

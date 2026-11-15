@@ -692,3 +692,17 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 - 요청 응답의 `instruction`은 기존 프롬프트에서 사용자 요청 부분만 추출한 200자 요약이다. 시스템 프롬프트는 반환하지 않는다.
 - `POST /api/games/{id}/requests`의 선택적 `review_before_apply`(기본 false): true인 요청의 자동 빌드는 첫 성공본 이후 현재 활성 버전을 바꾸지 않고 후보로 남는다. 자동 타입 수리에도 전달한다. 기존 기본 호출 계약은 유지하며 스튜디오 UI는 true를 지정한다.
 - 후보의 플레이는 기존 `POST /api/games/{id}/play {build_id}`로 하고, 사용자 선택 후 적용은 `POST /api/games/{id}/rollback {build_id,restore_source:false,confirm:true}`를 재사용한다. 후보 확인 중 기존 활성 버전과 소스는 변경하지 않는다. 저장 데이터는 별도 호환성 확인 대상이다.
+
+## 저장소 가치 평가 (ADR 0073, 소유자 전용)
+
+GitHub 저장소 하나를 종합 품질로 평가한다. 전부 소유자 JWT가 필요하고 에이전트/MCP 라우터는 없다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| POST | `/api/repo-appraisals` | `{target, account, mode?, force?}`. `target`은 `owner/repo`나 github.com URL, `account`는 gh 로그인 계정(필수), `mode`는 `quick`(기본)\|`deep`. 같은 `(owner/repo, head_sha, mode, rubric_version)` 완료 결과가 있으면 그 행을 200으로 돌려주고(재계산 없음), 없으면 행을 만들어 백그라운드로 실행하고 202 `{id, status, ...}` |
+| GET | `/api/repo-appraisals/{id}` | 상태와 결과. 실행 중(`queued`·`running`)이면 진행 단계 `stage(collect\|score\|llm)`를 함께 낸다. 없으면 404 `not_found` |
+| GET | `/api/repo-appraisals?owner=&repo=&limit=` | 같은 저장소 이력 최신순(`limit` 1~50, 기본 20). 항목마다 직전 완료 행과의 점수 차이 `delta`를 함께 낸다 |
+
+- 상세 응답: `{id, owner, repo, head_sha, mode, rubric_version, repo_type, status, stage?, result?, weighted_score, grade, llm_used, llm_model, evidence_chars, error, delta, created_at, finished_at}`. `result`는 완료 시에만 있고 `{repo_type, axes, items, weights, contributions, weaknesses(최대 3개, 항목별 보강안 포함), summary, ...}`다. 비용 표시용 `llm_used`·`llm_model`·`evidence_chars`가 항상 있다.
+- 등급: A+ 90, A 85, B+ 80, B 70, C 60, 그 아래 D. 하네스 파일이 하나도 없으면 `ai_harness` 축은 `na`(감점 아님).
+- 오류는 `{code,message}` 규약. 저장소 대상이 아니면 422 `invalid_target`, 목록에 없는 계정이면 404 `account_unavailable`, 상류 401은 앱 로그아웃 방지로 502 `gh_auth_expired`다. LLM 호출 실패는 실행 실패가 아니라 결정론 점수만으로 완료(`llm_used=false`)한다.

@@ -1635,3 +1635,28 @@ class ScheduledAction(Base):
     executed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class RepoAppraisal(Base):
+    """저장소 가치 평가 1회(ADR 0073). 실행 중에는 result 에 {"stage"} 만 두고 끝나면 전체 결과를 둔다."""
+
+    __tablename__ = "repo_appraisals"
+    __table_args__ = (Index("ix_repo_appraisals_owner_repo_created", "owner", "repo", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner: Mapped[str] = mapped_column(String(39))
+    repo: Mapped[str] = mapped_column(String(100))
+    head_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    mode: Mapped[str] = mapped_column(String(8), default="quick")
+    rubric_version: Mapped[str] = mapped_column(String(8), default="1")
+    repo_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    result: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    weighted_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    llm_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_chars: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

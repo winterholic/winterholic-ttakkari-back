@@ -44,6 +44,7 @@ from ttakkari.api import (
     public_shares,
     push,
     remote_desktop,
+    repo_appraisals,
     research,
     reverse,
     sessions,
@@ -215,6 +216,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.warning("marked %d notebooklm jobs as interrupted after restart", nn)
     except Exception as e:  # noqa: BLE001 - NotebookLM 복구 실패가 기동을 막지 않게
         log.warning("notebooklm recovery failed: %s", e)
+    try:
+        from ttakkari.repo_appraisal.service import recover_running
+        an = await recover_running()
+        if an:
+            log.warning("marked %d repo appraisals as failed after restart", an)
+    except Exception as e:  # noqa: BLE001 - 평가 복구 실패가 기동을 막지 않게
+        log.warning("repo appraisal recovery failed: %s", e)
     # 한도 상태를 되살린 뒤에 대기열을 돌려야 초기화 전 계정을 다시 두드리지 않는다.
     with contextlib.suppress(Exception):
         async with sessionmaker()() as db:
@@ -395,6 +403,7 @@ def create_app() -> FastAPI:
     from ttakkari.api import github_agent
     app.include_router(github_agent.router)
     app.include_router(remote_desktop.router)
+    app.include_router(repo_appraisals.router)
     github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)
     from ttakkari.api import knowledge
     app.include_router(knowledge.router)

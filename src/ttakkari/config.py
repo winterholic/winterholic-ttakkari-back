@@ -375,6 +375,11 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
+    # 저장소 가치 평가(ADR 0073). 기본 모델은 접수가 쓰는 저가 모델과 같다.
+    repo_appraisal_engine: str = "codex"
+    repo_appraisal_model: str = "gpt-6-luna"
+    repo_appraisal_evidence_max_chars: int = 40000
+    repo_appraisal_timeout_seconds: float = 120.0
     # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
     desk_qwen_enabled: bool = True
     # 비우면 백엔드(세대) 프로세스가 llama-server 자식 프로세스를 직접 띄우고 끝낸다(runs/desk_qwen_service, OS 서비스 등록 없음).

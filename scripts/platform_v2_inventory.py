@@ -1990,6 +1990,7 @@ def classify_config(field: str) -> str:
             "codex",
             "muse",
             "run_",
+            "stall_",
             "worker",
             "agent",
             "orchestrator",

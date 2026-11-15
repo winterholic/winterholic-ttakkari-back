@@ -7,12 +7,15 @@ import unicodedata
 from typing import Any, ClassVar
 
 from ttakkari.common.chunking import LocatorSpan
-from ttakkari.kb_parsers import ocr
+from ttakkari.kb_parsers import ocr, pdf_layout
 from ttakkari.kb_parsers.base import BaseParser, ParsedDocument, ParseStatus
 from ttakkari.kb_parsers.resource_limits import (
     DEFAULT_LIMITS,
     ParserResourceLimits,
 )
+
+# 쪽당 파싱 비용이 두 배가 되므로 아주 긴 문서는 기본 추출만 쓴다.
+LAYOUT_MAX_PAGES = 400
 
 
 class PdfParser(BaseParser):
@@ -128,6 +131,23 @@ class PdfParser(BaseParser):
                 hold_reason="ocr_required",
             )
 
+        laid_out = self._parse_layout(reader, num_pages, limits) if num_pages <= LAYOUT_MAX_PAGES else None
+        if laid_out is not None:
+            body, spans, stats = laid_out
+            return ParsedDocument(
+                normalized_body=body,
+                metadata={
+                    "parser": "pdf_layout_v1",
+                    "version": "1.0",
+                    "page_count": num_pages,
+                    "char_count": len(body),
+                    "filename": filename,
+                    **stats,
+                },
+                locator_spans=spans,
+                status=ParseStatus.SUCCEEDED.value,
+            )
+
         return ParsedDocument(
             normalized_body=full_body,
             metadata={
@@ -140,6 +160,78 @@ class PdfParser(BaseParser):
             locator_spans=locator_spans,
             status=ParseStatus.SUCCEEDED.value,
         )
+
+    def _parse_layout(
+        self, reader: Any, num_pages: int, limits: ParserResourceLimits,
+    ) -> tuple[str, list[LocatorSpan], dict[str, Any]] | None:
+        """쪽마다 좌표 기반 구조(다단·표·제목)를 복원한다. 구조가 없는 쪽은 기본 추출 결과를 그대로 쓴다.
+
+        어느 쪽에서든 예외가 나거나 구조가 하나도 없으면 None 을 돌려 호출자가 기본 경로를 쓰게 한다.
+        """
+        table_pages = pdf_layout.structure_table_pages(reader)
+        parts: list[str] = []
+        spans: list[LocatorSpan] = []
+        trail: list[tuple[int, str]] = []
+        pos = 0
+        structured_pages = column_pages = table_count = heading_count = 0
+
+        def add(text: str, kind: str, page_no: int, level: int = 0) -> None:
+            nonlocal pos
+            if not text.strip():
+                return
+            if kind == "heading":
+                while trail and trail[-1][0] >= level:
+                    trail.pop()
+                trail.append((level, text))
+                text = f"{'#' * level} {text}"
+            if parts:
+                parts.append("\n\n")
+                pos += 2
+            parts.append(text)
+            path = [t for _, t in trail] or [f"Page {page_no}"]
+            spans.append(
+                LocatorSpan(
+                    start_offset=pos, end_offset=pos + len(text), section_path=path, page_no=page_no,
+                    chunk_kind=kind, extra={"exact_text": text},
+                )
+            )
+            pos += len(text)
+
+        for idx, page in enumerate(reader.pages):
+            page_no = idx + 1
+            try:
+                frags = pdf_layout.collect_fragments(page)
+                layout = pdf_layout.analyze_page(
+                    frags, float(page.mediabox.width), table_allowed=table_pages is None or idx in table_pages,
+                )
+            except Exception:  # noqa: BLE001
+                return None
+            if layout.structured:
+                structured_pages += 1
+                column_pages += layout.columns
+                table_count += layout.tables
+                heading_count += layout.headings
+                for block in layout.blocks:
+                    add(unicodedata.normalize("NFC", block.text.replace("\x00", "")).strip(), block.kind, page_no, block.level)
+            else:
+                try:
+                    plain = (page.extract_text() or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+                except Exception:  # noqa: BLE001
+                    plain = ""
+                add(unicodedata.normalize("NFC", plain).strip(), "prose", page_no)
+            if pos > limits.max_text_chars:
+                return None
+
+        if not structured_pages or not parts:
+            return None
+        stats = {
+            "layout_pages": structured_pages,
+            "layout_column_pages": column_pages,
+            "layout_tables": table_count,
+            "layout_headings": heading_count,
+            "tagged_structure": table_pages is not None,
+        }
+        return "".join(parts), spans, stats
 
     def _parse_scanned(
         self, data: bytes, num_pages: int, filename: str | None, limits: ParserResourceLimits,

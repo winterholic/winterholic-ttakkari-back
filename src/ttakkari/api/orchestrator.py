@@ -411,6 +411,8 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
     out.false_completion = usage_info.get("false_completion")
     if comp := usage_info.get("completion"):
         out.completion_status = "위반" if comp.get("violation") else comp.get("status")
+    if impact_warnings := usage_info.get("impact_check_warnings"):
+        out.read_budget_warnings = [*out.read_budget_warnings, *impact_warnings]
     streak = 0
     for r in runs:  # 최신순. 진행 중이거나 계약 대상이 아닌 Run 에서 끊는다.
         c = (r.usage or {}).get("completion") if r.status not in ACTIVE else None
@@ -613,7 +615,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
 
     await queue_run(db, w, prompt + ab_extra, origin=RunOrigin.orchestrator, on_queued=_stash_fit)
     out = await _out(db, w)
-    out.read_budget_warnings = await _read_budget_warnings(db, w.workspace_id, body.card)
+    out.read_budget_warnings = [*out.read_budget_warnings, *await _read_budget_warnings(db, w.workspace_id, body.card)]
     return out
 
 
@@ -727,7 +729,7 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
     else:
         await db.commit()
     out = await _out(db, w)
-    out.read_budget_warnings = await _read_budget_warnings(db, w.workspace_id, body.card)
+    out.read_budget_warnings = [*out.read_budget_warnings, *await _read_budget_warnings(db, w.workspace_id, body.card)]
     return out
 
 

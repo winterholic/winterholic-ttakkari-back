@@ -73,6 +73,7 @@ from ttakkari.runs import (
     context_usage,
     desk,
     events,
+    impact_check,
     tool_output_limit,
     worker_routing,
 )
@@ -1792,6 +1793,11 @@ class RunManager:
         await self._collect_artifacts(db, run, ws, outbox, state)
         if diff:
             events.append(db, run, "run.diff", diff)
+        if sess.kind == SessionKind.worker:
+            run.usage = {**(run.usage or {}), **await impact_check.record(
+                session_id=str(sess.id), settings=s, is_git=ws.is_git,
+                checkpoint_ref=run.checkpoint_ref, root=root,
+                new_files=diff["new_files"] if diff else [])}
 
         if self._shutting_down and not (h and h.cancel_requested):
             await self._finish(db, run, RunStatus.interrupted, error="서버 종료로 중단")

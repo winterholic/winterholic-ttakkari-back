@@ -150,8 +150,27 @@ def _scan_roots(roots: list[Path]) -> list[Path]:
     return sorted(found)[:MAX_FILES]
 
 
+def scan(roots: list[Path]) -> list[Path]:
+    """호출자 탐색용 작업 공간 후보. build와 같은 상한·순서를 쓴다."""
+    return _scan_roots(roots)
+
+
 def _short(callee: str) -> str:
     return callee.rsplit(".", 1)[-1]
+
+
+def callers(entries: dict[str, dict[str, list]]) -> dict[tuple[str, str], list[tuple[str, str]]]:
+    """(파일, 심볼)별 직접 호출자 목록. 짧은 이름으로 대조해 별칭 호출도 놓치지 않는다."""
+    by_short: dict[str, list[tuple[str, str]]] = {}
+    for file, entry in entries.items():
+        for sym in entry["symbols"]:
+            by_short.setdefault(_short(sym["qual"]), []).append((file, sym["qual"]))
+    out: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for file, entry in entries.items():
+        for caller, callee, _lineno in entry["calls"]:
+            for hit in by_short.get(_short(callee), []):
+                out.setdefault(hit, []).append((file, caller or ""))
+    return out
 
 
 def build(targets: list[Path], scan_roots: list[Path], max_chars: int, cache_dir: Path) -> str:
@@ -160,15 +179,7 @@ def build(targets: list[Path], scan_roots: list[Path], max_chars: int, cache_dir
     if not ordered:
         return ""
     index = load(list(dict.fromkeys([*ordered, *_scan_roots(scan_roots)])), cache_dir)
-    by_short: dict[str, list[tuple[str, str]]] = {}
-    for file, entry in index.items():
-        for sym in entry["symbols"]:
-            by_short.setdefault(_short(sym["qual"]), []).append((file, sym["qual"]))
-    callers: dict[tuple[str, str], list[tuple[str, str]]] = {}
-    for file, entry in index.items():
-        for caller, callee, _lineno in entry["calls"]:
-            for hit in by_short.get(_short(callee), []):
-                callers.setdefault(hit, []).append((file, caller or ""))
+    who_by_target = callers(index)
     base = scan_roots[0] if scan_roots else None
 
     def rel(file: str) -> str:
@@ -192,7 +203,7 @@ def build(targets: list[Path], scan_roots: list[Path], max_chars: int, cache_dir
             if callees:
                 lines.append(f"  호출: {', '.join(callees[:MAX_EDGE_NAMES])}"
                              + (f" 외 {len(callees) - MAX_EDGE_NAMES}개" if len(callees) > MAX_EDGE_NAMES else ""))
-            who = sorted({(rel(f), q) for f, q in callers.get((str(path), sym["qual"]), []) if q})
+            who = sorted({(rel(f), q) for f, q in who_by_target.get((str(path), sym["qual"]), []) if q})
             if who:
                 shown = ", ".join(f"{f}:{q}" if f != rel(str(path)) else q for f, q in who[:MAX_EDGE_NAMES])
                 lines.append(f"  불림: {shown}"

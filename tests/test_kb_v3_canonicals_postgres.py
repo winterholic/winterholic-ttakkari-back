@@ -17,11 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.db import sessionmaker
+from ttakkari.kb_access import from_caller_visibility
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_ontology.canonicals import (
     get_active_assertions_for_entity,
     synthesize_canonical_for_entity,
 )
+from ttakkari.kb_ontology.currency import current_revision_ids
+from ttakkari.kb_ontology.graph_query import _fetch_hub_entities
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -166,3 +169,22 @@ async def test_canonical_postgresql_roundtrip_and_ledger_constraints(
                 )
             )
             await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_current_revision_ids_accepts_more_than_asyncpg_bind_limit(
+    db: AsyncSession,
+) -> None:
+    document_ids = {uuid.uuid4() for _ in range(32_768)}
+
+    assert await current_revision_ids(db, document_ids) == {}
+
+    entities = await _fetch_hub_entities(
+        db,
+        (uuid.uuid4() for _ in range(32_768)),
+        tenant_id="personal",
+        ctx=from_caller_visibility("global"),
+        entity_kind=None,
+        domain=None,
+    )
+    assert entities == []

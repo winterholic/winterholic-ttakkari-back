@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 from sqlalchemy import and_, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +27,20 @@ __all__ = [
     "current_revision_id",
     "current_revision_ids",
     "older_revision_ids",
+    "uuid_id_batches",
 ]
+
+UUID_ID_BATCH_SIZE = 10_000
+
+
+def uuid_id_batches(values: Iterable[uuid.UUID]) -> Iterator[set[uuid.UUID]]:
+    """Yield UUID sets small enough to stay below asyncpg's bind argument limit."""
+    unique_ids = set(values)
+    while unique_ids:
+        batch = set()
+        for _ in range(min(UUID_ID_BATCH_SIZE, len(unique_ids))):
+            batch.add(unique_ids.pop())
+        yield batch
 
 
 async def current_revision_ids(
@@ -43,23 +56,24 @@ async def current_revision_ids(
     if not ids:
         return {}
     current: dict[uuid.UUID, uuid.UUID] = {}
-    observations = await db.execute(
-        select(KbObservation.document_id, KbObservation.revision_id)
-        .where(KbObservation.document_id.in_(ids))
-        .order_by(
-            KbObservation.event_time.desc(),
-            KbObservation.recorded_at.desc(),
-            KbObservation.id.desc(),
+    for batch in uuid_id_batches(ids):
+        observations = await db.execute(
+            select(KbObservation.document_id, KbObservation.revision_id)
+            .where(KbObservation.document_id.in_(batch))
+            .order_by(
+                KbObservation.event_time.desc(),
+                KbObservation.recorded_at.desc(),
+                KbObservation.id.desc(),
+            )
         )
-    )
-    for doc_id, rev_id in observations:
-        current.setdefault(doc_id, rev_id)
+        for doc_id, rev_id in observations:
+            current.setdefault(doc_id, rev_id)
 
     missing = ids - set(current.keys())
-    if missing:
+    for batch in uuid_id_batches(missing):
         revisions = await db.execute(
             select(KbRevision.document_id, KbRevision.id)
-            .where(KbRevision.document_id.in_(missing))
+            .where(KbRevision.document_id.in_(batch))
             .order_by(KbRevision.document_id, KbRevision.rev_no.desc())
         )
         for doc_id, rev_id in revisions:

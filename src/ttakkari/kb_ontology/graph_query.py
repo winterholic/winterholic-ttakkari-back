@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -30,7 +31,7 @@ from ttakkari.kb_access import (
     from_caller_visibility,
 )
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision
-from ttakkari.kb_ontology.currency import current_revision_ids
+from ttakkari.kb_ontology.currency import current_revision_ids, uuid_id_batches
 from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
     KbEntity,
@@ -59,6 +60,7 @@ async def _current_revision_map(
 ) -> dict[uuid.UUID, uuid.UUID]:
     """문서별 현재 리비전(rev_no 최대). 주장·정본·충돌과 같은 정의다(kb_ontology.currency)."""
     return await current_revision_ids(db, document_ids)
+
 
 __all__ = [
     "GraphEdge",
@@ -226,6 +228,36 @@ async def _visible_entity_stats(
     }
 
 
+async def _fetch_hub_entities(
+    db: AsyncSession,
+    entity_ids: Iterable[uuid.UUID],
+    *,
+    tenant_id: str,
+    ctx: KbAccessContext,
+    entity_kind: str | None,
+    domain: str | tuple[str, ...] | None,
+) -> list[KbEntity]:
+    """Fetch every authorized hub candidate in bounded UUID batches."""
+    entities: list[KbEntity] = []
+    for batch in uuid_id_batches(entity_ids):
+        stmt = select(KbEntity).where(
+            KbEntity.id.in_(batch),
+            KbEntity.tenant_id == tenant_id,
+            KbEntity.status == "active",
+            KbEntity.visibility.in_(ctx.allowed_visibilities),
+        )
+        if entity_kind:
+            stmt = stmt.where(KbEntity.entity_kind == entity_kind)
+        if domain:
+            stmt = stmt.where(
+                KbEntity.domain.in_(domain)
+                if isinstance(domain, tuple)
+                else KbEntity.domain == domain
+            )
+        entities.extend(await db.scalars(stmt))
+    return entities
+
+
 async def get_ontology_hubs(
     db: AsyncSession,
     *,
@@ -257,19 +289,14 @@ async def get_ontology_hubs(
     if not documents_by_entity:
         return GraphHubsResult([], 0, offset, limit, False)
 
-    stmt = select(KbEntity).where(
-        KbEntity.id.in_(documents_by_entity),
-        KbEntity.tenant_id == tenant_id,
-        KbEntity.status == "active",
+    entities = await _fetch_hub_entities(
+        db,
+        documents_by_entity,
+        tenant_id=tenant_id,
+        ctx=ctx,
+        entity_kind=entity_kind,
+        domain=domain,
     )
-    stmt = stmt.where(KbEntity.visibility.in_(ctx.allowed_visibilities))
-    if entity_kind:
-        stmt = stmt.where(KbEntity.entity_kind == entity_kind)
-    if domain:
-        stmt = stmt.where(
-            KbEntity.domain.in_(domain) if isinstance(domain, tuple) else KbEntity.domain == domain
-        )
-    entities = list(await db.scalars(stmt))
     entities.sort(
         key=lambda entity: (
             -(

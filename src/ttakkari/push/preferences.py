@@ -19,6 +19,7 @@ CATALOG = (
     (PushKind.worker_agent, "하위 에이전트의 직접 알림", "각 하위 에이전트가 보내는 개별 보고를 받아요.", False),
     (PushKind.worker_failed, "하위 작업 실패", "각 하위 작업의 오류를 하나씩 알려드려요.", False),
     (PushKind.worker_waiting, "하위 작업 대기", "각 하위 작업의 사용량 한도·모델 혼잡 대기를 알려드려요.", False),
+    (PushKind.stall, "작업 정지·대기 정체 경고", "작업이 오래 멈추거나 시작하지 못하고 기획 알림 뒤에도 풀리지 않을 때 알려드려요.", True),
     (PushKind.meeting, "회의록 분석 결과", "회의록 분석 완료와 실패를 알려드려요.", True),
     (PushKind.google_account, "Google 계정 로그인", "연결한 계정에 다시 로그인해야 할 때 알려드려요.", True),
     (PushKind.deployment, "배포 결과", "따까리 서버의 배포 결과를 알려드려요.", False),

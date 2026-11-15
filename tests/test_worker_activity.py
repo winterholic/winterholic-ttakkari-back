@@ -133,3 +133,102 @@ async def test_long_quota_wait_notifies_orchestrator(client, auth, make_dir, mon
 async def _has_status(client, auth, wid, state):
     s = (await client.get(f"/api/sessions/{wid}", headers=auth)).json()
     return s if s.get("waiting_limit") else None
+
+
+async def _queued_run(sid, wsid, *, created_ago, resume_after=None):
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sid), workspace_id=uuid.UUID(wsid), engine="claude", prompt="p",
+                  status=RunStatus.queued, origin=RunOrigin.orchestrator, created_at=utcnow() - created_ago,
+                  resume_after=resume_after)
+        db.add(run)
+        await db.commit()
+        return run.id
+
+
+@pytest.fixture
+def pushes(monkeypatch):
+    sent: list[dict] = []
+
+    async def fake(kind, title, body="", **kw):
+        sent.append({"kind": kind, "title": title, "body": body, **kw})
+        return {"sent": 1}
+
+    monkeypatch.setattr(watchdog, "notify", fake)
+    return sent
+
+
+async def test_queued_worker_notifies_parent_once(client, auth, make_dir, pushes):
+    orch, wk = await _worker(client, auth, make_dir)
+    rid = await _queued_run(wk["id"], wk["workspace_id"], created_ago=timedelta(minutes=30))
+    assert await watchdog.scan_queued_runs() == 1
+    reports = await _reports(client, auth, orch["id"])
+    assert len(reports) == 1 and "[작업 시작 지연 의심]" in reports[0]["prompt"] and str(rid) in reports[0]["prompt"]
+    assert await watchdog.scan_queued_runs() == 0  # 같은 Run 은 다시 알리지 않는다
+    assert pushes == []  # 부모가 있으면 사용자 푸시는 에스컬레이션 단계에서만 나간다
+
+
+async def test_queued_scan_ignores_recent_limit_wait_and_busy_session(client, auth, make_dir, pushes):
+    orch, wk = await _worker(client, auth, make_dir)
+    await _queued_run(wk["id"], wk["workspace_id"], created_ago=timedelta(minutes=2))  # 아직 짧다
+    orch2, wk2 = await _worker(client, auth, make_dir)
+    await _queued_run(wk2["id"], wk2["workspace_id"], created_ago=timedelta(hours=1),
+                      resume_after=utcnow() + timedelta(hours=1))  # 한도 대기는 별도 알림이 있다
+    orch3, wk3 = await _worker(client, auth, make_dir)
+    await _running_run(wk3, started_ago=timedelta(minutes=5), event_type="message", event_ago=timedelta(minutes=1))
+    await _queued_run(wk3["id"], wk3["workspace_id"], created_ago=timedelta(hours=1))  # 앞선 Run 을 기다리는 정상 대기
+    assert await watchdog.scan_queued_runs() == 0
+    for o in (orch, orch2, orch3):
+        assert await _reports(client, auth, o["id"]) == []
+    assert pushes == []
+
+
+async def test_queued_run_without_parent_pushes_user_directly(client, auth, make_dir, pushes):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    rid = await _queued_run(orch["id"], orch["workspace_id"], created_ago=timedelta(minutes=30))
+    assert await watchdog.scan_queued_runs() == 1
+    assert len(pushes) == 1 and pushes[0]["kind"] == watchdog.PushKind.stall and pushes[0]["target_id"] == rid
+    assert pushes[0].get("source_session_id") is None  # 하위 알림으로 바뀌어 기본 꺼짐이 되지 않게 한다
+    assert await watchdog.scan_queued_runs() == 0
+    assert await watchdog.escalate_stalls() == 0  # 이미 사용자에게 갔으므로 다시 올리지 않는다
+
+
+async def _age_notice(key, seconds):
+    async with sessionmaker()() as db:
+        row = await db.get(AppSetting, key)
+        row.updated_at = utcnow() - timedelta(seconds=seconds)
+        await db.commit()
+
+
+async def test_stalled_worker_escalates_to_user_once(client, auth, make_dir, pushes, monkeypatch):
+    monkeypatch.setattr(get_settings(), "stall_escalate_seconds", 600)
+    _orch, wk = await _worker(client, auth, make_dir)
+    rid = await _running_run(wk, started_ago=timedelta(hours=2), event_type="message", event_ago=timedelta(hours=1))
+    assert await watchdog.scan_stalled_workers() == 1
+    assert await watchdog.escalate_stalls() == 0  # 알림 직후에는 기다린다
+    await _age_notice(f"stall:{rid}", 700)
+    assert await watchdog.escalate_stalls() == 1
+    assert len(pushes) == 1 and pushes[0]["dedupe_key"] == f"stall-esc:{rid}"
+    assert await watchdog.escalate_stalls() == 0
+
+
+async def test_escalation_is_dropped_when_run_recovered(client, auth, make_dir, pushes, monkeypatch):
+    monkeypatch.setattr(get_settings(), "stall_escalate_seconds", 600)
+    _orch, wk = await _worker(client, auth, make_dir)
+    rid = await _running_run(wk, started_ago=timedelta(hours=2), event_type="message", event_ago=timedelta(hours=1))
+    assert await watchdog.scan_stalled_workers() == 1
+    async with sessionmaker()() as db:  # 알림 뒤에 진행 이벤트가 다시 생겼다
+        run = await db.get(Run, rid)
+        run.last_seq += 1
+        db.add(RunEvent(run_id=rid, seq=run.last_seq, type="message", payload={}, created_at=utcnow()))
+        await db.commit()
+    await _age_notice(f"stall:{rid}", 700)
+    assert await watchdog.escalate_stalls() == 0 and pushes == []
+
+
+async def test_queued_escalation_pushes_when_still_queued(client, auth, make_dir, pushes, monkeypatch):
+    monkeypatch.setattr(get_settings(), "stall_escalate_seconds", 600)
+    _orch, wk = await _worker(client, auth, make_dir)
+    rid = await _queued_run(wk["id"], wk["workspace_id"], created_ago=timedelta(minutes=30))
+    assert await watchdog.scan_queued_runs() == 1
+    await _age_notice(f"qstall:{rid}", 700)
+    assert await watchdog.escalate_stalls() == 1 and "queued" in pushes[0]["body"]

@@ -39,6 +39,7 @@ class PushKind(enum.StrEnum):
     worker_agent = "push.worker_agent"  # 하위 에이전트의 직접 알림
     worker_failed = "push.worker_failed"  # 하위 작업 실패
     worker_waiting = "push.worker_waiting"  # 하위 작업 한도·용량 대기
+    stall = "push.stall"  # 정지·대기 정체가 기획 알림 뒤에도 풀리지 않아 사용자에게 올리는 경고(runs/watchdog.py)
     test = "push.test_sent"  # 설정 화면의 테스트 알림
     calendar_reminder = "push.calendar_reminder"  # 일정 알림(planner/reminders.py)
     checklist_reminder = "push.checklist_reminder"
@@ -54,6 +55,7 @@ INBOX_CATEGORY = {
     PushKind.calendar_reminder: "planner", PushKind.checklist_reminder: "planner",
     PushKind.meeting: "meetings", PushKind.deployment: "system", PushKind.test: "system",
     PushKind.worker_agent: "tasks", PushKind.worker_failed: "tasks", PushKind.worker_waiting: "tasks",
+    PushKind.stall: "tasks",
     PushKind.weather: "weather", PushKind.notebooklm: "system", PushKind.google_account: "system",
 }
 

@@ -2573,9 +2573,15 @@ async def _reconsider_quota_waits() -> None:
         await manager.dispatch(sid)
     try:
         from ttakkari.runs import watchdog
-        await watchdog.scan_stalled_workers()
     except Exception:
-        logging.getLogger("ttakkari.watchdog").exception("stalled worker scan failed")
+        logging.getLogger("ttakkari.watchdog").exception("watchdog import failed")
+        return
+    # 한 스캔의 실패가 나머지를 막지 않게 따로 감싼다.
+    for scan in (watchdog.scan_stalled_workers, watchdog.scan_queued_runs, watchdog.escalate_stalls):
+        try:
+            await scan()
+        except Exception:
+            logging.getLogger("ttakkari.watchdog").exception("%s failed", scan.__name__)
 
 def _looks_like_agent(pid: int) -> bool:
     """재부팅 뒤에는 PID 가 재사용될 수 있다. 엉뚱한 프로세스 그룹을 죽이지 않게 이름을 확인한다."""

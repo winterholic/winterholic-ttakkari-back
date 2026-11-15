@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     # 한도 대기가 이만큼 길어지면 정책 경로 밖의 가용 계정까지 후보를 넓힌다(runs/worker_routing.stranded_stages).
     worker_stranded_wait_seconds: int = Field(default=1800, ge=60)
     worker_stall_seconds: int = Field(default=1800, ge=60)
+    # 시작도 못 한 채(queued, 한도 대기 아님) 이만큼 지난 Run 을 알린다. 계정 부족·슬롯 포화처럼 하네스 밖 원인이 대부분이다.
+    queued_stall_seconds: int = Field(default=600, ge=60)
+    # 정지·대기 정체 알림 뒤에도 같은 Run 이 그대로면 사용자 푸시로 한 번 올린다. 0 이면 끈다.
+    stall_escalate_seconds: int = Field(default=1800, ge=0)
     # 오래된 배포 릴리스 자동 정리(release_gc.py). 주기 초, 0 이면 끈다. 최근 N개와 사용 중인 릴리스는 항상 남긴다.
     release_gc_interval_seconds: int = Field(default=6 * 3600, ge=0)
     release_gc_keep_recent: int = Field(default=8, ge=2)

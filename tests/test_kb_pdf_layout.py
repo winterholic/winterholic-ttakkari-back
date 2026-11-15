@@ -144,3 +144,60 @@ def test_tagged_page_without_table_suppresses_table_detection():
     frags = pdf_layout.collect_fragments(pypdf.PdfReader(io.BytesIO(make_pdf([ops]))).pages[0])
     assert pdf_layout.analyze_page(frags, 612, table_allowed=True).tables == 1
     assert pdf_layout.analyze_page(frags, 612, table_allowed=False).tables == 0
+
+
+def _run_worker(pdf: bytes) -> dict:
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    done = subprocess.run(
+        [sys.executable, "-m", "ttakkari.collector.pdf_worker"], input=pdf, capture_output=True, timeout=60,
+        env={**os.environ, "PYTHONPATH": src}, check=True,
+    )
+    return json.loads(done.stdout)
+
+
+def test_collector_worker_restores_column_order_and_marks_new_parser_version():
+    result = _run_worker(make_pdf([two_column_ops()]))
+    assert result["parser_version"].endswith("+pdf-2")
+    text = result["text"]
+    assert text.index(LEFT[7]) < text.index(RIGHT[0])
+    page = result["pages"][0]
+    assert page["page"] == 1 and page["start"] == 0 and page["end"] == len(text)
+
+
+def test_collector_worker_emits_markdown_heading_and_table_for_the_pipeline_parser():
+    ops = [(50, 740, 20, "Design Overview")]
+    ops += [(50, 700 - 14 * i, 10, f"Body sentence number {i} that is long enough to count as prose text.") for i in range(3)]
+    rows = [("Name", "Count", "Ratio"), ("pandas", "209", "44.0"), ("mypy", "193", "53.4"), ("scikit", "118", "52.5")]
+    for r, row in enumerate(rows):
+        for c, text in enumerate(row):
+            ops.append((50 + 150 * c, 640 - 14 * r, 10, text))
+    result = _run_worker(make_pdf([ops]))
+    assert result["text"].startswith("# Design Overview")
+    assert "| Name | Count | Ratio |" in result["text"]
+
+
+def test_collector_worker_keeps_plain_tier_for_uniform_text():
+    ops = [(50, 740 - 14 * i, 10, f"Plain line {i} of a document with a single uniform font size") for i in range(8)]
+    result = _run_worker(make_pdf([ops]))
+    assert result["parser_version"].endswith("+pdf-1")
+    assert "Plain line 7" in result["text"]
+
+
+def test_collector_worker_falls_back_to_plain_when_cpu_budget_is_spent(monkeypatch):
+    import time
+
+    from ttakkari.collector import pdf_worker
+
+    reader = pypdf.PdfReader(io.BytesIO(make_pdf([two_column_ops()])))
+    plain = {0: reader.pages[0].extract_text()}
+    assert pdf_worker._layout_pages(reader, plain, 1) is not None
+    monkeypatch.setattr(time, "process_time", lambda: pdf_worker.LAYOUT_START_CPU + 1)
+    assert pdf_worker._layout_pages(reader, plain, 1) is None
+    monkeypatch.setattr(time, "process_time", lambda: 0.0)
+    assert pdf_worker._layout_pages(reader, plain, pdf_worker.LAYOUT_MAX_PAGES + 1) is None

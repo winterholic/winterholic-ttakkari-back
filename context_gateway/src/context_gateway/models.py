@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
@@ -88,6 +88,9 @@ class Session(Base):
 class AuditEvent(Base):
     __tablename__ = "gateway_audit_events"
     __table_args__ = (Index("ix_gateway_audit_created", "created_at"),)
+    # Public workers may INSERT audit events but must not SELECT them. Fetching
+    # the server timestamp via implicit RETURNING would require SELECT too.
+    __mapper_args__: ClassVar[dict[str, bool]] = {"eager_defaults": False}
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     key_id: Mapped[UUID | None] = mapped_column(ForeignKey("gateway_api_keys.id"), nullable=True)

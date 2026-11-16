@@ -7,12 +7,50 @@ import httpx
 import pytest
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from context_gateway.apps import create_control_app, create_public_app
 from context_gateway.auth import AuthenticationError, authenticate_session, hash_credential
 from context_gateway.config import Settings
 from context_gateway.models import APIKey, AuditEvent, KeyACL, Project, Session
+
+
+@pytest.mark.asyncio
+async def test_audit_insert_with_insert_only_role_does_not_require_select(postgres_url):
+    """Match the public container's INSERT-only audit grant, not an admin DB role."""
+    role = "gateway_audit_test_" + uuid4().hex
+    engine = create_async_engine(postgres_url)
+    try:
+        async with engine.connect() as connection:
+            transaction = await connection.begin()
+            try:
+                await connection.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+                await connection.execute(text(f'GRANT USAGE ON SCHEMA public TO "{role}"'))
+                await connection.execute(text(f'GRANT INSERT ON gateway_audit_events TO "{role}"'))
+                await connection.execute(text(f'SET LOCAL ROLE "{role}"'))
+                async with AsyncSession(bind=connection, expire_on_commit=False) as db:
+                    event = AuditEvent(event="synthetic_insert_only")
+                    db.add(event)
+                    await db.flush()
+                    event_id = event.id
+                    await db.commit()
+                async with connection.begin_nested():
+                    with pytest.raises(DBAPIError):
+                        await connection.execute(text("SELECT created_at FROM gateway_audit_events"))
+                    # Roll back the deliberately rejected statement before leaving
+                    # the savepoint; the outer transaction still owns the test role.
+                    await connection.get_nested_transaction().rollback()
+                await connection.execute(text("RESET ROLE"))
+                value = await connection.scalar(
+                    select(AuditEvent.created_at).where(AuditEvent.id == event_id)
+                )
+                assert value is not None
+            finally:
+                await transaction.rollback()  # Removes the test role and event too.
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

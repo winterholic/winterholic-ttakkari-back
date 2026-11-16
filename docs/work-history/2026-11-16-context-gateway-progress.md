@@ -159,3 +159,11 @@
 - 실제 image build/기동에서 Node Blob 생성자 차이, 잘못 파싱된 tmpfs 목록, 이동된 venv의 실행 파일 경로를 확인해 교정했다. 수정 뒤 이미지가 빌드되고 세 컨테이너가 healthy가 됐다. 내부망의 호스트 포트 공개가 비활성인 관측에 따라 홈서버 전용 override는 포트를 공개하지 않고 nginx가 예약 내부 IP로 접속하게 한다. 최종 외부 검증과 source revision 고정은 후속 단계다.
 - 새 production-only 자격 파일은 Gateway 연결 세 필드만 허용한다. RED 6건을 관측한 뒤 구현했고, 해당 보안/스키마/기존 어댑터 검사 72건이 통과했다. Ruff와 diff 검사를 통과했다.
 - Codex sandbox의 unit_tests 전체는 2610 passed/29 failed/1 skipped였다. 실패에는 process table 열거가 불완전한 host resource 검사와 시험 DB 비밀번호 인증 실패가 포함됐다. 전체 통과를 주장하지 않으며 보호 정책을 바꾸거나 해당 환경 실패를 우회하지 않는다. 배포 컨트롤러의 호스트 환경 전체 검증을 별도 유지한다.
+
+## INSERT-only 감사 권한의 실제 운영 회귀
+
+- Gateway 9289e176의 HTTPS 키 교환에서 500을 관측했다. 공개 컨테이너 로그는 `auth.exchange_key → session.flush → INSERT gateway_audit_events ... RETURNING created_at`의 `permission denied`를 보였다. 운영 계정은 감사 INSERT만 갖지만 기존 코어 테스트는 admin DB 계정이라 이 차이를 놓쳤다.
+- 감사 읽기 권한을 추가하지 않고 `AuditEvent`만 `eager_defaults=False`로 바꿔 INSERT가 서버 시각을 반환 조회하지 않도록 했다. DB의 `created_at` 기본값은 유지된다.
+- 이번 Run 전용 홈서버 DB `test_cg_deploy_4277e61d`와 SSH loopback forward를 사용했다. `test_audit_insert_with_insert_only_role_does_not_require_select`에서 NOLOGIN 임시 역할에 INSERT만 부여해 실제 ORM flush를 재현했고 RED `InsufficientPrivilegeError`를 확인했다. 수정 뒤 Gateway 전체 `30 passed in 20.97s`. 임시 역할은 외부 트랜잭션 rollback으로 제거하고 SSH 자식 프로세스는 종료했다. 운영 Gateway DB는 시험용으로 drop/create하지 않았다.
+- Public 컨테이너의 실제 검증: 외부 1.1.1.1:443 및 홈서버 Tailscale DB 주소 연결은 errno 101, snapshot write는 EROFS(30), project UPDATE는 42501, control 토큰은 환경에 없었다. 이 관측은 해당 주소·권한의 실행 증거이며 모든 가능한 목적지의 전수 검사는 아니다.
+- Public HTTPS 화면·health 200, 무자격 프로젝트 401, control 경로 404를 관측했다. 모바일 390×844와 데스크톱 1280×900의 접속 폼은 configured browser로 렌더했고 닫았다. console에는 Cloudflare analytics script CSP 차단과 favicon 404가 있었으며 CSP를 완화하지 않았다. 인증된 UI 전체 여정의 운영 브라우저 검증은 이번 범위에 포함하지 않았다.

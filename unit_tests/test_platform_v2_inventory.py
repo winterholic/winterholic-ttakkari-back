@@ -165,6 +165,42 @@ def test_research_migrations_belong_to_research_lab(stem):
     assert classify_migration(stem) == "domain.research_lab"
 
 
+@pytest.mark.parametrize(
+    "path", ("/api/context-sharing/status", "/api/agent/context-sharing/drafts")
+)
+def test_context_sharing_routes_belong_to_shares(path):
+    assert classify_route("GET", path) == "domain.shares_artifacts"
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "context_share_draft",
+        "context_share_draft_create",
+        "context_share_drafts",
+        "context_share_projects",
+        "context_share_sources",
+    ),
+)
+def test_context_sharing_tools_belong_to_shares(name):
+    assert classify_mcp_tool(name) == "domain.shares_artifacts"
+
+
+def test_context_sharing_migration_belongs_to_shares():
+    assert classify_migration("0079_context_sharing") == "domain.shares_artifacts"
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "src/ttakkari/api/context_sharing.py",
+        "src/ttakkari/context_sharing/service.py",
+    ),
+)
+def test_context_sharing_sources_belong_to_shares(path):
+    assert classify_source_file(path) == "domain.shares_artifacts"
+
+
 def test_unknown_inputs_negative_controls():
     assert classify_route("GET", "/api/alien_service/teleport") == "unmatched"
     assert classify_mcp_tool("quantum_hyperdrive_engage") == "unmatched"

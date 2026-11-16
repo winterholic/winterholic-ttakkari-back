@@ -60,14 +60,16 @@ class SnapshotPublishRequest(BaseModel):
     source_refs: list[str] = Field(min_length=1, max_length=100)
     source_revision: str = Field(min_length=1, max_length=255)
     generated_at: datetime
-    verified_at: datetime
+    verified_at: datetime | None = None
     documents: list[SnapshotDocumentInput] = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
     def validate_timestamps_and_size(self):
-        if self.generated_at.utcoffset() is None or self.verified_at.utcoffset() is None:
-            raise ValueError("generated_at and verified_at must include a timezone")
-        if self.verified_at < self.generated_at:
+        if self.generated_at.utcoffset() is None:
+            raise ValueError("generated_at must include a timezone")
+        if self.verified_at is not None and self.verified_at.utcoffset() is None:
+            raise ValueError("verified_at must include a timezone when supplied")
+        if self.verified_at is not None and self.verified_at < self.generated_at:
             raise ValueError("verified_at cannot precede generated_at")
         if sum(len(document.content.encode("utf-8")) for document in self.documents) > 20_000_000:
             raise ValueError("snapshot content exceeds 20 MB")
@@ -79,6 +81,7 @@ class SnapshotDocumentInput(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     content: str = Field(max_length=2_000_000)
     content_type: Literal["text/markdown", "text/plain", "application/json"] = "text/markdown"
+    source_refs: list[str] = Field(default_factory=list, max_length=100)
     sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
@@ -96,7 +99,7 @@ class SnapshotOut(BaseModel):
     source_refs: list[str]
     source_revision: str
     generated_at: datetime
-    verified_at: datetime
+    verified_at: datetime | None
     published_at: datetime
     manifest_sha256: str
     documents: list[dict[str, Any]]
@@ -114,6 +117,9 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
     async with engine.begin() as connection:
         await connection.exec_driver_sql("SELECT pg_advisory_xact_lock(915712611)")
         await connection.run_sync(Base.metadata.create_all)
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_snapshots ALTER COLUMN verified_at DROP NOT NULL"
+        )
         await connection.exec_driver_sql(
             """CREATE OR REPLACE FUNCTION context_gateway_snapshot_immutable() RETURNS trigger AS $$
                 BEGIN

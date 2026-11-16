@@ -95,6 +95,7 @@ async def publish_snapshot(
                 "content_type": content_type,
                 "extension": extension,
                 "sha256": digest,
+                "source_refs": document.get("source_refs", []),
             }
         )
         contents[doc_id] = content
@@ -108,7 +109,7 @@ async def publish_snapshot(
         "source_refs": payload["source_refs"],
         "source_revision": payload["source_revision"],
         "generated_at": generated_at.isoformat(),
-        "verified_at": verified_at.isoformat(),
+        "verified_at": verified_at.isoformat() if verified_at is not None else None,
         "documents": manifest_docs,
     }
     manifest_hash = hashlib.sha256(canonical_json(manifest)).hexdigest()

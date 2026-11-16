@@ -35,7 +35,7 @@ class Snapshot(Base):
     source_refs: Mapped[list[str]] = mapped_column(JSONB)
     source_revision: Mapped[str] = mapped_column(String(255))
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     manifest: Mapped[dict[str, Any]] = mapped_column(JSONB)
     manifest_sha256: Mapped[str] = mapped_column(String(64))
     storage_path: Mapped[str] = mapped_column(String(700))

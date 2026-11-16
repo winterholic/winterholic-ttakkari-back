@@ -10,6 +10,10 @@ All control calls use `Authorization: Bearer <control-token>`. The token is prov
 
 ## Private Publisher JSON contract
 
+All paths below are served by the separately launched control app at `http://127.0.0.1:8788` in the local Compose example. Send `Authorization: Bearer <control-token>` and `Content-Type: application/json` on JSON requests. The control token is the independently provisioned `CONTEXT_GATEWAY_CONTROL_TOKEN`; it is not a public session token or issued client key. Missing, malformed, or incorrect credentials return `401 {"detail":"unauthorized"}` with `WWW-Authenticate: Bearer`. Never put credentials in a URL, follow redirects with this credential, or log request/response credential bodies.
+
+Successful JSON response examples below omit no response fields unless stated. Control API errors use FastAPI's `{"detail": ...}` envelope: request/schema and domain validation failures are `422`, hash mismatch is `409`, unknown revoke IDs are `404`, and missing/invalid control authentication is `401`. A malformed UUID path value is a request validation error (`422`). Do not infer success from a transport-level response alone; require the documented status and response fields.
+
 ### Publish an immutable snapshot
 
 `POST /control/v1/snapshots` on the control port.
@@ -27,26 +31,65 @@ Content-Type: application/json
   "source_refs": ["opaque-source-ref-01"],
   "source_revision": "source-revision-42",
   "generated_at": "2026-11-16T00:00:00Z",
-  "verified_at": "2026-11-16T00:05:00Z",
+  "verified_at": null,
   "documents": [
     {
       "id": "overview",
       "title": "Approved overview",
       "content_type": "text/markdown",
       "content": "Only explicitly approved content belongs here.",
+      "source_refs": ["note:overview-source"],
       "sha256": "optional-lowercase-sha256-of-UTF8-content"
     }
   ]
 }
 ```
 
-Required fields are `project_slug`, `project_name`, `source_refs`, `source_revision`, `generated_at`, `verified_at`, and a non-empty `documents` list. `project_description` is optional. Document `sha256` is optional, but when supplied it must match the UTF-8 content bytes. The Gateway always calculates and stores a SHA-256 for each document and for the canonical manifest. The manifest records `source_refs`, `source_revision`, `generated_at`, `verified_at`, and the per-document hashes. `source_refs` should be opaque stable identifiers, not local paths, credentials, or copied source content.
+Required fields are `project_slug`, `project_name`, `source_refs`, `source_revision`, `generated_at`, and a non-empty `documents` list. `project_description` and `verified_at` are optional; omitted or explicit `null` `verified_at` means there is no verified source approval timestamp. Set it only to the timezone-aware time when the snapshot content was actually verified; code inspection, snapshot generation, or publishing time is not a substitute. If present, `verified_at` must be at or after `generated_at`. `source_revision` must identify a source hash or revision actually observed from the source. Do not infer a Git SHA from the Publisher's code, checkout, or deployment; a Git SHA is valid only when it is itself the verified source revision being published. Document `sha256` is optional, but when supplied it must match the UTF-8 content bytes. The Gateway always calculates and stores a SHA-256 for each document and for the canonical manifest. The manifest records the snapshot-level `source_refs`, `source_revision`, `generated_at`, nullable `verified_at`, and the per-document hashes and source refs. `source_refs` should be opaque stable identifiers, not local paths, credentials, or copied source content.
+
+Limits and validation: `project_slug` is 1–120 characters and matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`; `project_name` is 1–240 characters; `project_description` is at most 4,000 characters; there are 1–100 snapshot-level `source_refs`; `source_revision` is 1–255 characters. `generated_at` must include a timezone. If non-null, `verified_at` must include a timezone and be at or after `generated_at`. There must be 1–1,000 documents and the combined UTF-8 document content must not exceed 20,000,000 bytes; an individual document's content is at most 2,000,000 characters. A document has `id` (1–120 characters, unique within the snapshot, ASCII letters/digits/dot/underscore/hyphen, starting with a letter or digit), `title` (1–500 characters), `content` (string), optional `content_type` (`text/markdown`, `text/plain`, or `application/json`; defaults to `text/markdown`), optional `source_refs` (up to 100 opaque references; defaults to `[]`), and optional lowercase 64-hex `sha256`.
 
 Each call creates a new immutable revision. Its content is staged in the dedicated snapshot volume, renamed into its final directory, and then the snapshot row and project latest pointer are committed together in PostgreSQL. If the database commit fails the new directory is removed. A failed hash check returns `409` and publishes no snapshot. A successful response is `201` with the snapshot ID (`id`), Gateway project UUID (`project_id`), timestamps, source metadata, per-document hashes, and manifest hash; it does not include source document contents. The `project_id` is the UUID to place in a later key ACL.
 
-### Revoke a snapshot
+The successful response shape is:
 
-`POST /control/v1/snapshots/{snapshot_id}/revoke` with the same control header. Returns `200 {"revoked": true, "snapshot_id": "…"}` or `404`. Revocation is irreversible. If it was the latest pointer, PostgreSQL switches the project pointer to the newest remaining active snapshot in the same transaction; otherwise the pointer becomes null. Every REST and MCP read rejects revoked snapshots.
+```json
+{
+  "id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67",
+  "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+  "source_refs": ["opaque-source-ref-01"],
+  "source_revision": "source-revision-42",
+  "generated_at": "2026-11-16T00:00:00Z",
+  "verified_at": null,
+  "published_at": "2026-11-16T00:05:02Z",
+  "manifest_sha256": "<64 lowercase hex characters>",
+  "documents": [
+    {
+      "id": "overview",
+      "title": "Approved overview",
+      "content_type": "text/markdown",
+      "extension": "md",
+      "sha256": "<64 lowercase hex characters>",
+      "source_refs": ["note:overview-source"]
+    }
+  ]
+}
+```
+
+The success response deliberately returns document metadata and hashes, never document bodies or the supplied optional content hash as a separate field. On invalid payload/domain values the response is `422 {"detail":"<reason>"}` (Pydantic shape errors may use a structured `detail` array); on a supplied hash mismatch it is `409 {"detail":"document hash mismatch: <document-id>"}`. The Publisher should persist the returned `project_id`, snapshot `id`, `manifest_sha256`, and document hashes as its receipt.
+
+### Revoke a project publication (current API: revoke each snapshot)
+
+There is no project-level revoke route in the current control app. To withdraw a project's published context, the Publisher must track every successful publish receipt for that Gateway `project_id`, then call the existing endpoint once for each snapshot ID:
+
+```http
+POST /control/v1/snapshots/4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67/revoke
+Authorization: Bearer <control-token>
+```
+
+There is no request body. Each successful call returns `200 {"revoked":true,"snapshot_id":"4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67"}`. Repeated revocation is idempotent and returns the same success shape. An unknown UUID returns `404 {"detail":"not found"}`. Revocation is irreversible. When revoking the latest snapshot, the latest pointer moves to the newest remaining active snapshot, or becomes `null` if none remains. Therefore, a project-wide withdrawal is complete only after every snapshot receipt for that project has been revoked; revoking only the latest snapshot can expose an older active revision.
+
+Snapshot revocation removes readable context, but the current API does not delete a project or remove a project from a key's ACL. If the Publisher must revoke a client's whole key, use the key revoke endpoint below (which revokes all project grants on that key), then issue a replacement key containing only the still-approved projects. The control API currently has no per-project ACL removal operation.
 
 ### Issue a one-time key
 
@@ -63,9 +106,21 @@ Each call creates a new immutable revision. Its content is staged in the dedicat
 
 Allowed scopes are `read`, `search`, and `export`. Response `201` contains `key_id`, the raw 256-bit random `key`, and `expires_at` exactly one hour after issuance. The raw key is returned once; PostgreSQL stores only its SHA-256 hash. The Publisher must deliver it to the intended client over a protected channel and must not log or persist the response body.
 
+`label` is 1–160 characters. `projects` must contain at least one Gateway project UUID; each grant must contain at least one allowed scope. A nonexistent project UUID or invalid scope returns `422 {"detail":"one or more projects do not exist"}` or `422 {"detail":"invalid scopes"}` respectively. Successful response:
+
+```json
+{
+  "key_id": "87fae3bb-8b59-4e96-a10b-7152eb18e231",
+  "key": "<one-time URL-safe encoding of 32 random bytes>",
+  "expires_at": "2026-11-16T01:00:00+00:00"
+}
+```
+
+The current API has no `ttl`, `ttl_seconds`, or requested-expiration field: issuance is fixed at 3,600 seconds (one hour). The current Pydantic request model uses its default extra-field behavior, so an unrecognized TTL field is ignored rather than applied; callers must omit TTL fields and treat returned `expires_at` as authoritative. The exchanged session expires no later than this original key expiry.
+
 ### Revoke a key
 
-`POST /control/v1/keys/{key_id}/revoke` with the same control header. Returns `200 {"revoked": true, "key_id": "…"}` or `404`. Every session checks the parent key on every request, so revocation takes effect immediately.
+`POST /control/v1/keys/{key_id}/revoke` with the same control header and no body. Returns `200 {"revoked":true,"key_id":"87fae3bb-8b59-4e96-a10b-7152eb18e231"}`. Repeated revocation is idempotent; an unknown UUID returns `404 {"detail":"not found"}`. Revoking a key revokes all its project grants and makes its issued sessions fail their next authorization check.
 
 ## Public REST contract
 

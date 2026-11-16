@@ -76,6 +76,47 @@ describe("로그인과 정상 조회", () => {
     expect(within(provenance).queryByText("미검증")).toBeNull();
   });
 
+  it("문서 단건과 전체 맥락에서 문서 A/B provenance를 스냅샷 값과 섞지 않는다", async () => {
+    const gateway = new FakeGateway();
+    const snapshot = gateway.snapshots.find((item) => item.id === SNAP_A_NEW)!;
+    snapshot.verifiedAt = "2026-11-16T02:30:00+00:00";
+    snapshot.sourceRefs = ["snapshot-only-ref"];
+    snapshot.sourceRevision = "snapshot-revision";
+    snapshot.generatedAt = "2026-11-16T02:00:00+00:00";
+    Object.assign(snapshot.docs[0]!, {
+      sourceRefs: ["document-a-ref"],
+      sourceRevision: "document-a-revision",
+      generatedAt: "2026-11-16T02:10:00+00:00",
+      verifiedAt: "2026-11-16T02:20:00+00:00",
+    });
+    // B는 빈 source_refs와 null provenance를 보낸다. 미지정 필드는 어댑터 회귀에서 별도로 확인한다.
+    Object.assign(snapshot.docs[1]!, { sourceRefs: [], sourceRevision: null, generatedAt: null, verifiedAt: null });
+
+    const { user } = await loggedIn(KEY, gateway);
+    await screen.findByText(/합성 데이터/);
+    const docA = screen.getByRole("group", { name: "문서 출처" });
+    expect(within(docA).getByText("document-a-ref")).toBeInTheDocument();
+    expect(within(docA).getByText("document-a-revision")).toBeInTheDocument();
+    expect(within(docA).queryByText("미검증")).toBeNull();
+
+    await user.click(docList().getByRole("button", { name: /API 노트/ }));
+    expect(await screen.findByText(/GET \/things/)).toBeInTheDocument();
+    const docB = screen.getByRole("group", { name: "문서 출처" });
+    expect(within(docB).getByText("미검증")).toBeInTheDocument();
+    expect(within(docB).getAllByText("기록 없음")).toHaveLength(3);
+    expect(within(docB).queryByText(/snapshot-only-ref|snapshot-revision/)).toBeNull();
+
+    await user.click(docList().getByRole("button", { name: /전체 맥락/ }));
+    expect(await screen.findByRole("heading", { level: 2, name: "전체 맥락" })).toBeInTheDocument();
+    const groups = screen.getAllByRole("group", { name: "문서 출처" });
+    expect(groups).toHaveLength(2);
+    expect(within(groups[0]!).getByText("document-a-ref")).toBeInTheDocument();
+    expect(within(groups[0]!).queryByText("미검증")).toBeNull();
+    expect(within(groups[1]!).getByText("미검증")).toBeInTheDocument();
+    expect(within(groups[1]!).getAllByText("기록 없음")).toHaveLength(3);
+    expect(within(groups[1]!).queryByText(/snapshot-only-ref|snapshot-revision/)).toBeNull();
+  });
+
   it("스냅샷을 바꾸면 그 스냅샷의 문서를 읽고 verified_at이 null이면 미검증으로 표시한다", async () => {
     const { user, gateway } = await loggedIn();
     await screen.findByText(/합성 데이터/);

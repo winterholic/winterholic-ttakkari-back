@@ -84,7 +84,7 @@ export function toContext(raw: unknown, requestedProjectId: string, requestedSna
   if (project.id !== requestedProjectId) throw contract("다른 프로젝트의 맥락");
   if (requestedSnapshotId && snapshot.id !== requestedSnapshotId) throw contract("다른 스냅샷의 맥락");
   const provenance: Provenance = { sourceRefs: snapshot.sourceRefs, sourceRevision: snapshot.sourceRevision, generatedAt: snapshot.generatedAt, verifiedAt: snapshot.verifiedAt };
-  const documents = asArray(rec["documents"], "context.documents").map((item) => mergeProvenance(toDocument(item), provenance));
+  const documents = asArray(rec["documents"], "context.documents").map(toDocument);
   return { project, snapshotId: snapshot.id, provenance, documents };
 }
 
@@ -96,16 +96,4 @@ export function toSearch(raw: unknown, requestedProjectId: string): SearchResult
     return { id: str(hit, "id", "hit"), title: str(hit, "title", "hit"), snippet: typeof hit["snippet"] === "string" ? hit["snippet"] : "", matches: typeof hit["matches"] === "number" ? hit["matches"] : 0 };
   });
   return { projectId: requestedProjectId, snapshotId: str(rec, "snapshot_id", "search"), query: typeof rec["query"] === "string" ? rec["query"] : "", hits };
-}
-
-/** 문서 자신의 출처가 있으면 그것을, 없으면 스냅샷 출처를 쓴다. verified_at은 둘 다 없으면 null(미검증)로 남는다. */
-export function mergeProvenance<T extends Provenance>(doc: T, fallback: Provenance | null): T {
-  if (!fallback) return doc;
-  return {
-    ...doc,
-    sourceRefs: doc.sourceRefs.length > 0 ? doc.sourceRefs : fallback.sourceRefs,
-    sourceRevision: doc.sourceRevision ?? fallback.sourceRevision,
-    generatedAt: doc.generatedAt ?? fallback.generatedAt,
-    verifiedAt: doc.verifiedAt ?? fallback.verifiedAt,
-  };
 }

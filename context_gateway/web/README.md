@@ -26,7 +26,9 @@ npm run dev         # 개발 서버. API는 같은 origin이어야 하므로 아
 5. 호출 경로는 `src/api/paths.ts`의 허용 목록(교환 + 공개 REST 7개)뿐이다. Private API·로그인·refresh 경로는 만들 수 없다. 모든 요청은 `credentials: "omit"`, `referrerPolicy: "no-referrer"`, 상대 경로(같은 origin)다.
 6. 다운로드는 Authorization을 붙인 `fetch` → `Blob` → `blob:` URL 앵커로 저장한다. URL에는 자격이 없다.
 7. Markdown은 `react-markdown` + `remark-gfm`으로 그린다. 원시 HTML은 요소가 되지 않고 글자로 보이며, 링크는 `http(s):`·`mailto:`만 새 탭(`noopener noreferrer nofollow`)으로 열고, 이미지는 외부를 불러오지 않고 대체 텍스트만 보인다.
-8. 문서별 `source_refs`·`source_revision`·`generated_at`·`verified_at`을 보인다. `verified_at`이 null이면 "미검증" 배지로 표시한다. 문서 단건 응답에는 출처 필드가 없어 스냅샷의 값을 상속한다(`mergeProvenance`).
+8. 문서별 `source_refs`·`source_revision`·`generated_at`·`verified_at`을 보인다. `verified_at`이 null이거나 응답에서 빠지면 "미검증" 배지로 표시한다. 최신 [Gateway 계약](../../docs/context-gateway-contract.md)은 문서 provenance를 스냅샷과 독립된 문서 값으로 정의하며, 생략과 명시적 `null`은 미상이다. 빈 `source_refs`도 실제 문서 값으로 보존하고 스냅샷 값으로 채우지 않는다.
+
+   과거 UI 기록에는 문서 단건 응답에 출처 필드가 없다는 구 계약을 전제로 `mergeProvenance`가 스냅샷 값을 상속한다고 적혀 있었다. 그 fallback은 현재 계약과 맞지 않아 제거했다. 단건 응답과 전체 context 응답 모두 각 문서가 돌려준 provenance만 표시한다.
 
 ## 오류 처리
 
@@ -95,7 +97,8 @@ node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 
 | 검증 | 대상 | 결과 |
 |---|---|---|
-| `npm test` | 합성 Gateway(`src/test/fakeGateway.ts`) | 94 통과, live 5개는 환경변수 없으면 skip |
+| `npm test` | 합성 Gateway(`src/test/fakeGateway.ts`) | 93 통과, live 5개 skip |
+| 문서 provenance 회귀 | 단건·전체 context의 A/B 표시, null·미지정, snapshot 값 비상속 | `src/App.test.tsx`, `src/api/adapters.test.ts` 통과 |
 | `npm run typecheck`, `npm run build` | | 오류 없음 |
 | **실제 Gateway 대조** | `apps.py` 실서버(PostgreSQL 17 + uvicorn)에 `GatewayClient` 어댑터 | `src/api/live.test.ts` 4개 통과(앞선 실행 기록) |
 | **실제 Gateway + UI 전체 흐름** | 로그인→읽기→스냅샷→검색→ZIP→로그아웃(jsdom) | `src/live.app.test.tsx` 1개 통과(앞선 실행 기록) |
@@ -106,7 +109,7 @@ node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 
 - `expires_at`·`published_at`은 `2026-11-16T02:21:24.472494Z`처럼 **마이크로초 + Z**다. V8(Node)에서 `Date.parse`가 읽는다. Safari·Firefox의 마이크로초 파싱은 **미검증**이다.
 - 문서 메타에 `extension`(`md`/`txt`/`json`)이 추가돼 있다. 어댑터는 모르는 필드를 무시하므로 그대로 동작한다(저장 파일 이름은 content_type으로 정한다).
-- 스냅샷 및 전체 context 실제 응답의 `verified_at`은 `null`이었다. 문서 단건 응답은 `source_refs`, `extension`, `path`, `sha256`를 포함했고, snapshot-level `source_revision`, `generated_at`, `verified_at`은 포함하지 않았다. UI는 해당 세 값을 선택된 snapshot에서 가져와 표시했다. 각 문서의 `source_refs`는 서로 다른 값으로 보존·표시됐다.
+- **과거 런타임 관측(당시 구 응답·구 UI):** snapshot 및 전체 context의 `verified_at`은 `null`이었고, 단건 문서 응답에는 `source_refs`, `extension`, `path`, `sha256`가 있었지만 revision·생성·검증 시각은 없었다. 당시 UI가 이 세 값을 snapshot에서 채웠다는 기록은 이전 동작의 증거이며 최신 계약을 설명하지 않는다. 현재 계약은 문서 metadata를 snapshot과 독립적으로 정의하고, 현재 UI는 생략·`null`을 미상으로 표시한다. 문서별 `source_refs`는 당시에도 서로 다른 값으로 관측됐다.
 - control publish와 key issuance는 각각 201이었다. projects, project, snapshots, context(JSON), document(JSON), search는 200이었다. export Markdown/JSON/ZIP은 각각 200이며 `text/markdown`, `application/json`, `application/zip`이었다.
 - 소비된 key의 재교환은 401이었다. 시험용 session row의 `expires_at`을 전용 DB에서 과거로 설정한 뒤 보호된 search 요청은 실제 401을 반환했고 UI가 토큰과 문서를 비운 뒤 `세션이 만료됐습니다` 화면으로 돌아왔다.
 - 실제 429도 관측했다. 동일 test DB를 쓰는 별도 public 프로세스를 `CONTEXT_GATEWAY_RATE_LIMIT=3`으로 띄웠다. projects/project/snapshots가 200인 뒤 document 요청이 429였고 `Retry-After: 60`; 브라우저는 `60초 뒤에 다시 시도하세요`와 재시도 버튼을 표시했다.
@@ -139,7 +142,7 @@ Control API에 합성 snapshot을 게시하고 key를 발급한 뒤 raw key는 �
 | 확인 | 결과 |
 |---|---|
 | 390×844 | built UI에 새 key 교환 성공, 프로젝트·snapshot·문서 목록, overview 문서·출처/리비전/생성/미검증 표시 |
-| 문서별 provenance | overview, notes, config에서 각각 게시한 문서별 `source_refs`와 snapshot-level provenance 표시; 전체 context 화면에서도 3개 모두 확인 |
+| 문서별 provenance(당시 동작) | overview, notes, config의 문서별 `source_refs`가 다르게 표시되고 snapshot-level 값을 함께 사용했다. timestamp/revision의 snapshot fallback은 과거 동작이며, 최신 문서별 provenance 동작은 현재 Vitest 회귀로 확인했다(이번 변경에서는 브라우저 재실행 안 함). |
 | 1280×800 | 검색 결과·전체 맥락·세 문서가 좌측 탐색과 본문에 표시 |
 | Search | `gateway-live-probe`가 실제 문서 3개를 반환 |
 | 전체 export 다운로드 | 브라우저 완료 이벤트로 `context-…md`, `context-…json`, `live-ui-check-….zip` 확인 |

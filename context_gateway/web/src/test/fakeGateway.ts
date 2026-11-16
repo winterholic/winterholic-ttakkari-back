@@ -15,6 +15,10 @@ interface Doc {
   id: string;
   title: string;
   content: string;
+  sourceRefs?: string[];
+  sourceRevision?: string | null;
+  generatedAt?: string | null;
+  verifiedAt?: string | null;
 }
 
 interface SnapshotFixture {
@@ -38,8 +42,8 @@ export const SNAPSHOTS: SnapshotFixture[] = [
     generatedAt: "2026-11-16T02:00:00+00:00",
     verifiedAt: "2026-11-16T02:30:00+00:00",
     docs: [
-      { id: "overview", title: "개요", content: "# 알파 개요\n\n알파 프로젝트는 **합성 데이터**다.\n\n- 항목 하나\n- 항목 둘" },
-      { id: "api", title: "API 노트", content: "## 엔드포인트\n\n`GET /things` 는 목록을 돌려준다." },
+      { id: "overview", title: "개요", content: "# 알파 개요\n\n알파 프로젝트는 **합성 데이터**다.\n\n- 항목 하나\n- 항목 둘", sourceRefs: ["repo://alpha@abc1234", "docs/overview.md"], sourceRevision: "abc1234", generatedAt: "2026-11-16T02:00:00+00:00", verifiedAt: "2026-11-16T02:30:00+00:00" },
+      { id: "api", title: "API 노트", content: "## 엔드포인트\n\n`GET /things` 는 목록을 돌려준다.", sourceRefs: ["repo://alpha@abc1234"], sourceRevision: "abc1234", generatedAt: "2026-11-16T02:00:00+00:00", verifiedAt: null },
     ],
   },
   {
@@ -50,7 +54,7 @@ export const SNAPSHOTS: SnapshotFixture[] = [
     sourceRevision: "old0001",
     generatedAt: "2026-11-15T02:00:00+00:00",
     verifiedAt: null,
-    docs: [{ id: "overview", title: "개요", content: "# 알파 개요 (이전판)\n\n옛 내용." }],
+    docs: [{ id: "overview", title: "개요", content: "# 알파 개요 (이전판)\n\n옛 내용.", sourceRefs: ["repo://alpha@old0001"], sourceRevision: "old0001", generatedAt: "2026-11-15T02:00:00+00:00", verifiedAt: null }],
   },
   {
     id: SNAP_B,
@@ -60,7 +64,7 @@ export const SNAPSHOTS: SnapshotFixture[] = [
     sourceRevision: "def5678",
     generatedAt: "2026-11-16T03:30:00+00:00",
     verifiedAt: "2026-11-16T03:45:00+00:00",
-    docs: [{ id: "secret", title: "베타 비밀", content: `# 베타\n\n${B_SECRET}` }],
+    docs: [{ id: "secret", title: "베타 비밀", content: `# 베타\n\n${B_SECRET}`, sourceRefs: ["repo://beta@def5678"], sourceRevision: "def5678", generatedAt: "2026-11-16T03:30:00+00:00", verifiedAt: "2026-11-16T03:45:00+00:00" }],
   },
 ];
 
@@ -198,7 +202,14 @@ export class FakeGateway {
     const wanted = url.searchParams.get("snapshot_id") ?? project.latest_snapshot_id;
     const snapshot = snapshots.find((s) => s.id === wanted);
     if (!snapshot) return json({ detail: "not found" }, 404);
-    const full = (d: Doc) => ({ ...toMeta(d), content: d.content });
+    const full = (d: Doc) => ({
+      ...toMeta(d),
+      content: d.content,
+      ...(Object.hasOwn(d, "sourceRefs") ? { source_refs: d.sourceRefs } : {}),
+      ...(Object.hasOwn(d, "sourceRevision") ? { source_revision: d.sourceRevision } : {}),
+      ...(Object.hasOwn(d, "generatedAt") ? { generated_at: d.generatedAt } : {}),
+      ...(Object.hasOwn(d, "verifiedAt") ? { verified_at: d.verifiedAt } : {}),
+    });
     if (sub === "context") {
       const leaked = this.leakProjectInContext ? PROJECTS.find((p) => p.id !== projectId)! : project;
       return json({ project: leaked, snapshot: snapshotOut(snapshot), documents: snapshot.docs.map(full) });

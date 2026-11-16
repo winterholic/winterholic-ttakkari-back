@@ -1,32 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { GatewayError } from "./errors";
-import { mergeProvenance, parseTime, toDocument } from "./adapters";
-import type { GatewayDocument, SnapshotInfo } from "./types";
+import { parseTime, toContext, toDocument } from "./adapters";
 
-const snapshot: SnapshotInfo = {
-  id: "s",
-  publishedAt: null,
-  manifestSha256: null,
-  documents: [],
-  sourceRefs: ["repo://x@1"],
-  sourceRevision: "rev1",
-  generatedAt: "2026-11-16T00:00:00Z",
-  verifiedAt: null,
-};
-const bare: GatewayDocument = { id: "d", title: "t", contentType: "text/markdown", sha256: null, content: "c", sourceRefs: [], sourceRevision: null, generatedAt: null, verifiedAt: null };
-
-describe("mergeProvenance", () => {
-  it("문서에 출처가 없으면 스냅샷 값을 쓰고, verified_at이 null이면 null로 남긴다", () => {
-    expect(mergeProvenance(bare, snapshot)).toMatchObject({ sourceRefs: ["repo://x@1"], sourceRevision: "rev1", verifiedAt: null });
+describe("문서 provenance", () => {
+  const contextRaw = (docs: unknown[]) => ({
+    project: { id: "p", slug: "p", name: "Project", description: "", latest_snapshot_id: "s" },
+    snapshot: { id: "s", source_refs: ["snapshot-ref"], source_revision: "snapshot-rev", generated_at: "2026-11-16T00:00:00Z", verified_at: "2026-11-16T00:30:00Z", documents: [] },
+    documents: docs,
   });
 
-  it("문서가 자기 출처를 가지고 있으면 그것을 우선한다", () => {
-    const own = { ...bare, sourceRefs: ["docs/own.md"], sourceRevision: "own", verifiedAt: "2026-11-16T01:00:00Z" };
-    expect(mergeProvenance(own, snapshot)).toMatchObject({ sourceRefs: ["docs/own.md"], sourceRevision: "own", verifiedAt: "2026-11-16T01:00:00Z", generatedAt: "2026-11-16T00:00:00Z" });
-  });
+  it("문서 verified_at null과 미지정은 verified snapshot이어도 미상으로 남는다", () => {
+    const bundle = toContext(contextRaw([
+      { id: "a", title: "A", content: "a", source_refs: ["doc-a-ref"], source_revision: "doc-a-rev", generated_at: "2026-11-16T00:10:00Z", verified_at: "2026-11-16T00:20:00Z" },
+      { id: "b-null", title: "B null", content: "b", source_refs: [], source_revision: null, generated_at: null, verified_at: null },
+      { id: "b-omitted", title: "B omitted", content: "b" },
+    ]), "p", null);
 
-  it("스냅샷을 모르면 문서를 그대로 둔다", () => {
-    expect(mergeProvenance(bare, null)).toEqual(bare);
+    expect(bundle.provenance.verifiedAt).toBe("2026-11-16T00:30:00Z");
+    expect(bundle.documents.map((doc) => doc.verifiedAt)).toEqual(["2026-11-16T00:20:00Z", null, null]);
+    expect(bundle.documents[1]).toMatchObject({ sourceRefs: [], sourceRevision: null, generatedAt: null });
+    expect(bundle.documents[2]).toMatchObject({ sourceRefs: [], sourceRevision: null, generatedAt: null });
+    expect(bundle.documents[0]).toMatchObject({ sourceRefs: ["doc-a-ref"], sourceRevision: "doc-a-rev" });
   });
 });
 

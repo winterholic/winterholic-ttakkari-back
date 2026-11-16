@@ -114,8 +114,8 @@ describe("GatewayClient 데이터 요청", () => {
     expect(snapshots[1]).toMatchObject({ verifiedAt: null, sourceRevision: "old0001" });
     expect(snapshots[0]!.documents.map((d) => d.id)).toEqual(["overview", "api"]);
     const doc = await client.getDocument(PROJECT_A, "overview", SNAP_A_OLD);
-    // 문서 단건 응답에는 출처 필드가 없다(서버 계약). 스냅샷에서 상속하는 것은 mergeProvenance의 몫이다.
-    expect(doc).toMatchObject({ id: "overview", title: "개요", sourceRevision: null, verifiedAt: null, sourceRefs: [] });
+    // 문서 단건 응답은 문서 자신의 provenance를 반환하며, 빈 값은 스냅샷에서 채우지 않는다.
+    expect(doc).toMatchObject({ id: "overview", title: "개요", sourceRevision: "old0001", verifiedAt: null, sourceRefs: ["repo://alpha@old0001"] });
     expect(doc.content).toContain("이전판");
     const bundle = await client.getContext(PROJECT_A, null);
     expect(bundle.documents).toHaveLength(2);

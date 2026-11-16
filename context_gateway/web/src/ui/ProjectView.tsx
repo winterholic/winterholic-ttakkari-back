@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { mergeProvenance } from "../api/adapters";
 import type { GatewayClient } from "../api/client";
 import type { DownloadedFile, ProjectSummary, SnapshotInfo } from "../api/types";
 import { ConnectGuide } from "./ConnectGuide";
@@ -107,7 +106,7 @@ export function ProjectView({ client, project, save, notify }: { client: Gateway
           <DocumentReader
             title={activeDoc.title}
             state={doc.state}
-            provenance={doc.state.status === "ready" ? mergeProvenance(doc.state.data, snapshot) : null}
+            provenance={doc.state.status === "ready" ? doc.state.data : null}
             focusSignal={focusSignal}
             onBack={() => setMobileView("list")}
             onRetry={doc.reload}

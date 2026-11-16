@@ -67,6 +67,28 @@ async def test_api_mcp_and_health_are_forwarded_without_static_fallback(client: 
 
 
 @pytest.mark.asyncio
+async def test_openapi_and_docs_expose_only_the_public_rest_schema(client: AsyncClient):
+    response = await client.get("/openapi.json")
+    assert response.status_code == 200
+    schema = response.json()
+    assert schema["openapi"].startswith("3.1.")
+    assert schema["paths"]
+    assert all(path.startswith("/api/v1/") for path in schema["paths"])
+    assert not any("control" in path for path in schema["paths"])
+    assert response.headers["content-type"].startswith("application/json")
+
+    docs = await client.get("/docs")
+    assert docs.status_code == 200
+    assert "Context Gateway API" in docs.text
+    assert "/openapi.json" in docs.text
+    assert "/api/v1/projects" in docs.text
+    assert "control API is not included" in docs.text
+    assert "<script" not in docs.text.lower()
+    assert "cdn." not in docs.text.lower()
+    assert "frame-ancestors 'none'" in docs.headers["content-security-policy"]
+
+
+@pytest.mark.asyncio
 async def test_only_built_assets_are_exposed(client: AsyncClient):
     for path in (
         "/assets/app.js.map",
@@ -74,7 +96,7 @@ async def test_only_built_assets_are_exposed(client: AsyncClient):
         "/main.py",
         "/assets/%2e%2e/main.py",
         "/assets/../../main.py",
-        "/openapi.json",
-        "/docs",
+        "/openapi.json.bak",
+        "/docs/",
     ):
         assert (await client.get(path)).status_code == 404, path

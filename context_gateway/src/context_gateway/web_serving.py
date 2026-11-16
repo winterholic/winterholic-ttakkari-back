@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import html
+import json
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from starlette.exceptions import HTTPException
-from starlette.responses import PlainTextResponse
+from starlette.responses import HTMLResponse, PlainTextResponse
 from starlette.staticfiles import StaticFiles
 
 _ASSET_SUFFIXES = {".css", ".ico", ".js", ".png", ".svg", ".ttf", ".webp", ".woff", ".woff2"}
@@ -43,6 +45,10 @@ class WebServingApp:
             await self.public_app(scope, receive, secure_send)
             return
 
+        if path == "/docs" and scope.get("method", "GET") in {"GET", "HEAD"}:
+            await self._docs_response()(scope, receive, secure_send)
+            return
+
         if not self._is_built_file(path, scope.get("method", "GET")):
             await PlainTextResponse("Not Found", status_code=404)(scope, receive, secure_send)
             return
@@ -59,10 +65,25 @@ class WebServingApp:
     def _is_public_route(path: str) -> bool:
         return (
             path == "/healthz"
+            or path == "/openapi.json"
             or path == "/api/v1"
             or path == "/mcp"
             or path.startswith(("/api/v1/", "/mcp/"))
         )
+
+    def _docs_response(self) -> HTMLResponse:
+        schema_json = json.dumps(self.public_app.openapi(), ensure_ascii=False, indent=2)
+        escaped_schema = html.escape(schema_json)
+        body = (
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            "<title>Context Gateway API</title></head><body>"
+            "<h1>Context Gateway API</h1>"
+            "<p>Public REST API OpenAPI 3.1 document. The control API is not included.</p>"
+            "<p><a href=\"/openapi.json\">Download the OpenAPI JSON</a></p>"
+            f"<pre>{escaped_schema}</pre></body></html>"
+        )
+        return HTMLResponse(body)
 
     @staticmethod
     def _is_built_file(path: str, method: str) -> bool:

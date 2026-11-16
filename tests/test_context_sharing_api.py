@@ -273,6 +273,33 @@ async def test_publish_preserves_null_per_document_verification(client, auth, ga
     assert [d["verified_at"] for d in body["documents"]] == [None, None]
     assert all(d["source_revision"] and d["generated_at"] and d["source_refs"] for d in body["documents"])
     assert len({d["source_revision"] for d in body["documents"]}) == 2
+    assert r.json()["draft"]["status"] == "published"
+
+
+async def test_mixed_source_verification_does_not_block_approved_publish_or_infer_snapshot_verification(client, auth,
+                                                                                                         gateway):
+    project = await make_project("Alpha", {"a.md": DOC, "b.md": "# b\n"})
+    draft = await new_draft(client, auth, project, ["a.md", "b.md"], verified=False)
+    first = draft["documents"][0]
+    edited = await client.patch(f"{BASE}/drafts/{draft['id']}", headers=auth,
+                                json={"documents": [{"id": first["id"], "owner_verified": True}]})
+    assert edited.status_code == 200
+    draft = edited.json()
+
+    result = await publish(client, auth, draft)
+
+    assert result.status_code == 200, result.text
+    assert result.json()["draft"]["status"] == "published"
+    body = gateway.calls[-1][2]
+    assert body["verified_at"] is None
+    assert [d["verified_at"] for d in body["documents"]] == [draft["documents"][0]["verified_at"], None]
+    assert body["documents"][0]["verified_at"] is not None
+    for sent, source in zip(body["documents"], draft["documents"], strict=True):
+        expected_ref = f"library-document:{project['docs'][source['logical_path']]}"
+        assert sent["source_refs"] == [expected_ref]
+        assert sent["source_revision"] == source["source_revision"]
+        assert sent["generated_at"] == source["generated_at"]
+        assert sent["verified_at"] == source["verified_at"]
 
 
 async def test_risky_body_is_previewed_blocks_publish_and_can_be_edited_away(client, auth, gateway):

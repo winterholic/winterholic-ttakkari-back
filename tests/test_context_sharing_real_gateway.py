@@ -97,6 +97,11 @@ async def test_publish_and_revoke_against_the_real_control_app(client, auth, rea
     r = await client.post(f"{BASE}/drafts", headers=auth, json={
         "entity_id": project["entity_id"], "document_ids": list(project["docs"].values())})
     draft = r.json()
+    first_doc = draft["documents"][0]
+    r = await client.patch(f"{BASE}/drafts/{draft['id']}", headers=auth,
+                           json={"documents": [{"id": first_doc["id"], "owner_verified": True}]})
+    assert r.status_code == 200, r.text
+    draft = r.json()
     published = await publish_real(client, auth, draft)
     assert published.status_code == 200, published.text
     snap_id = published.json()["publication"]["snapshot_id"]
@@ -111,7 +116,9 @@ async def test_publish_and_revoke_against_the_real_control_app(client, auth, rea
         assert published_doc["source_refs"] == [f"library-document:{project['docs'][source_doc['logical_path']]}"]
         assert published_doc["source_revision"] == source_doc["source_revision"]
         assert published_doc["generated_at"] == source_doc["generated_at"]
-        assert published_doc["verified_at"] is None
+        assert published_doc["verified_at"] == source_doc["verified_at"]
+    assert manifest["documents"][0]["verified_at"] is not None
+    assert manifest["documents"][1]["verified_at"] is None
     assert published.json()["publication"]["status"] == "active"
 
     revoked = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)

@@ -35,8 +35,8 @@
 2. `GET /projects/{entity_id}/sources`로 고를 수 있는 문서를 본다.
 3. `POST /drafts`로 선택한 `document_ids`만 담은 초안을 만든다(DB에 저장).
 4. 미리보기(`preview`)의 `findings`를 읽고 `PATCH /drafts/{id}`로 본문을 고친다. 고위험이 남으면 게시가 막힌다.
-5. 문서를 원본과 직접 대조해 확인한 경우에만 `owner_verified: true`로 표시한다. 확인하지 않은 문서는 `verified_at: null`로 둔다. 게시 승인(digest 확인)과 원본 검증 시각은 별개다.
-6. 현재 `preview.digest`를 `approved_digest`로 보내 `POST /drafts/{id}/publish`.
+5. 문서를 원본과 직접 대조해 확인한 경우에만 `owner_verified: true`로 표시한다. 확인하지 않은 문서는 `verified_at: null`로 둔다. 원본 대조는 선택 사항이며 게시 필수 조건이 아니다.
+6. 현재 `preview.digest`를 `approved_digest`로 보내 `POST /drafts/{id}/publish`. 게시 승인은 내용 승인이고 원본 대조 시각과 별개다. `verified_at: null` 문서도 digest 승인 및 고위험 탐지 통과 후 게시할 수 있다.
 7. 게시 후 `POST /keys`로 1회 교환용 키를 발급하고 그 응답에서 한 번만 복사하게 한다.
 8. 필요하면 `POST /keys/{id}/revoke` 또는 `POST /projects/{slug}/revoke`.
 
@@ -64,6 +64,7 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 - 시각은 ISO 8601 UTC 문자열이다.
 - `sha256`: 게시되는 `content`(UTF-8)의 SHA-256. 편집하면 서버가 다시 계산한다. `source_revision`: 색인 당시 원본 파일의 SHA-256.
 - `verified_at`은 서버가 현재 시각으로 채우지 않는다. 소유자가 `owner_verified: true`를 보낼 때만 채워지고(`verified_by: "owner"`), 문서 내용·제목을 고치면 다시 `null`이 된다.
+- `owner_verified`는 원본 대조를 사용자가 직접 마쳤다는 선택적 표시다. 표시를 생략하거나 `false`로 두어도 초안 게시를 막지 않으며, 자동으로 `true`가 되지 않는다.
 - `digest`는 제목·요약·문서별 본문 해시·출처·`generated_at`·검증 표시의 정규화 해시다. 본문에서 매번 다시 계산하므로 저장된 값을 믿지 않는다.
 - 위험 탐지는 정규식 보조 수단이다. `limitations`를 화면에 그대로 보여 준다. **회사 기밀·맥락상 비공개 내용은 자동 탐지를 보장하지 않는다.** 심각도 `high`(인증정보, 개인 식별번호, 내부 URL, 로컬 경로)는 게시를 막고 `medium`(이메일, 전화번호)은 경고만 한다. 인증정보 발췌는 값이 `«rule»`로 가려진다.
 
@@ -124,6 +125,7 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 ```json
 { "draft": "Draft(status=published)", "publication": { "id": "uuid", "status": "active", "draft_id": "uuid", "digest": "…", "snapshot_id": "…", "published_at": "…", "revoked_at": null } }
 ```
+게시 조건은 현재 digest 승인과 고위험 탐지 통과다. 문서의 `verified_at`은 게시 조건이 아니며, 하나라도 미검증이면 스냅샷 수준 `verified_at`은 `null`로 보낸다. 각 문서는 자신의 `source_refs`, `source_revision`, `generated_at`, `verified_at`을 별도로 전송한다. API는 원본 대조 시각을 자동 생성하지 않는다.
 검사 순서와 오류:
 
 | 순서 | 상태 | `code` | 의미 |

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from context_gateway.apps import _initialize_schema, create_control_app, create_public_app
 from context_gateway.auth import hash_credential
 from context_gateway.config import Settings
-from context_gateway.models import Session, SiteControlAudit
+from context_gateway.models import APIKey, Session, SiteControlAudit
 
 
 @pytest.fixture
@@ -186,6 +186,18 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
         )
         assert issued.status_code == 201, issued.text
         expires_at = issued.json()["expires_at"]
+        unexchanged = await admin.post(
+            "/control/v1/keys", headers=control_headers,
+            json={"label": "synthetic unexchanged", "projects": {project_id: {"scopes": ["read"]}}},
+        )
+        assert unexchanged.status_code == 201, unexchanged.text
+        unexchanged_expires_at = unexchanged.json()["expires_at"]
+        async with control.state.session_factory() as db:
+            stored_key_expiry = await db.scalar(
+                select(APIKey.expires_at).where(
+                    APIKey.credential_hash == hash_credential(unexchanged.json()["key"])
+                )
+            )
         exchanged = await rest.post("/api/v1/auth/exchange",
                                     headers={"Authorization": f"Bearer {issued.json()['key']}"})
         assert exchanged.status_code == 200, exchanged.text
@@ -219,8 +231,12 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
                         "/api/v1/auth/exchange",
                         headers={"Authorization": f"Bearer {issued.json()['key']}"},
                     ),
+                    await rest.post(
+                        "/api/v1/auth/exchange",
+                        headers={"Authorization": f"Bearer {unexchanged.json()['key']}"},
+                    ),
                 ]
-                assert [response.status_code for response in denied] == [503, 503, 503]
+                assert [response.status_code for response in denied] == [503, 503, 503, 503]
                 assert all(
                     response.json() == {"detail": "site_temporarily_unavailable"}
                     for response in denied
@@ -247,6 +263,18 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
                     )
                 ).status_code == 401
                 assert issued.json()["expires_at"] == expires_at
+                resumed_unexchanged = await rest.post(
+                    "/api/v1/auth/exchange",
+                    headers={"Authorization": f"Bearer {unexchanged.json()['key']}"},
+                )
+                assert resumed_unexchanged.status_code == 200, resumed_unexchanged.text
+                assert unexchanged.json()["expires_at"] == unexchanged_expires_at
+                async with control.state.session_factory() as db:
+                    assert await db.scalar(
+                        select(APIKey.expires_at).where(
+                            APIKey.credential_hash == hash_credential(unexchanged.json()["key"])
+                        )
+                    ) == stored_key_expiry
                 resumed_snapshots = await rest.get(
                     f"/api/v1/projects/{project_id}/snapshots", headers=session_headers
                 )

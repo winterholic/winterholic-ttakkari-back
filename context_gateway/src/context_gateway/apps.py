@@ -84,7 +84,24 @@ class SnapshotDocumentInput(BaseModel):
     content: str = Field(max_length=2_000_000)
     content_type: Literal["text/markdown", "text/plain", "application/json"] = "text/markdown"
     source_refs: list[str] = Field(default_factory=list, max_length=100)
+    source_revision: str | None = Field(default=None, min_length=1, max_length=255)
+    generated_at: datetime | None = None
+    verified_at: datetime | None = None
     sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_provenance_timestamps(self):
+        for name in ("generated_at", "verified_at"):
+            value = getattr(self, name)
+            if value is not None and value.utcoffset() is None:
+                raise ValueError(f"{name} must include a timezone when supplied")
+        if (
+            self.verified_at is not None
+            and self.generated_at is not None
+            and self.verified_at < self.generated_at
+        ):
+            raise ValueError("verified_at cannot precede generated_at")
+        return self
 
 
 class ProjectOut(BaseModel):

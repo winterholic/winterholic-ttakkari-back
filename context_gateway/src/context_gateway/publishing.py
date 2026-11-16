@@ -102,6 +102,17 @@ async def publish_snapshot(
                 "extension": extension,
                 "sha256": digest,
                 "source_refs": document.get("source_refs", []),
+                "source_revision": document.get("source_revision"),
+                "generated_at": (
+                    document["generated_at"].isoformat()
+                    if document.get("generated_at") is not None
+                    else None
+                ),
+                "verified_at": (
+                    document["verified_at"].isoformat()
+                    if document.get("verified_at") is not None
+                    else None
+                ),
                 "path": f"documents/{doc_id}.{extension}",
             }
         )

@@ -4,6 +4,10 @@
 
 ## 1. 구조와 경계
 
+### ADR 0030과의 경계
+
+[ADR 0030](../adr/0030-public-capability-shares-and-exports.md)은 기존 PublicShare API에서 `CtxDocument`·`CtxMemory`·`CtxSource` 공개를 지원하지 않는다고 정한다. 이 기능은 그 API나 `PublicShare` 모델에 맥락 도서관을 추가하지 않으며, 전체 도서관 검색도 노출하지 않는다. 이 계약은 별도 Private Publisher에서 소유자가 고른 색인 문서를 검토·승인한 뒤 독립 Context Gateway로 게시하는 별도 경로다. 따라서 선택 문서의 외부 AI 게시 범위는 이 작업에서 승인된 별도 기능이며 ADR 0030의 기존 PublicShare 범위가 바뀌었다고 해석하면 안 된다.
+
 ```
 도서관 DB(ctx_*) ──LibraryAdapter──▶ Private Publisher(초안·검토·승인) ──control 토큰──▶ Gateway control 앱 ──▶ Gateway 독립 DB/파일
                                                                               외부 AI ──1회용 키 교환──▶ Gateway public 앱(읽기 전용)

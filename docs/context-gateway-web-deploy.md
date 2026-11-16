@@ -81,7 +81,10 @@ Mac의 Docker 소켓 부재와 별개로 기존 `hs-ops`/`hs-edge` 계정에서 
 
 실제 Docker 실행에서 교정한 항목: tmpfs flow list의 쉼표를 문자열로 묶었고, builder/runtime의 venv 절대 경로를 `/app/.venv`로 일치시켰다. Gateway Python 패키지를 `--no-editable`로 설치해 builder 소스 경로에 의존하지 않도록 했다. Node 22의 fetch Blob은 DOM Blob과 생성자가 달라 다운로드 검사를 ZIP MIME 및 실제 4바이트로 대조한다.
 
+현재 release를 바꾸거나 다시 기동할 때는 아래 `CONTEXT_GATEWAY_IMAGE_TAG`를 의도한 full SHA로 먼저 지정한다. 기존 `deployment.env`에 이전 tag가 남아 있을 수 있으며, `current` 링크 교체만으로 Compose의 image tag는 바뀌지 않는다. 아래 값은 2026-11-16 사이트 제어 배포 revision이다. 자격 파일은 수정하거나 출력하지 않는다.
+
 ```bash
+export CONTEXT_GATEWAY_IMAGE_TAG=032ace3b91c64fff1d0d555af39981f6aedcdd54
 docker compose --project-name context-gateway \
   --env-file /opt/homeserver/apps/context-gateway/runtime/secrets/deployment.env \
   -f deploy/context-gateway/compose.homeserver.yaml config --quiet

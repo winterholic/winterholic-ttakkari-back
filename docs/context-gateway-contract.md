@@ -197,12 +197,21 @@ The current API has no `ttl`, `ttl_seconds`, or requested-expiration field: issu
 
 `POST /control/v1/keys/{key_id}/revoke` with the same control header and no body. Returns `200 {"revoked":true,"key_id":"87fae3bb-8b59-4e96-a10b-7152eb18e231"}`. Repeated revocation is idempotent; an unknown UUID returns `404 {"detail":"not found"}`. Revoking a key revokes all its project grants and makes its issued sessions fail their next authorization check.
 
+### Temporarily close or reopen the site
+
+`GET /control/v1/site` requires the control Bearer token and returns `200 {"enabled":true}` or `200 {"enabled":false}`. `PATCH /control/v1/site` requires the same token and a JSON body such as `{"enabled":false}`; its response has the same shape. Both operations record their event and resulting state in the site-control audit table without credentials.
+
+The global switch is persisted separately from snapshots, keys, and sessions. Closing the site blocks new authenticated REST and MCP reads and key exchange with `503 {"detail":"site_temporarily_unavailable"}`, `Cache-Control: no-store`, and `Retry-After: 60`. Reopening preserves the original snapshot IDs and credential expiry times. Requests already in progress are not cancelled, and open streams are not forcibly terminated. The public status endpoint and health check remain available.
+
+If an established site's state row is missing, reads remain closed, including after schema initialization runs again. Only an authenticated control PATCH can restore that row and reopen the site. A first-time installation or first introduction of site control initializes the switch to true for compatibility. The public database role can read the switch but cannot change it or read its audit table.
+
 ## Public REST contract
 
 The public app publishes OpenAPI 3.1 at `/openapi.json`. Every protected request requires `Authorization: Bearer <session-token>`. The endpoint `/api/v1/auth/exchange` accepts the one-time key in that header once and returns a session token whose expiry is capped at the key's original expiry. The session cannot extend the one-hour issuance window.
 
 | Method and path | Scope | Response |
 |---|---|---|
+| `GET /api/v1/site` | no credential required | only `enabled` (boolean); `Cache-Control: no-store` |
 | `POST /api/v1/auth/exchange` | one-time key | `access_token`, `token_type`, `expires_at` |
 | `GET /api/v1/projects` | `read` | projects granted to this key |
 | `GET /api/v1/projects/{project_id}` | `read` | project metadata |

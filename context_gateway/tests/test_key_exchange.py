@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from context_gateway.auth import AuthenticationError, exchange_key, issue_key
+from context_gateway.models import APIKey
+
+
+async def _save_key(db_sessions, raw_key: str, key_hash: str, expires_at: datetime) -> None:
+    async with db_sessions() as session:
+        session.add(APIKey(label="synthetic test", credential_hash=key_hash, expires_at=expires_at))
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_only_one_concurrent_exchange_can_consume_a_key(db_sessions) -> None:
+    now = datetime.now(UTC)
+    raw_key, key_hash, expires_at = issue_key(now=now)
+    await _save_key(db_sessions, raw_key, key_hash, expires_at)
+
+    async def exchange() -> bool:
+        async with db_sessions() as session:
+            try:
+                await exchange_key(session, raw_key, now=now)
+                await session.commit()
+                return True
+            except AuthenticationError:
+                await session.rollback()
+                return False
+
+    assert sum(await asyncio.gather(exchange(), exchange())) == 1
+
+
+@pytest.mark.asyncio
+async def test_expired_and_reused_keys_cannot_exchange(db_sessions) -> None:
+    now = datetime.now(UTC)
+    raw_key, key_hash, expires_at = issue_key(now=now - timedelta(hours=2))
+    await _save_key(db_sessions, raw_key, key_hash, expires_at)
+
+    async with db_sessions() as session, pytest.raises(AuthenticationError):
+        await exchange_key(session, raw_key, now=now)
+
+    live_key, live_hash, live_expiry = issue_key(now=now)
+    await _save_key(db_sessions, live_key, live_hash, live_expiry)
+    async with db_sessions() as session:
+        await exchange_key(session, live_key, now=now)
+        await session.commit()
+    async with db_sessions() as session, pytest.raises(AuthenticationError):
+        await exchange_key(session, live_key, now=now)
+
+
+@pytest.mark.asyncio
+async def test_session_expiry_is_capped_at_the_original_key_expiry(db_sessions) -> None:
+    now = datetime.now(UTC)
+    issued_at = now - timedelta(minutes=59, seconds=30)
+    raw_key, key_hash, key_expiry = issue_key(now=issued_at)
+    await _save_key(db_sessions, raw_key, key_hash, key_expiry)
+
+    async with db_sessions() as session:
+        _, session_expiry = await exchange_key(session, raw_key, now=now)
+        await session.commit()
+
+    assert session_expiry == key_expiry

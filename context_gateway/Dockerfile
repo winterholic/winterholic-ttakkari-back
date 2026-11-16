@@ -1,0 +1,19 @@
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+RUN pip install --no-cache-dir uv==0.12.18
+COPY pyproject.toml uv.lock ./
+COPY src ./src
+RUN uv sync --frozen --no-dev --no-cache
+
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH"
+WORKDIR /app
+COPY --from=builder /build/.venv /app/.venv
+RUN mkdir -p /var/lib/context-gateway/snapshots && chown -R 10001:10001 /var/lib/context-gateway
+
+USER 10001:10001
+EXPOSE 8787
+CMD ["uvicorn", "context_gateway.public:app", "--host", "0.0.0.0", "--port", "8787", "--proxy-headers", "--no-server-header"]

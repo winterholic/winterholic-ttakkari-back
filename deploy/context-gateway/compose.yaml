@@ -1,0 +1,89 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    image: context-gateway-postgres:17
+    environment:
+      POSTGRES_DB: context_gateway
+      POSTGRES_USER: context_gateway_admin
+      POSTGRES_PASSWORD: ${CONTEXT_GATEWAY_DB_ADMIN_PASSWORD:?set in .env}
+      CONTEXT_GATEWAY_PUBLIC_PASSWORD: ${CONTEXT_GATEWAY_DB_PUBLIC_PASSWORD:?set in .env}
+    volumes:
+      - gateway_db:/var/lib/postgresql/data
+    networks: [gateway-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U context_gateway_admin -d context_gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: local
+
+  control:
+    build:
+      context: ../../context_gateway
+      dockerfile: Dockerfile
+    image: context-gateway:0.1.0
+    command: ["uvicorn", "context_gateway.control:app", "--host", "0.0.0.0", "--port", "8788", "--no-server-header"]
+    environment:
+      CONTEXT_GATEWAY_DATABASE_URL: postgresql+asyncpg://context_gateway_admin:${CONTEXT_GATEWAY_DB_ADMIN_PASSWORD}@db:5432/context_gateway
+      CONTEXT_GATEWAY_SNAPSHOT_DIR: /var/lib/context-gateway/snapshots
+      CONTEXT_GATEWAY_CONTROL_TOKEN: ${CONTEXT_GATEWAY_CONTROL_TOKEN:?set in .env}
+      CONTEXT_GATEWAY_INITIALIZE_SCHEMA: "true"
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - gateway_snapshots:/var/lib/context-gateway/snapshots
+    networks: [gateway-internal]
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8788/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: local
+
+  public:
+    image: context-gateway:0.1.0
+    command: ["uvicorn", "context_gateway.public:app", "--host", "0.0.0.0", "--port", "8787", "--proxy-headers", "--no-server-header"]
+    environment:
+      CONTEXT_GATEWAY_DATABASE_URL: postgresql+asyncpg://context_gateway_public:${CONTEXT_GATEWAY_DB_PUBLIC_PASSWORD}@db:5432/context_gateway
+      CONTEXT_GATEWAY_SNAPSHOT_DIR: /var/lib/context-gateway/snapshots
+      CONTEXT_GATEWAY_INITIALIZE_SCHEMA: "false"
+      CONTEXT_GATEWAY_MCP_ALLOWED_HOSTS: ${CONTEXT_GATEWAY_MCP_ALLOWED_HOSTS:-localhost,127.0.0.1,localhost:*,127.0.0.1:*}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - gateway_snapshots:/var/lib/context-gateway/snapshots:ro
+    networks: [gateway-internal]
+    depends_on:
+      control:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    mem_limit: 512m
+    logging:
+      driver: local
+
+networks:
+  gateway-internal:
+    internal: true
+
+volumes:
+  gateway_db:
+  gateway_snapshots:

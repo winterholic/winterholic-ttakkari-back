@@ -1,0 +1,34 @@
+[project]
+name = "context-gateway"
+version = "0.1.0"
+description = "Isolated snapshot-only Context Gateway"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.32,<1",
+    "fastapi>=0.115,<1",
+    "mcp>=2.3,<3",
+    "sqlalchemy[asyncio]>=2,<3",
+    "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.28,<1", "pytest>=9,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1"]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+ignore = ["B008"]

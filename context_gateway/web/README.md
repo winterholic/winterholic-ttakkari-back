@@ -46,7 +46,7 @@ npm run dev         # 개발 서버. API는 같은 origin이어야 하므로 아
 
 이 디렉터리는 core 코드를 고치지 않는다. 아래는 통합 때 core에서 적용할 방법이다.
 
-**정적 서빙 통합 상태.** Core working tree에 `web_public.py`와 `WebServingApp` 구현이 생겼다. 래퍼는 `/`, `/index.html`, `/assets/*`만 정적으로 열고 `/healthz`, `/api/v1/*`, `/mcp*`는 기존 public ASGI 앱으로 전달하며 보안 헤더를 붙인다. Dockerfile/배포 설정의 `web/dist` 복사는 아직 확인되지 않았다. core 소유 범위라 수정하지 않았다.
+**정적 서빙 통합 상태.** Core working tree의 `web_public.py`와 `WebServingApp`이 이번 실 Gateway 확인에 사용됐다. `/`, `/index.html`, `/assets/*`는 빌드 UI를 서빙하고 `/healthz`, `/api/v1/*`, `/mcp*`는 public ASGI 앱으로 전달한다. 이번 검증은 로컬 ASGI wrapper까지다. Docker 이미지 빌드·배포 연결은 확인하지 않았다. 이 core 파일들은 현재 다른 worker의 미커밋 변경이므로 여기서 수정하지 않았다.
 
 ```python
 from fastapi.staticfiles import StaticFiles
@@ -97,49 +97,59 @@ node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 |---|---|---|
 | `npm test` | 합성 Gateway(`src/test/fakeGateway.ts`) | 94 통과, live 5개는 환경변수 없으면 skip |
 | `npm run typecheck`, `npm run build` | | 오류 없음 |
-| **실제 Gateway 대조** | `apps.py` 실서버(PostgreSQL 17 + uvicorn)에 `GatewayClient` 어댑터 | `src/api/live.test.ts` 4개 통과 |
-| **실제 Gateway + UI 전체 흐름** | 로그인→읽기→스냅샷→검색→ZIP→로그아웃(jsdom) | `src/live.app.test.tsx` 1개 통과 |
+| **실제 Gateway 대조** | `apps.py` 실서버(PostgreSQL 17 + uvicorn)에 `GatewayClient` 어댑터 | `src/api/live.test.ts` 4개 통과(앞선 실행 기록) |
+| **실제 Gateway + UI 전체 흐름** | 로그인→읽기→스냅샷→검색→ZIP→로그아웃(jsdom) | `src/live.app.test.tsx` 1개 통과(앞선 실행 기록) |
+| **실제 Gateway + 빌드 UI** | 새 전용 DB에 control/public 앱, `web_public:app`에서 `web/dist` 서빙, configured browser | 390×844·1280×800, 문서별 provenance, 검색, MD/JSON/ZIP 브라우저 다운로드 완료, 만료·재사용 401, 실제 429 확인(아래 기록) |
 | MCP 경로 | 실서버 `POST /mcp` + 세션 Bearer | `initialize`·`tools/list` 200, 도구 4개. `/mcp/mcp`는 404 → `MCP_PATH="/mcp"` 확정 |
 
-실제 Gateway 응답과 어댑터를 대조한 결과(불일치는 없었고 차이는 아래 둘뿐이다).
+이번 control/public 응답을 확인한 범위에서 실제 응답 모양은 다음과 같았다.
 
 - `expires_at`·`published_at`은 `2026-11-16T02:21:24.472494Z`처럼 **마이크로초 + Z**다. V8(Node)에서 `Date.parse`가 읽는다. Safari·Firefox의 마이크로초 파싱은 **미검증**이다.
 - 문서 메타에 `extension`(`md`/`txt`/`json`)이 추가돼 있다. 어댑터는 모르는 필드를 무시하므로 그대로 동작한다(저장 파일 이름은 content_type으로 정한다).
-- 문서 단건 응답에는 출처 필드가 없다 → 스냅샷의 `source_refs/source_revision/generated_at/verified_at`을 상속한다(실측 일치).
-- 재사용 키 401, 다른 프로젝트·scope 부족 404, 잘못된 Accept 406, 없는 snapshot_id 404는 `Retry-After` 헤더 429를 제외하고 실제로 관측했다. **429 응답은 실서버에서 유발해 보지 않았다**(합성 서버 시나리오 `ratelimit`와 단위 테스트로만 확인).
+- 스냅샷 및 전체 context 실제 응답의 `verified_at`은 `null`이었다. 문서 단건 응답은 `source_refs`, `extension`, `path`, `sha256`를 포함했고, snapshot-level `source_revision`, `generated_at`, `verified_at`은 포함하지 않았다. UI는 해당 세 값을 선택된 snapshot에서 가져와 표시했다. 각 문서의 `source_refs`는 서로 다른 값으로 보존·표시됐다.
+- control publish와 key issuance는 각각 201이었다. projects, project, snapshots, context(JSON), document(JSON), search는 200이었다. export Markdown/JSON/ZIP은 각각 200이며 `text/markdown`, `application/json`, `application/zip`이었다.
+- 소비된 key의 재교환은 401이었다. 시험용 session row의 `expires_at`을 전용 DB에서 과거로 설정한 뒤 보호된 search 요청은 실제 401을 반환했고 UI가 토큰과 문서를 비운 뒤 `세션이 만료됐습니다` 화면으로 돌아왔다.
+- 실제 429도 관측했다. 동일 test DB를 쓰는 별도 public 프로세스를 `CONTEXT_GATEWAY_RATE_LIMIT=3`으로 띄웠다. projects/project/snapshots가 200인 뒤 document 요청이 429였고 `Retry-After: 60`; 브라우저는 `60초 뒤에 다시 시도하세요`와 재시도 버튼을 표시했다.
 
-현재 working tree의 core 변경도 대조했다. `verified_at`은 nullable/optional이고 문서별 `source_refs`가 추가됐다. 어댑터는 null을 미검증으로 표시하며, 문서별 출처가 비어 있으면 스냅샷 provenance를 상속하므로 응답 모양 변화와 호환된다. 계약 문서에는 아직 두 변경이 반영되지 않았다: `verified_at`을 필수로 적고 문서별 `source_refs`를 설명하지 않는다. core 소유 문서라 여기서는 수정하지 않았다.
+서버 시작 시 HEAD는 `f654054f41de750a1679f61afa68cfedc11375a0`였고, `web_public.py`, `web_serving.py` 및 provenance/API 수정은 다른 worker의 working tree에 있었다. 검증 중 core 변경이 `87b87335`, `c429113c`, `bba4990b`, `185ea8bd`로 차례로 커밋됐다. 현재 README 갱신 시 HEAD는 `185ea8bd`; 실행 중인 서버는 시작 때 로드한 working-tree 코드로 계속 동작했다. 따라서 runtime 결과를 단일 SHA나 배포 빌드 결과로 단정하지 않는다. 계약 문서는 nullable `verified_at`과 manifest의 문서별 provenance를 규정하지만 public document 응답의 모든 필드를 열거하지는 않는다. 실제 응답 필드는 위에서 관측한 그대로 기록했다.
 
-**Core 통합 계약 한 줄:** Docker는 `web/dist`를 `/app/web-dist`로 복사하고 `CONTEXT_GATEWAY_WEB_DIR`를 설정해 `context_gateway.web_public:app`을 실행하며, `/healthz`·`/api/v1/*`·`/mcp*`는 기존 public ASGI 앱으로 전달한다.
+**Core 통합 계약 한 줄:** Docker는 `web/dist`를 `/app/web-dist`로 복사하고 `CONTEXT_GATEWAY_WEB_DIR`를 설정해 `context_gateway.web_public:app`을 실행하며, `/healthz`·`/api/v1/*`·`/mcp*`는 기존 public ASGI 앱으로 전달한다. 이 로컬 실행에서 wrapper/UI/API/MCP 경로는 확인했지만 Docker 배포는 미검증이다.
 
 ### 실제 Gateway 대조 재현
 
+직전 live 스크립트는 자체 `initdb`와 고정 DB/포트를 가정하므로 이번에는 실행하지 않았다. 이미 준비된 host PostgreSQL의 전용 DB에 실제 앱을 붙이는 방식은 다음과 같다. DB는 지우지 말고 아래 cleanup 목록에 유지한다. CONTROL_TOKEN은 임의의 일회용 값으로 준비해 shell history·출력·access log에 넣지 않는다.
+
 ```bash
-cd context_gateway/web
-scripts/live/start-gateway.sh          # 격리 PostgreSQL 17 + public :18787 + control :18789 (macOS, /opt/homebrew/opt/postgresql@17 필요)
-python3 scripts/live/seed.py           # 합성 스냅샷 발행 + 1회용 키 발급 → /tmp/ctx-gw-live/keys.json (키는 출력하지 않음)
-GATEWAY_LIVE_URL=http://127.0.0.1:18787 npx vitest run src/api/live.test.ts   # 키가 1회용이라 실행 전마다 seed.py를 다시 돌린다
-scripts/live/stop-gateway.sh
+cd context_gateway
+npm --prefix web run build
+export CONTEXT_GATEWAY_DATABASE_URL='postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_ui_d40c9adf'
+export CONTEXT_GATEWAY_SNAPSHOT_DIR=/private/tmp/<run-dir>/snapshots
+export CONTEXT_GATEWAY_WEB_DIR="$PWD/web/dist"
+read -rs CONTEXT_GATEWAY_CONTROL_TOKEN; export CONTEXT_GATEWAY_CONTROL_TOKEN
+../.venv/bin/python -m uvicorn context_gateway.web_public:app --host 127.0.0.1 --port <free-public-port> --no-access-log
+../.venv/bin/python -m uvicorn context_gateway.control:app --host 127.0.0.1 --port <free-control-port> --no-access-log
 ```
 
-`scripts/live/control_launch.py`는 **코어 결함을 우회하는 하네스**다. 현재 코어 `publish_snapshot`은 stage 디렉터리를 `0o555`로 만든 뒤 다른 부모로 `os.replace`해서 macOS에서 `PermissionError`(`POST /control/v1/snapshots` 500)가 난다. 코어가 고쳐지면 하네스 없이 `context_gateway.control:app`을 쓴다. 이 결함은 코어 소유라 수정하지 않고 작업 보고에만 남겼다.
+Control API에 합성 snapshot을 게시하고 key를 발급한 뒤 raw key는 일회성 보호 입력으로 브라우저에 전달한다. MCP 검증은 별도 key/session을 사용하고 `POST <public-origin>/mcp`로 SDK initialize·tools/list·도구 호출을 수행한다. `/mcp/mcp`를 덧붙이지 않는다.
 
 ### 브라우저 검증 (2026-11-16)
 
-설정된 `ttakkari_browser`로 합성 Gateway UI를 확인했다. 실제 Gateway는 이 검증 중 실행하지 않았으므로, 아래 결과는 UI 동작의 브라우저 확인이며 실 API 런타임 확인과 구분한다.
+설정된 `ttakkari_browser`로 실제 Gateway wrapper가 서빙하는 built UI를 확인했다. 기존 합성 fixture 기록은 이전 검증이고 이번 결과에는 포함하지 않았다.
 
 | 확인 | 결과 |
 |---|---|
-| 390×844 로그인 | 로그인 폼·키 입력이 표시됨. 키 입력 후 Enter로 교환 성공 |
-| 390px 정상 상태 | 프로젝트·스냅샷·문서 목록과 검색·Markdown/JSON/ZIP 동작 표시. 본문 provenance에 source refs, revision, generated/verified 시각 표시 |
-| 데스크톱 1280×800 | 좌측 탐색과 본문·출처 영역이 나란히 표시됨 |
-| 390px / 데스크톱 오류 상태 | 합성 스냅샷 목록 503이 목록 안의 오류 및 다시 시도 버튼으로 표시되고 프로젝트 헤더·내보내기는 유지됨 |
-| 키보드 | 로그인 폼에서 Enter로 접속, Tab으로 문서 목록에 포커스 이동 후 Enter로 문서 열기 |
-| Markdown 문서 다운로드 | 브라우저가 `overview.md` 다운로드 완료 이벤트를 보고함 |
-| ZIP 다운로드 | 브라우저가 `synthetic-alpha-…zip` 다운로드 완료 이벤트를 보고함 |
-| Markdown 안전 렌더링 | script·onerror는 텍스트로 표시, javascript 링크는 비활성, 외부 이미지는 로드하지 않음 |
+| 390×844 | built UI에 새 key 교환 성공, 프로젝트·snapshot·문서 목록, overview 문서·출처/리비전/생성/미검증 표시 |
+| 문서별 provenance | overview, notes, config에서 각각 게시한 문서별 `source_refs`와 snapshot-level provenance 표시; 전체 context 화면에서도 3개 모두 확인 |
+| 1280×800 | 검색 결과·전체 맥락·세 문서가 좌측 탐색과 본문에 표시 |
+| Search | `gateway-live-probe`가 실제 문서 3개를 반환 |
+| 전체 export 다운로드 | 브라우저 완료 이벤트로 `context-…md`, `context-…json`, `live-ui-check-….zip` 확인 |
+| 문서 다운로드 | `overview.md` 브라우저 완료 이벤트 확인 |
+| 401 만료 | test DB에서 검증용 session `expires_at`만 과거로 설정; 다음 실제 search는 401, UI는 문서·토큰을 지우고 `세션이 만료됐습니다` 표시 |
+| 401 재사용 | UI에서 한 번 성공 교환한 동일 key를 로그아웃 후 다시 입력; exchange 401 및 `키가 받아들여지지 않았습니다` 확인 |
+| 429 | rate-limit 3인 실제 public 앱에서 document 429 / `Retry-After: 60`; UI가 재시도 버튼과 60초 안내 표시 |
+| `/mcp` 안내 | UI 펼침 패널은 `${CONTEXT_GATEWAY_URL}/mcp`; 실제 SDK transport도 `/mcp`에 연결 |
 
-로그에 남은 404는 브라우저 자동 요청 `/favicon.ico`이고, 503은 위 오류 상태를 확인하기 위해 합성 서버가 반환한 응답이다. 그 외 콘솔 경고는 없었다.
+브라우저의 자동 `/favicon.ico` 요청은 404였다. 인증 테스트에서 의도한 401 외에 페이지 이동 오류는 보지 않았다.
 
 #### 브라우저 검증 재현 방법
 
@@ -168,5 +178,13 @@ node scripts/serve-web.mjs --port 4173                      # 합성 API. 실제
 
 ### 미검증으로 남은 것
 
-- 실제 Gateway 런타임을 이번 브라우저 검증과 동시에 연결한 화면 흐름. 실제 REST 어댑터·MCP smoke의 앞선 실행 결과는 위 표에 적었지만, 이번 Run에서는 Gateway를 재기동하지 않았다.
-- 키보드로 모든 화면 요소를 전수 탐색하는 접근성 검증, 실서버 429 응답, Safari·Firefox의 마이크로초 시각 파싱, `.mcp.json`의 `${VAR}` 헤더 확장(MCP 클라이언트 구현에 달림).
+- 키보드로 모든 화면 요소를 전수 탐색하는 접근성 검증, Safari·Firefox의 마이크로초 시각 파싱, `.mcp.json`의 `${VAR}` 헤더 확장(MCP 클라이언트 구현에 달림), Docker 배포.
+- 현재 관측 core 변경은 HEAD `f654054`에 커밋되지 않았다. 해당 core working tree가 다른 worker에 의해 바뀔 수 있으므로, 동일 SHA/working-tree 상태로 다시 띄운 별도 checkout의 재현은 미실행.
+
+#### 실제 런타임·cleanup 기록 (2026-11-16)
+
+- UI build: `npm run build` → TypeScript check 및 Vite build 성공 (`index-IyXtM50A.css`, `index-pldaL2gE.js`). 기존 94개 합성 테스트는 재실행하지 않았다.
+- 앱 실행(working tree): `../.venv/bin/python -m uvicorn context_gateway.web_public:app --host 127.0.0.1 --port 19127 --no-access-log`; control은 같은 방식으로 `context_gateway.control:app --port 19129`. 두 `/healthz`가 200이었다. 429 UI는 실제 `web_public:app`의 별도 `:19131` 프로세스(`CONTEXT_GATEWAY_RATE_LIMIT=3`)에서 확인했다.
+- DB: `test_cg_ui_d40c9adf`만 사용. 사용자 지시에 따라 유지하며 삭제하지 않았다. API가 게시한 snapshot bytes는 `/private/tmp/context-gateway-ui-qh8kajyy/snapshots`에 남아 있다.
+- Cleanup 목록(의도적으로 보존): `test_cg_ui_d40c9adf` 데이터베이스 및 위 snapshot directory. 브라우저는 닫았다. 이 Run이 시작한 public/control/rate-limited-public PID는 shutdown을 시도했으나 Codex `exec_command` sandbox가 `ps` subprocess와 `os.kill(SIGTERM)`을 `PermissionError: [Errno 1] Operation not permitted`로 거부해 종료 여부를 확인하지 못했다. PID 파일은 run directory에 남아 있다. 같은 PID를 다른 경로로 재시도하지 않았다.
+- 키 발급/교환은 합성 프로젝트에서만 수행. 임시 raw key/control token 파일은 삭제했다. 최초 브라우저 입력 도구의 결과가 합성 one-time key 하나를 action code에 원문 에코했다. 해당 키는 이미 사용된 뒤였고 재사용 검증에서 401을 받았다. 이후 키 입력 결과는 노출하지 않았다. 원문은 README나 Gateway access logs에 저장하지 않았다.

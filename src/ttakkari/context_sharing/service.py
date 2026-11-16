@@ -294,6 +294,35 @@ async def create_draft(db: AsyncSession, adapter: ContextSourceAdapter, *, entit
     return await get_draft(db, draft.id)
 
 
+async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, gateway: GatewayControl, *,
+                              entity_id: uuid.UUID, ip: str | None = None,
+                              user_agent: str | None = None) -> dict[str, Any]:
+    """Publish every currently listed indexed document of one explicitly named project."""
+    project_info = await adapter.get_project(entity_id)
+    if project_info is None:
+        raise ShareError(404, "project_not_found", "라이브러리에 그런 프로젝트가 없습니다.")
+    if project_info.scope == "work":
+        raise ShareError(403, "work_scope_owner_only", "회사(work) 범위 프로젝트는 소유자 경로에서 공유해야 합니다.")
+    groups = await adapter.list_documents(entity_id)
+    if any(group.truncated for group in groups):
+        raise ShareError(422, "source_listing_truncated", "문서 목록이 제한을 넘어 전체 범위를 확인할 수 없습니다.")
+    document_ids = [doc.document_id for group in groups if group.enabled for doc in group.documents]
+    if not document_ids:
+        raise ShareError(422, "no_shareable_documents", "이 프로젝트에 공유할 색인 문서가 없습니다.")
+    if len(document_ids) > MAX_DOCUMENTS:
+        raise ShareError(422, "too_many_documents", f"한 번에 {MAX_DOCUMENTS}개 이하 문서만 게시할 수 있습니다.")
+    draft = await create_draft(db, adapter, entity_id=entity_id, document_ids=document_ids, title=None,
+                               summary=project_info.summary[:2000], actor="agent", confirm_work_scope=False,
+                               ip=ip, user_agent=user_agent)
+    if draft["preview"]["blocked"]:
+        raise ShareError(422, "sensitive_content_blocked",
+                         "민감정보 scanner가 고위험 항목을 막았습니다. 프로젝트 원천을 정리한 뒤 다시 요청하세요.",
+                         extra={"draft_id": draft["id"], "findings": draft["preview"]["findings"],
+                                "counts": draft["preview"]["counts"]})
+    return await publish_draft(db, gateway, uuid.UUID(draft["id"]), draft["preview"]["digest"],
+                               actor="agent", ip=ip, user_agent=user_agent)
+
+
 async def update_draft(db: AsyncSession, draft_id: uuid.UUID, patch: dict[str, Any], *, ip: str | None = None,
                        user_agent: str | None = None) -> dict[str, Any]:
     draft = await _load_draft(db, draft_id, lock=True)
@@ -370,18 +399,19 @@ def gateway_problem(exc: GatewayError) -> ShareError:
 
 
 async def _fail(db: AsyncSession, action: str, exc: GatewayError, *, target_type: str, target_id: Any,
-                detail: dict[str, Any], ip: str | None, user_agent: str | None) -> ShareError:
+                detail: dict[str, Any], ip: str | None, user_agent: str | None, actor: str = "user") -> ShareError:
     err = gateway_problem(exc)
-    record(db, action=action, outcome="error", target_type=target_type, target_id=target_id,
+    record(db, action=action, outcome="error", actor=actor, target_type=target_type, target_id=target_id,
            detail={**detail, "error": err.code}, ip=ip, user_agent=user_agent)
     await db.commit()
     return err
 
 
 def _record_key_cleanup_failure(db: AsyncSession, project: ShareProject, key_id: str,
-                                exc: GatewayError, *, ip: str | None, user_agent: str | None) -> None:
+                                exc: GatewayError, *, ip: str | None, user_agent: str | None,
+                                actor: str = "user") -> None:
     """발급 뒤 보상 폐기가 실패하면 원문 없이 식별자와 오류 코드만 기록한다."""
-    record(db, action="context_share.key_cleanup_failed", outcome="error", target_type="share_project",
+    record(db, action="context_share.key_cleanup_failed", outcome="error", actor=actor, target_type="share_project",
            target_id=project.id,
            detail={"gateway_key_id": key_id, "error": gateway_problem(exc).code}, ip=ip, user_agent=user_agent)
 
@@ -434,7 +464,7 @@ def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareD
 
 
 async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uuid.UUID, approved_digest: str, *,
-                        ip: str | None = None, user_agent: str | None = None) -> dict[str, Any]:
+                        ip: str | None = None, user_agent: str | None = None, actor: str = "user") -> dict[str, Any]:
     draft = await _load_draft(db, draft_id, lock=True)
     if draft.status != "draft":
         raise ShareError(409, "draft_not_editable", "이미 게시한 초안입니다. 변경하려면 새 초안을 만드세요.")
@@ -455,7 +485,7 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
             raise GatewayBadResponse("gateway project id changed")
     except GatewayError as exc:
         raise await _fail(db, "context_share.publish", exc, target_type="share_draft", target_id=draft.id,
-                          detail=detail, ip=ip, user_agent=user_agent) from None
+                          detail=detail, ip=ip, user_agent=user_agent, actor=actor) from None
     previous = await _active_publication(db, project.id, lock=True)
     if previous is not None:
         previous.status = "superseded"
@@ -468,7 +498,7 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
     db.add(publication)
     draft.status = "published"
     draft.updated_at = now()
-    record(db, action="context_share.publish", target_type="share_draft", target_id=draft.id,
+    record(db, action="context_share.publish", actor=actor, target_type="share_draft", target_id=draft.id,
            detail={**detail, "snapshot_id": publication.gateway_snapshot_id}, ip=ip, user_agent=user_agent)
     await db.commit()
     return {"draft": await get_draft(db, draft.id), "publication": publication_out(publication)}
@@ -489,7 +519,8 @@ KEY_SCOPES = ("read", "search", "export")
 
 
 async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, label: str,
-                    scopes: list[str], ip: str | None = None, user_agent: str | None = None) -> dict[str, Any]:
+                    scopes: list[str], ip: str | None = None, user_agent: str | None = None,
+                    actor: str = "user") -> dict[str, Any]:
     project = await _project_by_slug(db, slug)
     publication = await _active_publication(db, project.id)
     if publication is None:
@@ -519,15 +550,15 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
                 await gateway.revoke_key(str(issued["key_id"]))
             except GatewayError as cleanup_exc:
                 _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
-                                            ip=ip, user_agent=user_agent)
+                                            ip=ip, user_agent=user_agent, actor=actor)
         raise await _fail(db, "context_share.key_issue", exc, target_type="share_project", target_id=project.id,
-                          detail=detail, ip=ip, user_agent=user_agent) from None
+                          detail=detail, ip=ip, user_agent=user_agent, actor=actor) from None
     key = ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
                    gateway_key_id=str(issued["key_id"])[:64], label=label, ttl_seconds=KEY_TTL_SECONDS, issued_at=issued_at,
                    expires_at=expires_at)
     try:
         db.add(key)
-        record(db, action="context_share.key_issue", target_type="share_key", target_id=key.id,
+        record(db, action="context_share.key_issue", actor=actor, target_type="share_key", target_id=key.id,
                detail={**detail, "gateway_key_id": key.gateway_key_id}, ip=ip, user_agent=user_agent)
         await db.commit()
     except Exception:
@@ -536,7 +567,7 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
             await gateway.revoke_key(str(issued["key_id"]))
         except GatewayError as cleanup_exc:
             _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
-                                        ip=ip, user_agent=user_agent)
+                                        ip=ip, user_agent=user_agent, actor=actor)
             await db.commit()
         raise
     out = key_out(key, project)
@@ -555,7 +586,7 @@ async def list_keys(db: AsyncSession, slug: str | None) -> dict[str, Any]:
 
 
 async def revoke_key(db: AsyncSession, gateway: GatewayControl, key_id: uuid.UUID, *, ip: str | None = None,
-                     user_agent: str | None = None) -> dict[str, Any]:
+                     user_agent: str | None = None, actor: str = "user") -> dict[str, Any]:
     key = await db.scalar(select(ShareKey).where(ShareKey.id == key_id).with_for_update())
     if key is None:
         raise ShareError(404, "key_not_found", "발급한 적 없는 키입니다.")
@@ -567,9 +598,9 @@ async def revoke_key(db: AsyncSession, gateway: GatewayControl, key_id: uuid.UUI
         await gateway.revoke_key(key.gateway_key_id)
     except GatewayError as exc:
         raise await _fail(db, "context_share.key_revoke", exc, target_type="share_key", target_id=key.id,
-                          detail={"slug": project.slug}, ip=ip, user_agent=user_agent) from None
+                          detail={"slug": project.slug}, ip=ip, user_agent=user_agent, actor=actor) from None
     key.status, key.revoked_at = "revoked", now()  # 코어 영수증에는 시각이 없어 확인한 시각을 쓴다
-    record(db, action="context_share.key_revoke", target_type="share_key", target_id=key.id,
+    record(db, action="context_share.key_revoke", actor=actor, target_type="share_key", target_id=key.id,
            detail={"slug": project.slug}, ip=ip, user_agent=user_agent)
     await db.commit()
     return key_out(key, project)

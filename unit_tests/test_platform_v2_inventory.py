@@ -166,7 +166,9 @@ def test_research_migrations_belong_to_research_lab(stem):
 
 
 @pytest.mark.parametrize(
-    "path", ("/api/context-sharing/status", "/api/agent/context-sharing/drafts")
+    "path", ("/api/context-sharing/status", "/api/agent/context-sharing/drafts",
+             "/api/agent/context-sharing/publish", "/api/agent/context-sharing/keys",
+             "/api/agent/context-sharing/keys/{key_id}/revoke", "/api/agent/context-sharing/site")
 )
 def test_context_sharing_routes_belong_to_shares(path):
     assert classify_route("GET", path) == "domain.shares_artifacts"
@@ -178,7 +180,13 @@ def test_context_sharing_routes_belong_to_shares(path):
         "context_share_draft",
         "context_share_draft_create",
         "context_share_drafts",
+        "context_share_key_issue",
+        "context_share_key_revoke",
+        "context_share_keys",
+        "context_share_publish",
         "context_share_projects",
+        "context_share_site",
+        "context_share_site_set",
         "context_share_sources",
     ),
 )

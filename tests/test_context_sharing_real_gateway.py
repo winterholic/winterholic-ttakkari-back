@@ -3,6 +3,7 @@
 코어는 같은 프로세스에서 ASGI 로 띄우고, DB 는 시험 전용 PostgreSQL 클러스터 안의 별도 데이터베이스를 쓴다."""
 from __future__ import annotations
 
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -10,13 +11,15 @@ from pathlib import Path
 import conftest
 import httpx
 import pytest
-from context_sharing_support import make_project
+from context_sharing_support import agent_headers, make_project
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from ttakkari.api import context_sharing as api
 from ttakkari.context_sharing.gateway import GatewayControl, HttpGatewayTransport
+from ttakkari.db import sessionmaker
 from ttakkari.main import app
+from ttakkari.orchestrator import mcp_server as ms
 
 CORE_SRC = Path(__file__).resolve().parents[1] / "context_gateway" / "src"
 CLUSTER = getattr(conftest, "PG_CLUSTER", None)
@@ -176,6 +179,61 @@ async def test_key_issue_exchange_single_use_revoke_and_withdraw_against_the_rea
     again = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     withdrawn = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
     assert withdrawn.status_code == 200 and withdrawn.json()["revoked_keys"] == (1 if again.status_code == 201 else 0)
+
+
+async def test_agent_mcp_dispatch_publishes_and_manages_keys_and_site_against_real_core(monkeypatch, real_gateway):
+    project = await make_project("AgentAlpha", {"README.md": "# 공개 설명\n합성 프로젝트 설명입니다.\n"})
+    headers = await agent_headers()
+    transport = httpx.ASGITransport(app=app)
+
+    async def via_asgi(method, path, body=None, *, prefix="/api/orchestrator", params=None, timeout=30):
+        async with httpx.AsyncClient(transport=transport, base_url="http://private", headers=headers) as client:
+            response = await client.request(method, f"{prefix}{path}", json=body, params=params)
+        data = response.json()
+        if response.status_code >= 400:
+            data = {"error": response.status_code, **data}
+        return json.dumps(data, ensure_ascii=False)
+
+    monkeypatch.setattr(ms, "_call", via_asgi)
+    published = json.loads((await ms.server.call_tool("context_share_publish", {
+        "entity_id": project["entity_id"]})).content[0].text)
+    assert published["publication"]["status"] == "active"
+    slug = published["draft"]["slug"]
+    issued = json.loads((await ms.server.call_tool("context_share_key_issue", {
+        "project_slug": slug, "label": "agent test"})).content[0].text)
+    raw_key = issued["key"]
+    assert issued["ttl_seconds"] == 3600 and issued["single_use"] is True
+    keys = json.loads((await ms.server.call_tool("context_share_keys", {"project_slug": slug})).content[0].text)
+    assert len(keys["keys"]) == 1 and keys["keys"][0]["id"] == issued["id"]
+    assert raw_key not in (await ms.server.call_tool("context_share_keys", {"project_slug": slug})).content[0].text, \
+        "raw key leaked into list response"
+    async with sessionmaker()() as db:
+        audit_rows = (await db.execute(text(
+            "SELECT actor, detail::text FROM audit_logs WHERE action = 'context_share.key_issue'"))).all()
+    assert audit_rows and all(actor == "agent" for actor, _ in audit_rows), "agent key issuance was misattributed"
+    assert all(raw_key not in detail for _, detail in audit_rows), "raw key leaked into audit storage"
+
+    public = httpx.AsyncClient(transport=httpx.ASGITransport(app=real_gateway["public"]), base_url="http://public")
+    async with public:
+        exchanged = await public.post("/api/v1/auth/exchange", headers={"Authorization": f"Bearer {raw_key}"})
+        assert exchanged.status_code == 200
+        access = exchanged.json()["access_token"]
+        assert (await public.post("/api/v1/auth/exchange", headers={"Authorization": f"Bearer {raw_key}"})).status_code == 401
+        state = json.loads((await ms.server.call_tool("context_share_site", {})).content[0].text)
+        assert state["enabled"] is True
+        closed = json.loads((await ms.server.call_tool("context_share_site_set", {"enabled": False})).content[0].text)
+        assert closed["enabled"] is False
+        assert (await public.get("/api/v1/site")).json() == {"enabled": False}
+        assert (await public.get("/api/v1/projects/{}/context".format(
+            next(iter((await core_rows(real_gateway["url"], "SELECT id::text FROM gateway_projects"))[0]))),
+            headers={"Authorization": f"Bearer {access}"})).status_code == 503
+        reopened = json.loads((await ms.server.call_tool("context_share_site_set", {"enabled": True})).content[0].text)
+        assert reopened["enabled"] is True
+
+    revoked = json.loads((await ms.server.call_tool("context_share_key_revoke", {
+        "key_id": issued["id"]})).content[0].text)
+    assert revoked["status"] == "revoked"
+    assert raw_key not in json.dumps(keys), "raw key leaked into persisted key metadata"
 
 
 async def test_private_site_switch_controls_real_gateway_without_changing_snapshot_or_ttl(client, auth, real_gateway):

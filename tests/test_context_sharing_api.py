@@ -91,7 +91,7 @@ async def test_owner_routes_reject_missing_and_agent_credentials(client, method,
     assert agent.status_code == 401
 
 
-async def test_agent_cannot_publish_or_issue_keys_even_for_existing_drafts(client, auth, gateway):
+async def test_agent_publish_and_key_tools_use_only_scoped_routes(client, auth, gateway):
     project = await make_project("Alpha", {"a.md": DOC})
     draft = await new_draft(client, auth, project, ["a.md"])
     agent = await agent_headers()
@@ -99,11 +99,13 @@ async def test_agent_cannot_publish_or_issue_keys_even_for_existing_drafts(clien
                           json={"approved_digest": draft["preview"]["digest"]})
     assert r.status_code == 401
     assert gateway.calls == []
-    # agent 전용 경로에는 게시·키 경로 자체가 없다.
-    for method, path in [("POST", f"/drafts/{draft['id']}/publish"), ("POST", "/keys"), ("PATCH", f"/drafts/{draft['id']}"),
+    # 새 제어 도구는 session route에만 존재하고 기존 소유자 게시·편집·전체 철회 경로는 열리지 않는다.
+    for method, path in [("POST", f"/drafts/{draft['id']}/publish"), ("PATCH", f"/drafts/{draft['id']}"),
                          ("POST", "/projects/alpha/revoke")]:
         r = await client.request(method, f"/api/agent/context-sharing{path}", headers=agent, json={})
         assert r.status_code in (404, 405), (method, path, r.status_code)
+    assert (await client.get("/api/agent/context-sharing/keys", headers=agent)).status_code == 200
+    assert (await client.get("/api/agent/context-sharing/site", headers=agent)).status_code == 200
 
 
 async def test_owner_site_control_reads_and_changes_gateway_state(client, auth, gateway):

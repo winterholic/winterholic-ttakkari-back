@@ -17,7 +17,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # 게이트 자체와 인벤토리 역누락 검사
     "tests/test_security_gate.py",
     "tests/test_security_gate_inventory.py",
-    # 프로젝트 맥락 공유: 소유자 전용 게시·키, 민감정보 차단, control 토큰 분리
+    # 프로젝트 맥락 공유: 사용자 직접 요청·세션 범위 게시/키, 민감정보 차단, control 토큰 분리
     "tests/test_context_sharing_api.py",
     "tests/test_context_sharing_gateway.py",
     "tests/test_context_sharing_mcp.py",

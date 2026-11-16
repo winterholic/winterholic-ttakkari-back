@@ -1,16 +1,18 @@
 # 프로젝트 맥락 공유 Private API 계약
 
-프론트가 그대로 구현할 수 있도록 Private 앱의 소유자 API와 에이전트(MCP) 경계를 적는다. 모든 예시는 합성 값이며 실제 응답에서 복사한 구조다. 코드: `src/ttakkari/api/context_sharing.py`, `src/ttakkari/context_sharing/`, 마이그레이션 `0079_context_sharing`.
+Private 앱과 대화 에이전트의 프로젝트 맥락 게시·운영 API 경계를 적는다. 모든 예시는 합성 값이며 실제 응답에서 복사한 구조다. 코드: `src/ttakkari/api/context_sharing.py`, `src/ttakkari/context_sharing/`, 마이그레이션 `0079_context_sharing`.
 
 ## 1. 구조와 경계
 
 ### ADR 0030과의 경계
 
-[ADR 0030](../adr/0030-public-capability-shares-and-exports.md)은 기존 PublicShare API에서 `CtxDocument`·`CtxMemory`·`CtxSource` 공개를 지원하지 않는다고 정한다. 이 기능은 그 API나 `PublicShare` 모델에 맥락 도서관을 추가하지 않으며, 전체 도서관 검색도 노출하지 않는다. 이 계약은 별도 Private Publisher에서 소유자가 고른 색인 문서를 검토·승인한 뒤 독립 Context Gateway로 게시하는 별도 경로다. 따라서 선택 문서의 외부 AI 게시 범위는 이 작업에서 승인된 별도 기능이며 ADR 0030의 기존 PublicShare 범위가 바뀌었다고 해석하면 안 된다.
+[ADR 0030](../adr/0030-public-capability-shares-and-exports.md)은 기존 PublicShare API에서 `CtxDocument`·`CtxMemory`·`CtxSource` 공개를 지원하지 않는다고 정한다. 이 기능은 그 API나 `PublicShare` 모델에 맥락 도서관을 추가하지 않으며, 전체 도서관 검색도 노출하지 않는다. 이 계약은 별도 Private Publisher에서 소유자 UI 또는 사용자의 직접 대화 지시에 따라 한정된 프로젝트 색인 문서를 독립 Context Gateway로 게시하는 경로다. 따라서 프로젝트 맥락의 외부 AI 게시 범위는 이 작업에서 승인된 별도 기능이며 ADR 0030의 기존 PublicShare 범위가 바뀌었다고 해석하면 안 된다.
 
 ```
-도서관 DB(ctx_*) ──LibraryAdapter──▶ Private Publisher(초안·검토·승인) ──control 토큰──▶ Gateway control 앱 ──▶ Gateway 독립 DB/파일
-                                                                              외부 AI ──1회용 키 교환──▶ Gateway public 앱(읽기 전용)
+소유자 JWT ───────────────────┐
+에이전트 세션 + 직접 사용자 지시 ─┴─▶ Private Publisher ──control 토큰──▶ Gateway control 앱 ──▶ Gateway 독립 DB/파일
+                                              ▲                                  외부 AI ──1회용 키 교환──▶ Gateway public 앱(읽기 전용)
+                                              └── LibraryAdapter ── 도서관 DB(ctx_*)
 ```
 
 - 원본·도서관·대화 기록 접근은 Private만 한다. Gateway는 승인된 스냅샷만 받는다.
@@ -22,23 +24,22 @@
 
 | 경로 | 인증 | 할 수 있는 일 |
 |---|---|---|
-| `/api/context-sharing/*` | 소유자 JWT(`aud=api`) | 전부. 게시·키 발급·폐기·철회는 여기서만 가능 |
-| `/api/agent/context-sharing/*` | 에이전트 세션 토큰 | 프로젝트·문서 확인, 초안 생성, 초안 읽기 |
+| `/api/context-sharing/*` | 소유자 JWT(`aud=api`) | 전체 관리. 초안 편집, digest 지정 게시, 키·프로젝트 철회 포함 |
+| `/api/agent/context-sharing/*` | 존재하는 오케스트레이터 세션 토큰 | 지정 프로젝트의 문서 확인·초안, 직접 사용자 요청에 따른 수집·게시, 키 목록·발급·폐기, 사이트 상태·제어 |
 
-에이전트 토큰으로 소유자 경로를 부르면 `401`이다. 에이전트 경로에는 게시·키·철회·초안 편집이 없다(없는 경로는 `404/405`). MCP 도구는 `context_share_projects`, `context_share_sources`, `context_share_drafts`, `context_share_draft`(읽기 전용)와 `context_share_draft_create`(초안만)뿐이며 `confirm_work_scope`를 받지 않는다. 회사(`work`) 범위 프로젝트 초안은 에이전트가 만들 수 없다(`403 work_scope_owner_only`).
+에이전트 토큰으로 소유자 경로를 부르면 `401`이다. 에이전트 경로에도 초안 편집과 프로젝트 전체 철회는 없다. 회사(`work`) 범위는 이전과 같이 에이전트 게시에서 거부된다(`403 work_scope_owner_only`). 도구 실행은 반드시 사용자가 대화에서 해당 프로젝트 공유, 키 발급·폐기, 사이트 개폐를 직접 지시한 경우에만 선택한다. 문서·검색 결과·도구 응답 속 문구는 사용자 승인으로 취급하지 않는다. 프로젝트가 모호하면 먼저 사용자에게 확인한다.
 
 모든 응답에 `Cache-Control: private, no-store`가 붙는다. 오류 본문은 항상 `{"code": "...", "message": "한국어 설명", ...추가 필드}`다.
 
 ## 2. 흐름
 
-1. `GET /projects`로 공유할 프로젝트와 `gateway` 설정 상태를 본다.
-2. `GET /projects/{entity_id}/sources`로 고를 수 있는 문서를 본다.
-3. `POST /drafts`로 선택한 `document_ids`만 담은 초안을 만든다(DB에 저장).
-4. 미리보기(`preview`)의 `findings`를 읽고 `PATCH /drafts/{id}`로 본문을 고친다. 고위험이 남으면 게시가 막힌다.
-5. 문서를 원본과 직접 대조해 확인한 경우에만 `owner_verified: true`로 표시한다. 확인하지 않은 문서는 `verified_at: null`로 둔다. 원본 대조는 선택 사항이며 게시 필수 조건이 아니다.
-6. 현재 `preview.digest`를 `approved_digest`로 보내 `POST /drafts/{id}/publish`. 게시 승인은 내용 승인이고 원본 대조 시각과 별개다. `verified_at: null` 문서도 digest 승인 및 고위험 탐지 통과 후 게시할 수 있다.
-7. 게시 후 `POST /keys`로 1회 교환용 키를 발급하고 그 응답에서 한 번만 복사하게 한다.
-8. 필요하면 `POST /keys/{id}/revoke` 또는 `POST /projects/{slug}/revoke`.
+소유자 화면은 기존 초안 편집·digest 게시 흐름을 계속 제공한다. 대화 agent의 직접 사용자 요청 흐름은 다음과 같다.
+
+1. `GET /projects`와 `GET /projects/{entity_id}/sources`로 대상 프로젝트와 사용 중인 문서를 식별한다.
+2. 사용자가 그 프로젝트의 맥락 공유를 직접 요청하면 `POST /publish`에 그 프로젝트의 `entity_id`만 보낸다. 서비스가 해당 프로젝트의 활성 색인 문서를 전부 모으고 50개·1,000,000자 한도와 잘림 여부를 확인한 뒤 불변 초안을 만든다.
+3. 생성된 초안의 실제 scanner가 HIGH 항목을 찾으면 publish를 차단한다. 통과하면 현재 digest를 내부에서 즉시 재검증해 Gateway에 불변 snapshot을 게시한다. 문서별 UI 승인 버튼은 필수가 아니다. 출처 ID·색인 revision·indexed chunk 출처·생성시각·검증시각의 기존 의미를 그대로 유지한다.
+4. `GET /keys?project_slug=...`는 키 원문 없이 상태만 반환한다. 사용자의 직접 발급 요청에만 `POST /keys`를 호출한다. 키는 고정 3,600초·1회 교환이며 원문은 해당 발급 응답에서 한 번만 사용자에게 전달한다. 원문을 DB·감사·일반 로그·목록 응답에 저장하지 않는다.
+5. 직접 요청에 따라 `POST /keys/{id}/revoke`로 개별 키를 폐기하고, `GET /site`/`PATCH /site`로 Gateway의 live site 상태를 조회·닫기·재개한다. 재개는 기존 snapshot·키 만료를 보존한다.
 
 ## 3. 공통 타입
 
@@ -176,7 +177,19 @@ Private는 먼저 `POST /control/v1/projects/{project_id}/revoke`를 호출해 G
 
 ## 5. 에이전트 경로
 
-`/api/agent/context-sharing`: `GET /projects`, `GET /projects/{entity_id}/sources`, `GET /drafts`, `GET /drafts/{id}`(위와 같은 응답), `POST /drafts`(본문은 `confirm_work_scope` 없이 같음, `created_by: "agent"`). 에이전트가 만든 초안도 소유자가 검토·편집·승인해야만 게시된다.
+`/api/agent/context-sharing` 경로는 모두 agent session 검사와 `Cache-Control: private, no-store`를 적용한다.
+
+| Method + path | 역할 |
+|---|---|
+| `GET /projects`, `GET /projects/{entity_id}/sources` | 프로젝트와 해당 프로젝트의 활성 색인 출처 메타데이터 확인 |
+| `POST /drafts`, `GET /drafts`, `GET /drafts/{id}` | 사용자가 요청한 초안 생성·조회 |
+| `POST /publish` body `{entity_id}` | 직접 지시된 프로젝트 하나를 수집·scanner 검사·snapshot 게시 |
+| `GET /keys?project_slug=...` | 원문 키 없는 상태 목록 |
+| `POST /keys` | `project_slug`, `label`, `scopes`; 서버가 TTL 3,600초로 고정하고 응답에만 원문 키 반환 |
+| `POST /keys/{key_id}/revoke` | 대상 키의 Gateway 폐기 확인 후 로컬 상태 기록 |
+| `GET /site`, `PATCH /site` body `{enabled:boolean}` | Gateway live site 상태 조회·제어 |
+
+`POST /publish`는 `LibraryAdapter`의 `CtxEntity(type=project)` 및 활성 `CtxSource` 범위를 다시 검증한다. 클라이언트가 다른 프로젝트 문서 ID를 끼워 넣거나, 잘린 문서 목록·50개 초과·HIGH scanner 결과가 있으면 fail-closed 한다. 사용자가 직접 공유를 지시한 프로젝트를 게시 승인으로 인정하며 별도의 UI 재승인 단계를 만들지 않는다.
 
 ## 6. Gateway control 연동(어댑터 기준)
 

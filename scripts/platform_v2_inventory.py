@@ -1721,7 +1721,13 @@ def classify_mcp_tool(name: str) -> str:
         "context_share_draft",
         "context_share_draft_create",
         "context_share_drafts",
+        "context_share_key_issue",
+        "context_share_key_revoke",
+        "context_share_keys",
+        "context_share_publish",
         "context_share_projects",
+        "context_share_site",
+        "context_share_site_set",
         "context_share_sources",
     ):
         return "domain.shares_artifacts"

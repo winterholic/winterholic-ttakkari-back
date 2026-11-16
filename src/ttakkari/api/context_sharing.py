@@ -1,8 +1,8 @@
-"""프로젝트 맥락 공유 REST. 소유자(`/api/context-sharing`)만 게시·키·철회를 한다.
+"""프로젝트 맥락 공유 REST. 대화 에이전트는 명시된 프로젝트 게시·키·사이트 제어를 할 수 있다.
 
-에이전트(`/api/agent/context-sharing`)는 공유 가능한 프로젝트·문서를 보고 초안을 만들고 읽는 데까지만 쓴다.
-게시·키 발급·철회·초안 편집 경로는 에이전트 라우터에 존재하지 않는다(소유자 JWT 만 통과).
-오류는 {code, message[, ...]} 로 내려가고 키·control 토큰은 응답·로그·DB 어디에도 남기지 않는다.
+에이전트(`/api/agent/context-sharing`)는 기존 세션 검사를 통과한 자연어 요청에 따라 범위가 제한된 작업을 한다.
+게시·키 발급·폐기·사이트 변경 외의 편집 및 프로젝트 전체 철회는 소유자 경로에 둔다.
+오류는 {code, message[, ...]} 로 내려간다. control 토큰은 응답·로그·DB에 남기지 않고, 원문 키는 발급 응답에서만 한 번 반환하며 로그·DB에는 저장하지 않는다.
 """
 from __future__ import annotations
 
@@ -75,6 +75,11 @@ class KeyIn(BaseModel):
 class SiteEnabledIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
+
+
+class AgentPublishIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_id: uuid.UUID
 
 
 async def user_access(_: User) -> None:
@@ -263,7 +268,7 @@ async def revoke_project(slug: str, request: Request, db: Db, gateway: Gateway) 
     return await service.revoke_project(db, gateway, slug, **_meta(request))
 
 
-# ---- 에이전트: 확인과 초안(생성·읽기)만
+# ---- 에이전트: 세션 범위 프로젝트 게시·키·사이트 관리, 초안 편집/프로젝트 철회는 제외
 
 @agent_router.get("/projects")
 async def agent_projects(db: Db) -> dict[str, Any]:
@@ -292,3 +297,52 @@ async def agent_list_drafts(db: Db, entity_id: uuid.UUID | None = None,
 @agent_router.get("/drafts/{draft_id}")
 async def agent_get_draft(draft_id: uuid.UUID, db: Db) -> dict[str, Any]:
     return await service.get_draft(db, draft_id)
+
+
+@agent_router.post("/publish")
+async def agent_publish(body: AgentPublishIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    if error := _site_configuration_error(gateway):
+        return error
+    return await service.collect_and_publish(db, LibraryAdapter(db), gateway, entity_id=body.entity_id, **_meta(request))
+
+
+@agent_router.get("/keys")
+async def agent_list_keys(db: Db, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_keys(db, project_slug)
+
+
+@agent_router.post("/keys", status_code=201)
+async def agent_issue_key(body: KeyIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    if error := _site_configuration_error(gateway):
+        return error
+    return await service.issue_key(db, gateway, body.project_slug, label=body.label,
+                                   scopes=sorted(set(body.scopes)), actor="agent", **_meta(request))
+
+
+@agent_router.post("/keys/{key_id}/revoke")
+async def agent_revoke_key(key_id: uuid.UUID, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    if error := _site_configuration_error(gateway):
+        return error
+    return await service.revoke_key(db, gateway, key_id, actor="agent", **_meta(request))
+
+
+@agent_router.get("/site")
+async def agent_site_status(gateway: Gateway) -> Any:
+    if error := _site_configuration_error(gateway):
+        return error
+    try:
+        enabled = await gateway.site_status()
+    except (GatewayNotConfigured, GatewayUnavailable, GatewayRejected, GatewayBadResponse) as exc:
+        return _gateway_site_error(exc)
+    return {"enabled": enabled, "public_url": gateway.public_url}
+
+
+@agent_router.patch("/site")
+async def agent_set_site_status(body: SiteEnabledIn, gateway: Gateway) -> Any:
+    if error := _site_configuration_error(gateway):
+        return error
+    try:
+        enabled = await gateway.set_site_enabled(body.enabled)
+    except (GatewayNotConfigured, GatewayUnavailable, GatewayRejected, GatewayBadResponse) as exc:
+        return _gateway_site_error(exc)
+    return {"enabled": enabled, "public_url": gateway.public_url}

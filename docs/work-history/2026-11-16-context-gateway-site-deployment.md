@@ -115,6 +115,8 @@ HTTP 401
 
 공개 OpenAPI에는 `/api/v1/site`를 포함한 공개 경로 9개가 있으며 `/control/*` 경로는 없다. 현재 `docs/context-gateway-contract.md`의 공개 API 경로 표에는 `/api/v1/site`가 없다. 즉 live schema와 문서 표 사이에 해당 공개 상태 endpoint 누락이 확인됐다. 범위의 소유 work-history만 커밋하며 계약 문서는 수정하지 않았다.
 
+Ttakkari 브라우저에서도 UI를 렌더했다. 페이지 제목은 `Context Gateway`, 화면에는 접속 안내와 1회용 키 입력 폼이 표시됐고 키는 입력하지 않았다. console 오류는 Cloudflare Insights 스크립트가 `script-src 'self'` CSP에 의해 차단된 항목 2개와 `/favicon.ico` 404 1개였다. 기존 CSP를 완화하거나 favicon을 추가하지 않았다.
+
 ## 롤백 기준과 한계
 
 직전 `515b565dc652e67e806daff921fa26e86695d581` release 디렉터리와 `context-gateway:515b565dc652e67e806daff921fa26e86695d581` image tag가 남아 있음을 확인했다. 롤백은 해당 이전 release의 Compose 파일과 기존 자격 파일을 사용하고 image tag를 프로세스 환경에서 지정한다.

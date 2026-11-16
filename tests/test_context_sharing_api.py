@@ -240,13 +240,14 @@ async def test_publish_requires_the_current_approved_digest(client, auth, gatewa
 
 
 async def test_publish_pushes_the_approved_snapshot_to_gateway_control_only(client, auth, gateway):
-    _, draft, result = await published_project(client, auth, gateway)
+    project, draft, result = await published_project(client, auth, gateway)
     (method, path, body), = gateway.calls
     assert (method, path) == ("POST", "/control/v1/snapshots")
     assert body["project_slug"] == draft["slug"] and body["project_name"] == "Alpha"
     assert [d["id"] for d in body["documents"]] == ["docs-arch"]  # 코어 문서 id 규칙에 맞춘 논리 경로
     assert body["documents"][0]["sha256"] == sha(draft["documents"][0]["content"])
-    assert body["verified_at"] and body["source_refs"] == ["library:projects/docs/arch.md"]
+    assert body["verified_at"] and body["source_refs"] == [f"library-document:{project['docs']['docs/arch.md']}"]
+    assert "docs/arch.md" not in json.dumps(body)
     assert "/synthetic-root" not in json.dumps(body)
     assert result["draft"]["status"] == "published"
     assert result["publication"]["status"] == "active"
@@ -368,7 +369,7 @@ async def test_key_is_returned_once_and_never_stored(client, auth, gateway):
     assert issued["ttl_seconds"] == 3600 and issued["single_use"] is True
     assert issued["connect"]["url"] == "https://ctx.example.test"
     sent = gateway.calls[-1][2]
-    assert sent["ttl_seconds"] == 3600 and sent["label"] == "외부 AI"
+    assert "ttl_seconds" not in sent and sent["label"] == "외부 AI"
     (pid, grant), = sent["projects"].items()
     assert grant["scopes"] == ["read", "search"] and pid == gateway.projects[draft["slug"]]["id"]
     listing = await client.get(f"{BASE}/keys", headers=auth)
@@ -390,7 +391,9 @@ async def test_key_requires_an_active_publication_and_validates_ttl(client, auth
         bad = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"], "ttl_seconds": ttl})
         assert bad.status_code == 422
     shorter = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"], "ttl_seconds": 600})
-    assert shorter.status_code == 201 and shorter.json()["ttl_seconds"] == 600
+    assert shorter.status_code == 422
+    fixed = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"]})
+    assert fixed.status_code == 201 and fixed.json()["ttl_seconds"] == 3600
 
 
 async def test_key_issue_failure_leaves_no_local_key(client, auth, gateway):
@@ -525,23 +528,36 @@ async def test_settings_expose_status_without_secrets(client, auth, monkeypatch)
     assert r.json()["gateway"]["control_host"] == "control.example.test"
 
 
-async def test_key_that_outlives_the_requested_ttl_is_revoked_and_not_returned(client, auth, gateway):
+async def test_key_that_outlives_the_fixed_ttl_is_revoked_and_not_returned(client, auth, gateway):
     _, draft, _ = await published_project(client, auth, gateway)
-    gateway.key_lifetime = 3600  # 코어는 현재 수명을 3600초로 고정한다.
-    r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"], "ttl_seconds": 600})
+    gateway.key_lifetime = 3665  # 코어가 고정 3600초보다 오래 사는 키를 반환했다고 가정한다.
+    r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     assert r.status_code == 502 and r.json()["code"] == "gateway_bad_response"
     assert RAW_KEY_PREFIX not in r.text
     assert all(k["revoked"] for k in gateway.keys.values())
     assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []
+    gateway.key_lifetime = None
     ok = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"], "scopes": ["read"]})
     assert ok.status_code == 201 and ok.json()["scopes"] == ["read"]
 
 
+async def test_key_that_expires_too_early_is_revoked_and_not_returned(client, auth, gateway):
+    _, draft, _ = await published_project(client, auth, gateway)
+    gateway.key_lifetime = 60
+    r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
+    assert r.status_code == 502 and r.json()["code"] == "gateway_bad_response"
+    assert RAW_KEY_PREFIX not in r.text
+    assert all(k["revoked"] for k in gateway.keys.values())
+    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []
+
+
 async def test_key_issue_is_refused_clearly_when_gateway_receipt_has_no_project_id(client, auth, gateway):
     gateway.omit_project_id = True
-    _, draft, _ = await published_project(client, auth, gateway)  # 게시 자체는 Gateway 가 확인했으므로 기록된다
-    assert (await client.get(f"{BASE}/drafts/{draft['id']}", headers=auth)).json()["status"] == "published"
-    r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
-    assert r.status_code == 503 and r.json()["code"] == "gateway_contract_incomplete"
+    project = await make_project("Alpha", {"docs/arch.md": DOC})
+    draft = await new_draft(client, auth, project, ["docs/arch.md"])
+    r = await publish(client, auth, draft)
+    assert r.status_code == 502 and r.json()["code"] == "gateway_bad_response"
+    detail = (await client.get(f"{BASE}/drafts/{draft['id']}", headers=auth)).json()
+    assert detail["status"] == "draft" and detail["publication"] is None
     assert not any(c[1] == "/control/v1/keys" for c in gateway.calls)
     assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []

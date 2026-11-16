@@ -1,11 +1,15 @@
 """Gateway control 클라이언트: control 토큰과 public 읽기 키를 섞지 않고, 오류를 성공으로 만들지 않는다."""
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
 
 from ttakkari.config import Settings
 from ttakkari.context_sharing.gateway import (
+    GatewayBadResponse,
     GatewayControl,
     GatewayNotConfigured,
     GatewayRejected,
@@ -116,3 +120,79 @@ async def test_http_errors_map_to_rejected_with_gateway_code_only():
 async def test_transport_repr_hides_the_token():
     t = transport(lambda r: httpx.Response(200, json={}))
     assert TOKEN not in repr(t) and TOKEN not in str(t.__dict__.get("_base"))
+
+
+@pytest.mark.parametrize("receipt", [
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "manifest_sha256": "a" * 64,
+     "documents": [{"id": "overview", "sha256": "b" * 64}]},
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+     "manifest_sha256": "a" * 64},
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+     "manifest_sha256": "a" * 64, "documents": [{"id": "overview", "sha256": "c" * 64}]},
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+     "manifest_sha256": "a" * 64, "documents": [{"id": ["overview"], "sha256": "b" * 64}]},
+])
+async def test_publish_requires_a_complete_matching_gateway_receipt(receipt):
+    control = GatewayControl(transport(lambda _: httpx.Response(201, json=receipt)))
+    payload = {"documents": [{"id": "overview", "sha256": "b" * 64, "content": "body"}]}
+
+    with pytest.raises(GatewayBadResponse):
+        await control.publish_snapshot(payload)
+
+
+async def test_publish_accepts_only_the_contract_created_status():
+    receipt = {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+               "manifest_sha256": "a" * 64, "documents": [{"id": "overview", "sha256": "b" * 64}]}
+    control = GatewayControl(transport(lambda _: httpx.Response(200, json=receipt)))
+
+    with pytest.raises(GatewayBadResponse):
+        await control.publish_snapshot({"documents": [{"id": "overview", "sha256": "b" * 64, "content": "body"}]})
+
+
+async def test_key_issue_omits_ttl_field_not_supported_by_gateway_contract():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        expires = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+        return httpx.Response(201, json={"key_id": "87fae3bb-8b59-4e96-a10b-7152eb18e231", "key": "synthetic-one-time-key",
+                                         "expires_at": expires})
+
+    control = GatewayControl(transport(handler))
+    await control.issue_key("7bf808c4-b492-442e-9e7e-c753b42b420d", label="synthetic-client", scopes=["read"])
+
+    assert seen == [{"label": "synthetic-client", "projects": {
+        "7bf808c4-b492-442e-9e7e-c753b42b420d": {"scopes": ["read"]}}}]
+
+
+async def test_key_issue_accepts_only_the_contract_created_status():
+    expires = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    control = GatewayControl(transport(lambda _: httpx.Response(200, json={
+        "key_id": "87fae3bb-8b59-4e96-a10b-7152eb18e231", "key": "synthetic-one-time-key",
+        "expires_at": expires})))
+
+    with pytest.raises(GatewayBadResponse):
+        await control.issue_key("7bf808c4-b492-442e-9e7e-c753b42b420d", label="synthetic-client", scopes=["read"])
+
+
+async def test_issue_key_rejects_non_uuid_gateway_key_id():
+    expires = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    control = GatewayControl(transport(lambda _: httpx.Response(201, json={
+        "key_id": "../../unexpected-path", "key": "synthetic-one-time-key", "expires_at": expires})))
+
+    with pytest.raises(GatewayBadResponse):
+        await control.issue_key("7bf808c4-b492-442e-9e7e-c753b42b420d", label="synthetic-client", scopes=["read"])
+
+
+@pytest.mark.parametrize("operation", ["revoke_snapshot", "revoke_key"])
+async def test_revoke_refuses_non_uuid_gateway_id_before_sending(operation):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"revoked": True, "snapshot_id": "../../bad", "key_id": "../../bad"})
+
+    control = GatewayControl(transport(handler))
+    with pytest.raises(GatewayBadResponse):
+        await getattr(control, operation)("../../bad")
+    assert calls == []

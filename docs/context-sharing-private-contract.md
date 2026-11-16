@@ -11,7 +11,7 @@
 
 - 원본·도서관·대화 기록 접근은 Private만 한다. Gateway는 승인된 스냅샷만 받는다.
 - 어댑터(`ContextSourceAdapter`, 구현 `LibraryAdapter`)는 `CtxEntity(type=project)`에 연결된 **사용 중인** `CtxSource`의 색인 문서(`CtxDocument`/`CtxChunk`) 중 요청이 `document_id`로 명시한 것만 읽는다. 전체 검색, 기억(`CtxMemory`), 대화, 임의 경로 파일은 읽지 않는다.
-- 외부에는 원본 경로를 내보내지 않는다. 문서는 색인 루트 기준의 `logical_path`(예 `docs/arch.md`), 출처는 `library:<category>/<logical_path>` 형식의 `source_refs`로 표시한다.
+- Private 초안에는 색인 루트 기준 `logical_path`(예 `docs/arch.md`)와 `library:<category>/<logical_path>` 형식의 내부 `source_refs`를 보존한다. Gateway에는 상대 경로 대신 `library-document:<CtxDocument UUID>` 형식의 불투명한 안정 ID를 보낸다.
 - 본문은 색인된 조각을 이어 붙인 것(`content_origin: "indexed_chunks"`)이라 원본 파일과 다를 수 있다. 요약 생성·원문 재검증은 하지 않는다.
 
 ### 인증과 권한
@@ -138,9 +138,9 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 
 ### POST `/keys` → `201`
 ```json
-{ "project_slug": "alpha", "ttl_seconds": 3600, "label": "claude", "scopes": ["read", "search"] }
+{ "project_slug": "alpha", "label": "claude", "scopes": ["read", "search"] }
 ```
-`ttl_seconds` 60~3600(기본 3600), `scopes`는 `read|search|export`(기본 `["read","search"]`), `label` ≤ 160자. 프로젝트에 `active` 게시가 있어야 한다.
+키 수명 입력은 받지 않는다. Gateway 계약에 따라 3,600초(1시간)·1회 교환으로 고정한다. `scopes`는 `read|search|export`(기본 `["read","search"]`), `label` ≤ 160자다. 프로젝트에 `active` 게시가 있어야 한다.
 ```json
 { "id": "uuid", "project_slug": "alpha", "label": "claude", "status": "active", "ttl_seconds": 3600, "single_use": true,
   "issued_at": "…", "expires_at": "…", "revoked_at": null, "publication_id": "uuid", "scopes": ["read", "search"],
@@ -150,9 +150,9 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 - 원문 `key`는 이 `201` 응답에만 있다. Private DB(키 테이블·감사 로그), 목록 응답, 로그에 저장하지 않는다. 응답은 `no-store`.
 - 프론트는 키를 메모리에서만 들고 복사 버튼으로 한 번 보여 준 뒤, 창을 닫거나 이동하면 폐기한다. 로컬/세션 스토리지·URL·로그에 쓰지 않는다. 다시 볼 수 없으니 잃어버리면 새 키를 발급한다.
 - 키는 Gateway에서 1회 교환용이다. 외부 AI가 한 번 교환하면 같은 만료 시각까지 읽기 세션으로 쓴다. 교환 여부는 Private가 추적하지 않아 목록의 `status`는 `active`(미폐기·미만료), `revoked`, `expired`만 나온다.
-- Gateway가 요청한 `ttl_seconds`보다 오래 사는 키를 주면 Private가 그 키를 폐기하고 `502 gateway_bad_response`로 응답한다(현재 코어는 수명을 3600초로 고정하므로 3600만 성공한다).
+- Gateway가 3,600초보다 오래 사는 키를 주거나 만료 시각이 잘못되면 Private가 그 키를 폐기하고 `502 gateway_bad_response`로 응답한다.
 
-오류: `404 project_not_found`, `409 project_not_published`, `503 gateway_contract_incomplete`(Gateway가 게시 응답에 프로젝트 ID를 주지 않아 키를 발급할 수 없음), 위 Gateway 오류들. Gateway가 오류를 내면 로컬에 키 행이 생기지 않는다.
+오류: `404 project_not_found`, `409 project_not_published`, `503 gateway_contract_incomplete`(이전 게시 기록에 Gateway 프로젝트 ID가 없음; 새 초안을 게시해야 함), 위 Gateway 오류들. Gateway가 오류를 내면 로컬에 키 행이 생기지 않는다.
 
 ### GET `/keys?project_slug=`
 `{ "keys": Key[] }` (최신순, 최대 200). 원문 키 없음. `status`는 서버가 만료 시각으로 `expired`를 계산한다.
@@ -179,16 +179,16 @@ Private는 Gateway의 control 앱(`docs/context-gateway-contract.md`)에만 `Aut
 
 | Private 동작 | Gateway 호출 | 성공 판정 |
 |---|---|---|
-| 게시 | `POST /control/v1/snapshots` | `201`, `id`·`manifest_sha256` 존재, 영수증의 문서 해시가 보낸 해시와 같음(영수증에 있을 때) |
-| 키 발급 | `POST /control/v1/keys` (`projects: {<gateway project uuid>: {scopes}}`) | `201`, `key_id`·`key`·`expires_at`, 수명이 요청 이내 |
+| 게시 | `POST /control/v1/snapshots` | `201`, UUID `id`·`project_id`, 64자 `manifest_sha256`, 모든 문서 ID·해시가 일치하는 영수증 필수 |
+| 키 발급 | `POST /control/v1/keys` (`projects: {<gateway project uuid>: {scopes}}`) | `201`, `key_id`·`key`·`expires_at`, 고정 3,600초 이내 |
 | 키 폐기 | `POST /control/v1/keys/{id}/revoke` | `200 {"revoked": true, "key_id"}` |
 | 스냅샷 폐기 | `POST /control/v1/snapshots/{id}/revoke` | `200 {"revoked": true, "snapshot_id"}` |
 
-게시 본문 매핑: `project_slug`/`project_name`/`project_description`(=초안 요약), `source_refs`(문서 출처의 합집합), `source_revision`(`library-index:<digest>`), `generated_at`(문서 중 가장 늦은 값), `verified_at`(문서 중 가장 이른 소유자 검증 시각), 문서 `id`(논리 경로에서 만든 `[A-Za-z0-9._-]` id, 중복 시 `-2`), `title`, `content`, `content_type`, `sha256`.
+게시 본문 매핑: `project_slug`/`project_name`/`project_description`(=초안 요약), `source_refs`(경로를 포함하지 않는 `library-document:<CtxDocument UUID>` 합집합), `source_revision`(`library-index:<digest>`), `generated_at`(문서 중 가장 늦은 값), `verified_at`(문서 중 가장 이른 소유자 검증 시각), 문서 `id`(논리 경로에서 만든 `[A-Za-z0-9._-]` id, 중복 시 `-2`), `title`, `content`, `content_type`, `sha256`.
 
 ### 계약 일치 상태와 남은 제약
-- 코어 `docs/context-gateway-contract.md`(게시 응답의 `project_id`·문서 해시 포함)와 일치한다. 게시 응답에 `project_id`가 없는 구버전 Gateway에서는 게시는 기록되지만 키 발급이 `503 gateway_contract_incomplete`로 막힌다.
-- 키 수명은 코어가 1시간으로 고정한다(수명 입력 없음). 더 짧은 `ttl_seconds`는 위 정책대로 거절된다.
+- 코어 `docs/context-gateway-contract.md`와 일치한다. 게시 응답에 필수 `project_id`·문서 해시가 없거나 다르면 `502 gateway_bad_response`로 처리하고 게시 성공 상태를 기록하지 않는다.
+- 키 수명은 코어가 1시간으로 고정한다(수명 입력 없음). Gateway에도 TTL 필드를 보내지 않는다.
 - 실제 코어 통합 시험(`tests/test_context_sharing_real_gateway.py`)은 코어 control/public 앱을 같은 프로세스에서 ASGI로 띄워 게시 → 키 발급 → 교환 → 컨텍스트 읽기 → 재교환 거절(1회) → 키 폐기 후 열린 세션 즉시 차단 → 프로젝트 철회를 확인한다. 코어 소스나 시험 DB가 없으면 건너뛴다. 네트워크·TLS·배포 환경은 검증하지 않았다.
 
 ## 7. 감사와 저장

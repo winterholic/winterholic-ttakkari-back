@@ -63,7 +63,6 @@ class PublishIn(BaseModel):
 class KeyIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     project_slug: str = Field(pattern=SLUG)
-    ttl_seconds: int = Field(default=3600, ge=60, le=3600)
     label: str = Field(default="", max_length=160)
     scopes: list[Literal["read", "search", "export"]] = Field(default_factory=lambda: ["read", "search"], min_length=1)
 
@@ -187,7 +186,7 @@ async def publish(draft_id: uuid.UUID, body: PublishIn, request: Request, db: Db
 @router.post("/keys", status_code=201)
 async def issue_key(body: KeyIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
     """원문 키는 이 응답에 한 번만 담긴다. Private DB·감사 로그·목록 응답에는 없다."""
-    return await service.issue_key(db, gateway, body.project_slug, ttl_seconds=body.ttl_seconds, label=body.label,
+    return await service.issue_key(db, gateway, body.project_slug, label=body.label,
                                    scopes=sorted(set(body.scopes)), **_meta(request))
 
 

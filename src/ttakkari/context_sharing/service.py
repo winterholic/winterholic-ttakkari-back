@@ -37,6 +37,7 @@ from ttakkari.models import CtxEntity
 MAX_DOCUMENTS = 50
 MAX_DOCUMENT_CHARS = 200_000
 MAX_DRAFT_CHARS = 1_000_000
+KEY_TTL_SECONDS = 3600
 LIMITATIONS = [
     "정규식 기반 탐지입니다. 회사 기밀, 맥락상 비공개 내용, 사람 이름과 숫자는 자동으로 찾지 못하니 게시 전에 직접 읽어 확인하세요.",
     "본문은 색인된 조각을 이어 붙인 것이라 원본 파일과 다를 수 있습니다.",
@@ -393,6 +394,15 @@ def gateway_doc_ids(docs: list[ShareDraftDocument]) -> list[str]:
     return out
 
 
+def gateway_source_ref(doc: ShareDraftDocument) -> str:
+    """Gateway에는 경로 대신 색인 문서의 불투명한 안정 ID를 보낸다."""
+    if doc.source_document_id is not None:
+        identifier = str(doc.source_document_id)
+    else:
+        identifier = sha256_text("\0".join([*sorted(map(str, doc.source_refs)), doc.source_revision]))
+    return f"library-document:{identifier}"
+
+
 def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareDraftDocument]) -> dict[str, Any]:
     """코어 SnapshotPublishRequest. verified_at 은 모든 문서가 소유자 검증을 거쳤을 때만 호출된다."""
     ordered = sorted(docs, key=lambda x: x.position)
@@ -400,7 +410,7 @@ def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareD
         "project_slug": project.slug,
         "project_name": project.name,
         "project_description": draft.summary,
-        "source_refs": sorted({r for d in ordered for r in d.source_refs}),
+        "source_refs": sorted({gateway_source_ref(d) for d in ordered}),
         "source_revision": f"library-index:{compute_digest(draft, ordered)}",
         "generated_at": iso(max(d.generated_at for d in ordered)),
         "verified_at": iso(min(d.verified_at for d in ordered if d.verified_at)),
@@ -433,7 +443,7 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
     detail = {"digest": digest, "slug": project.slug, "documents": len(docs)}
     try:
         receipt = await gateway.publish_snapshot(snapshot_payload(project, draft, docs))
-        if receipt.get("project_id") and project.gateway_project_id not in (None, receipt["project_id"]):
+        if project.gateway_project_id not in (None, receipt["project_id"]):
             raise GatewayBadResponse("gateway project id changed")
     except GatewayError as exc:
         raise await _fail(db, "context_share.publish", exc, target_type="share_draft", target_id=draft.id,
@@ -442,8 +452,7 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
     if previous is not None:
         previous.status = "superseded"
         await db.flush()
-    if receipt.get("project_id"):
-        project.gateway_project_id = str(receipt["project_id"])[:36]
+    project.gateway_project_id = receipt["project_id"]
     publication = SharePublication(id=uuid.uuid4(), project_id=project.id, draft_id=draft.id, digest=digest,
                                    gateway_snapshot_id=receipt["id"][:64],
                                    gateway_manifest_sha256=str(receipt.get("manifest_sha256") or "")[:64] or None,
@@ -471,30 +480,31 @@ def key_out(k: ShareKey, project: ShareProject) -> dict[str, Any]:
 KEY_SCOPES = ("read", "search", "export")
 
 
-async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, ttl_seconds: int, label: str,
+async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, label: str,
                     scopes: list[str], ip: str | None = None, user_agent: str | None = None) -> dict[str, Any]:
     project = await _project_by_slug(db, slug)
     publication = await _active_publication(db, project.id)
     if publication is None:
         raise ShareError(409, "project_not_published", "게시된 스냅샷이 없는 프로젝트입니다. 먼저 초안을 승인해 게시하세요.")
     if not project.gateway_project_id:
-        # Gateway control 계약은 게시 영수증에 프로젝트 UUID 를 약속하지 않는데, 키 ACL 은 그 UUID 로만 지정한다.
         raise ShareError(503, "gateway_contract_incomplete",
-                         "Gateway 가 게시 응답에 프로젝트 ID 를 돌려주지 않아 키를 발급할 수 없습니다. Gateway 계약 갱신이 필요합니다.",
+                         "이전 게시 기록에 Gateway 프로젝트 ID가 없어 키를 발급할 수 없습니다. 새 초안을 게시해 주세요.",
                          headers={"Retry-After": "3600"})
-    detail = {"slug": slug, "ttl_seconds": ttl_seconds, "scopes": scopes, "publication_id": str(publication.id)}
+    detail = {"slug": slug, "ttl_seconds": KEY_TTL_SECONDS, "scopes": scopes, "publication_id": str(publication.id)}
     issued_at = now()
     issued: dict[str, Any] | None = None
     try:
-        issued = await gateway.issue_key(project.gateway_project_id, ttl_seconds=ttl_seconds,
-                                         label=label or f"{project.name} 외부 공유", scopes=scopes)
+        issued = await gateway.issue_key(project.gateway_project_id, label=label or f"{project.name} 외부 공유",
+                                         scopes=scopes)
         try:
             expires_at = datetime.fromisoformat(issued["expires_at"])
         except ValueError:
             raise GatewayBadResponse("expires_at") from None
-        if expires_at.tzinfo is None or expires_at > issued_at + timedelta(seconds=ttl_seconds + 60):
-            # 코어가 요청보다 오래 사는 키를 줬다. 그대로 넘기지 않고 폐기한다.
-            raise GatewayBadResponse("key outlives the requested ttl")
+        if (expires_at.tzinfo is None
+                or expires_at < issued_at + timedelta(seconds=KEY_TTL_SECONDS - 60)
+                or expires_at > issued_at + timedelta(seconds=KEY_TTL_SECONDS + 60)):
+            # 코어가 고정 1시간 계약을 벗어난 키를 줬다. 그대로 넘기지 않고 폐기한다.
+            raise GatewayBadResponse("key expiry is outside the fixed ttl")
     except GatewayError as exc:
         if issued is not None:
             try:
@@ -504,7 +514,7 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, ttl
         raise await _fail(db, "context_share.key_issue", exc, target_type="share_project", target_id=project.id,
                           detail=detail, ip=ip, user_agent=user_agent) from None
     key = ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
-                   gateway_key_id=str(issued["key_id"])[:64], label=label, ttl_seconds=ttl_seconds, issued_at=issued_at,
+                   gateway_key_id=str(issued["key_id"])[:64], label=label, ttl_seconds=KEY_TTL_SECONDS, issued_at=issued_at,
                    expires_at=expires_at)
     try:
         db.add(key)

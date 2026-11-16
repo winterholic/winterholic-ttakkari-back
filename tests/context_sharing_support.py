@@ -36,8 +36,8 @@ class FakeGateway:
         self.reply_status: int | None = None
         self.fail_paths: dict[str, int] = {}
         self.echo_wrong_hash = False
-        self.omit_project_id = False  # 현재 코어 계약처럼 영수증에 project_id 가 없는 경우
-        self.key_lifetime: int | None = None  # None 이면 요청 ttl 을 따른다. 코어 현재 동작은 3600 고정.
+        self.omit_project_id = False  # 불완전한 영수증의 fail-closed 경로를 재현한다.
+        self.key_lifetime: int | None = None  # None 이면 코어 계약의 3600초를 따른다.
 
     def latest(self, slug: str) -> str | None:
         return self.projects[slug]["latest"]
@@ -102,7 +102,7 @@ class FakeGateway:
             return GatewayReply(422, {"detail": "one or more projects do not exist"})
         key_id = str(uuid.uuid4())
         raw = RAW_KEY_PREFIX + uuid.uuid4().hex
-        ttl = self.key_lifetime or body["ttl_seconds"]
+        ttl = self.key_lifetime if self.key_lifetime is not None else 3600
         self.keys[key_id] = {"raw": raw, "project_id": pid, "revoked": False, "scopes": grant["scopes"], "body": body}
         return GatewayReply(201, {"key_id": key_id, "key": raw,
                                   "expires_at": (datetime.now(UTC) + timedelta(seconds=ttl)).isoformat()})

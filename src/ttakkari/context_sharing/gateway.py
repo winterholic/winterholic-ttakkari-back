@@ -1,11 +1,12 @@
 """Gateway control 앱 전용 클라이언트. public 읽기 키와 control 토큰은 설정·경로·헤더 모두 분리한다.
 
 HTTP transport(HttpGatewayTransport)와 계약 어댑터(GatewayControl)를 나눠, 코어 계약이 바뀌면 GatewayControl 의
-경로·본문 매핑만 고친다. docs/context-gateway-contract.md 가 없던 시점에는 코어 작업 트리의
-control 앱(POST /control/v1/snapshots, /snapshots/{id}/revoke, /keys, /keys/{id}/revoke)을 기준으로 맞췄다.
+경로·본문 매핑만 고친다. 계약은 docs/context-gateway-contract.md 에 적혀 있다.
 """
 from __future__ import annotations
 
+import re
+import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -16,6 +17,17 @@ from ttakkari.config import Settings, get_settings
 
 CONTROL_PREFIX = "/control/v1"
 _LOOPBACK = {"localhost", "127.0.0.1", "::1"}
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _is_uuid(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 class GatewayError(Exception):
@@ -136,36 +148,50 @@ class GatewayControl:
             return reply.body
         if reply.status >= 500:
             raise GatewayUnavailable(f"http_{reply.status}")
-        raise GatewayRejected(reply.status, _code(reply))
+        if 400 <= reply.status < 500:
+            raise GatewayRejected(reply.status, _code(reply))
+        raise GatewayBadResponse(f"unexpected_http_{reply.status}")
 
     async def publish_snapshot(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """payload 는 코어 SnapshotPublishRequest 와 같다. 영수증에 문서 해시가 있으면 보낸 것과 같아야 성공이다.
-
-        계약은 영수증에 프로젝트 UUID 를 약속하지 않는다. 있으면 body["project_id"] 로 받아 키 발급에 쓴다."""
-        body = await self._send("POST", "/snapshots", payload, {200, 201})
+        """코어 계약에서 요구하는 전체 영수증을 확인해야 성공으로 돌려준다."""
+        body = await self._send("POST", "/snapshots", payload, {201})
         sent = {d["id"]: d["sha256"] for d in payload["documents"]}
         docs = body.get("documents")
-        if not isinstance(body.get("id"), str) or not body.get("manifest_sha256"):
-            raise GatewayBadResponse("snapshot receipt is missing id/manifest_sha256")
-        if isinstance(docs, list) and {d.get("id"): d.get("sha256") for d in docs if isinstance(d, dict)} != sent:
+        if (not _is_uuid(body.get("id")) or not _is_uuid(body.get("project_id"))
+                or not isinstance(body.get("manifest_sha256"), str)
+                or not _SHA256.fullmatch(body["manifest_sha256"]) or not isinstance(docs, list)
+                or len(docs) != len(sent)):
+            raise GatewayBadResponse("snapshot receipt is missing required fields")
+        received: dict[str, str] = {}
+        for doc in docs:
+            if (not isinstance(doc, dict) or not isinstance(doc.get("id"), str)
+                    or not isinstance(doc.get("sha256"), str) or doc["id"] in received):
+                raise GatewayBadResponse("snapshot receipt contains invalid document metadata")
+            received[doc["id"]] = doc["sha256"]
+        if received != sent:
             raise GatewayBadResponse("snapshot receipt does not match what was published")
         return body
 
     async def revoke_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        if not _is_uuid(snapshot_id):
+            raise GatewayBadResponse("snapshot id is not a UUID")
         body = await self._send("POST", f"/snapshots/{snapshot_id}/revoke", None, {200})
         if body.get("revoked") is not True or str(body.get("snapshot_id", "")).lower() != snapshot_id.lower():
             raise GatewayBadResponse("snapshot revoke receipt is missing")
         return body
 
-    async def issue_key(self, project_id: str, *, ttl_seconds: int, label: str, scopes: list[str]) -> dict[str, Any]:
-        """키는 단회 교환용이다. 코어가 수명을 정하므로 요청보다 오래 사는 키는 호출한 쪽이 거절한다."""
-        body = await self._send("POST", "/keys", {"label": label, "ttl_seconds": ttl_seconds,
-                                                  "projects": {project_id: {"scopes": scopes}}}, {200, 201})
-        if not all(isinstance(body.get(k), str) and body[k] for k in ("key_id", "key", "expires_at")):
+    async def issue_key(self, project_id: str, *, label: str, scopes: list[str]) -> dict[str, Any]:
+        """키는 단회 교환용이며 Gateway 계약의 고정 3,600초 수명을 따른다."""
+        body = await self._send("POST", "/keys", {"label": label,
+                                                  "projects": {project_id: {"scopes": scopes}}}, {201})
+        if (not _is_uuid(body.get("key_id"))
+                or not all(isinstance(body.get(k), str) and body[k] for k in ("key", "expires_at"))):
             raise GatewayBadResponse("key response is missing key_id/key/expires_at")
         return body
 
     async def revoke_key(self, key_id: str) -> dict[str, Any]:
+        if not _is_uuid(key_id):
+            raise GatewayBadResponse("key id is not a UUID")
         body = await self._send("POST", f"/keys/{key_id}/revoke", None, {200})
         if body.get("revoked") is not True or str(body.get("key_id", "")).lower() != key_id.lower():
             raise GatewayBadResponse("key revoke receipt is missing")

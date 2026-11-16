@@ -2,6 +2,15 @@
 
 상태: 구현·통합 검증 진행 중. 전체 완료·운영 배포 아님.
 
+## 최신 main 병합 및 대표 회귀
+
+- backend `d21343cb2f0805156e6d6c678479c3d8f2d50e88`와 frontend의 feat checkout에 최신 main을 충돌 없이 병합했다. backend upstream은 계정 login/check 경로, frontend upstream은 계정 재로그인 버튼이다.
+- 통합 backend core는29 passed, public UI는93 passed/5 live skipped이며 production build 통과다. Private·migration·route·orchestrator·account·security 관련15개파일 실행은259 passed/1 failed였다. 실패는 기존 offline SQL 테스트의 `uv run alembic` 하위명령 exit2였으며 상세 stderr가 출력되지 않아 원인은 단정하지 않는다. 인접 realdb 테스트와 같이 설치된 `sys.executable -m alembic`을 사용하도록 고쳤고 해당파일16건 재검사 pass다. 마이그레이션 head는0079 하나다.
+- 바뀐 Python56개경로 Ruff 검사에서 live helper의 비활성 E402 noqa1개를 발견해 제거했고 최종 전부 pass다. production 동작 변경은 없다.
+- frontend 전체는 최초1805 passed/1 failed로 `/context-sharing`이 Markdown 링크 분류 허용목록에 빠진 것을 찾았다. 해당목록을 보완해 전체1806 passed/10 skipped와 production build를 확인했다. 공유 CSS는 기존토큰·부모gap으로 정리했고 자기범위 UI lint지적0건, 변경17개JS/TS경로 ESLint도 pass다.
+- 전체 frontend lint는 기존main과 동일한 StoryboardCreateFlow.tsx의 set-state-in-effect 오류1개/기존warning2개 및 기존chat·creative·reverse CSS 지적으로 실패한다. 해당파일들은 `git diff --exit-code origin/main -- 경로들`이0으로 이작업 변경이 아님을 확인했다. 기준선을 올리거나 타기능을 고치지 않았다.
+- 다음은 이결과를 커밋하고 기존pre-push게이트를 실행한 뒤 push 및 backend fullSHA 예약이다. 외부 Gateway 격리배포/HTTPS는 이검증 범위 밖이다.
+
 ## owner 최종 HTTP 검증 대조 및 main 통합 착수
 
 - frontend `be2316c95308616763cc54bdd46bd2544bfc79ae`의 정본 기록을 직접 읽었다. backend `4ad5ca30`의 실제 공유 라우터를 붙인 최소 시험 호스트에서 키 첫 교환200/재사용401, TTL3600, 프로젝트 철회200/기존 세션 context401, MCP list/context200, JSON export200와 문서 verified_at null을 관측한 범위를 수락한다. 전체 Private 앱 기동·실제 배포를 검증한 것은 아니다.

@@ -16,6 +16,6 @@ def _replace(src, dst, *args, **kwargs):
 
 publishing.os.replace = _replace
 
-from context_gateway.apps import create_control_app  # noqa: E402
+from context_gateway.apps import create_control_app
 
 app = create_control_app()

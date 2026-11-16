@@ -352,11 +352,13 @@ def test_postgresql_ddl_compilation():
 def test_migration_0072_offline_sql_generation():
     """Alembic offline 환경에서 0072 upgrade 및 downgrade static SQL 이 유효하게 생성되는지 검증."""
     import subprocess
+    import sys
 
+    # 이미 설치된 시험 환경을 사용한다. uv 재실행으로 설치/캐시 접근을 유발하지 않는다.
     res_up = subprocess.run(
         [
-            "uv",
-            "run",
+            sys.executable,
+            "-m",
             "alembic",
             "upgrade",
             "0071_library_platform_v2_merge:0072_kb_v3_schema_and_scope",
@@ -379,8 +381,8 @@ def test_migration_0072_offline_sql_generation():
 
     res_down = subprocess.run(
         [
-            "uv",
-            "run",
+            sys.executable,
+            "-m",
             "alembic",
             "downgrade",
             "0072_kb_v3_schema_and_scope:0071_library_platform_v2_merge",

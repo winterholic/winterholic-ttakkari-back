@@ -5,7 +5,10 @@ HTTP transport(HttpGatewayTransport)와 계약 어댑터(GatewayControl)를 나�
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import stat
 import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -78,17 +81,64 @@ def _control_url_problem(url: str) -> str | None:
     return None
 
 
-def gateway_status(s: Settings | None = None) -> dict[str, Any]:
-    """설정 상태. 토큰·전체 URL 은 싣지 않고 호스트만 보인다."""
-    s = s or get_settings()
+def _connection_settings(s: Settings) -> tuple[Settings, list[str]]:
+    """Production-only, owner-readable Gateway credentials; never an app policy source.
+
+    Explicit settings always win, including incomplete settings (fail closed).
+    This file can supply only the three Gateway connection values, not arbitrary
+    environment variables, commands, paths or operational/security settings.
+    """
+    if s.env != "prod" or any((s.context_gateway_control_url, s.context_gateway_control_token,
+                                s.context_gateway_public_url)):
+        return s, []
+    path = s.home.parent / "private-resources/service-data/context-gateway/secrets/publisher.json"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return s, []
+    except OSError:
+        return s, ["gateway_credentials_file_invalid"]
+    try:
+        with os.fdopen(fd) as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 8192:
+                raise ValueError("invalid credential file permissions or size")
+            raw = stream.read(8193)
+            if len(raw) > 8192:
+                raise ValueError("credential file grew beyond the size limit")
+            data = json.loads(raw)
+        if not isinstance(data, dict) or set(data) != {"control_url", "control_token", "public_url"}:
+            raise ValueError("invalid fields")
+        if any(not isinstance(value, str) or not value for value in data.values()):
+            raise ValueError("invalid values")
+        for name in ("control_url", "public_url"):
+            parts = urlsplit(data[name])
+            if (parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+                    or parts.query or parts.fragment or parts.path not in {"", "/"}):
+                raise ValueError("invalid origin")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43,256}", data["control_token"]):
+            raise ValueError("invalid control token")
+        return s.model_copy(update={"context_gateway_control_url": data["control_url"],
+                                    "context_gateway_control_token": data["control_token"],
+                                    "context_gateway_public_url": data["public_url"]}), []
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        return s, ["gateway_credentials_file_invalid"]
+
+
+def _status(s: Settings, problems: list[str]) -> dict[str, Any]:
     missing = [name for name, v in (("context_gateway_control_url", s.context_gateway_control_url),
                                     ("context_gateway_control_token", s.context_gateway_control_token)) if not v]
-    problems: list[str] = []
     if s.context_gateway_control_url and (p := _control_url_problem(s.context_gateway_control_url)):
         problems.append(p)
     host = urlsplit(s.context_gateway_control_url).hostname if s.context_gateway_control_url and not problems else None
     return {"configured": not missing and not problems, "missing": missing, "problems": problems,
             "control_host": host, "public_url": s.context_gateway_public_url or None}
+
+
+def gateway_status(s: Settings | None = None) -> dict[str, Any]:
+    """설정 상태. 토큰·전체 control URL 은 싣지 않고 호스트만 보인다."""
+    effective, problems = _connection_settings(s or get_settings())
+    return _status(effective, problems)
 
 
 class HttpGatewayTransport:
@@ -221,8 +271,8 @@ class GatewayControl:
 
 
 def build_control(s: Settings | None = None) -> GatewayControl:
-    s = s or get_settings()
-    status = gateway_status(s)
+    s, problems = _connection_settings(s or get_settings())
+    status = _status(s, problems)
     transport = None
     if status["configured"]:
         transport = HttpGatewayTransport(s.context_gateway_control_url, s.context_gateway_control_token,

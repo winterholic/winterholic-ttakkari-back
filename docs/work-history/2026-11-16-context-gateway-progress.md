@@ -151,3 +151,11 @@
 - 기획이 같은 HEAD의 core src/tests에 미커밋 변경이 없음을 확인하고 전체를 재실행했다. 명령: `CONTEXT_GATEWAY_TEST_DATABASE_URL=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_metadata_29d22061 CONTEXT_GATEWAY_DATABASE_URL=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_metadata_29d22061 .venv/bin/python -m pytest -q -o asyncio_default_fixture_loop_scope=function tests` (cwd `context_gateway`). 결과: `29 passed in 1.86s`, 실패·skip0. 이 DB는 core 보완 worker가 종료한 뒤 기획이 쓰는 전용 DB다.
 - 해당 Gateway 코어 검증 단위에 verification passed를 기록했다. 이전 전체21 pass/4 fail과 DB 미실행 결과는 해결 전 이력이다. Private의 기존56 pass는 이전 revision의 scoped 증거이며, 현재 작성 중인 Private nullable/provenance 변경에는 최종 재검증이 필요하다.
 - Private 구현·테스트와 public UI 파일은 현재 다른 worker의 미커밋 변경이다. 보존하고 단일 revision 통합·push·배포는 이 작업들이 안정된 뒤 진행한다. owner 실제 게시·키 수명주기, 자연어 초안 연결, Docker·외부 HTTPS는 아직 전체 완료 근거가 없다.
+
+## 배포 재개: 실제 실행 경로 교정
+
+- 사용자 재개 지시 뒤 dd861485 예약의 지원 로그를 확인했다. 배포 준비 pytest에서 `test_single_head_preserves_both_published_branch_identities`가 최신 0079를 기존 0078과 비교해 실패했다. 같은 원인의 admission 검사도 로컬 RED로 확인하고, 0078은 online 승격 대상·0079는 current로 검증하도록 갱신했다. 계보의 0079→0078→0077 연결은 모두 검사한다.
+- 기존 hs-ops/hs-edge 경로에서 Docker 29.1.2·Compose 5.0.0 및 제한된 edgectl 권한을 실제 확인했다. Mac Docker/차단 프로세스 종료를 재시도하지 않았다. Gateway만 포함한 소스와 별도 0600 자격 파일로 새 홈서버 서비스를 구성했다. 실제 사용자 문서는 게시하지 않았다.
+- 실제 image build/기동에서 Node Blob 생성자 차이, 잘못 파싱된 tmpfs 목록, 이동된 venv의 실행 파일 경로를 확인해 교정했다. 수정 뒤 이미지가 빌드되고 세 컨테이너가 healthy가 됐다. 내부망의 호스트 포트 공개가 비활성인 관측에 따라 홈서버 전용 override는 포트를 공개하지 않고 nginx가 예약 내부 IP로 접속하게 한다. 최종 외부 검증과 source revision 고정은 후속 단계다.
+- 새 production-only 자격 파일은 Gateway 연결 세 필드만 허용한다. RED 6건을 관측한 뒤 구현했고, 해당 보안/스키마/기존 어댑터 검사 72건이 통과했다. Ruff와 diff 검사를 통과했다.
+- Codex sandbox의 unit_tests 전체는 2610 passed/29 failed/1 skipped였다. 실패에는 process table 열거가 불완전한 host resource 검사와 시험 DB 비밀번호 인증 실패가 포함됐다. 전체 통과를 주장하지 않으며 보호 정책을 바꾸거나 해당 환경 실패를 우회하지 않는다. 배포 컨트롤러의 호스트 환경 전체 검증을 별도 유지한다.

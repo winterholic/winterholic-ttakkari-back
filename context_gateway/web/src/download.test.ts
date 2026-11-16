@@ -16,7 +16,8 @@ describe("downloadExport", () => {
     expect(save).toHaveBeenCalledTimes(1);
     const file = save.mock.calls[0]![0] as { blob: Blob; filename: string };
     expect(file.filename).toMatch(/\.zip$/);
-    expect(file.blob).toBeInstanceOf(Blob);
+    expect(file.blob.type).toBe("application/zip");
+    expect(new Uint8Array(await file.blob.arrayBuffer())).toEqual(new Uint8Array([80, 75, 3, 4]));
   });
 
   it("실패하면 저장하지 않고 오류를 그대로 던진다", async () => {

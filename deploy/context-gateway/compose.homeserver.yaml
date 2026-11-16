@@ -1,0 +1,48 @@
+# Standalone override for the existing homeserver deployment accounts.
+# Keep state outside the release tree. Use /srv/context-gateway when provisioned;
+# otherwise set CONTEXT_GATEWAY_STATE_DIR to an operator-writable absolute path.
+services:
+  db:
+    extends:
+      file: compose.yaml
+      service: db
+    volumes:
+      - ${CONTEXT_GATEWAY_STATE_DIR:?absolute persistent state directory}/postgres:/var/lib/postgresql/data
+    networks:
+      gateway-internal:
+        ipv4_address: 172.31.0.4
+  control:
+    extends:
+      file: compose.yaml
+      service: control
+    image: context-gateway:${CONTEXT_GATEWAY_IMAGE_TAG:?full source revision}
+    user: ${CONTEXT_GATEWAY_RUNTIME_UID:?host snapshot owner UID}:${CONTEXT_GATEWAY_RUNTIME_GID:?host snapshot owner GID}
+    ports: !reset []
+    volumes:
+      - ${CONTEXT_GATEWAY_STATE_DIR:?absolute persistent state directory}/snapshots:/var/lib/context-gateway/snapshots
+    labels:
+      org.opencontainers.image.revision: ${CONTEXT_GATEWAY_IMAGE_TAG}
+    networks:
+      gateway-internal:
+        ipv4_address: 172.31.0.2
+  public:
+    extends:
+      file: compose.yaml
+      service: public
+    image: context-gateway:${CONTEXT_GATEWAY_IMAGE_TAG:?full source revision}
+    user: ${CONTEXT_GATEWAY_RUNTIME_UID:?host snapshot owner UID}:${CONTEXT_GATEWAY_RUNTIME_GID:?host snapshot owner GID}
+    ports: !reset []
+    volumes:
+      - ${CONTEXT_GATEWAY_STATE_DIR:?absolute persistent state directory}/snapshots:/var/lib/context-gateway/snapshots:ro
+    labels:
+      org.opencontainers.image.revision: ${CONTEXT_GATEWAY_IMAGE_TAG}
+    networks:
+      gateway-internal:
+        ipv4_address: 172.31.0.3
+networks:
+  gateway-internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+          gateway: 172.31.0.1

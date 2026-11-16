@@ -67,3 +67,31 @@ docker compose -f deploy/context-gateway/compose.yaml config --quiet
 - 후속 완료: wrapper OpenAPI 3.1 전달, 공개 REST path-only assertion, CSP/CDN 독립 `/docs` 렌더링과 무자격 API·MCP 경계 회귀 테스트.
 - 미검증: 컨테이너 이미지 빌드·기동과 컨테이너 내부 HTTP. 이 작업 카드에 기록된 Codex Docker CLI 실패(`unix:///Users/winterholic/.orbstack/run/docker.sock: connect: no such file or directory`)가 이미 발생한 단계이므로 daemon이나 소켓을 건드리지 않고 런타임 검증을 생략했다.
 - 미검증: 실제 DNS, Tunnel, 운영 환경변수와 운영 데이터. 이 범위에서 읽거나 변경하지 않았다.
+
+## 2026-11-16 홈서버 운영 경로
+
+Mac의 Docker 소켓 부재와 별개로 기존 `hs-ops`/`hs-edge` 계정에서 홈서버 Docker 29.1.2, Compose 5.0.0과 `edgectl`을 확인했다. `compose.homeserver.yaml`은 기존 서비스 정의를 재사용하고, 운영 스냅샷 소유 UID/GID와 release tag·영구 bind mount만 분리한다. Compose `!reset` 지원 버전이 필요하다.
+
+- 코드: `/opt/homeserver/apps/context-gateway/releases/<full SHA>/`. `git archive`로 Gateway와 해당 배포 디렉터리만 전송한다. Private 코드·DB·사용자 문서는 이미지에 포함하지 않는다.
+- 상태: `/opt/homeserver/apps/context-gateway/runtime/`. `/srv`는 root 소유이고 ops 비대화형 sudo 조회가 비밀번호를 요구해 기존 권한을 변경하지 않았다. 이번 서비스의 상태는 release 디렉터리 밖의 별도 bind 경로에 유지한다. 이 경로는 기존 `/opt/homeserver` 백업 범위에 포함하되 실제 백업 실행·복원은 이번 검증 범위가 아니다. 향후 `/srv/context-gateway`가 준비되면 중지·백업 후 mount 원본만 이전한다.
+- 자격 파일: `runtime/secrets/deployment.env`, mode 0600. 원문은 git·보고서·빌드 문맥에 넣지 않는다.
+- 네트워크: `172.31.0.0/24` 내부 브리지. control `.2:8788`, public `.3:8787`, DB `.4:5432`. 컨테이너는 호스트 포트를 공개하지 않는다. 해당 subnet은 이 홈서버에서 예약한 값이며 다른 호스트에서는 충돌 여부를 먼저 확인한다.
+- 기존 host nginx가 이 브리지에만 접속한다. `share.winterholic.net`은 public만, `share-control.winterholic.net`은 `/control/v1/`만 전달한다. 두 주소의 nginx access log는 꺼져 있다. 게시 인증은 control 앱의 별도 Bearer 토큰이 담당한다.
+- 기존 Cloudflare `homeserver` Tunnel에 위 두 hostname만 추가했다. 설정은 변경 전 백업했으며 `edgectl`로 nginx/ingress 검사와 적용을 한다. Tunnel 자격 파일을 읽거나 변경하지 않는다.
+
+실제 Docker 실행에서 교정한 항목: tmpfs flow list의 쉼표를 문자열로 묶었고, builder/runtime의 venv 절대 경로를 `/app/.venv`로 일치시켰다. Gateway Python 패키지를 `--no-editable`로 설치해 builder 소스 경로에 의존하지 않도록 했다. Node 22의 fetch Blob은 DOM Blob과 생성자가 달라 다운로드 검사를 ZIP MIME 및 실제 4바이트로 대조한다.
+
+```bash
+docker compose --project-name context-gateway \
+  --env-file /opt/homeserver/apps/context-gateway/runtime/secrets/deployment.env \
+  -f deploy/context-gateway/compose.homeserver.yaml config --quiet
+docker compose --project-name context-gateway \
+  --env-file /opt/homeserver/apps/context-gateway/runtime/secrets/deployment.env \
+  -f deploy/context-gateway/compose.homeserver.yaml up -d --wait
+```
+
+## Private Publisher 자격 파일
+
+기존 `TTAKKARI_CONTEXT_GATEWAY_*` 설정을 우선한다. 세 연결 값이 모두 비었고 `env=prod`일 때만 `<TTAKKARI_HOME의 상위>/private-resources/service-data/context-gateway/secrets/publisher.json`을 읽는다(기본 사용자 홈 기준). 보호된 `config.env`를 수정할 필요가 없다. 허용 필드는 `control_url`, `control_token`, `public_url` 세 개뿐이며 앱 정책·권한·일반 환경변수를 변경할 수 없다.
+
+파일은 현재 프로세스 소유의 일반 파일이어야 하고 그룹/타인 권한이 없어야 한다(mode 0600 권장). symlink, 8KiB 초과, 알 수 없는 필드, 잘못된 HTTPS origin, 256비트 미만 길이의 토큰은 연결을 비활성화한다. 기존 설정이 일부만 지정됐을 때 파일 값으로 섞어 보완하지 않는다. 응답에는 자격 값이나 파일 오류 원문을 노출하지 않는다. 자격 파일은 도서관 색인·공유·백업 평문 산출 대상에 넣지 않는다.

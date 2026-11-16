@@ -24,10 +24,10 @@ def _is_uuid(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     try:
-        uuid.UUID(value)
+        parsed = uuid.UUID(value)
     except ValueError:
         return False
-    return True
+    return str(parsed) == value.lower()
 
 
 class GatewayError(Exception):
@@ -154,8 +154,17 @@ class GatewayControl:
 
     async def publish_snapshot(self, payload: dict[str, Any]) -> dict[str, Any]:
         """코어 계약에서 요구하는 전체 영수증을 확인해야 성공으로 돌려준다."""
+        documents = payload.get("documents")
+        if not isinstance(documents, list) or not documents:
+            raise GatewayBadResponse("snapshot request has no documents")
+        sent: dict[str, str] = {}
+        for doc in documents:
+            if (not isinstance(doc, dict) or not isinstance(doc.get("id"), str) or not doc["id"]
+                    or not isinstance(doc.get("sha256"), str) or not _SHA256.fullmatch(doc["sha256"])
+                    or doc["id"] in sent):
+                raise GatewayBadResponse("snapshot request contains invalid or duplicate document metadata")
+            sent[doc["id"]] = doc["sha256"]
         body = await self._send("POST", "/snapshots", payload, {201})
-        sent = {d["id"]: d["sha256"] for d in payload["documents"]}
         docs = body.get("documents")
         if (not _is_uuid(body.get("id")) or not _is_uuid(body.get("project_id"))
                 or not isinstance(body.get("manifest_sha256"), str)
@@ -165,7 +174,8 @@ class GatewayControl:
         received: dict[str, str] = {}
         for doc in docs:
             if (not isinstance(doc, dict) or not isinstance(doc.get("id"), str)
-                    or not isinstance(doc.get("sha256"), str) or doc["id"] in received):
+                    or not isinstance(doc.get("sha256"), str) or not _SHA256.fullmatch(doc["sha256"])
+                    or doc["id"] in received):
                 raise GatewayBadResponse("snapshot receipt contains invalid document metadata")
             received[doc["id"]] = doc["sha256"]
         if received != sent:

@@ -141,9 +141,9 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 
 ### POST `/keys` → `201`
 ```json
-{ "project_slug": "alpha", "label": "claude", "scopes": ["read", "search"] }
+{ "project_slug": "alpha", "label": "claude", "scopes": ["read", "search"], "ttl_seconds": 3600 }
 ```
-키 수명 입력은 받지 않는다. Gateway 계약에 따라 3,600초(1시간)·1회 교환으로 고정한다. `scopes`는 `read|search|export`(기본 `["read","search"]`), `label` ≤ 160자다. 프로젝트에 `active` 게시가 있어야 한다.
+키 수명은 3,600초(1시간)·1회 교환으로 고정한다. 요청의 `ttl_seconds`는 생략하거나 정확히 `3600`만 보낼 수 있고, 다른 값은 Gateway 호출 전에 `422 validation`으로 거절한다. 응답에는 `ttl_seconds: 3600`이 포함된다. `scopes`는 `read|search|export`(기본 `["read","search"]`), `label` ≤ 160자다. 프로젝트에 `active` 게시가 있어야 한다.
 ```json
 { "id": "uuid", "project_slug": "alpha", "label": "claude", "status": "active", "ttl_seconds": 3600, "single_use": true,
   "issued_at": "…", "expires_at": "…", "revoked_at": null, "publication_id": "uuid", "scopes": ["read", "search"],
@@ -183,7 +183,7 @@ Private는 Gateway의 control 앱(`docs/context-gateway-contract.md`)에만 `Aut
 | Private 동작 | Gateway 호출 | 성공 판정 |
 |---|---|---|
 | 게시 | `POST /control/v1/snapshots` | flat snapshot JSON, `201`, UUID `id`·`project_id`, 64자 `manifest_sha256`, 모든 문서 ID·해시가 일치하는 영수증 필수 |
-| 키 발급 | `POST /control/v1/keys` (`projects: {<gateway project uuid>: {scopes}}`) | `201`, `key_id`·`key`·`expires_at`, 고정 3,600초 이내 |
+| 키 발급 | `POST /control/v1/keys` (`projects: {<gateway project uuid>: {scopes}}`) | `201`, `key_id`·`key`·`expires_at`, 고정 3,600초 |
 | 키 폐기 | `POST /control/v1/keys/{id}/revoke` | `200 {"revoked": true, "key_id"}` |
 | 스냅샷 폐기 | `POST /control/v1/snapshots/{id}/revoke` | `200 {"revoked": true, "snapshot_id"}` |
 | 프로젝트 공유 철회 | `POST /control/v1/projects/{project_id}/revoke` | `200`, 일치하는 `project_id`, `revoked: true`, `snapshots_revoked` 확인 뒤 해당 프로젝트의 모든 게시를 로컬 철회 처리 |
@@ -192,11 +192,11 @@ Private는 Gateway의 control 앱(`docs/context-gateway-contract.md`)에만 `Aut
 
 ### 계약 일치 상태와 남은 제약
 - 코어 `context_gateway/src/context_gateway/apps.py`와 `docs/context-gateway-contract.md`의 현재 계약을 따른다. 게시 응답에 필수 `project_id`·문서 해시가 없거나 다르면 `502 gateway_bad_response`로 처리하고 게시 성공 상태를 기록하지 않는다.
-- 키 수명은 코어가 1시간으로 고정한다(수명 입력 없음). Gateway에도 TTL 필드를 보내지 않는다.
+- 키 수명은 Private API에서 생략 또는 `ttl_seconds: 3600`만 허용하며, 다른 TTL은 상류 호출 전 `422`다. 코어는 1시간으로 고정하고 Gateway에도 TTL 필드를 보내지 않는다.
 - 실제 코어 통합 시험(`tests/test_context_sharing_real_gateway.py`)은 코어 control/public 앱을 같은 프로세스에서 ASGI로 띄워 게시 → 키 발급 → 교환 → 컨텍스트 읽기 → 재교환 거절(1회) → 키 폐기 후 열린 세션 즉시 차단 → 프로젝트 철회를 확인한다. 코어 소스나 시험 DB가 없으면 건너뛴다. 네트워크·TLS·배포 환경은 검증하지 않았다.
 
 ## 7. 감사와 저장
 
-- 감사 로그(`audit_logs`) 행동: `context_share.draft_create|draft_update|publish|key_issue|key_revoke|project_revoke`. 상세에는 id·digest·개수·오류 코드만 있고 본문·원문 키·control 토큰은 없다.
+- 감사 로그(`audit_logs`) 행동: `context_share.draft_create|draft_update|publish|key_issue|key_cleanup_failed|key_revoke|project_revoke`. 발급 후 보상 폐기가 실패하면 `key_cleanup_failed`에 Gateway 키 ID와 오류 코드만 기록하며, 상세에는 본문·원문 키·control 토큰이 없다.
 - 테이블: `ctx_share_projects`(slug↔프로젝트, Gateway 프로젝트 id), `ctx_share_drafts`, `ctx_share_draft_documents`(본문·출처·검증), `ctx_share_publications`(Gateway 스냅샷 id), `ctx_share_keys`(Gateway 키 id·만료·상태만). 원문 키 열은 없다.
 - 게시된 초안은 불변이다. 변경하려면 새 초안을 만들고 다시 게시한다.

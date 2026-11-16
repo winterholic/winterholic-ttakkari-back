@@ -144,6 +144,12 @@ async def test_transport_repr_hides_the_token():
      "manifest_sha256": "a" * 64, "documents": [{"id": "overview", "sha256": "c" * 64}]},
     {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
      "manifest_sha256": "a" * 64, "documents": [{"id": ["overview"], "sha256": "b" * 64}]},
+    {"id": "not-a-uuid", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+     "manifest_sha256": "a" * 64, "documents": [{"id": "overview", "sha256": "b" * 64}]},
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "not-a-uuid",
+     "manifest_sha256": "a" * 64, "documents": [{"id": "overview", "sha256": "b" * 64}]},
+    {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+     "manifest_sha256": "short", "documents": [{"id": "overview", "sha256": "b" * 64}]},
 ])
 async def test_publish_requires_a_complete_matching_gateway_receipt(receipt):
     control = GatewayControl(transport(lambda _: httpx.Response(201, json=receipt)))
@@ -151,6 +157,28 @@ async def test_publish_requires_a_complete_matching_gateway_receipt(receipt):
 
     with pytest.raises(GatewayBadResponse):
         await control.publish_snapshot(payload)
+
+
+async def test_publish_rejects_duplicate_document_receipt_entries():
+    receipt = {"id": "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67", "project_id": "7bf808c4-b492-442e-9e7e-c753b42b420d",
+               "manifest_sha256": "a" * 64,
+               "documents": [{"id": "overview", "sha256": "b" * 64}, {"id": "overview", "sha256": "b" * 64}]}
+    control = GatewayControl(transport(lambda _: httpx.Response(201, json=receipt)))
+
+    with pytest.raises(GatewayBadResponse):
+        await control.publish_snapshot({"documents": [{"id": "overview", "sha256": "b" * 64},
+                                                        {"id": "introduction", "sha256": "c" * 64}]})
+
+
+async def test_publish_rejects_duplicate_document_ids_before_sending():
+    calls = []
+    control = GatewayControl(transport(lambda request: calls.append(request) or httpx.Response(201, json={})))
+    payload = {"documents": [{"id": "overview", "sha256": "b" * 64},
+                              {"id": "overview", "sha256": "c" * 64}]}
+
+    with pytest.raises(GatewayBadResponse):
+        await control.publish_snapshot(payload)
+    assert calls == []
 
 
 async def test_publish_accepts_only_the_contract_created_status():

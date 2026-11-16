@@ -65,6 +65,7 @@ class KeyIn(BaseModel):
     project_slug: str = Field(pattern=SLUG)
     label: str = Field(default="", max_length=160)
     scopes: list[Literal["read", "search", "export"]] = Field(default_factory=lambda: ["read", "search"], min_length=1)
+    ttl_seconds: Literal[3600] = 3600
 
 
 async def user_access(_: User) -> None:

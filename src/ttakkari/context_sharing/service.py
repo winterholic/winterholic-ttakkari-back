@@ -378,6 +378,14 @@ async def _fail(db: AsyncSession, action: str, exc: GatewayError, *, target_type
     return err
 
 
+def _record_key_cleanup_failure(db: AsyncSession, project: ShareProject, key_id: str,
+                                exc: GatewayError, *, ip: str | None, user_agent: str | None) -> None:
+    """발급 뒤 보상 폐기가 실패하면 원문 없이 식별자와 오류 코드만 기록한다."""
+    record(db, action="context_share.key_cleanup_failed", outcome="error", target_type="share_project",
+           target_id=project.id,
+           detail={"gateway_key_id": key_id, "error": gateway_problem(exc).code}, ip=ip, user_agent=user_agent)
+
+
 # ---- 게시
 
 def gateway_doc_ids(docs: list[ShareDraftDocument]) -> list[str]:
@@ -509,8 +517,9 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
         if issued is not None:
             try:
                 await gateway.revoke_key(str(issued["key_id"]))
-            except GatewayError:
-                pass
+            except GatewayError as cleanup_exc:
+                _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
+                                            ip=ip, user_agent=user_agent)
         raise await _fail(db, "context_share.key_issue", exc, target_type="share_project", target_id=project.id,
                           detail=detail, ip=ip, user_agent=user_agent) from None
     key = ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
@@ -525,8 +534,10 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
         await db.rollback()
         try:  # 로컬에 남지 않은 키가 Gateway 에서 살아 있으면 안 된다.
             await gateway.revoke_key(str(issued["key_id"]))
-        except GatewayError:
-            pass
+        except GatewayError as cleanup_exc:
+            _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
+                                        ip=ip, user_agent=user_agent)
+            await db.commit()
         raise
     out = key_out(key, project)
     out["scopes"] = scopes

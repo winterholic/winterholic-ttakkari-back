@@ -385,18 +385,18 @@ async def test_key_is_returned_once_and_never_stored(client, auth, gateway):
         assert (await db.execute(text("SELECT count(*) FROM ctx_share_keys"))).scalar() == 1
 
 
-async def test_key_requires_an_active_publication_and_validates_ttl(client, auth, gateway):
+async def test_key_requires_an_active_publication_and_accepts_only_fixed_one_hour_ttl(client, auth, gateway):
     project = await make_project("Alpha", {"a.md": DOC})
     draft = await new_draft(client, auth, project, ["a.md"])
     r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     assert r.status_code == 409 and r.json()["code"] == "project_not_published"
     _, published, _ = await published_project(client, auth, gateway, name="Beta")
-    for ttl in (0, 59, 3601):
+    for ttl in (0, 59, 600, 3601):
         bad = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"], "ttl_seconds": ttl})
         assert bad.status_code == 422
-    shorter = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"], "ttl_seconds": 600})
-    assert shorter.status_code == 422
-    fixed = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": published["slug"]})
+    assert not any(c[1] == "/control/v1/keys" for c in gateway.calls)
+    fixed = await client.post(f"{BASE}/keys", headers=auth,
+                              json={"project_slug": published["slug"], "ttl_seconds": 3600})
     assert fixed.status_code == 201 and fixed.json()["ttl_seconds"] == 3600
 
 
@@ -532,6 +532,20 @@ async def test_settings_expose_status_without_secrets(client, auth, monkeypatch)
     assert r.json()["gateway"]["control_host"] == "control.example.test"
 
 
+async def test_key_cleanup_revoke_failure_is_audited_without_key_material(client, auth, gateway):
+    _, draft, _ = await published_project(client, auth, gateway)
+    gateway.key_lifetime = 3665  # 코어가 고정 3600초보다 오래 사는 키를 반환했다고 가정한다.
+    gateway.fail_paths["/control/v1/keys/"] = 503
+    r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
+    assert r.status_code == 502 and r.json()["code"] == "gateway_bad_response"
+    assert RAW_KEY_PREFIX not in r.text
+    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []
+    async with sessionmaker()() as db:
+        audit = (await db.execute(text("SELECT detail::text FROM audit_logs WHERE action = 'context_share.key_cleanup_failed'"))).scalar_one()
+    assert "gateway_key_id" in audit and "gateway_unavailable" in audit
+    assert RAW_KEY_PREFIX not in audit
+
+
 async def test_key_that_outlives_the_fixed_ttl_is_revoked_and_not_returned(client, auth, gateway):
     _, draft, _ = await published_project(client, auth, gateway)
     gateway.key_lifetime = 3665  # 코어가 고정 3600초보다 오래 사는 키를 반환했다고 가정한다.
@@ -555,7 +569,7 @@ async def test_key_that_expires_too_early_is_revoked_and_not_returned(client, au
     assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []
 
 
-async def test_key_issue_is_refused_clearly_when_gateway_receipt_has_no_project_id(client, auth, gateway):
+async def test_publish_is_refused_when_gateway_receipt_has_no_project_id(client, auth, gateway):
     gateway.omit_project_id = True
     project = await make_project("Alpha", {"docs/arch.md": DOC})
     draft = await new_draft(client, auth, project, ["docs/arch.md"])

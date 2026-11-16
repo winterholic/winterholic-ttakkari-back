@@ -24,12 +24,12 @@ RAW_KEY_PREFIX = "synthetic-gateway-key-"
 class FakeGateway:
     """코어 control 앱(context_gateway/apps.py create_control_app)의 라우트·검증·부작용을 메모리로 따라 한다.
 
-    코어와 같은 점: verified_at 필수(422), 문서 sha256 검증(409), 최신 스냅샷을 폐기하면 이전 스냅샷이 최신으로 되살아남,
+    코어와 같은 점: nullable document provenance, 문서 sha256 검증(409), project revoke 는 모든 스냅샷을 원자 철회,
     키 수명은 서버가 정함(ttl_seconds 무시). 계약상 추가 요청 사항: 게시 영수증에 project_id 를 싣는다."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
-        self.projects: dict[str, dict[str, Any]] = {}  # slug -> {id, latest, snapshots: [ids]}
+        self.projects: dict[str, dict[str, Any]] = {}  # slug -> {id, latest, snapshots: [ids], revoked}
         self.snapshots: dict[str, dict[str, Any]] = {}
         self.keys: dict[str, dict[str, Any]] = {}
         self.fail_with: Exception | None = None
@@ -54,6 +54,8 @@ class FakeGateway:
         if (method, path) == ("POST", "/control/v1/snapshots"):
             return self._publish(json)
         parts = path.strip("/").split("/")
+        if method == "POST" and parts[:3] == ["control", "v1", "projects"] and parts[-1] == "revoke":
+            return self._revoke_project(parts[3])
         if method == "POST" and parts[:3] == ["control", "v1", "snapshots"] and parts[-1] == "revoke":
             return self._revoke_snapshot(parts[3])
         if (method, path) == ("POST", "/control/v1/keys"):
@@ -67,7 +69,7 @@ class FakeGateway:
         return GatewayReply(404, {"detail": "not found"})
 
     def _publish(self, body: dict[str, Any]) -> GatewayReply:
-        if not body.get("verified_at") or not body.get("documents") or not body.get("source_refs"):
+        if not body.get("documents") or not body.get("source_refs"):
             return GatewayReply(422, {"detail": "invalid"})
         manifest_docs = []
         for d in body["documents"]:
@@ -75,8 +77,14 @@ class FakeGateway:
             if d.get("sha256") not in (None, digest):
                 return GatewayReply(409, {"detail": "document hash mismatch"})
             manifest_docs.append({"id": d["id"], "title": d["title"], "content_type": d["content_type"],
-                                  "sha256": "0" * 64 if self.echo_wrong_hash else digest})
-        project = self.projects.setdefault(body["project_slug"], {"id": str(uuid.uuid4()), "latest": None, "snapshots": []})
+                                  "sha256": "0" * 64 if self.echo_wrong_hash else digest,
+                                  "source_refs": d.get("source_refs", []),
+                                  "source_revision": d.get("source_revision"),
+                                  "generated_at": d.get("generated_at"), "verified_at": d.get("verified_at")})
+        project = self.projects.setdefault(body["project_slug"], {"id": str(uuid.uuid4()), "latest": None,
+                                                                    "snapshots": [], "revoked": False})
+        if project["revoked"]:
+            return GatewayReply(409, {"detail": "project sharing has been revoked"})
         sid = str(uuid.uuid4())
         self.snapshots[sid] = {"slug": body["project_slug"], "revoked": False, "body": body}
         project["snapshots"].append(sid)
@@ -84,6 +92,17 @@ class FakeGateway:
         receipt = {} if self.omit_project_id else {"project_id": project["id"]}
         return GatewayReply(201, {**receipt, "id": sid, "source_refs": body["source_refs"],
                                   "manifest_sha256": hashlib.sha256(sid.encode()).hexdigest(), "documents": manifest_docs})
+
+    def _revoke_project(self, project_id: str) -> GatewayReply:
+        project = next((p for p in self.projects.values() if p["id"] == project_id), None)
+        if project is None:
+            return GatewayReply(404, {"detail": "not found"})
+        for sid in project["snapshots"]:
+            self.snapshots[sid]["revoked"] = True
+        project["latest"], project["revoked"] = None, True
+        return GatewayReply(200, {"project_id": project_id, "revoked": True,
+                                  "revoked_at": datetime.now(UTC).isoformat(),
+                                  "snapshots_revoked": len(project["snapshots"])})
 
     def _revoke_snapshot(self, sid: str) -> GatewayReply:
         snap = self.snapshots.get(sid)
@@ -98,8 +117,11 @@ class FakeGateway:
 
     def _issue_key(self, body: dict[str, Any]) -> GatewayReply:
         (pid, grant), = body["projects"].items()
-        if pid not in {p["id"] for p in self.projects.values()}:
+        project = next((p for p in self.projects.values() if p["id"] == pid), None)
+        if project is None:
             return GatewayReply(422, {"detail": "one or more projects do not exist"})
+        if project["revoked"]:
+            return GatewayReply(409, {"detail": "project sharing has been revoked"})
         key_id = str(uuid.uuid4())
         raw = RAW_KEY_PREFIX + uuid.uuid4().hex
         ttl = self.key_lifetime if self.key_lifetime is not None else 3600

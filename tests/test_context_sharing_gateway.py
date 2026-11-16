@@ -27,18 +27,31 @@ def transport(handler, **kw) -> HttpGatewayTransport:
     return HttpGatewayTransport("https://control.example.test/", TOKEN, http_transport=httpx.MockTransport(handler), **kw)
 
 
-async def test_requests_carry_only_the_control_token_to_the_control_origin():
+async def test_snapshot_adapter_uses_flat_post_contract_and_only_the_control_token():
     seen = []
+    snapshot_id = "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67"
+    project_id = "7bf808c4-b492-442e-9e7e-c753b42b420d"
+    payload = {"project_slug": "synthetic-alpha", "project_name": "Synthetic Alpha", "project_description": "",
+               "source_refs": ["library-document:5b9d7d8f-7e96-49db-b8eb-9577e35aa982"],
+               "source_revision": "library-index:revision", "generated_at": "2026-11-16T00:00:00+00:00",
+               "verified_at": None,
+               "documents": [{"id": "overview", "title": "Overview", "content": "hello",
+                              "content_type": "text/markdown", "source_refs": ["opaque-doc-ref"],
+                              "source_revision": "document-sha", "generated_at": "2026-11-16T00:00:00+00:00",
+                              "verified_at": None, "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}]}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, json={"ok": True})
+        return httpx.Response(201, json={"id": snapshot_id, "project_id": project_id,
+                                         "manifest_sha256": "a" * 64,
+                                         "documents": [{"id": "overview", "sha256": payload["documents"][0]["sha256"]}]})
 
-    reply = await transport(handler).request("PUT", "/control/v1/projects/a/snapshot", {"x": 1})
-    assert reply.status == 200 and reply.body == {"ok": True}
+    await GatewayControl(transport(handler)).publish_snapshot(payload)
     req, = seen
-    assert str(req.url) == "https://control.example.test/control/v1/projects/a/snapshot"
+    assert req.method == "POST"
+    assert str(req.url) == "https://control.example.test/control/v1/snapshots"
     assert req.headers["authorization"] == f"Bearer {TOKEN}"
+    assert json.loads(req.content) == payload
 
 
 async def test_redirects_are_not_followed_so_the_token_cannot_leak():
@@ -196,3 +209,30 @@ async def test_revoke_refuses_non_uuid_gateway_id_before_sending(operation):
     with pytest.raises(GatewayBadResponse):
         await getattr(control, operation)("../../bad")
     assert calls == []
+
+
+async def test_project_revoke_uses_core_route_and_validates_receipt():
+    requests = []
+    project_id = "7bf808c4-b492-442e-9e7e-c753b42b420d"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"project_id": project_id, "revoked": True,
+                                         "revoked_at": "2026-11-16T00:00:00+00:00", "snapshots_revoked": 2})
+
+    receipt = await GatewayControl(transport(handler)).revoke_project_sharing(project_id)
+
+    assert receipt["snapshots_revoked"] == 2
+    request, = requests
+    assert request.method == "POST"
+    assert str(request.url) == f"https://control.example.test/control/v1/projects/{project_id}/revoke"
+    assert request.content == b""
+
+
+async def test_project_revoke_rejects_a_receipt_for_another_project():
+    control = GatewayControl(transport(lambda _: httpx.Response(200, json={
+        "project_id": "11111111-1111-1111-1111-111111111111", "revoked": True,
+        "revoked_at": "2026-11-16T00:00:00+00:00", "snapshots_revoked": 1})))
+
+    with pytest.raises(GatewayBadResponse):
+        await control.revoke_project_sharing("7bf808c4-b492-442e-9e7e-c753b42b420d")

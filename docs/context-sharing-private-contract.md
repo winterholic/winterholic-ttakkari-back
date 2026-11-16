@@ -35,7 +35,7 @@
 2. `GET /projects/{entity_id}/sources`로 고를 수 있는 문서를 본다.
 3. `POST /drafts`로 선택한 `document_ids`만 담은 초안을 만든다(DB에 저장).
 4. 미리보기(`preview`)의 `findings`를 읽고 `PATCH /drafts/{id}`로 본문을 고친다. 고위험이 남으면 게시가 막힌다.
-5. 각 문서를 직접 확인한 뒤 `owner_verified: true`로 표시한다(Gateway가 `verified_at`을 필수로 받는다).
+5. 문서를 원본과 직접 대조해 확인한 경우에만 `owner_verified: true`로 표시한다. 확인하지 않은 문서는 `verified_at: null`로 둔다. 게시 승인(digest 확인)과 원본 검증 시각은 별개다.
 6. 현재 `preview.digest`를 `approved_digest`로 보내 `POST /drafts/{id}/publish`.
 7. 게시 후 `POST /keys`로 1회 교환용 키를 발급하고 그 응답에서 한 번만 복사하게 한다.
 8. 필요하면 `POST /keys/{id}/revoke` 또는 `POST /projects/{slug}/revoke`.
@@ -132,13 +132,12 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 | 2 | 409 | `draft_not_editable` | 이미 게시한 초안 |
 | 3 | 409 | `digest_mismatch` | 승인한 digest가 현재 내용과 다름. `current_digest` 포함. 미리보기를 다시 보고 새 digest로 승인 |
 | 4 | 422 | `sensitive_content_blocked` | 고위험 항목이 남음. `findings`, `counts` 포함. 초안을 고쳐 제거 |
-| 5 | 422 | `verification_required` | `verified_at`이 빈 문서가 있음. `document_ids` 포함 |
-| 6 | 503 | `gateway_not_configured` | 설정 누락. `gateway`(Gateway 타입) 포함, `Retry-After: 300` |
-| 7 | 503 | `gateway_unavailable` | 연결 실패·시간 초과·Gateway 5xx. `Retry-After: 30` |
-| 7 | 502 | `gateway_rejected` | Gateway 4xx(인증 실패·검증 실패 포함). `gateway_status`, 있으면 `gateway_code` |
-| 7 | 502 | `gateway_bad_response` | 응답이 계약과 다름(문서 해시 불일치 등) |
+| 5 | 503 | `gateway_not_configured` | 설정 누락. `gateway`(Gateway 타입) 포함, `Retry-After: 300` |
+| 6 | 503 | `gateway_unavailable` | 연결 실패·시간 초과·Gateway 5xx. `Retry-After: 30` |
+| 6 | 502 | `gateway_rejected` | Gateway 4xx(인증 실패·검증 실패 포함). `gateway_status`, 있으면 `gateway_code` |
+| 6 | 502 | `gateway_bad_response` | 응답이 계약과 다름(문서 해시 불일치 등) |
 
-6~7번 실패에서는 초안이 `draft`로 남고 게시 기록이 없다(감사 로그에는 `outcome=error`로 남는다). 같은 요청을 다시 보내도 된다. 같은 프로젝트를 다시 게시하면 이전 게시는 `superseded`가 되고 새 게시가 `active`다.
+5~6번 Gateway 실패에서는 초안이 `draft`로 남고 게시 기록이 없다(감사 로그에는 `outcome=error`로 남는다). 같은 요청을 다시 보내도 된다. 같은 프로젝트를 다시 게시하면 이전 게시는 `superseded`가 되고 새 게시가 `active`다.
 
 ### POST `/keys` → `201`
 ```json
@@ -169,8 +168,8 @@ Gateway가 폐기를 확인한 뒤에만 `status: "revoked"`로 기록한다. �
 ```json
 { "project_slug": "alpha", "publication": "Publication(status=revoked)", "revoked_snapshots": 1, "revoked_keys": 1, "already_revoked": false }
 ```
-Gateway에는 프로젝트 단위 철회 호출이 없다. Private가 이 프로젝트의 `active`·`superseded` 스냅샷을 **오래된 것부터** 하나씩 폐기하고(최신을 먼저 폐기하면 코어가 이전 스냅샷을 최신으로 되살린다), 이어서 `active` 키를 하나씩 폐기한다. Gateway가 확인한 항목만 그때그때 기록한다. 이미 철회됐으면 `200`에 `already_revoked: true`.
-부분 실패: `503`/`502`에 `partial: { revoked_snapshots, remaining_snapshots, revoked_keys, remaining_keys }`가 붙고, 확인된 것만 `revoked`다. 같은 요청을 다시 보내면 남은 것만 이어서 처리한다.
+Private는 먼저 `POST /control/v1/projects/{project_id}/revoke`를 호출해 Gateway 프로젝트와 그 프로젝트의 모든 스냅샷을 원자적으로 철회한다. 확인 후 해당 프로젝트의 로컬 게시 행을 철회 처리하고, 그 다음 연결된 활성 Gateway 키를 하나씩 폐기한다. Gateway 프로젝트 철회는 비가역이므로 같은 slug로 재게시할 수 없고 새 프로젝트 identity가 필요하다. 이미 Gateway에서 철회됐으면 멱등 응답을 확인해 계속 진행한다.
+부분 실패: 프로젝트 철회가 실패하면 로컬 게시·키 상태를 바꾸지 않는다. 키 폐기 단계에서 실패하면 프로젝트/스냅샷은 이미 철회 상태로 기록하고, 실제로 폐기를 확인한 키만 `revoked`로 기록한다. `503`/`502`에 `partial: { revoked_snapshots, remaining_snapshots, revoked_keys, remaining_keys }`를 붙이고, 재요청은 프로젝트 철회 확인 후 남은 키만 이어서 처리한다.
 오류: `404 project_not_found`, `409 project_not_published`(한 번도 게시한 적 없음).
 
 ## 5. 에이전트 경로
@@ -183,15 +182,16 @@ Private는 Gateway의 control 앱(`docs/context-gateway-contract.md`)에만 `Aut
 
 | Private 동작 | Gateway 호출 | 성공 판정 |
 |---|---|---|
-| 게시 | `POST /control/v1/snapshots` | `201`, UUID `id`·`project_id`, 64자 `manifest_sha256`, 모든 문서 ID·해시가 일치하는 영수증 필수 |
+| 게시 | `POST /control/v1/snapshots` | flat snapshot JSON, `201`, UUID `id`·`project_id`, 64자 `manifest_sha256`, 모든 문서 ID·해시가 일치하는 영수증 필수 |
 | 키 발급 | `POST /control/v1/keys` (`projects: {<gateway project uuid>: {scopes}}`) | `201`, `key_id`·`key`·`expires_at`, 고정 3,600초 이내 |
 | 키 폐기 | `POST /control/v1/keys/{id}/revoke` | `200 {"revoked": true, "key_id"}` |
 | 스냅샷 폐기 | `POST /control/v1/snapshots/{id}/revoke` | `200 {"revoked": true, "snapshot_id"}` |
+| 프로젝트 공유 철회 | `POST /control/v1/projects/{project_id}/revoke` | `200`, 일치하는 `project_id`, `revoked: true`, `snapshots_revoked` 확인 뒤 해당 프로젝트의 모든 게시를 로컬 철회 처리 |
 
-게시 본문 매핑: `project_slug`/`project_name`/`project_description`(=초안 요약), `source_refs`(경로를 포함하지 않는 `library-document:<CtxDocument UUID>` 합집합), `source_revision`(`library-index:<digest>`), `generated_at`(문서 중 가장 늦은 값), `verified_at`(문서 중 가장 이른 소유자 검증 시각), 문서 `id`(논리 경로에서 만든 `[A-Za-z0-9._-]` id, 중복 시 `-2`), `title`, `content`, `content_type`, `sha256`.
+게시 본문은 flat JSON이다. 스냅샷 수준은 `project_slug`/`project_name`/`project_description`(=초안 요약), `source_refs`(경로를 포함하지 않는 `library-document:<CtxDocument UUID>` 합집합), `source_revision`(`library-index:<digest>`), `generated_at`(문서 중 가장 늦은 값), `verified_at`(모든 문서를 실제 검증했을 때 가장 이른 검증 시각, 하나라도 미검증이면 `null`), `documents`로 보낸다. 각 문서는 `id`(논리 경로에서 만든 `[A-Za-z0-9._-]` id, 중복 시 `-2`), `title`, `content`, `content_type`, `sha256`, 문서별 불투명 `source_refs`, 실제 색인 `source_revision`, `generated_at`, `verified_at`을 보낸다. 문서별 검증이 없으면 `verified_at: null`을 보존한다. `PUT /control/v1/projects/{slug}/snapshot` 경로는 사용하지 않는다.
 
 ### 계약 일치 상태와 남은 제약
-- 코어 `docs/context-gateway-contract.md`와 일치한다. 게시 응답에 필수 `project_id`·문서 해시가 없거나 다르면 `502 gateway_bad_response`로 처리하고 게시 성공 상태를 기록하지 않는다.
+- 코어 `context_gateway/src/context_gateway/apps.py`와 `docs/context-gateway-contract.md`의 현재 계약을 따른다. 게시 응답에 필수 `project_id`·문서 해시가 없거나 다르면 `502 gateway_bad_response`로 처리하고 게시 성공 상태를 기록하지 않는다.
 - 키 수명은 코어가 1시간으로 고정한다(수명 입력 없음). Gateway에도 TTL 필드를 보내지 않는다.
 - 실제 코어 통합 시험(`tests/test_context_sharing_real_gateway.py`)은 코어 control/public 앱을 같은 프로세스에서 ASGI로 띄워 게시 → 키 발급 → 교환 → 컨텍스트 읽기 → 재교환 거절(1회) → 키 폐기 후 열린 세션 즉시 차단 → 프로젝트 철회를 확인한다. 코어 소스나 시험 DB가 없으면 건너뛴다. 네트워크·TLS·배포 환경은 검증하지 않았다.
 

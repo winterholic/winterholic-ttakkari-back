@@ -180,6 +180,18 @@ class GatewayControl:
             raise GatewayBadResponse("snapshot revoke receipt is missing")
         return body
 
+    async def revoke_project_sharing(self, project_id: str) -> dict[str, Any]:
+        if not _is_uuid(project_id):
+            raise GatewayBadResponse("project id is not a UUID")
+        body = await self._send("POST", f"/projects/{project_id}/revoke", None, {200})
+        revoked_at = body.get("revoked_at")
+        count = body.get("snapshots_revoked")
+        if (str(body.get("project_id", "")).lower() != project_id.lower()
+                or body.get("revoked") is not True or not isinstance(revoked_at, str) or not revoked_at
+                or isinstance(count, bool) or not isinstance(count, int) or count < 0):
+            raise GatewayBadResponse("project revoke receipt is missing or invalid")
+        return body
+
     async def issue_key(self, project_id: str, *, label: str, scopes: list[str]) -> dict[str, Any]:
         """키는 단회 교환용이며 Gateway 계약의 고정 3,600초 수명을 따른다."""
         body = await self._send("POST", "/keys", {"label": label,

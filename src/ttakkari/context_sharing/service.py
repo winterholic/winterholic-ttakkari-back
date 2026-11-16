@@ -404,8 +404,10 @@ def gateway_source_ref(doc: ShareDraftDocument) -> str:
 
 
 def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareDraftDocument]) -> dict[str, Any]:
-    """코어 SnapshotPublishRequest. verified_at 은 모든 문서가 소유자 검증을 거쳤을 때만 호출된다."""
+    """코어 SnapshotPublishRequest. 문서별 출처와 nullable 검증 시각을 독립 보존한다."""
     ordered = sorted(docs, key=lambda x: x.position)
+    verified = [d.verified_at for d in ordered]
+    snapshot_verified_at = min(verified) if all(value is not None for value in verified) else None
     return {
         "project_slug": project.slug,
         "project_name": project.name,
@@ -413,10 +415,13 @@ def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareD
         "source_refs": sorted({gateway_source_ref(d) for d in ordered}),
         "source_revision": f"library-index:{compute_digest(draft, ordered)}",
         "generated_at": iso(max(d.generated_at for d in ordered)),
-        "verified_at": iso(min(d.verified_at for d in ordered if d.verified_at)),
+        "verified_at": iso(snapshot_verified_at),
         "documents": [{"id": doc_id, "title": d.title[:500], "content": d.content,
                        "content_type": "text/markdown" if d.logical_path.lower().endswith((".md", ".markdown")) else "text/plain",
-                       "sha256": sha256_text(d.content)} for doc_id, d in zip(gateway_doc_ids(ordered), ordered, strict=True)],
+                       "source_refs": [gateway_source_ref(d)], "source_revision": d.source_revision,
+                       "generated_at": iso(d.generated_at), "verified_at": iso(d.verified_at),
+                       "sha256": sha256_text(d.content)}
+                      for doc_id, d in zip(gateway_doc_ids(ordered), ordered, strict=True)],
     }
 
 
@@ -434,11 +439,6 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
     if pv["blocked"]:
         raise ShareError(422, "sensitive_content_blocked", "인증정보·내부 주소·로컬 경로 같은 고위험 항목이 남아 있어 게시할 수 없습니다. 초안을 고쳐 제거하세요.",
                          extra={"findings": pv["findings"], "counts": pv["counts"]})
-    unverified = [str(d.id) for d in docs if d.verified_at is None]
-    if unverified:
-        # Gateway 는 verified_at 을 필수로 받는다. 검증하지 않은 문서에 현재 시각을 채우지 않고 소유자 확인을 요구한다.
-        raise ShareError(422, "verification_required", "원본과 대조해 확인한 문서만 게시할 수 있습니다. 각 문서를 확인한 뒤 owner_verified 로 표시하세요.",
-                         extra={"document_ids": unverified})
     project = await _project_of(db, draft)
     detail = {"digest": digest, "slug": project.slug, "documents": len(docs)}
     try:
@@ -566,10 +566,7 @@ async def revoke_key(db: AsyncSession, gateway: GatewayControl, key_id: uuid.UUI
 
 async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *, ip: str | None = None,
                          user_agent: str | None = None) -> dict[str, Any]:
-    """Gateway 에 프로젝트 철회 호출이 없어 스냅샷을 오래된 것부터 하나씩, 그다음 발급 키를 폐기한다.
-
-    최신 스냅샷을 먼저 폐기하면 코어가 이전 스냅샷을 최신으로 되살리므로 최신을 마지막에 폐기한다.
-    Gateway 가 확인한 항목만 그때그때 로컬에 기록하고, 하나라도 실패하면 거기서 멈춰 실패를 알린다."""
+    """Gateway 프로젝트 철회로 모든 스냅샷을 원자 철회한 뒤 발급 키를 개별 폐기한다."""
     project = await _project_by_slug(db, slug)
     pubs = list((await db.scalars(select(SharePublication).where(
         SharePublication.project_id == project.id, SharePublication.status.in_(("active", "superseded")))
@@ -586,10 +583,16 @@ async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *
                 "already_revoked": True}
     done_snapshots = done_keys = 0
     try:
-        for pub in pubs:
-            await gateway.revoke_snapshot(pub.gateway_snapshot_id)
-            pub.status, pub.revoked_at = "revoked", now()
-            done_snapshots += 1
+        if pubs:
+            if not project.gateway_project_id:
+                raise GatewayBadResponse("gateway project id is missing")
+            receipt = await gateway.revoke_project_sharing(project.gateway_project_id)
+            if receipt["snapshots_revoked"] < len(pubs):
+                raise GatewayBadResponse("project revoke receipt reports too few snapshots")
+            revoked_at = now()
+            for pub in pubs:
+                pub.status, pub.revoked_at = "revoked", revoked_at
+            done_snapshots = len(pubs)
             await db.commit()
         for k in keys:
             await gateway.revoke_key(k.gateway_key_id)

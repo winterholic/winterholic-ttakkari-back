@@ -246,6 +246,10 @@ async def test_publish_pushes_the_approved_snapshot_to_gateway_control_only(clie
     assert body["project_slug"] == draft["slug"] and body["project_name"] == "Alpha"
     assert [d["id"] for d in body["documents"]] == ["docs-arch"]  # 코어 문서 id 규칙에 맞춘 논리 경로
     assert body["documents"][0]["sha256"] == sha(draft["documents"][0]["content"])
+    assert body["documents"][0]["source_refs"] == [f"library-document:{project['docs']['docs/arch.md']}"]
+    assert body["documents"][0]["source_revision"] == draft["documents"][0]["source_revision"]
+    assert body["documents"][0]["generated_at"] == draft["documents"][0]["generated_at"]
+    assert body["documents"][0]["verified_at"] == draft["documents"][0]["verified_at"]
     assert body["verified_at"] and body["source_refs"] == [f"library-document:{project['docs']['docs/arch.md']}"]
     assert "docs/arch.md" not in json.dumps(body)
     assert "/synthetic-root" not in json.dumps(body)
@@ -259,16 +263,16 @@ async def test_publish_pushes_the_approved_snapshot_to_gateway_control_only(clie
     assert edit.status_code == 409 and edit.json()["code"] == "draft_not_editable"
 
 
-async def test_publish_requires_owner_verification_of_every_document(client, auth, gateway):
+async def test_publish_preserves_null_per_document_verification(client, auth, gateway):
     project = await make_project("Alpha", {"a.md": DOC, "b.md": "# b\n"})
     draft = await new_draft(client, auth, project, ["a.md", "b.md"], verified=False)
-    await client.patch(f"{BASE}/drafts/{draft['id']}", headers=auth,
-                       json={"documents": [{"id": draft["documents"][0]["id"], "owner_verified": True}]})
-    current = (await client.get(f"{BASE}/drafts/{draft['id']}", headers=auth)).json()
-    r = await publish(client, auth, current)
-    assert r.status_code == 422 and r.json()["code"] == "verification_required"
-    assert r.json()["document_ids"] == [current["documents"][1]["id"]]
-    assert gateway.calls == []
+    r = await publish(client, auth, draft)
+    assert r.status_code == 200, r.text
+    body = gateway.calls[0][2]
+    assert body["verified_at"] is None
+    assert [d["verified_at"] for d in body["documents"]] == [None, None]
+    assert all(d["source_revision"] and d["generated_at"] and d["source_refs"] for d in body["documents"])
+    assert len({d["source_revision"] for d in body["documents"]}) == 2
 
 
 async def test_risky_body_is_previewed_blocks_publish_and_can_be_edited_away(client, auth, gateway):
@@ -443,7 +447,7 @@ async def test_project_revoke_requires_gateway_confirmation(client, auth, gatewa
     assert unknown.status_code == 404
 
 
-async def test_project_revoke_removes_older_snapshots_first_so_none_is_resurrected(client, auth, gateway):
+async def test_project_revoke_uses_gateway_project_endpoint_for_all_snapshots(client, auth, gateway):
     project, first, _ = await published_project(client, auth, gateway)
     second = await new_draft(client, auth, project, ["README.md"])
     assert (await publish(client, auth, second)).status_code == 200
@@ -451,8 +455,8 @@ async def test_project_revoke_removes_older_snapshots_first_so_none_is_resurrect
     ok = await client.post(f"{BASE}/projects/{first['slug']}/revoke", headers=auth)
     assert ok.status_code == 200 and ok.json()["revoked_snapshots"] == 2
     order = [c[1] for c in gateway.calls]
-    snaps = [sid for sid in gateway.projects[first["slug"]]["snapshots"]]
-    assert order == [f"/control/v1/snapshots/{sid}/revoke" for sid in snaps]  # 오래된 것 먼저, 최신은 마지막
+    project_id = gateway.projects[first["slug"]]["id"]
+    assert order == [f"/control/v1/projects/{project_id}/revoke"]
     assert gateway.latest(first["slug"]) is None
 
 
@@ -460,16 +464,16 @@ async def test_project_revoke_partial_failure_records_only_what_gateway_confirme
     project, first, _ = await published_project(client, auth, gateway)
     second = await new_draft(client, auth, project, ["README.md"])
     assert (await publish(client, auth, second)).status_code == 200
-    newest = gateway.projects[first["slug"]]["latest"]
-    gateway.fail_paths[f"/snapshots/{newest}/revoke"] = 500
+    project_id = gateway.projects[first["slug"]]["id"]
+    gateway.fail_paths[f"/projects/{project_id}/revoke"] = 500
     r = await client.post(f"{BASE}/projects/{first['slug']}/revoke", headers=auth)
     assert r.status_code == 503
-    assert r.json()["partial"] == {"revoked_snapshots": 1, "remaining_snapshots": 1, "revoked_keys": 0, "remaining_keys": 0}
+    assert r.json()["partial"] == {"revoked_snapshots": 0, "remaining_snapshots": 2, "revoked_keys": 0, "remaining_keys": 0}
     state = (await client.get(f"{BASE}/projects", headers=auth)).json()["projects"][0]["publication"]
     assert state["status"] == "active" and state["draft_id"] == second["id"]
     gateway.fail_paths.clear()
     ok = await client.post(f"{BASE}/projects/{first['slug']}/revoke", headers=auth)
-    assert ok.status_code == 200 and ok.json()["revoked_snapshots"] == 1
+    assert ok.status_code == 200 and ok.json()["revoked_snapshots"] == 2
 
 
 async def test_republish_supersedes_previous_publication(client, auth, gateway):

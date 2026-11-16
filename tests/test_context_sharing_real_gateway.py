@@ -93,25 +93,32 @@ async def core_rows(url: str, sql: str):
 
 
 async def test_publish_and_revoke_against_the_real_control_app(client, auth, real_gateway):
-    project = await make_project("Alpha", {"docs/arch.md": "# 공개 설명\n\n본문입니다.\n"})
+    project = await make_project("Alpha", {"docs/arch.md": "# 공개 설명\n\n본문입니다.\n", "notes.md": "선택한 보충 내용\n"})
     r = await client.post(f"{BASE}/drafts", headers=auth, json={
         "entity_id": project["entity_id"], "document_ids": list(project["docs"].values())})
     draft = r.json()
-    draft = (await client.patch(f"{BASE}/drafts/{draft['id']}", headers=auth, json={
-        "documents": [{"id": d["id"], "owner_verified": True} for d in draft["documents"]]})).json()
     published = await publish_real(client, auth, draft)
     assert published.status_code == 200, published.text
     snap_id = published.json()["publication"]["snapshot_id"]
-    rows = await core_rows(real_gateway["url"], "SELECT s.id::text, s.revoked_at, p.slug, p.latest_snapshot_id::text "
+    rows = await core_rows(real_gateway["url"], "SELECT s.id::text, s.revoked_at, p.slug, p.latest_snapshot_id::text, s.manifest "
                                                 "FROM gateway_snapshots s JOIN gateway_projects p ON p.id = s.project_id")
     assert [(r[0], r[1], r[2], r[3]) for r in rows] == [(snap_id, None, draft["slug"], snap_id)]
+    manifest = rows[0][4]
+    assert manifest["verified_at"] is None
+    assert len(manifest["documents"]) == 2
+    for published_doc, source_doc in zip(manifest["documents"], draft["documents"], strict=True):
+        assert published_doc["id"] == ("docs-arch" if source_doc["logical_path"] == "docs/arch.md" else "notes")
+        assert published_doc["source_refs"] == [f"library-document:{project['docs'][source_doc['logical_path']]}"]
+        assert published_doc["source_revision"] == source_doc["source_revision"]
+        assert published_doc["generated_at"] == source_doc["generated_at"]
+        assert published_doc["verified_at"] is None
     assert published.json()["publication"]["status"] == "active"
 
     revoked = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
     assert revoked.status_code == 200 and revoked.json()["revoked_snapshots"] == 1
-    rows = await core_rows(real_gateway["url"], "SELECT s.revoked_at IS NOT NULL, p.latest_snapshot_id FROM gateway_snapshots s "
+    rows = await core_rows(real_gateway["url"], "SELECT s.revoked_at IS NOT NULL, p.latest_snapshot_id, p.sharing_revoked_at IS NOT NULL FROM gateway_snapshots s "
                                                 "JOIN gateway_projects p ON p.id = s.project_id")
-    assert [tuple(r) for r in rows] == [(True, None)]
+    assert [tuple(r) for r in rows] == [(True, None, True)]
 
 
 async def test_real_control_app_rejects_a_wrong_control_token(client, auth, core):

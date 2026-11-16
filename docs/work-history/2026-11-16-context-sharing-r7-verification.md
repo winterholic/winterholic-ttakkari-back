@@ -36,3 +36,12 @@
 - 운영 데이터와 외부 Gateway를 변경하지 않았다. 운영 게시·키 발급·키 폐기·사이트 상태 변경, 운영 HTTPS 확인, push·배포는 하지 않음(작업 범위 금지). `context_gateway` 전체 코어 테스트 재실행은 하지 않음; 실제 control/public 앱 경로는 이 검증에서 통합 테스트의 ASGI로 실행했다.
 - 임시 probe의 첫 1,000,000-character 입력은 각 chunk를 200,000자로 만들어 assemble 후 문서별 후행 개행 때문에 `draft_too_large`가 났다. 크기 계산을 확인하고 조립 결과 기준 정확히 1,000,000/1,000,001 반례를 다시 실행해 위 결과를 얻었다. 제품 결함은 재현되지 않았다.
 - 앱 lifespan의 합성 fixture 경로 `/synthetic-root/...` 색인 시 `FileNotFoundError` 로그 한 건이 나왔다. 요청 검증 출력은 성공했고 제품 공유 데이터·운영 경로와 무관한 fixture 부수 로그로 분류했다.
+
+## 푸시와 Private 배포 예약 (2026-11-16)
+- 사전 확인: HEAD c7470468c71174ea39d50fb9436eedf9b07e02da, `git status --short` 0줄, origin/main 244e3029가 HEAD의 조상(`merge-base --is-ancestor` 통과), HEAD..origin/main 비어 있음. 새 upstream 변경 없음.
+- 푸시: `git push origin HEAD:main`, 기본 pre-push hook 유지. hook 결과 ruff 통과, 계약 87 passed, 바뀐 테스트 6개 파일 194 passed, 총 120초, "사전 검증 통과". 이 hook은 계약 묶음과 바뀐 파일 범위만 확인하며 전체 통과를 뜻하지 않는다. push는 `244e3029..c7470468`로 성공했으므로 hook은 0으로 종료했다. 첫 실행에서 쉘의 PIPESTATUS 표시가 비어 종료 코드 숫자는 직접 출력하지 못했다.
+- 대조: `git ls-remote origin refs/heads/main` = c7470468c71174ea39d50fb9436eedf9b07e02da.
+- Gateway 확인: `curl https://share.winterholic.net/api/v1/site` 단발 → `{"enabled":true}`, HTTP 200.
+- 예약: `request_backend_deploy(revision=c7470468...)` → reservation id bf9b513c-ddb1-43f7-a26f-d8cb2d9569e4, status requested, strategy generations, skip_tests false. 배포 성공이 아니며 완료 여부는 미확인.
+- 미실행: R7 128개와 Gateway 34개 재실행(새 실질 변경 없음), frontend push와 배포(Private 활성화 뒤).
+- 잔여: frontend 시험 합성 파일 2개 삭제는 권한으로 차단됨. 재시도하지 않음.

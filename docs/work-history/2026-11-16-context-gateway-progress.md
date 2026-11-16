@@ -178,6 +178,14 @@
 - 두 소스 커밋은 기존 pre-push gate를 유지하고 main에 push했다. 9289e176 gate: Ruff, contract87, 변경unit33 pass. 515b565d gate: Ruff, contract87 pass; Gateway 별도 패키지 검증은 위30건과 외부 검증으로 보완했다.
 - Private backend 예약: 기존 dd861485는 schema-head 검사 실패로 종료됐다. 수정본 예약 ff7de520 뒤 core 감사 수정까지 담은 최신 예약 `e7e8252a-5fce-4669-b89a-9e43031889eb`(515b565d, skip_tests=false)는 requested로 접수됐다. 컨트롤러가 전체 검사와 세대 전환을 담당한다. 이 Run에서 결과를 기다리거나 polling하지 않는다. 운영 Private API의 gateway configured 상태와 실제 owner UI 게시 연결은 해당 배포 결과 뒤 최종 확인해야 하므로 R5 전체 완료를 선언하지 않는다.
 
+## 15:44 KST Private 활성 revision 및 Gateway 연결 상태 읽기 전용 검증
+
+- 환경: 운영 Private owner CLI (`~/bin/ttk`), 조회 시각 2026-11-16 15:44 KST. `~/bin/ttk get /api/version | jq '{revision}'` → `244e30295b3b5ccb8f9519137fde27b0cda28f40`. 지원 API `backend_deploy_status(job_id=25d36cc4-4616-405e-992f-f7bb869fa5d4)` → `status=draining`, `error=null`, `tested_revision=244e30295b3b5ccb8f9519137fde27b0cda28f40`, `activated_revision=244e30295b3b5ccb8f9519137fde27b0cda28f40`, `candidate_generation=5ee13268-1814-489d-91d3-087a2ef13a5f`, `updated_at=2026-11-16T06:35:52.495243+00:00`. draining은 새 revision 활성화 뒤 이전 세대 퇴거 상태로 해석하며 기다리거나 재배포하지 않았다.
+- 저장소 `src/ttakkari/api/context_sharing.py`의 `GET /api/context-sharing/status`와 `src/ttakkari/context_sharing/gateway.py::gateway_status`를 확인했다. `~/bin/ttk get /api/context-sharing/status | jq '{gateway: {configured: .gateway.configured, control_host: .gateway.control_host, public_url: .gateway.public_url, missing: .gateway.missing, problems: .gateway.problems}}'` 종료 0: `configured=true`, `control_host=share-control.winterholic.net`, `public_url=https://share.winterholic.net`, `missing=[]`, `problems=[]`. 이 핸들러는 설정 적합성만 보고 `GatewayControl` 요청을 하지 않으며 토큰을 응답하지 않는다.
+- 가능한 무변경 확인으로 `curl --silent --show-error --output /dev/null --write-out 'control /healthz HTTP %{http_code}\\n' https://share-control.winterholic.net/healthz` → HTTP 404; 같은 GET을 public `https://share.winterholic.net/healthz`에 실행 → HTTP 200. [배포 연결 문서](../context-gateway-web-deploy.md)는 control hostname이 `/control/v1/`만 전달한다고 명시한다. 코드상 control 인증이 필요한 모든 `/control/v1/*` 연산은 POST이며 게시·발급·폐기·철회 변경을 수행한다. 따라서 이번 읽기 전용 범위에서 Private 설정 토큰의 실제 인증/연결까지는 검증할 수 없다. control 404는 확인한 stage/command/error이며 control 애플리케이션 자체의 장애 증거로 확대하지 않는다.
+- UI 출처: sibling frontend checkout `front-context-gateway-20261116/src/App.tsx`의 route `/context-sharing`, `src/shell/features.ts`의 “맥락 공유” 진입. Private 로그인 앱에서 접근하는 경로는 `/context-sharing`; 공개 Gateway URL은 `https://share.winterholic.net`이다.
+- 변경·미실행 경계: 운영 데이터/설정/키를 건드리지 않았고, 게시·재배포·배포 대기·전체 테스트는 실행하지 않았다. authenticated control health를 확인할 무변경 GET이 코드와 노출 경로에 없어 미검증으로 남긴다.
+
 ## 16:01 KST Gateway 사이트 일시 중지/재개 제어 구현
 
 - `context_gateway.gateway_site_control` singleton row에 `enabled`를 저장한다. 초기화 시 기존 DB는 `INSERT ... ON CONFLICT DO NOTHING`으로 enabled=true를 채우고, 상태 row가 아직 없는 경우에도 읽기는 true로 처리한다. 스냅샷·키·세션 row는 닫기/재개에서 변경하지 않는다.

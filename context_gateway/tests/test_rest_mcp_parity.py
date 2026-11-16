@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from context_gateway.apps import create_control_app, create_public_app
+from context_gateway.apps import _initialize_schema, create_control_app, create_public_app
 from context_gateway.auth import hash_credential
 from context_gateway.config import Settings
 from context_gateway.models import Session, SiteControlAudit
@@ -271,6 +271,44 @@ async def test_site_control_requires_control_token_and_public_role_cannot_change
     ) as client:
         assert (await client.get("/control/v1/site")).status_code == 401
         assert (await client.patch("/control/v1/site", json={"enabled": False})).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_missing_site_state_stays_closed_after_restart_until_explicit_resume(settings) -> None:
+    control = create_control_app(settings)
+    public = create_public_app(settings)
+    auth = {"Authorization": "Bearer synthetic-parity-token"}
+    async with (
+        control.router.lifespan_context(control),
+        public.router.lifespan_context(public),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=control), base_url="http://control") as admin,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=public), base_url="http://public") as rest,
+    ):
+        async with control.state.session_factory() as db:
+            assert await db.scalar(text("SELECT current_database()")) == "test_cg_site_4aea5321"
+        assert (await rest.get("/api/v1/site")).json() == {"enabled": True}
+        async with control.state.session_factory() as db:
+            await db.execute(text("DELETE FROM gateway_site_control WHERE id = 1"))
+            await db.commit()
+
+        status = await rest.get("/api/v1/site")
+        assert status.json() == {"enabled": False}
+        assert status.headers["cache-control"] == "no-store"
+        denied = await rest.get("/api/v1/projects/not-a-project", headers=auth)
+        assert denied.status_code == 503
+        assert denied.json() == {"detail": "site_temporarily_unavailable"}
+        assert denied.headers["cache-control"] == "no-store"
+
+        await _initialize_schema(control.state.session_factory)
+        after_restart = await rest.get("/api/v1/site")
+        assert after_restart.json() == {"enabled": False}
+
+        resumed = await admin.patch("/control/v1/site", headers=auth, json={"enabled": True})
+        assert resumed.status_code == 200 and resumed.json() == {"enabled": True}
+        resumed_status = await rest.get("/api/v1/site")
+        assert resumed_status.json() == {"enabled": True}
+        assert resumed_status.headers["cache-control"] == "no-store"
+        assert (await rest.get("/api/v1/projects/not-a-project", headers=auth)).status_code != 503
 
 @pytest.mark.asyncio
 async def test_public_database_role_can_read_site_switch_but_cannot_write_or_read_audit(postgres_url, tmp_path):

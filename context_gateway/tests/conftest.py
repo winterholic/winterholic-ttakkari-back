@@ -95,6 +95,7 @@ async def isolate_test_database(postgres_url: str) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
+        await connection.exec_driver_sql("DROP TABLE gateway_site_control_audit")
     await engine.dispose()
 
 

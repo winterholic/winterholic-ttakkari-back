@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .auth import (
@@ -143,10 +143,14 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
     engine = factory.kw["bind"]
     async with engine.begin() as connection:
         await connection.exec_driver_sql("SELECT pg_advisory_xact_lock(915712611)")
-        await connection.run_sync(Base.metadata.create_all)
-        await connection.exec_driver_sql(
-            "INSERT INTO gateway_site_control (id, enabled) VALUES (1, TRUE) ON CONFLICT (id) DO NOTHING"
+        site_control_was_initialized = await connection.scalar(
+            text("SELECT to_regclass('public.gateway_site_control_audit') IS NOT NULL")
         )
+        await connection.run_sync(Base.metadata.create_all)
+        if not site_control_was_initialized:
+            await connection.exec_driver_sql(
+                "INSERT INTO gateway_site_control (id, enabled) VALUES (1, TRUE) ON CONFLICT (id) DO NOTHING"
+            )
         await connection.exec_driver_sql(
             "ALTER TABLE gateway_projects ADD COLUMN IF NOT EXISTS sharing_revoked_at TIMESTAMPTZ"
         )
@@ -207,7 +211,7 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
 
 async def _site_enabled(db: AsyncSession) -> bool:
     enabled = await db.scalar(select(SiteControlState.enabled).where(SiteControlState.id == 1))
-    return True if enabled is None else bool(enabled)
+    return bool(enabled) if enabled is not None else False
 
 
 def _session_dependency(factory: async_sessionmaker[AsyncSession]):
@@ -353,8 +357,9 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         return await call_next(request)
 
     @app.get("/api/v1/site", include_in_schema=True)
-    async def public_site_status(db: AsyncSession = Depends(db_dep)):
+    async def public_site_status(response: Response, db: AsyncSession = Depends(db_dep)):
         # Deliberately exposes only the global switch, never project or document metadata.
+        response.headers["Cache-Control"] = "no-store"
         return {"enabled": await _site_enabled(db)}
 
     @app.middleware("http")

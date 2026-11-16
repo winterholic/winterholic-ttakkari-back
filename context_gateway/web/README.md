@@ -108,6 +108,10 @@ node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 - 문서 단건 응답에는 출처 필드가 없다 → 스냅샷의 `source_refs/source_revision/generated_at/verified_at`을 상속한다(실측 일치).
 - 재사용 키 401, 다른 프로젝트·scope 부족 404, 잘못된 Accept 406, 없는 snapshot_id 404는 `Retry-After` 헤더 429를 제외하고 실제로 관측했다. **429 응답은 실서버에서 유발해 보지 않았다**(합성 서버 시나리오 `ratelimit`와 단위 테스트로만 확인).
 
+현재 working tree의 core 변경도 대조했다. `verified_at`은 nullable/optional이고 문서별 `source_refs`가 추가됐다. 어댑터는 null을 미검증으로 표시하며, 문서별 출처가 비어 있으면 스냅샷 provenance를 상속하므로 응답 모양 변화와 호환된다. 계약 문서에는 아직 두 변경이 반영되지 않았다: `verified_at`을 필수로 적고 문서별 `source_refs`를 설명하지 않는다. core 소유 문서라 여기서는 수정하지 않았다.
+
+**Core 통합 계약 한 줄:** `web/dist`를 `/app` 아래 정적 서빙하고, REST 라우트 뒤·`app.mount("/", mcp_app)` 앞에 mount하며, Docker Node 단계에서 빌드한 `dist`를 Python 이미지의 web dir로 복사한다.
+
 ### 실제 Gateway 대조 재현
 
 ```bash
@@ -120,12 +124,24 @@ scripts/live/stop-gateway.sh
 
 `scripts/live/control_launch.py`는 **코어 결함을 우회하는 하네스**다. 현재 코어 `publish_snapshot`은 stage 디렉터리를 `0o555`로 만든 뒤 다른 부모로 `os.replace`해서 macOS에서 `PermissionError`(`POST /control/v1/snapshots` 500)가 난다. 코어가 고쳐지면 하네스 없이 `context_gateway.control:app`을 쓴다. 이 결함은 코어 소유라 수정하지 않고 작업 보고에만 남겼다.
 
-### 브라우저 검증: 이 worker에서는 하지 못했다
+### 브라우저 검증 (2026-11-16)
 
-- 이 worker에는 `ttakkari_browser`(`mcp__ttakkari_browser__*`) 도구가 없다. ToolSearch 결과: `ttakkari_browser` → "No matching deferred tools found", `browser_navigate` → 없음, `select:mcp__ttakkari_browser__browser_navigate,…browser_snapshot,…browser_resize,…browser_take_screenshot` → 없음. 지시에 따라 셸 Chrome/Playwright로 우회하지 않았다.
-- 따라서 **390px·데스크톱 레이아웃, 키보드 조작, 실제 파일 저장, 빌드 CSP의 브라우저 동작은 여전히 미검증**이다. jsdom 테스트는 DOM 구조·동작만 본다.
+설정된 `ttakkari_browser`로 합성 Gateway UI를 확인했다. 실제 Gateway는 이 검증 중 실행하지 않았으므로, 아래 결과는 UI 동작의 브라우저 확인이며 실 API 런타임 확인과 구분한다.
 
-#### 메인이 같은 승인된 도구로 재현하는 방법
+| 확인 | 결과 |
+|---|---|
+| 390×844 로그인 | 로그인 폼·키 입력이 표시됨. 키 입력 후 Enter로 교환 성공 |
+| 390px 정상 상태 | 프로젝트·스냅샷·문서 목록과 검색·Markdown/JSON/ZIP 동작 표시. 본문 provenance에 source refs, revision, generated/verified 시각 표시 |
+| 데스크톱 1280×800 | 좌측 탐색과 본문·출처 영역이 나란히 표시됨 |
+| 390px / 데스크톱 오류 상태 | 합성 스냅샷 목록 503이 목록 안의 오류 및 다시 시도 버튼으로 표시되고 프로젝트 헤더·내보내기는 유지됨 |
+| 키보드 | 로그인 폼에서 Enter로 접속, Tab으로 문서 목록에 포커스 이동 후 Enter로 문서 열기 |
+| Markdown 문서 다운로드 | 브라우저가 `overview.md` 다운로드 완료 이벤트를 보고함 |
+| ZIP 다운로드 | 브라우저가 `synthetic-alpha-…zip` 다운로드 완료 이벤트를 보고함 |
+| Markdown 안전 렌더링 | script·onerror는 텍스트로 표시, javascript 링크는 비활성, 외부 이미지는 로드하지 않음 |
+
+로그에 남은 404는 브라우저 자동 요청 `/favicon.ico`이고, 503은 위 오류 상태를 확인하기 위해 합성 서버가 반환한 응답이다. 그 외 콘솔 경고는 없었다.
+
+#### 브라우저 검증 재현 방법
 
 ```bash
 cd context_gateway/web && npm ci && npm run build
@@ -152,5 +168,5 @@ node scripts/serve-web.mjs --port 4173                      # 합성 API. 실제
 
 ### 미검증으로 남은 것
 
-- 위 브라우저 항목 전부(레이아웃·키보드·실제 저장·CSP).
-- 실서버 429 응답, Safari·Firefox의 마이크로초 시각 파싱, `.mcp.json`의 `${VAR}` 헤더 확장(MCP 클라이언트 구현에 달림).
+- 실제 Gateway 런타임을 이번 브라우저 검증과 동시에 연결한 화면 흐름. 실제 REST 어댑터·MCP smoke의 앞선 실행 결과는 위 표에 적었지만, 이번 Run에서는 Gateway를 재기동하지 않았다.
+- 키보드로 모든 화면 요소를 전수 탐색하는 접근성 검증, 실서버 429 응답, Safari·Firefox의 마이크로초 시각 파싱, `.mcp.json`의 `${VAR}` 헤더 확장(MCP 클라이언트 구현에 달림).

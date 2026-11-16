@@ -29,10 +29,12 @@ from .database import make_session_factory
 from .models import Base, Project, Session, Snapshot
 from .publishing import (
     IntegrityError,
+    ProjectSharingRevokedError,
     PublishError,
     issue_api_key,
     publish_snapshot,
     revoke_api_key,
+    revoke_project_sharing,
     revoke_snapshot,
 )
 from .snapshot_service import get_snapshot, read_all_documents, read_document
@@ -96,6 +98,10 @@ class ProjectOut(BaseModel):
 class SnapshotOut(BaseModel):
     id: UUID
     project_id: UUID
+    schema_version: int
+    version: int
+    created_at: datetime
+    status: Literal["active", "revoked"]
     source_refs: list[str]
     source_revision: str
     generated_at: datetime
@@ -117,6 +123,9 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
     async with engine.begin() as connection:
         await connection.exec_driver_sql("SELECT pg_advisory_xact_lock(915712611)")
         await connection.run_sync(Base.metadata.create_all)
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_projects ADD COLUMN IF NOT EXISTS sharing_revoked_at TIMESTAMPTZ"
+        )
         await connection.exec_driver_sql(
             "ALTER TABLE gateway_snapshots ALTER COLUMN verified_at DROP NOT NULL"
         )
@@ -230,6 +239,10 @@ def _snapshot_out(snapshot: Snapshot) -> SnapshotOut:
     return SnapshotOut(
         id=snapshot.id,
         project_id=snapshot.project_id,
+        schema_version=snapshot.manifest.get("schema_version", 0),
+        version=snapshot.manifest.get("version", 0),
+        created_at=snapshot.published_at,
+        status="revoked" if snapshot.revoked_at is not None else "active",
         source_refs=snapshot.source_refs,
         source_revision=snapshot.source_revision,
         generated_at=snapshot.generated_at,
@@ -634,6 +647,8 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
         payload = body.model_dump(mode="python")
         try:
             snapshot = await publish_snapshot(db, config.snapshot_dir, payload)
+        except ProjectSharingRevokedError as exc:
+            raise HTTPException(409, str(exc)) from exc
         except (PublishError, IntegrityError) as exc:
             raise HTTPException(
                 422
@@ -654,6 +669,24 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "not found")
         return {"revoked": True, "snapshot_id": snapshot_id}
 
+    @app.post("/control/v1/projects/{project_id}/revoke")
+    async def revoke_project_endpoint(
+        project_id: UUID,
+        authorization: str | None = Header(default=None),
+        db: AsyncSession = Depends(db_dep),
+    ):
+        control_auth(authorization)
+        result = await revoke_project_sharing(db, project_id)
+        if result is None:
+            raise HTTPException(404, "not found")
+        revoked_at, snapshot_count = result
+        return {
+            "project_id": str(project_id),
+            "revoked": True,
+            "revoked_at": revoked_at.isoformat(),
+            "snapshots_revoked": snapshot_count,
+        }
+
     @app.post("/control/v1/keys", status_code=201)
     async def issue_key_endpoint(
         body: IssueKeyRequest,
@@ -664,6 +697,8 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
         scopes = {project_id: grant.scopes for project_id, grant in body.projects.items()}
         try:
             key, raw = await issue_api_key(db, label=body.label, project_scopes=scopes)
+        except ProjectSharingRevokedError as exc:
+            raise HTTPException(409, str(exc)) from exc
         except PublishError as exc:
             raise HTTPException(422, str(exc)) from exc
         return {"key_id": str(key.id), "key": raw, "expires_at": key.expires_at.isoformat()}

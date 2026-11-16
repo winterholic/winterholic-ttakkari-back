@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import APIKey, AuditEvent, KeyACL, Project, Snapshot
@@ -24,6 +24,10 @@ class PublishError(ValueError):
 
 
 class IntegrityError(PublishError):
+    pass
+
+
+class ProjectSharingRevokedError(PublishError):
     pass
 
 
@@ -61,6 +65,8 @@ async def publish_snapshot(
         )
         session.add(project)
         await session.flush()
+    elif project.sharing_revoked_at is not None:
+        raise ProjectSharingRevokedError("project sharing has been revoked")
     elif payload["project_name"] != project.name:
         project.name = payload["project_name"]
         project.description = payload.get("project_description", project.description)
@@ -96,16 +102,29 @@ async def publish_snapshot(
                 "extension": extension,
                 "sha256": digest,
                 "source_refs": document.get("source_refs", []),
+                "path": f"documents/{doc_id}.{extension}",
             }
         )
         contents[doc_id] = content
 
+    version = (
+        await session.scalar(
+            select(func.count(Snapshot.id)).where(Snapshot.project_id == project.id)
+        )
+        or 0
+    ) + 1
     snapshot_id = uuid4()
+    created_at = datetime.now(UTC)
     generated_at = payload["generated_at"]
     verified_at = payload["verified_at"]
     manifest = {
+        "schema_version": 1,
         "snapshot_id": str(snapshot_id),
+        "project_id": str(project.id),
         "project_slug": slug,
+        "version": version,
+        "created_at": created_at.isoformat(),
+        "status": "published",
         "source_refs": payload["source_refs"],
         "source_revision": payload["source_revision"],
         "generated_at": generated_at.isoformat(),
@@ -140,7 +159,7 @@ async def publish_snapshot(
             source_revision=payload["source_revision"],
             generated_at=generated_at,
             verified_at=verified_at,
-            published_at=datetime.now(UTC),
+            published_at=created_at,
             manifest=manifest,
             manifest_sha256=manifest_hash,
             storage_path=str(final),
@@ -168,6 +187,12 @@ def hmac_compare(left: str, right: str) -> bool:
 
 
 async def revoke_snapshot(session: AsyncSession, snapshot_id: UUID) -> bool:
+    project_id = await session.scalar(select(Snapshot.project_id).where(Snapshot.id == snapshot_id))
+    if project_id is None:
+        return False
+    project = await session.scalar(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
     snapshot = await session.scalar(
         select(Snapshot).where(Snapshot.id == snapshot_id).with_for_update()
     )
@@ -175,7 +200,6 @@ async def revoke_snapshot(session: AsyncSession, snapshot_id: UUID) -> bool:
         return False
     now = datetime.now(UTC)
     snapshot.revoked_at = snapshot.revoked_at or now
-    project = await session.get(Project, snapshot.project_id, with_for_update=True)
     if project and project.latest_snapshot_id == snapshot.id:
         replacement = await session.scalar(
             select(Snapshot)
@@ -197,6 +221,39 @@ async def revoke_snapshot(session: AsyncSession, snapshot_id: UUID) -> bool:
     return True
 
 
+async def revoke_project_sharing(
+    session: AsyncSession, project_id: UUID
+) -> tuple[datetime, int] | None:
+    project = await session.scalar(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    if project is None:
+        return None
+    now = datetime.now(UTC)
+    first_revoke = project.sharing_revoked_at is None
+    project.sharing_revoked_at = project.sharing_revoked_at or now
+    snapshot_count = await session.scalar(
+        select(func.count(Snapshot.id)).where(Snapshot.project_id == project.id)
+    )
+    if first_revoke:
+        await session.execute(
+            update(Snapshot)
+            .where(Snapshot.project_id == project.id, Snapshot.revoked_at.is_(None))
+            .values(revoked_at=project.sharing_revoked_at)
+        )
+    project.latest_snapshot_id = None
+    if first_revoke:
+        session.add(
+            AuditEvent(
+                event="project_sharing_revoked",
+                project_id=project.id,
+                detail=f"snapshots_revoked={snapshot_count or 0}",
+            )
+        )
+    await session.commit()
+    return project.sharing_revoked_at, snapshot_count or 0
+
+
 async def issue_api_key(
     session: AsyncSession,
     *,
@@ -205,10 +262,20 @@ async def issue_api_key(
 ) -> tuple[APIKey, str]:
     from .auth import issue_key as mint_key
 
-    projects = set(
-        (await session.scalars(select(Project.id).where(Project.id.in_(project_scopes)))).all()
-    )
-    if projects != set(project_scopes):
+    projects = (
+        await session.execute(
+            select(Project.id, Project.sharing_revoked_at)
+            .where(Project.id.in_(project_scopes))
+            .with_for_update()
+        )
+    ).all()
+    active_projects = {project_id for project_id, revoked_at in projects if revoked_at is None}
+    revoked_projects = {project_id for project_id, revoked_at in projects if revoked_at is not None}
+    if set(project_scopes) - {project_id for project_id, _ in projects}:
+        raise PublishError("one or more projects do not exist")
+    if revoked_projects:
+        raise ProjectSharingRevokedError("project sharing has been revoked")
+    if active_projects != set(project_scopes):
         raise PublishError("one or more projects do not exist")
     raw, digest, expires_at = mint_key()
     record = APIKey(label=label, credential_hash=digest, expires_at=expires_at)

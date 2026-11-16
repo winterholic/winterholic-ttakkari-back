@@ -49,6 +49,27 @@ def test_openapi_is_31_and_control_routes_are_not_mounted_publicly() -> None:
         asyncio.run(control.state.session_factory.kw["bind"].dispose())
 
 
+def test_project_share_revoke_is_control_only() -> None:
+    settings = Settings(
+        "postgresql+asyncpg://test:test@127.0.0.1:1/unused", Path("/tmp/cg"), "synthetic", 10
+    )
+    public = create_public_app(settings)
+    control = create_control_app(settings)
+    try:
+        control_routes = {
+            route.path
+            for route in control.routes
+            if getattr(route, "methods", None) and "POST" in route.methods
+        }
+        public_routes = {route.path for route in public.routes}
+
+        assert "/control/v1/projects/{project_id}/revoke" in control_routes
+        assert "/control/v1/projects/{project_id}/revoke" not in public_routes
+    finally:
+        asyncio.run(public.state.session_factory.kw["bind"].dispose())
+        asyncio.run(control.state.session_factory.kw["bind"].dispose())
+
+
 def test_python_mcp_sdk_registers_only_four_read_only_tools() -> None:
     from mcp.client import Client
 

@@ -21,6 +21,9 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(240))
     description: Mapped[str] = mapped_column(Text, default="")
     latest_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    sharing_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

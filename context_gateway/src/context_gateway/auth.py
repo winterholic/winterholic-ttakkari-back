@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import APIKey, AuditEvent, KeyACL, Session
+from .models import APIKey, AuditEvent, KeyACL, Project, Session
 
 KEY_LIFETIME = timedelta(hours=1)
 SESSION_LIFETIME = KEY_LIFETIME
@@ -72,6 +72,14 @@ async def exchange_key(
     record = consumed.first()
     if record is None:
         raise AuthenticationError()
+    has_active_grant = await session.scalar(
+        select(KeyACL.key_id)
+        .join(Project, Project.id == KeyACL.project_id)
+        .where(KeyACL.key_id == record.id, Project.sharing_revoked_at.is_(None))
+        .limit(1)
+    )
+    if has_active_grant is None:
+        raise AuthenticationError()
     session_key = encode_key(secrets.token_bytes(32))
     expires_at = min(record.expires_at, current + SESSION_LIFETIME)
     session.add(
@@ -108,7 +116,9 @@ async def authenticate_session(
     if key is None or key.revoked_at is not None or key.expires_at <= current:
         raise AuthenticationError()
     acl_rows = await session.execute(
-        select(KeyACL.project_id, KeyACL.scopes).where(KeyACL.key_id == key.id)
+        select(KeyACL.project_id, KeyACL.scopes)
+        .join(Project, Project.id == KeyACL.project_id)
+        .where(KeyACL.key_id == key.id, Project.sharing_revoked_at.is_(None))
     )
     allowed_projects: list[UUID] = []
     allowed = False
@@ -142,4 +152,11 @@ async def validate_session(
     key = await session.get(APIKey, record.key_id)
     if key is None or key.revoked_at is not None or key.expires_at <= current:
         return False
-    return bool(await session.scalar(select(KeyACL.key_id).where(KeyACL.key_id == key.id).limit(1)))
+    return bool(
+        await session.scalar(
+            select(KeyACL.key_id)
+            .join(Project, Project.id == KeyACL.project_id)
+            .where(KeyACL.key_id == key.id, Project.sharing_revoked_at.is_(None))
+            .limit(1)
+        )
+    )

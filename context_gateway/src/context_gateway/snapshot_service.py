@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import UUID
 
@@ -56,7 +56,15 @@ def read_document(snapshot: Snapshot, document_id: str) -> dict[str, Any] | None
     meta = next((doc for doc in manifest["documents"] if doc["id"] == document_id), None)
     if meta is None:
         return None
-    doc_path = Path(snapshot.storage_path) / "documents" / f"{document_id}.{meta['extension']}"
+    relative_path = PurePosixPath(meta.get("path", f"documents/{document_id}.{meta['extension']}"))
+    if (
+        relative_path.is_absolute()
+        or len(relative_path.parts) != 2
+        or relative_path.parts[0] != "documents"
+        or ".." in relative_path.parts
+    ):
+        raise IntegrityError("invalid document path in snapshot manifest")
+    doc_path = Path(snapshot.storage_path).joinpath(*relative_path.parts)
     try:
         content_bytes = doc_path.read_bytes()
     except OSError as exc:

@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +66,8 @@ class PublishingSession:
         )
 
     async def scalar(self, _statement):
+        if "count(" in str(_statement).lower():
+            return 0
         return self.project
 
     def add(self, _item) -> None:
@@ -105,7 +108,15 @@ async def test_publish_manifest_keeps_document_sources_and_unknown_verification(
     snapshot = await publish_snapshot(session, tmp_path, payload)
     manifest = json.loads((Path(snapshot.storage_path) / "manifest.json").read_text())
 
+    assert manifest["schema_version"] == 1
+    assert manifest["snapshot_id"] == str(snapshot.id)
+    assert manifest["project_id"] == str(snapshot.project_id)
+    assert manifest["version"] == 1
+    assert manifest["created_at"] == snapshot.published_at.isoformat()
+    assert manifest["status"] == "published"
     assert snapshot.source_revision == "known-source-revision-7"
     assert manifest["verified_at"] is None
     assert manifest["source_revision"] == "known-source-revision-7"
+    assert manifest["documents"][0]["path"] == "documents/overview.md"
     assert manifest["documents"][0]["source_refs"] == ["note:synthetic-overview"]
+    assert manifest["documents"][0]["sha256"] == hashlib.sha256(b"Synthetic only").hexdigest()

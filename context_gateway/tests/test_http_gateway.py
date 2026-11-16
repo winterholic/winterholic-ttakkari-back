@@ -233,6 +233,129 @@ async def test_publisher_rejects_hash_mismatch_without_publishing(settings) -> N
 
 
 @pytest.mark.asyncio
+async def test_project_revoke_blocks_old_snapshots_reads_and_republication(settings) -> None:
+    control = create_control_app(settings)
+    public = create_public_app(settings)
+    auth = {"Authorization": "Bearer synthetic-admin-token"}
+    async with (
+        control.router.lifespan_context(control),
+        public.router.lifespan_context(public),
+        await _client(control) as admin,
+        await _client(public) as api,
+    ):
+        base_payload = {
+            "project_slug": "synthetic-project-revoke",
+            "project_name": "Synthetic Project Revoke",
+            "source_refs": ["fixture:source"],
+            "source_revision": "known-fixture-revision-3",
+            "generated_at": "2026-11-16T00:00:00Z",
+            "verified_at": None,
+            "documents": [
+                {
+                    "id": "brief",
+                    "title": "Synthetic Brief",
+                    "content": "Synthetic project context",
+                    "source_refs": ["fixture:brief"],
+                }
+            ],
+        }
+        first = await admin.post("/control/v1/snapshots", headers=auth, json=base_payload)
+        second = await admin.post(
+            "/control/v1/snapshots",
+            headers=auth,
+            json={**base_payload, "source_revision": "known-fixture-revision-4"},
+        )
+        assert first.status_code == second.status_code == 201
+        first_receipt, second_receipt = first.json(), second.json()
+        project_id = first_receipt["project_id"]
+        assert first_receipt["schema_version"] == 1
+        assert first_receipt["version"] == 1
+        assert second_receipt["version"] == 2
+        assert first_receipt["verified_at"] is None
+        assert first_receipt["documents"][0]["path"] == "documents/brief.md"
+        assert (
+            first_receipt["documents"][0]["sha256"]
+            == hashlib.sha256(b"Synthetic project context").hexdigest()
+        )
+        assert first_receipt["documents"][0]["source_refs"] == ["fixture:brief"]
+
+        issued = await admin.post(
+            "/control/v1/keys",
+            headers=auth,
+            json={
+                "label": "synthetic-revoke-client",
+                "projects": {project_id: {"scopes": ["read"]}},
+            },
+        )
+        assert issued.status_code == 201
+        unexchanged = await admin.post(
+            "/control/v1/keys",
+            headers=auth,
+            json={
+                "label": "synthetic-pending-key",
+                "projects": {project_id: {"scopes": ["read"]}},
+            },
+        )
+        assert unexchanged.status_code == 201
+        exchange = await api.post(
+            "/api/v1/auth/exchange",
+            headers={"Authorization": f"Bearer {issued.json()['key']}"},
+        )
+        assert exchange.status_code == 200
+        session_headers = {"Authorization": f"Bearer {exchange.json()['access_token']}"}
+        assert len((await api.get("/api/v1/projects", headers=session_headers)).json()) == 1
+
+        revoked = await admin.post(f"/control/v1/projects/{project_id}/revoke", headers=auth)
+        assert revoked.status_code == 200
+        receipt = revoked.json()
+        assert receipt["project_id"] == project_id
+        assert receipt["revoked"] is True and receipt["snapshots_revoked"] == 2
+        assert receipt["revoked_at"]
+
+        assert (await api.get("/api/v1/projects", headers=session_headers)).json() == []
+        old_context = await api.get(
+            f"/api/v1/projects/{project_id}/context",
+            headers=session_headers,
+            params={"snapshot_id": first_receipt["id"]},
+        )
+        assert old_context.status_code == 404
+        assert (
+            await api.post(
+                "/api/v1/auth/exchange",
+                headers={"Authorization": f"Bearer {unexchanged.json()['key']}"},
+            )
+        ).status_code == 401
+
+        reissue = await admin.post(
+            "/control/v1/keys",
+            headers=auth,
+            json={"label": "synthetic-reissue", "projects": {project_id: {"scopes": ["read"]}}},
+        )
+        assert reissue.status_code == 409
+        republish = await admin.post(
+            "/control/v1/snapshots",
+            headers=auth,
+            json={**base_payload, "source_revision": "known-fixture-revision-5"},
+        )
+        assert republish.status_code == 409
+
+        repeated = await admin.post(f"/control/v1/projects/{project_id}/revoke", headers=auth)
+        assert repeated.status_code == 200
+        assert repeated.json() == receipt
+        async with public.state.session_factory() as db:
+            project = await db.get(Project, UUID(project_id))
+            assert project is not None and project.latest_snapshot_id is None
+            snapshots = list(
+                (
+                    await db.scalars(
+                        select(Snapshot).where(Snapshot.project_id == UUID(project_id))
+                    )
+                ).all()
+            )
+            assert len(snapshots) == 2 and all(item.revoked_at is not None for item in snapshots)
+
+
+@pytest.mark.asyncio
 async def test_mcp_streamable_http_uses_real_python_sdk_client(settings) -> None:
     import httpx2
     from mcp.client import Client

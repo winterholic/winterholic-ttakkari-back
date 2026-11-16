@@ -7,9 +7,15 @@ import httpx
 import pytest
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from context_gateway.apps import create_control_app, create_public_app
+from context_gateway.auth import hash_credential
 from context_gateway.config import Settings
+from context_gateway.models import Session, SiteControlAudit
 
 
 @pytest.fixture
@@ -147,3 +153,164 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
 
         exchanges = await asyncio.gather(exchange_concurrently(), exchange_concurrently())
         assert sorted(response.status_code for response in exchanges) == [200, 401]
+
+
+@pytest.mark.asyncio
+async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resumes_without_ttl_reset(settings, db_sessions) -> None:
+    control = create_control_app(settings)
+    public = create_public_app(settings)
+    slug = f"synthetic-pause-{uuid4().hex[:8]}"
+    control_headers = {"Authorization": "Bearer synthetic-parity-token"}
+    async with (
+        control.router.lifespan_context(control),
+        public.router.lifespan_context(public),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=control), base_url="http://control") as admin,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=public), base_url="http://public") as rest,
+    ):
+        before = await rest.get("/api/v1/site")
+        assert before.status_code == 200 and before.json() == {"enabled": True}
+        live_status = await admin.get("/control/v1/site", headers=control_headers)
+        assert live_status.status_code == 200 and live_status.json() == {"enabled": True}
+        published = await admin.post(
+            "/control/v1/snapshots", headers=control_headers,
+            json={"project_slug": slug, "project_name": "Synthetic Pause",
+                  "source_refs": ["fixture://pause"], "source_revision": "pause-rev",
+                  "generated_at": "2026-11-16T00:00:00Z", "verified_at": "2026-11-16T00:00:00Z",
+                  "documents": [{"id": "brief", "title": "Brief", "content": "synthetic data"}]},
+        )
+        assert published.status_code == 201, published.text
+        project_id = published.json()["project_id"]
+        issued = await admin.post(
+            "/control/v1/keys", headers=control_headers,
+            json={"label": "synthetic", "projects": {project_id: {"scopes": ["read", "export"]}}},
+        )
+        assert issued.status_code == 201, issued.text
+        expires_at = issued.json()["expires_at"]
+        exchanged = await rest.post("/api/v1/auth/exchange",
+                                    headers={"Authorization": f"Bearer {issued.json()['key']}"})
+        assert exchanged.status_code == 200, exchanged.text
+        session_token = exchanged.json()["access_token"]
+        session_expires_at = exchanged.json()["expires_at"]
+        session_headers = {"Authorization": f"Bearer {session_token}"}
+        assert (await rest.get(f"/api/v1/projects/{project_id}", headers=session_headers)).status_code == 200
+        original_snapshots = await rest.get(
+            f"/api/v1/projects/{project_id}/snapshots", headers=session_headers
+        )
+        assert original_snapshots.status_code == 200
+        original_snapshot_ids = [row["id"] for row in original_snapshots.json()]
+
+        async with httpx.AsyncClient(
+            headers=session_headers, transport=httpx.ASGITransport(app=public)
+        ) as mcp_http:
+            transport = streamable_http_client("http://localhost/mcp", http_client=mcp_http)
+            async with Client(transport) as sdk:
+                assert (await sdk.list_tools()).tools
+                paused = await admin.patch(
+                    "/control/v1/site", headers=control_headers, json={"enabled": False}
+                )
+                assert paused.status_code == 200 and paused.json() == {"enabled": False}
+                assert (await rest.get("/api/v1/site")).json() == {"enabled": False}
+                denied = [
+                    await rest.get(f"/api/v1/projects/{project_id}", headers=session_headers),
+                    await rest.get(
+                        f"/api/v1/projects/{project_id}/export?format=json", headers=session_headers
+                    ),
+                    await rest.post(
+                        "/api/v1/auth/exchange",
+                        headers={"Authorization": f"Bearer {issued.json()['key']}"},
+                    ),
+                ]
+                assert [response.status_code for response in denied] == [503, 503, 503]
+                assert all(
+                    response.json() == {"detail": "site_temporarily_unavailable"}
+                    for response in denied
+                )
+                with pytest.raises(MCPError):
+                    await sdk.call_tool("list_projects", {})
+
+                resumed = await admin.patch(
+                    "/control/v1/site", headers=control_headers, json={"enabled": True}
+                )
+                assert resumed.status_code == 200 and resumed.json() == {"enabled": True}
+                assert (
+                    await rest.get(f"/api/v1/projects/{project_id}", headers=session_headers)
+                ).status_code == 200
+                assert (
+                    await rest.get(
+                        f"/api/v1/projects/{project_id}/export?format=json", headers=session_headers
+                    )
+                ).status_code == 200
+                assert (
+                    await rest.post(
+                        "/api/v1/auth/exchange",
+                        headers={"Authorization": f"Bearer {issued.json()['key']}"},
+                    )
+                ).status_code == 401
+                assert issued.json()["expires_at"] == expires_at
+                resumed_snapshots = await rest.get(
+                    f"/api/v1/projects/{project_id}/snapshots", headers=session_headers
+                )
+                assert [row["id"] for row in resumed_snapshots.json()] == original_snapshot_ids
+    async with db_sessions() as db:
+        events = list((await db.scalars(select(SiteControlAudit.event))).all())
+        assert events.count("site_status_read") == 1
+        assert events.count("site_status_changed") == 2
+        stored_session_expiry = await db.scalar(
+            select(Session.expires_at).where(
+                Session.credential_hash == hash_credential(session_token)
+            )
+        )
+        assert stored_session_expiry.isoformat().replace("+00:00", "Z") == session_expires_at.replace("+00:00", "Z")
+
+
+@pytest.mark.asyncio
+async def test_site_control_requires_control_token_and_public_role_cannot_change_site(settings) -> None:
+    control = create_control_app(settings)
+    async with control.router.lifespan_context(control), httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=control), base_url="http://control"
+    ) as client:
+        assert (await client.get("/control/v1/site")).status_code == 401
+        assert (await client.patch("/control/v1/site", json={"enabled": False})).status_code == 401
+
+@pytest.mark.asyncio
+async def test_public_database_role_can_read_site_switch_but_cannot_write_or_read_audit(postgres_url, tmp_path):
+    from context_gateway.apps import _initialize_schema
+    from context_gateway.database import make_session_factory
+
+    role = "context_gateway_public"
+    engine = create_async_engine(postgres_url)
+    created_role = False
+    try:
+        async with engine.begin() as connection:
+            exists = await connection.scalar(
+                text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :name)"), {"name": role}
+            )
+            if not exists:
+                await connection.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+                created_role = True
+            await connection.execute(text(f'GRANT USAGE ON SCHEMA public TO "{role}"'))
+        settings = Settings(postgres_url, tmp_path / "snapshots", "synthetic-site-token")
+        factory = make_session_factory(settings)
+        await _initialize_schema(factory)
+        async with engine.connect() as connection:
+            transaction = await connection.begin()
+            try:
+                await connection.execute(text(f'SET LOCAL ROLE "{role}"'))
+                assert await connection.scalar(text("SELECT enabled FROM gateway_site_control WHERE id = 1")) is True
+                async with connection.begin_nested():
+                    with pytest.raises(DBAPIError):
+                        await connection.execute(text("UPDATE gateway_site_control SET enabled = FALSE WHERE id = 1"))
+                    await connection.get_nested_transaction().rollback()
+                async with connection.begin_nested():
+                    with pytest.raises(DBAPIError):
+                        await connection.execute(text("SELECT enabled FROM gateway_site_control_audit"))
+                    await connection.get_nested_transaction().rollback()
+            finally:
+                await transaction.rollback()
+        await factory.kw["bind"].dispose()
+    finally:
+        if created_role:
+            async with engine.begin() as connection:
+                await connection.execute(text(f'DROP OWNED BY "{role}"'))
+                await connection.execute(text(f'DROP ROLE "{role}"'))
+        await engine.dispose()

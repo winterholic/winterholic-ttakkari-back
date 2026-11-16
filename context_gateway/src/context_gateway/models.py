@@ -4,7 +4,18 @@ from datetime import datetime
 from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -100,4 +111,25 @@ class AuditEvent(Base):
     event: Mapped[str] = mapped_column(String(80))
     project_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     detail: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SiteControlState(Base):
+    """One durable site-wide switch; row id 1 is seeded enabled for old installations."""
+
+    __tablename__ = "gateway_site_control"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SiteControlAudit(Base):
+    __tablename__ = "gateway_site_control_audit"
+    __table_args__ = (Index("ix_gateway_site_control_audit_created", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    event: Mapped[str] = mapped_column(String(32))
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    actor: Mapped[str] = mapped_column(String(32), default="control_token")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

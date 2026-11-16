@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .auth import (
@@ -26,7 +26,7 @@ from .auth import (
 )
 from .config import Settings
 from .database import make_session_factory
-from .models import Base, Project, Session, Snapshot
+from .models import Base, Project, Session, SiteControlAudit, SiteControlState, Snapshot
 from .publishing import (
     IntegrityError,
     ProjectSharingRevokedError,
@@ -44,6 +44,10 @@ class ExchangeResponse(BaseModel):
     access_token: str
     token_type: Literal["Bearer"] = "Bearer"
     expires_at: datetime
+
+
+class SiteEnabledRequest(BaseModel):
+    enabled: bool
 
 
 class ProjectKeyGrant(BaseModel):
@@ -141,6 +145,9 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
         await connection.exec_driver_sql("SELECT pg_advisory_xact_lock(915712611)")
         await connection.run_sync(Base.metadata.create_all)
         await connection.exec_driver_sql(
+            "INSERT INTO gateway_site_control (id, enabled) VALUES (1, TRUE) ON CONFLICT (id) DO NOTHING"
+        )
+        await connection.exec_driver_sql(
             "ALTER TABLE gateway_projects ADD COLUMN IF NOT EXISTS sharing_revoked_at TIMESTAMPTZ"
         )
         await connection.exec_driver_sql(
@@ -187,6 +194,20 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
             await connection.exec_driver_sql(
                 "GRANT INSERT ON gateway_audit_events TO context_gateway_public"
             )
+            await connection.exec_driver_sql(
+                "GRANT SELECT ON gateway_site_control TO context_gateway_public"
+            )
+            await connection.exec_driver_sql(
+                "REVOKE INSERT, UPDATE, DELETE ON gateway_site_control FROM context_gateway_public"
+            )
+            await connection.exec_driver_sql(
+                "REVOKE ALL ON gateway_site_control_audit FROM context_gateway_public"
+            )
+
+
+async def _site_enabled(db: AsyncSession) -> bool:
+    enabled = await db.scalar(select(SiteControlState.enabled).where(SiteControlState.id == 1))
+    return True if enabled is None else bool(enabled)
 
 
 def _session_dependency(factory: async_sessionmaker[AsyncSession]):
@@ -314,6 +335,27 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz", include_in_schema=False)
     async def healthz():
         return {"status": "ok"}
+
+    @app.middleware("http")
+    async def enforce_site_enabled(request: Request, call_next):
+        path = request.url.path
+        if path == "/api/v1/site":
+            return await call_next(request)
+        if path.startswith(("/api/v1/", "/mcp")) and request.headers.get("authorization"):
+            async with factory() as db:
+                enabled = await _site_enabled(db)
+            if not enabled:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "site_temporarily_unavailable"},
+                    headers={"Cache-Control": "no-store", "Retry-After": "60"},
+                )
+        return await call_next(request)
+
+    @app.get("/api/v1/site", include_in_schema=True)
+    async def public_site_status(db: AsyncSession = Depends(db_dep)):
+        # Deliberately exposes only the global switch, never project or document metadata.
+        return {"enabled": await _site_enabled(db)}
 
     @app.middleware("http")
     async def require_session_for_mcp(request: Request, call_next):
@@ -653,6 +695,34 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
         supplied = _bearer(authorization)
         if not config.control_token or not hmac.compare_digest(supplied, config.control_token):
             raise HTTPException(401, "unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+    @app.get("/control/v1/site")
+    async def site_status(
+        authorization: str | None = Header(default=None),
+        db: AsyncSession = Depends(db_dep),
+    ):
+        control_auth(authorization)
+        enabled = await _site_enabled(db)
+        db.add(SiteControlAudit(event="site_status_read", enabled=enabled))
+        return {"enabled": enabled}
+
+    @app.patch("/control/v1/site")
+    async def set_site_status(
+        body: SiteEnabledRequest,
+        authorization: str | None = Header(default=None),
+        db: AsyncSession = Depends(db_dep),
+    ):
+        control_auth(authorization)
+        state = await db.get(SiteControlState, 1)
+        if state is None:
+            state = SiteControlState(id=1, enabled=body.enabled)
+            db.add(state)
+        else:
+            state.enabled = body.enabled
+            state.updated_at = func.now()
+        db.add(SiteControlAudit(event="site_status_changed", enabled=body.enabled))
+        await db.flush()
+        return {"enabled": state.enabled}
 
     @app.post("/control/v1/snapshots", status_code=201)
     async def publish(

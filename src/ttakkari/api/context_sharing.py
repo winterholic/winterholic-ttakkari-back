@@ -18,7 +18,11 @@ from ttakkari.context_sharing import service
 from ttakkari.context_sharing.adapter import LibraryAdapter
 from ttakkari.context_sharing.errors import ShareError
 from ttakkari.context_sharing.gateway import (
+    GatewayBadResponse,
     GatewayControl,
+    GatewayNotConfigured,
+    GatewayRejected,
+    GatewayUnavailable,
     build_control,
     gateway_status,
 )
@@ -68,6 +72,11 @@ class KeyIn(BaseModel):
     ttl_seconds: Literal[3600] = 3600
 
 
+class SiteEnabledIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
 async def user_access(_: User) -> None:
     pass
 
@@ -100,6 +109,31 @@ def _meta(request: Request) -> dict[str, Any]:
 async def _handler(request: Request, exc: ShareError) -> JSONResponse:
     return JSONResponse({"code": exc.code, "message": exc.message, **exc.extra}, status_code=exc.status,
                         headers={"Cache-Control": "private, no-store", **exc.headers})
+
+
+def _gateway_site_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, GatewayNotConfigured):
+        return JSONResponse(status_code=503, content={"code": "gateway_not_configured", "message": "Gateway control is not configured",
+                                                     "gateway_status": exc.status}, headers={"Cache-Control": "private, no-store"})
+    if isinstance(exc, GatewayUnavailable):
+        return JSONResponse(status_code=503, content={"code": "gateway_unavailable", "message": "Gateway site status could not be reached"},
+                             headers={"Cache-Control": "private, no-store"})
+    if isinstance(exc, GatewayRejected):
+        return JSONResponse(status_code=502, content={"code": "gateway_rejected", "message": "Gateway rejected site control",
+                                                       "gateway_status": exc.http_status}, headers={"Cache-Control": "private, no-store"})
+    return JSONResponse(status_code=502, content={"code": "gateway_bad_response", "message": "Gateway site control response was invalid"},
+                        headers={"Cache-Control": "private, no-store"})
+
+
+def _site_configuration_error(gateway: GatewayControl) -> JSONResponse | None:
+    if gateway.public_url:
+        return None
+    status = dict(gateway.status)
+    missing = list(status.get("missing", []))
+    if "context_gateway_public_url" not in missing:
+        missing.append("context_gateway_public_url")
+    status.update(configured=False, missing=missing)
+    return _gateway_site_error(GatewayNotConfigured(status))
 
 
 def install(app: FastAPI) -> None:
@@ -144,6 +178,29 @@ async def _sources(db, entity_id: uuid.UUID) -> dict[str, Any]:
 async def status() -> dict[str, Any]:
     """Gateway control 연결 설정 상태. 토큰·전체 주소는 내려가지 않는다."""
     return {"gateway": gateway_status()}
+
+
+@router.get("/site")
+async def site_status(gateway: Gateway) -> Any:
+    """Read the live Gateway setting rather than the local connection configuration."""
+    if error := _site_configuration_error(gateway):
+        return error
+    try:
+        enabled = await gateway.site_status()
+    except (GatewayNotConfigured, GatewayUnavailable, GatewayRejected, GatewayBadResponse) as exc:
+        return _gateway_site_error(exc)
+    return {"enabled": enabled, "public_url": gateway.public_url}
+
+
+@router.patch("/site")
+async def set_site_status(body: SiteEnabledIn, gateway: Gateway) -> Any:
+    if error := _site_configuration_error(gateway):
+        return error
+    try:
+        enabled = await gateway.set_site_enabled(body.enabled)
+    except (GatewayNotConfigured, GatewayUnavailable, GatewayRejected, GatewayBadResponse) as exc:
+        return _gateway_site_error(exc)
+    return {"enabled": enabled, "public_url": gateway.public_url}
 
 
 @router.get("/projects")

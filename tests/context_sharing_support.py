@@ -38,6 +38,7 @@ class FakeGateway:
         self.echo_wrong_hash = False
         self.omit_project_id = False  # 불완전한 영수증의 fail-closed 경로를 재현한다.
         self.key_lifetime: int | None = None  # None 이면 코어 계약의 3600초를 따른다.
+        self.site_enabled = True
 
     def latest(self, slug: str) -> str | None:
         return self.projects[slug]["latest"]
@@ -53,6 +54,11 @@ class FakeGateway:
             return GatewayReply(self.reply_status, {"code": "synthetic_failure", "message": "forced"})
         if (method, path) == ("POST", "/control/v1/snapshots"):
             return self._publish(json)
+        if (method, path) == ("GET", "/control/v1/site"):
+            return GatewayReply(200, {"enabled": self.site_enabled})
+        if (method, path) == ("PATCH", "/control/v1/site"):
+            self.site_enabled = json["enabled"]
+            return GatewayReply(200, {"enabled": self.site_enabled})
         parts = path.strip("/").split("/")
         if method == "POST" and parts[:3] == ["control", "v1", "projects"] and parts[-1] == "revoke":
             return self._revoke_project(parts[3])

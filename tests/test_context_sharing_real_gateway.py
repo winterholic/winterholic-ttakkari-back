@@ -68,7 +68,9 @@ async def core(tmp_path):
 @pytest.fixture
 def real_gateway(core):
     transport = HttpGatewayTransport("http://127.0.0.1:8788", TOKEN, http_transport=httpx.ASGITransport(app=core["control"]))
-    app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(transport)
+    app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(
+        transport, public_url="https://share.example.test"
+    )
     yield core
     app.dependency_overrides.pop(api.get_gateway, None)
 
@@ -174,3 +176,65 @@ async def test_key_issue_exchange_single_use_revoke_and_withdraw_against_the_rea
     again = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     withdrawn = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
     assert withdrawn.status_code == 200 and withdrawn.json()["revoked_keys"] == (1 if again.status_code == 201 else 0)
+
+
+async def test_private_site_switch_controls_real_gateway_without_changing_snapshot_or_ttl(client, auth, real_gateway):
+    from context_gateway.auth import hash_credential
+
+    control_client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=real_gateway["control"]), base_url="http://control"
+    )
+    public_client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=real_gateway["public"]), base_url="http://public"
+    )
+    async with control_client, public_client:
+        published = await control_client.post(
+            "/control/v1/snapshots", headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"project_slug": f"synthetic-site-{uuid.uuid4().hex[:8]}",
+                  "project_name": "Synthetic Site Switch", "source_refs": ["fixture://site-switch"],
+                  "source_revision": "site-switch-rev", "generated_at": "2026-11-16T00:00:00Z",
+                  "verified_at": "2026-11-16T00:00:00Z",
+                  "documents": [{"id": "brief", "title": "Brief", "content": "synthetic only"}]},
+        )
+        assert published.status_code == 201, published.text
+        project_id = published.json()["project_id"]
+        issued = await control_client.post(
+            "/control/v1/keys", headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"label": "synthetic site switch", "projects": {project_id: {"scopes": ["read"]}}},
+        )
+        assert issued.status_code == 201, issued.text
+        exchanged = await public_client.post(
+            "/api/v1/auth/exchange", headers={"Authorization": f"Bearer {issued.json()['key']}"}
+        )
+        assert exchanged.status_code == 200
+        reader = {"Authorization": f"Bearer {exchanged.json()['access_token']}"}
+        first = await public_client.get(f"/api/v1/projects/{project_id}/context", headers=reader)
+        assert first.status_code == 200
+        snapshot_id = first.json()["snapshot"]["id"]
+        session_hash = hash_credential(exchanged.json()["access_token"])
+        session_expiry_before = await core_rows(
+            real_gateway["url"],
+            f"SELECT expires_at::text FROM gateway_sessions WHERE credential_hash = '{session_hash}'",
+        )
+
+        state = await client.get(f"{BASE}/site", headers=auth)
+        assert state.status_code == 200
+        assert state.json() == {"enabled": True, "public_url": "https://share.example.test"}
+        closed = await client.patch(f"{BASE}/site", headers=auth, json={"enabled": False})
+        assert closed.status_code == 200 and closed.json()["enabled"] is False
+        assert (await public_client.get("/api/v1/site")).json() == {"enabled": False}
+        denied = await public_client.get(f"/api/v1/projects/{project_id}/context", headers=reader)
+        assert denied.status_code == 503
+
+        reopened = await client.patch(f"{BASE}/site", headers=auth, json={"enabled": True})
+        assert reopened.status_code == 200 and reopened.json()["enabled"] is True
+        after = await public_client.get(f"/api/v1/projects/{project_id}/context", headers=reader)
+        assert after.status_code == 200 and after.json()["snapshot"]["id"] == snapshot_id
+        session_expiry_after = await core_rows(
+            real_gateway["url"],
+            f"SELECT expires_at::text FROM gateway_sessions WHERE credential_hash = '{session_hash}'",
+        )
+        assert session_expiry_after == session_expiry_before
+        assert (await public_client.post(
+            "/api/v1/auth/exchange", headers={"Authorization": f"Bearer {issued.json()['key']}"}
+        )).status_code == 401

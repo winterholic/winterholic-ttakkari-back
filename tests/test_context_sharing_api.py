@@ -74,7 +74,7 @@ async def table_dump() -> str:
 # ---- 인증 경계
 
 OWNER_ROUTES = [
-    ("GET", "/status"), ("GET", "/projects"), ("GET", "/projects/00000000-0000-0000-0000-000000000000/sources"),
+    ("GET", "/status"), ("GET", "/site"), ("PATCH", "/site"), ("GET", "/projects"), ("GET", "/projects/00000000-0000-0000-0000-000000000000/sources"),
     ("GET", "/drafts"), ("POST", "/drafts"), ("GET", "/drafts/00000000-0000-0000-0000-000000000000"),
     ("PATCH", "/drafts/00000000-0000-0000-0000-000000000000"),
     ("POST", "/drafts/00000000-0000-0000-0000-000000000000/publish"),
@@ -104,6 +104,37 @@ async def test_agent_cannot_publish_or_issue_keys_even_for_existing_drafts(clien
                          ("POST", "/projects/alpha/revoke")]:
         r = await client.request(method, f"/api/agent/context-sharing{path}", headers=agent, json={})
         assert r.status_code in (404, 405), (method, path, r.status_code)
+
+
+async def test_owner_site_control_reads_and_changes_gateway_state(client, auth, gateway):
+    status = await client.get(f"{BASE}/site", headers=auth)
+    assert status.status_code == 200
+    assert status.json() == {"enabled": True, "public_url": "https://ctx.example.test"}
+    changed = await client.patch(f"{BASE}/site", headers=auth, json={"enabled": False})
+    assert changed.status_code == 200
+    assert changed.json() == {"enabled": False, "public_url": "https://ctx.example.test"}
+    assert [(method, path) for method, path, _ in gateway.calls] == [
+        ("GET", "/control/v1/site"), ("PATCH", "/control/v1/site")]
+
+
+async def test_owner_site_control_reports_gateway_failure_separately_from_config(client, auth, gateway):
+    gateway.fail_with = GatewayUnavailable("ConnectError")
+    response = await client.get(f"{BASE}/site", headers=auth)
+    assert response.status_code == 503
+    assert response.json()["code"] == "gateway_unavailable"
+
+    app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(
+        None, status={"configured": False, "missing": ["context_gateway_control_url"]}
+    )
+    unconfigured = await client.get(f"{BASE}/site", headers=auth)
+    assert unconfigured.status_code == 503
+    assert unconfigured.json()["code"] == "gateway_not_configured"
+
+    app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(gateway)
+    missing_public_url = await client.get(f"{BASE}/site", headers=auth)
+    assert missing_public_url.status_code == 503
+    assert missing_public_url.json()["code"] == "gateway_not_configured"
+    assert "context_gateway_public_url" in missing_public_url.json()["gateway_status"]["missing"]
 
 
 # ---- 선택한 문서만

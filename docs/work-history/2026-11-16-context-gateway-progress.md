@@ -177,3 +177,19 @@
 - 기존 gosu HTTPS는200이었다. 전체 기존 홈서버 서비스의 전수 회귀 검증은 아니다. 브라우저는 닫았다. 이번 전용 시험 DB는 검증 뒤 정리하고, 이전 Run의 정리 차단 대상은 건드리지 않는다.
 - 두 소스 커밋은 기존 pre-push gate를 유지하고 main에 push했다. 9289e176 gate: Ruff, contract87, 변경unit33 pass. 515b565d gate: Ruff, contract87 pass; Gateway 별도 패키지 검증은 위30건과 외부 검증으로 보완했다.
 - Private backend 예약: 기존 dd861485는 schema-head 검사 실패로 종료됐다. 수정본 예약 ff7de520 뒤 core 감사 수정까지 담은 최신 예약 `e7e8252a-5fce-4669-b89a-9e43031889eb`(515b565d, skip_tests=false)는 requested로 접수됐다. 컨트롤러가 전체 검사와 세대 전환을 담당한다. 이 Run에서 결과를 기다리거나 polling하지 않는다. 운영 Private API의 gateway configured 상태와 실제 owner UI 게시 연결은 해당 배포 결과 뒤 최종 확인해야 하므로 R5 전체 완료를 선언하지 않는다.
+
+## 16:01 KST Gateway 사이트 일시 중지/재개 제어 구현
+
+- `context_gateway.gateway_site_control` singleton row에 `enabled`를 저장한다. 초기화 시 기존 DB는 `INSERT ... ON CONFLICT DO NOTHING`으로 enabled=true를 채우고, 상태 row가 아직 없는 경우에도 읽기는 true로 처리한다. 스냅샷·키·세션 row는 닫기/재개에서 변경하지 않는다.
+- 최종 API 계약:
+  - Private owner JWT `GET /api/context-sharing/site`은 Gateway에 실제 조회를 보내 `{ "enabled": true, "public_url": "https://share.winterholic.net" }`를 반환한다. 기존 `GET /api/context-sharing/status`는 연결 설정 검사 전용이다.
+  - Private owner JWT `PATCH /api/context-sharing/site` body는 `{ "enabled": false }` 또는 `{ "enabled": true }`; 성공 응답은 같은 두 필드다. Gateway 미설정은 503 `gateway_not_configured`, 연결 실패는 503 `gateway_unavailable`, Gateway 거절/계약 오류는 각각 502 `gateway_rejected`/`gateway_bad_response`다.
+  - Gateway control bearer `GET /control/v1/site`, `PATCH /control/v1/site`가 상태 조회·변경을 수행한다. Public `GET /api/v1/site` 응답은 문서/프로젝트를 노출하지 않고 `{ "enabled": false }`만 준다. Public UI는 이 조회를 사용해 임시 중지 화면을 표시할 수 있다.
+  - disabled면 인증된 `/api/v1/*` 요청과 기존 MCP 요청은 공통 ASGI 경계에서 503 `site_temporarily_unavailable` 및 `Retry-After: 60`으로 닫힌다. 미교환 키도 exchange에서 거부된다. `/healthz`와 최소 site status 조회는 계속 열린다.
+- control site 상태 조회와 변경은 `gateway_site_control_audit`에 기록한다. 기존 `context_gateway_public` 역할에는 상태 테이블 SELECT만 더하고 UPDATE/INSERT/DELETE를 명시적으로 거부하며 감사 테이블 접근은 주지 않는다.
+- 변경 파일: `context_gateway/src/context_gateway/{apps.py,models.py}`, `context_gateway/tests/test_rest_mcp_parity.py`, `src/ttakkari/api/context_sharing.py`, `src/ttakkari/context_sharing/gateway.py`, `tests/{context_sharing_support.py,test_context_sharing_api.py,test_context_sharing_real_gateway.py}`. 요청 범위대로 frontend·운영 설정·키·게시 데이터는 수정하지 않았다.
+- RED/GREEN: 새 Gateway 테스트는 구현 전 `/api/v1/site`와 `/control/v1/site`에서 404로 실패했다. 새 Private route 테스트도 구현 전 `/api/context-sharing/site`에서 404로 실패했다. 구현 후 통과했다.
+- 검증(합성 자료, 기존 전용 시험 DB): 저장소 루트에서 `.venv/bin/python -m pytest -q tests/test_context_sharing_api.py tests/test_context_sharing_gateway.py tests/test_context_sharing_real_gateway.py` → `90 passed in 3.92s`. 여기에는 Private owner API부터 실제 Gateway control/public ASGI 앱까지 개폐 통합, 기존 REST 세션 거부, 재개, snapshot id·session 만료 보존, 미교환 키 일회 교환 회귀가 포함된다.
+- 검증(합성 자료, Gateway `test_cg_metadata_29d22061`): `CONTEXT_GATEWAY_TEST_DATABASE_URL=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_metadata_29d22061 CONTEXT_GATEWAY_DATABASE_URL=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_metadata_29d22061 .venv/bin/python -m pytest -q -o asyncio_default_fixture_loop_scope=function tests` (`cwd=context_gateway`) → `33 passed in 1.92s`. REST/MCP/export/기존 세션·미교환 키 차단, 다시 열기, TTL·snapshot 유지, control 인증, public DB 역할의 SELECT-only site 권한과 감사 접근 거부를 확인했다.
+- lint/공백: Gateway `.venv/bin/ruff check src/context_gateway/apps.py src/context_gateway/models.py tests/test_rest_mcp_parity.py` 및 Private `.venv/bin/ruff check src/ttakkari/api/context_sharing.py src/ttakkari/context_sharing/gateway.py tests/test_context_sharing_api.py tests/context_sharing_support.py tests/test_context_sharing_real_gateway.py` 모두 `All checks passed!`; 저장소 루트 `git diff --check` 종료 0, 출력 없음.
+- 기존 외부 HTTPS 38건 및 Gateway 코어 30건은 앞선 14:14 기록의 revision 증거로 재사용했다. 이 작업에서는 테스트 DB에서 현재 코드의 Gateway 전체 33건을 추가 실행했다. 운영 HTTPS 재검증·푸시·배포는 지시대로 미실행이다.

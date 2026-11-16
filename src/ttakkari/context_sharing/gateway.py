@@ -192,6 +192,18 @@ class GatewayControl:
             raise GatewayNotConfigured(self.status)
         return self._transport
 
+    async def site_status(self) -> bool:
+        body = await self._send("GET", "/site", None, {200})
+        if type(body.get("enabled")) is not bool:
+            raise GatewayBadResponse("site status response is missing enabled")
+        return body["enabled"]
+
+    async def set_site_enabled(self, enabled: bool) -> bool:
+        body = await self._send("PATCH", "/site", {"enabled": enabled}, {200})
+        if type(body.get("enabled")) is not bool or body["enabled"] is not enabled:
+            raise GatewayBadResponse("site status response does not match requested state")
+        return body["enabled"]
+
     async def _send(self, method: str, path: str, body: dict[str, Any] | None, ok: set[int]) -> dict[str, Any]:
         reply = await self.require().request(method, f"{CONTROL_PREFIX}{path}", body)
         if reply.status in ok:

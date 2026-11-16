@@ -669,6 +669,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/accounts/{account_id}/copilot/check"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/codex-reset"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/cooldown/clear"): "owner-plain",
+    ("POST", "/api/accounts/{account_id}/login/check"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/usage/refresh"): "owner-plain",
     ("POST", "/api/agent/checklists/items"): "agent-scoped",
     ("POST", "/api/agent/checklists/templates"): "agent-scoped",

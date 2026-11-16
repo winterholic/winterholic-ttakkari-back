@@ -771,7 +771,8 @@ async def test_management_summary_and_individual_status_contract(client, auth, m
 
 
 async def test_login_check_clears_expired_state_after_relogin(client, auth, make_dir, monkeypatch):
-    from ttakkari.runs import profiles, usage as usage_mod
+    from ttakkari.runs import profiles
+    from ttakkari.runs import usage as usage_mod
     d = make_dir()
     r = await client.post("/api/accounts", json={"name": "재로그인", "engine": "claude", "config_dir": str(d)}, headers=auth)
     aid = uuid.UUID(r.json()["id"])

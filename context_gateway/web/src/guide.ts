@@ -1,5 +1,6 @@
 // 명령 예시는 환경변수만 참조한다. 실제 키·세션 값은 이 모듈에 들어오지 않는다.
-// MCP 경로는 core app 구현(streamable_http_path="/mcp"를 /mcp에 mount)에 맞춰 바뀔 수 있어 상수 한 곳에 둔다. 실서버 확인 전이다.
+// MCP 경로는 실제 Gateway(2026-11-16, apps.py가 streamable_http_path="/mcp"를 "/"에 mount)에서 /mcp로 확인했다
+// (세션 Bearer로 initialize·tools/list 200, /mcp/mcp는 404). core가 바꾸면 이 상수 한 곳만 고친다.
 export const MCP_PATH = "/mcp";
 
 export function connectionGuide(origin: string): { curl: string; mcp: string } {

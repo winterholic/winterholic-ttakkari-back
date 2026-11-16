@@ -85,7 +85,8 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-const toMeta = (d: Doc) => ({ id: d.id, title: d.title, content_type: "text/markdown", sha256: "0".repeat(64) });
+// 실제 Gateway는 문서 메타에 extension도 준다(2026-11-16 실측). 어댑터는 모르는 필드를 무시해야 한다.
+const toMeta = (d: Doc) => ({ id: d.id, title: d.title, content_type: "text/markdown", extension: "md", sha256: "0".repeat(64) });
 const snapshotOut = (s: SnapshotFixture) => ({
   id: s.id,
   source_refs: s.sourceRefs,

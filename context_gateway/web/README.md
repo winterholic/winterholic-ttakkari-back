@@ -46,13 +46,13 @@ npm run dev         # 개발 서버. API는 같은 origin이어야 하므로 아
 
 이 디렉터리는 core 코드를 고치지 않는다. 아래는 통합 때 core에서 적용할 방법이다.
 
-**정적 mount 경로.** 빌드 산출물 `web/dist/`를 FastAPI에서 `StaticFiles`로 서빙한다. API(`/api/v1/*`)와 `/mcp`보다 **나중에** mount해 라우트가 가려지지 않게 한다.
+**정적 mount 경로.** 빌드 산출물 `web/dist/`를 FastAPI에서 `StaticFiles`로 서빙한다. **주의(2026-11-16 확인): 현재 `create_public_app()`는 MCP 앱을 `app.mount("/", mcp_app)`로 루트에 mount하고 끝난다.** 그 뒤에 `/`를 또 mount하면 가려지므로, UI는 MCP mount보다 **앞**에 두거나 `/app` 같은 하위 경로에 mount한다.
 
 ```python
 from fastapi.staticfiles import StaticFiles
 
-# create_public_app() 끝, 다른 라우트와 /mcp mount 뒤
-app.mount("/", StaticFiles(directory=settings.web_dir, html=True), name="web")
+# 라우트 등록 뒤, app.mount("/", mcp_app) 앞
+app.mount("/app", StaticFiles(directory=settings.web_dir, html=True), name="web")  # 예: https://<gateway>/app/
 ```
 
 - 자산 경로는 상대 경로(`base: "./"`)라서 `/`뿐 아니라 `/app/` 같은 하위 경로에 mount해도 동작한다. 하위 경로에 mount하면 `/app`이 `/app/`로 리다이렉트되도록 `html=True`를 쓴다.
@@ -89,16 +89,68 @@ ENV CONTEXT_GATEWAY_WEB_DIR=/app/web-dist
 node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 ```
 
-## 검증 상태와 미검증 계약
+## 검증 상태
 
-- 실행·통과: `npm test`(vitest, 합성 Gateway), `npm run typecheck`, `npm run build`.
-- **응답 어댑터는 실서버로 검증하지 않았다.** `src/api/adapters.ts`는 같은 checkout의 `context_gateway/src/context_gateway/apps.py`(작성 시점의 코드)를 읽고 맞춘 것이며, `src/test/fakeGateway.ts`가 그 모양을 흉내 낸다. 작성 시점에 `docs/context-gateway-contract.md`는 없었다. 통합 검증에서 실제 응답과 대조해야 하는 항목:
-  - 교환 응답 `{access_token, token_type, expires_at}`와 `expires_at`의 시간대 표기(없으면 UTC로 읽는다)
-  - 프로젝트 `{id, slug, name, description, latest_snapshot_id}`, 스냅샷 `{id, source_refs, source_revision, generated_at, verified_at, published_at, manifest_sha256, documents[]}`
-  - 문서 `{id, title, content_type, sha256, content}`(출처 필드 없음), 전체 맥락 `{project, snapshot, documents[]}`, 검색 `{project_id, snapshot_id, query, results[{id,title,snippet,matches}]}`
-  - 내보내기 `format=markdown|json|zip`, 파일 이름은 `Content-Disposition`(zip만 현재 제공), 없으면 `context-<id8>.<ext>`
-  - 401/404/429(`Retry-After`) 의미. 404가 scope 부족도 포함하는지
-  - `Accept: application/json` 요청에 JSON을 주는지(문서·프로젝트·전체 맥락은 content negotiation)
-  - MCP 경로: `src/guide.ts`의 `MCP_PATH`는 `/mcp`로 두었으나 코드상 `/mcp`에 mount한 앱의 `streamable_http_path`도 `/mcp`라서 실제는 `/mcp/mcp`일 수 있다
-  - `.mcp.json`의 `${VAR}` 확장이 사용하는 MCP 클라이언트에서 헤더에도 적용되는지
-- **브라우저 화면 검증은 하지 않았다.** 이 작업 세션에는 지정된 `ttakkari_browser` MCP가 없었고, 셸 Chrome/Playwright로 우회하지 않았다. 390px·데스크톱 레이아웃, 키보드 조작, 실제 파일 저장(blob 앵커), CSP meta의 실제 브라우저 동작은 미검증이다.
+실행·통과 (2026-11-16, 이 checkout):
+
+| 검증 | 대상 | 결과 |
+|---|---|---|
+| `npm test` | 합성 Gateway(`src/test/fakeGateway.ts`) | 94 통과, live 5개는 환경변수 없으면 skip |
+| `npm run typecheck`, `npm run build` | | 오류 없음 |
+| **실제 Gateway 대조** | `apps.py` 실서버(PostgreSQL 17 + uvicorn)에 `GatewayClient` 어댑터 | `src/api/live.test.ts` 4개 통과 |
+| **실제 Gateway + UI 전체 흐름** | 로그인→읽기→스냅샷→검색→ZIP→로그아웃(jsdom) | `src/live.app.test.tsx` 1개 통과 |
+| MCP 경로 | 실서버 `POST /mcp` + 세션 Bearer | `initialize`·`tools/list` 200, 도구 4개. `/mcp/mcp`는 404 → `MCP_PATH="/mcp"` 확정 |
+
+실제 Gateway 응답과 어댑터를 대조한 결과(불일치는 없었고 차이는 아래 둘뿐이다).
+
+- `expires_at`·`published_at`은 `2026-11-16T02:21:24.472494Z`처럼 **마이크로초 + Z**다. V8(Node)에서 `Date.parse`가 읽는다. Safari·Firefox의 마이크로초 파싱은 **미검증**이다.
+- 문서 메타에 `extension`(`md`/`txt`/`json`)이 추가돼 있다. 어댑터는 모르는 필드를 무시하므로 그대로 동작한다(저장 파일 이름은 content_type으로 정한다).
+- 문서 단건 응답에는 출처 필드가 없다 → 스냅샷의 `source_refs/source_revision/generated_at/verified_at`을 상속한다(실측 일치).
+- 재사용 키 401, 다른 프로젝트·scope 부족 404, 잘못된 Accept 406, 없는 snapshot_id 404는 `Retry-After` 헤더 429를 제외하고 실제로 관측했다. **429 응답은 실서버에서 유발해 보지 않았다**(합성 서버 시나리오 `ratelimit`와 단위 테스트로만 확인).
+
+### 실제 Gateway 대조 재현
+
+```bash
+cd context_gateway/web
+scripts/live/start-gateway.sh          # 격리 PostgreSQL 17 + public :18787 + control :18789 (macOS, /opt/homebrew/opt/postgresql@17 필요)
+python3 scripts/live/seed.py           # 합성 스냅샷 발행 + 1회용 키 발급 → /tmp/ctx-gw-live/keys.json (키는 출력하지 않음)
+GATEWAY_LIVE_URL=http://127.0.0.1:18787 npx vitest run src/api/live.test.ts   # 키가 1회용이라 실행 전마다 seed.py를 다시 돌린다
+scripts/live/stop-gateway.sh
+```
+
+`scripts/live/control_launch.py`는 **코어 결함을 우회하는 하네스**다. 현재 코어 `publish_snapshot`은 stage 디렉터리를 `0o555`로 만든 뒤 다른 부모로 `os.replace`해서 macOS에서 `PermissionError`(`POST /control/v1/snapshots` 500)가 난다. 코어가 고쳐지면 하네스 없이 `context_gateway.control:app`을 쓴다. 이 결함은 코어 소유라 수정하지 않고 작업 보고에만 남겼다.
+
+### 브라우저 검증: 이 worker에서는 하지 못했다
+
+- 이 worker에는 `ttakkari_browser`(`mcp__ttakkari_browser__*`) 도구가 없다. ToolSearch 결과: `ttakkari_browser` → "No matching deferred tools found", `browser_navigate` → 없음, `select:mcp__ttakkari_browser__browser_navigate,…browser_snapshot,…browser_resize,…browser_take_screenshot` → 없음. 지시에 따라 셸 Chrome/Playwright로 우회하지 않았다.
+- 따라서 **390px·데스크톱 레이아웃, 키보드 조작, 실제 파일 저장, 빌드 CSP의 브라우저 동작은 여전히 미검증**이다. jsdom 테스트는 DOM 구조·동작만 본다.
+
+#### 메인이 같은 승인된 도구로 재현하는 방법
+
+```bash
+cd context_gateway/web && npm ci && npm run build
+node scripts/serve-web.mjs --port 4173                      # 합성 API. 실제 Gateway를 쓰려면: --upstream http://127.0.0.1:18787
+```
+
+- URL: `http://127.0.0.1:4173/` (같은 origin이 `/api`·`/mcp`까지 제공. 합성 모드는 `POST /__synthetic/reset`으로 키를 되살린다)
+- 합성 키(1회용, 시나리오별 `synthetic-<시나리오>-<1..9>`): 값은 비밀이 아니다.
+
+| 키 | 시나리오 | 볼 것 |
+|---|---|---|
+| `synthetic-alpha-1` | 프로젝트 1개, 전 scope | 정상 읽기·전체 맥락·검색·MD/JSON/ZIP, `overview`는 악성 Markdown(스크립트·onerror·javascript: 링크·외부 이미지·표·코드블록)이고 `window.__pwned`가 undefined여야 함. 스냅샷을 `rev-1`로 바꾸면 "미검증" 배지 |
+| `synthetic-both-1` | 프로젝트 2개 | 프로젝트 전환, 이전 프로젝트 문서가 남지 않음 |
+| `synthetic-empty-1` | 프로젝트 0개 | 빈 상태 |
+| `synthetic-readonly-1` | read만 | 검색·내려받기가 "권한 없음" 안내 |
+| `synthetic-ratelimit-1` | 문서·맥락·내보내기 429(Retry-After 20) | 429 안내 + 다시 시도 |
+| `synthetic-short-1` | 세션 15초 | 15초 뒤 클릭하면 만료 안내와 로그인 화면, 문서 사라짐 |
+| `synthetic-slow-1` | 응답 1.5초 지연 | 로딩 스켈레톤 |
+| `synthetic-broken-1` | 스냅샷 목록 503 | 부분 오류(헤더·내보내기 유지, 목록에만 오류+재시도) |
+| `synthetic-alpha-1` 두 번째 입력 | 재사용 | "키가 받아들여지지 않았습니다" |
+
+- 확인 순서(도구 이름은 지시된 4개): `browser_navigate`로 URL 열기 → `browser_resize` 390×844 → `browser_snapshot`(로그인) → 키 입력·"키로 접속" → `browser_snapshot`(목록 뷰) → 문서 클릭(리더 뷰, "← 문서 목록") → `browser_take_screenshot` → `browser_resize` 1280×800 후 같은 과정 → Tab/↑↓/Enter로 문서 목록 이동, 다운로드 버튼으로 파일 저장 확인.
+- 실제 Gateway로 검증하려면 위 live 절차로 Gateway를 띄우고 `--upstream`을 주며, 키는 `/tmp/ctx-gw-live/keys.json`에서 읽는다(키는 로그·채팅에 남기지 않는다).
+
+### 미검증으로 남은 것
+
+- 위 브라우저 항목 전부(레이아웃·키보드·실제 저장·CSP).
+- 실서버 429 응답, Safari·Firefox의 마이크로초 시각 파싱, `.mcp.json`의 `${VAR}` 헤더 확장(MCP 클라이언트 구현에 달림).

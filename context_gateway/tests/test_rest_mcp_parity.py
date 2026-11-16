@@ -9,6 +9,7 @@ from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -313,7 +314,7 @@ async def test_missing_site_state_stays_closed_after_restart_until_explicit_resu
         httpx.AsyncClient(transport=httpx.ASGITransport(app=public), base_url="http://public") as rest,
     ):
         async with control.state.session_factory() as db:
-            assert await db.scalar(text("SELECT current_database()")) == "test_cg_site_4aea5321"
+            assert await db.scalar(text("SELECT current_database()")) == make_url(settings.database_url).database
         assert (await rest.get("/api/v1/site")).json() == {"enabled": True}
         async with control.state.session_factory() as db:
             await db.execute(text("DELETE FROM gateway_site_control WHERE id = 1"))

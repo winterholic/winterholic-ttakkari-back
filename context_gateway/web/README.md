@@ -46,7 +46,7 @@ npm run dev         # 개발 서버. API는 같은 origin이어야 하므로 아
 
 이 디렉터리는 core 코드를 고치지 않는다. 아래는 통합 때 core에서 적용할 방법이다.
 
-**정적 서빙 통합 상태.** 현재 `create_public_app()`는 MCP 앱을 `app.mount("/", mcp_app)`로 루트에 mount한다. Core working tree에는 이를 감싸는 `web_public.py` 초안이 생겼지만, 가져오는 `context_gateway.web_serving` 모듈은 아직 없다. Dockerfile/배포 설정의 `web/dist` 복사도 현재 확인되지 않았다. core 소유 범위라 수정하지 않았다.
+**정적 서빙 통합 상태.** Core working tree에 `web_public.py`와 `WebServingApp` 구현이 생겼다. 래퍼는 `/`, `/index.html`, `/assets/*`만 정적으로 열고 `/healthz`, `/api/v1/*`, `/mcp*`는 기존 public ASGI 앱으로 전달하며 보안 헤더를 붙인다. Dockerfile/배포 설정의 `web/dist` 복사는 아직 확인되지 않았다. core 소유 범위라 수정하지 않았다.
 
 ```python
 from fastapi.staticfiles import StaticFiles
@@ -75,7 +75,7 @@ COPY --from=web /web/dist /app/web-dist
 ENV CONTEXT_GATEWAY_WEB_DIR=/app/web-dist
 ```
 
-core 초안 `web_public.py`는 `CONTEXT_GATEWAY_WEB_DIR`(기본 `/app/web-dist`)를 참조한다. 실제 정적 서빙 경로는 `WebServingApp` 구현과 배포 설정이 완성된 뒤 확인해야 한다.
+core working tree의 `web_public.py`는 `CONTEXT_GATEWAY_WEB_DIR`(기본 `/app/web-dist`)를 참조한다. 이 래퍼의 실제 컨테이너 배포 연결은 아직 확인되지 않았다.
 
 ## 연결 안내(curl·MCP)
 
@@ -110,7 +110,7 @@ node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 
 현재 working tree의 core 변경도 대조했다. `verified_at`은 nullable/optional이고 문서별 `source_refs`가 추가됐다. 어댑터는 null을 미검증으로 표시하며, 문서별 출처가 비어 있으면 스냅샷 provenance를 상속하므로 응답 모양 변화와 호환된다. 계약 문서에는 아직 두 변경이 반영되지 않았다: `verified_at`을 필수로 적고 문서별 `source_refs`를 설명하지 않는다. core 소유 문서라 여기서는 수정하지 않았다.
 
-**Core 통합 계약 한 줄:** `web/dist`를 `CONTEXT_GATEWAY_WEB_DIR`에서 `/app/`으로 제공하고 `/api/*`·`/mcp` 요청은 현재 public ASGI 앱에 그대로 전달하며, Docker Node 단계에서 빌드한 `dist`만 Python 이미지로 복사한다.
+**Core 통합 계약 한 줄:** Docker는 `web/dist`를 `/app/web-dist`로 복사하고 `CONTEXT_GATEWAY_WEB_DIR`를 설정해 `context_gateway.web_public:app`을 실행하며, `/healthz`·`/api/v1/*`·`/mcp*`는 기존 public ASGI 앱으로 전달한다.
 
 ### 실제 Gateway 대조 재현
 

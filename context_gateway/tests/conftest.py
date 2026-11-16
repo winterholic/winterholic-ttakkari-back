@@ -89,12 +89,18 @@ def postgres_url() -> Iterator[str]:
             )
 
 
-@pytest_asyncio.fixture
-async def db_sessions(postgres_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+@pytest_asyncio.fixture(autouse=True)
+async def isolate_test_database(postgres_url: str) -> None:
     engine = create_async_engine(postgres_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_sessions(postgres_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(postgres_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()

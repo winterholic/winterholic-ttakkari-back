@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
 from context_gateway.auth import AuthenticationError, exchange_key, issue_key
-from context_gateway.models import APIKey
+from context_gateway.models import APIKey, KeyACL, Project
 
 
 async def _save_key(db_sessions, raw_key: str, key_hash: str, expires_at: datetime) -> None:
     async with db_sessions() as session:
-        session.add(APIKey(label="synthetic test", credential_hash=key_hash, expires_at=expires_at))
+        project = Project(
+            slug=f"synthetic-key-exchange-{uuid4().hex}", name="Synthetic Key Exchange"
+        )
+        key = APIKey(label="synthetic test", credential_hash=key_hash, expires_at=expires_at)
+        session.add_all([project, key])
+        await session.flush()
+        session.add(KeyACL(key_id=key.id, project_id=project.id, scopes=["read"]))
         await session.commit()
 
 
@@ -40,16 +47,18 @@ async def test_expired_and_reused_keys_cannot_exchange(db_sessions) -> None:
     raw_key, key_hash, expires_at = issue_key(now=now - timedelta(hours=2))
     await _save_key(db_sessions, raw_key, key_hash, expires_at)
 
-    async with db_sessions() as session, pytest.raises(AuthenticationError):
-        await exchange_key(session, raw_key, now=now)
+    async with db_sessions() as session:
+        with pytest.raises(AuthenticationError):
+            await exchange_key(session, raw_key, now=now)
 
     live_key, live_hash, live_expiry = issue_key(now=now)
     await _save_key(db_sessions, live_key, live_hash, live_expiry)
     async with db_sessions() as session:
         await exchange_key(session, live_key, now=now)
         await session.commit()
-    async with db_sessions() as session, pytest.raises(AuthenticationError):
-        await exchange_key(session, live_key, now=now)
+    async with db_sessions() as session:
+        with pytest.raises(AuthenticationError):
+            await exchange_key(session, live_key, now=now)
 
 
 @pytest.mark.asyncio

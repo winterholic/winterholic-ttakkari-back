@@ -768,3 +768,23 @@ async def test_management_summary_and_individual_status_contract(client, auth, m
     assert "name" not in status.json() and "priority" not in status.json()
     assert (await client.get(f"/api/accounts/{uuid.uuid4()}/status", headers=auth)).status_code == 404
     assert (await client.get(f"/api/accounts/{rows[0]['id']}/status")).status_code == 401
+
+
+async def test_login_check_clears_expired_state_after_relogin(client, auth, make_dir, monkeypatch):
+    from ttakkari.runs import profiles
+    from ttakkari.runs import usage as usage_mod
+    d = make_dir()
+    r = await client.post("/api/accounts", json={"name": "재로그인", "engine": "claude", "config_dir": str(d)}, headers=auth)
+    aid = uuid.UUID(r.json()["id"])
+    monkeypatch.setattr(profiles, "identity", lambda engine, config_dir: ("ok", "me@example.com"))
+    profiles.mark_auth_failed(aid)
+    profiles.cool_down(aid, 600)
+    listed = {x["id"]: x for x in await _accounts(client, auth)}
+    assert listed[str(aid)]["login"] == "expired" and listed[str(aid)]["login_command"]
+
+    async def fresh(*_a, **_k):
+        return usage_mod.Usage(windows=[usage_mod.Window(key="five_hour", label="5시간", percent=1, resets_at=None)], source="api", updated_at=1.0)
+    monkeypatch.setattr(usage_mod, "usage_for", fresh)
+    r = await client.post(f"/api/accounts/{aid}/login/check", headers=auth)
+    assert r.status_code == 200, r.text
+    assert r.json()["login"] == "ok" and r.json()["cooldown_seconds"] == 0

@@ -728,6 +728,23 @@ async def clear(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
     return _out(a)
 
 
+@router.post("/{account_id}/login/check", response_model=AccountOut)
+async def check_login(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
+    """터미널에서 다시 로그인한 Claude·Codex 계정을 즉시 재확인한다. 표식과 인증 실패 쉬기를 풀고 사용량을 새로 읽는다."""
+    a = await _get(db, account_id)
+    if a.engine not in ("claude", "codex"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "이 계정은 로그인 확인을 지원하지 않아요.")
+    profiles.clear_auth_failed(a.id)
+    try:
+        u = await asyncio.wait_for(usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=True),
+                                   REFRESH_TIMEOUT.get(a.engine, 35.0))
+    except TimeoutError:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "로그인 확인이 늦어지고 있어요. 잠시 뒤 다시 눌러 주세요.")
+    if u.windows and not u.error:
+        await manager.release_waiting()  # 인증 때문에 멈췄던 Run 이 있으면 바로 다시 시도한다
+    return _out(a)
+
+
 class AntigravityConfirmIn(BaseModel):
     # 사용자가 방금 전용 HOME 으로 로그인한 Google 계정. 따까리는 이 값을 토큰에서 읽지 않고 사용자 확인으로만 받는다.
     principal: str | None = Field(default=None, max_length=254)

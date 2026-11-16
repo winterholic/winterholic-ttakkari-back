@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     public_sharing_enabled: bool = True
     public_share_origin: str = "https://ttakkari.winterholic.net"
 
+    # 프로젝트 맥락 공유(Context Gateway). control 앱은 public 읽기 키와 별개의 주소·토큰을 쓴다.
+    # 비어 있으면 게시·키 API 가 503(gateway_not_configured)과 설정 상태를 돌려준다.
+    context_gateway_control_url: str = ""
+    context_gateway_control_token: str = Field(default="", repr=False)
+    context_gateway_public_url: str = ""
+    context_gateway_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     # Cloudflare Tunnel 뒤에서만 CF-Connecting-IP 를 믿는다. 직접 노출 시 위조 가능.
     trust_proxy_ip_header: str | None = None

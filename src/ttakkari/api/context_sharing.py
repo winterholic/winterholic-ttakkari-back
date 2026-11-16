@@ -1,0 +1,237 @@
+"""프로젝트 맥락 공유 REST. 소유자(`/api/context-sharing`)만 게시·키·철회를 한다.
+
+에이전트(`/api/agent/context-sharing`)는 공유 가능한 프로젝트·문서를 보고 초안을 만들고 읽는 데까지만 쓴다.
+게시·키 발급·철회·초안 편집 경로는 에이전트 라우터에 존재하지 않는다(소유자 JWT 만 통과).
+오류는 {code, message[, ...]} 로 내려가고 키·control 토큰은 응답·로그·DB 어디에도 남기지 않는다.
+"""
+from __future__ import annotations
+
+import uuid
+from typing import Annotated, Any, Literal
+
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+
+from ttakkari.api.deps import Db
+from ttakkari.context_sharing import service
+from ttakkari.context_sharing.adapter import LibraryAdapter
+from ttakkari.context_sharing.errors import ShareError
+from ttakkari.context_sharing.gateway import (
+    GatewayControl,
+    build_control,
+    gateway_status,
+)
+from ttakkari.models import ChatSession
+from ttakkari.orchestrator.runtime import OrchestratorSession
+from ttakkari.security.auth import User, client_ip
+
+SLUG = r"^[a-z0-9][a-z0-9-]{1,78}$"
+
+
+class DraftCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_id: uuid.UUID
+    document_ids: list[uuid.UUID] = Field(min_length=1, max_length=service.MAX_DOCUMENTS)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    summary: str = Field(default="", max_length=2000)
+    confirm_work_scope: bool = False
+
+
+class DocumentEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: uuid.UUID
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    content: str | None = Field(default=None, min_length=1, max_length=service.MAX_DOCUMENT_CHARS)
+    owner_verified: bool | None = None
+
+
+class DraftPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    summary: str | None = Field(default=None, max_length=2000)
+    documents: list[DocumentEdit] = Field(default_factory=list, max_length=service.MAX_DOCUMENTS)
+    remove_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=service.MAX_DOCUMENTS)
+    expected_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class PublishIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approved_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class KeyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_slug: str = Field(pattern=SLUG)
+    ttl_seconds: int = Field(default=3600, ge=60, le=3600)
+    label: str = Field(default="", max_length=160)
+    scopes: list[Literal["read", "search", "export"]] = Field(default_factory=lambda: ["read", "search"], min_length=1)
+
+
+async def user_access(_: User) -> None:
+    pass
+
+
+async def agent_access(sid: OrchestratorSession, db: Db) -> None:
+    from fastapi import HTTPException
+
+    if await db.get(ChatSession, sid) is None:
+        raise HTTPException(403, "세션이 없습니다.")
+
+
+async def no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+
+
+def get_gateway() -> GatewayControl:
+    return build_control()
+
+
+Gateway = Annotated[GatewayControl, Depends(get_gateway)]
+router = APIRouter(prefix="/api/context-sharing", tags=["context-sharing"], dependencies=[Depends(user_access), Depends(no_store)])
+agent_router = APIRouter(prefix="/api/agent/context-sharing", tags=["context-sharing"],
+                         dependencies=[Depends(agent_access), Depends(no_store)])
+
+
+def _meta(request: Request) -> dict[str, Any]:
+    return {"ip": client_ip(request), "user_agent": request.headers.get("user-agent")}
+
+
+async def _handler(request: Request, exc: ShareError) -> JSONResponse:
+    return JSONResponse({"code": exc.code, "message": exc.message, **exc.extra}, status_code=exc.status,
+                        headers={"Cache-Control": "private, no-store", **exc.headers})
+
+
+def install(app: FastAPI) -> None:
+    app.add_exception_handler(ShareError, _handler)  # type: ignore[arg-type]
+
+
+def _project_out(p, state: dict[str, Any] | None) -> dict[str, Any]:
+    state = state or {}
+    return {"entity_id": str(p.entity_id), "name": p.name, "aliases": p.aliases, "summary": p.summary[:240],
+            "scope": p.scope, "source_count": p.source_count, "document_count": p.document_count,
+            "slug": state.get("slug"), "publication": state.get("publication"),
+            "active_key_count": state.get("active_key_count", 0)}
+
+
+def _source_out(g) -> dict[str, Any]:
+    return {"source_id": str(g.source_id), "label": g.label, "category": g.category, "scope": g.scope,
+            "enabled": g.enabled, "truncated": g.truncated,
+            "documents": [{"document_id": str(d.document_id), "title": d.title, "logical_path": d.logical_path,
+                           "chunk_count": d.chunk_count, "chars": d.chars, "source_revision": d.source_revision,
+                           "indexed_at": service.iso(d.indexed_at)} for d in g.documents]}
+
+
+async def _projects(db) -> dict[str, Any]:
+    adapter = LibraryAdapter(db)
+    projects = await adapter.list_projects()
+    states = await service.project_states(db, [p.entity_id for p in projects])
+    return {"projects": [_project_out(p, states.get(p.entity_id)) for p in projects]}
+
+
+async def _sources(db, entity_id: uuid.UUID) -> dict[str, Any]:
+    adapter = LibraryAdapter(db)
+    project = await adapter.get_project(entity_id)
+    if project is None:
+        raise ShareError(404, "project_not_found", "라이브러리에 그런 프로젝트가 없습니다.")
+    return {"entity_id": str(entity_id), "name": project.name, "scope": project.scope,
+            "sources": [_source_out(g) for g in await adapter.list_documents(entity_id)]}
+
+
+# ---- 소유자
+
+@router.get("/status")
+async def status() -> dict[str, Any]:
+    """Gateway control 연결 설정 상태. 토큰·전체 주소는 내려가지 않는다."""
+    return {"gateway": gateway_status()}
+
+
+@router.get("/projects")
+async def projects(db: Db) -> dict[str, Any]:
+    return {"gateway": gateway_status(), **await _projects(db)}
+
+
+@router.get("/projects/{entity_id}/sources")
+async def sources(entity_id: uuid.UUID, db: Db) -> dict[str, Any]:
+    return await _sources(db, entity_id)
+
+
+@router.post("/drafts", status_code=201)
+async def create_draft(body: DraftCreate, request: Request, db: Db) -> dict[str, Any]:
+    return await service.create_draft(db, LibraryAdapter(db), entity_id=body.entity_id, document_ids=body.document_ids,
+                                      title=body.title, summary=body.summary, actor="owner",
+                                      confirm_work_scope=body.confirm_work_scope, **_meta(request))
+
+
+@router.get("/drafts")
+async def list_drafts(db: Db, entity_id: uuid.UUID | None = None, status: Literal["draft", "published"] | None = None,
+                      limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
+    return await service.list_drafts(db, entity_id=entity_id, status=status, limit=limit, offset=offset)
+
+
+@router.get("/drafts/{draft_id}")
+async def get_draft(draft_id: uuid.UUID, db: Db) -> dict[str, Any]:
+    return await service.get_draft(db, draft_id)
+
+
+@router.patch("/drafts/{draft_id}")
+async def update_draft(draft_id: uuid.UUID, body: DraftPatch, request: Request, db: Db) -> dict[str, Any]:
+    return await service.update_draft(db, draft_id, body.model_dump(exclude_unset=True), **_meta(request))
+
+
+@router.post("/drafts/{draft_id}/publish")
+async def publish(draft_id: uuid.UUID, body: PublishIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    return await service.publish_draft(db, gateway, draft_id, body.approved_digest, **_meta(request))
+
+
+@router.post("/keys", status_code=201)
+async def issue_key(body: KeyIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    """원문 키는 이 응답에 한 번만 담긴다. Private DB·감사 로그·목록 응답에는 없다."""
+    return await service.issue_key(db, gateway, body.project_slug, ttl_seconds=body.ttl_seconds, label=body.label,
+                                   scopes=sorted(set(body.scopes)), **_meta(request))
+
+
+@router.get("/keys")
+async def list_keys(db: Db, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_keys(db, project_slug)
+
+
+@router.post("/keys/{key_id}/revoke")
+async def revoke_key(key_id: uuid.UUID, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    return await service.revoke_key(db, gateway, key_id, **_meta(request))
+
+
+@router.post("/projects/{slug}/revoke")
+async def revoke_project(slug: str, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    return await service.revoke_project(db, gateway, slug, **_meta(request))
+
+
+# ---- 에이전트: 확인과 초안(생성·읽기)만
+
+@agent_router.get("/projects")
+async def agent_projects(db: Db) -> dict[str, Any]:
+    return await _projects(db)
+
+
+@agent_router.get("/projects/{entity_id}/sources")
+async def agent_sources(entity_id: uuid.UUID, db: Db) -> dict[str, Any]:
+    return await _sources(db, entity_id)
+
+
+@agent_router.post("/drafts", status_code=201)
+async def agent_create_draft(body: DraftCreate, request: Request, db: Db) -> dict[str, Any]:
+    # 에이전트는 work 범위 확인을 대신할 수 없다. 서비스가 actor 로 거부한다.
+    return await service.create_draft(db, LibraryAdapter(db), entity_id=body.entity_id, document_ids=body.document_ids,
+                                      title=body.title, summary=body.summary, actor="agent",
+                                      confirm_work_scope=False, **_meta(request))
+
+
+@agent_router.get("/drafts")
+async def agent_list_drafts(db: Db, entity_id: uuid.UUID | None = None,
+                            limit: Annotated[int, Query(ge=1, le=100)] = 50) -> dict[str, Any]:
+    return await service.list_drafts(db, entity_id=entity_id, status=None, limit=limit, offset=0)
+
+
+@agent_router.get("/drafts/{draft_id}")
+async def agent_get_draft(draft_id: uuid.UUID, db: Db) -> dict[str, Any]:
+    return await service.get_draft(db, draft_id)

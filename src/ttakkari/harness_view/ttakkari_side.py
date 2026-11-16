@@ -295,7 +295,7 @@ def collect_ttakkari_tools(tools: list[Any], orchestrator_only: frozenset[str]) 
         ("작업자 관리", tool_policy.WORKER_MANAGEMENT_TOOLS),
         ("벤치마크", tool_policy.BENCHMARK_TOOLS), ("리버스", tool_policy.REVERSE_TOOLS),
         ("연구", tool_policy.RESEARCH_TOOLS), ("예약", tool_policy.SCHEDULE_TOOLS),
-        ("크리에이티브", tool_policy.CREATIVE_TOOLS)) for name in names}
+        ("크리에이티브", tool_policy.CREATIVE_TOOLS), ("맥락 공유", tool_policy.CONTEXT_SHARE_TOOLS)) for name in names}
     items = []
     for tool in tools:
         name = tool.name

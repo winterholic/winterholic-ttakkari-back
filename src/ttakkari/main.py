@@ -422,6 +422,10 @@ def create_app() -> FastAPI:
     app.include_router(collect.router)
     app.include_router(collect.agent_router)
     collect.install(app)  # CollectorError 의 http_status/error_code(403·409·422·404)를 {code, message} 로 내린다(CP-S2-02)
+    from ttakkari.api import context_sharing
+    app.include_router(context_sharing.router)
+    app.include_router(context_sharing.agent_router)
+    context_sharing.install(app)  # ShareError 를 {code, message, ...} 로 내린다(프로젝트 맥락 공유)
     return app
 
 

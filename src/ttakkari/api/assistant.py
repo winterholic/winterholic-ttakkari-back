@@ -41,6 +41,11 @@ EType = Literal["person", "project", "org", "place", "tool", "topic", "preferenc
 
 # 비서 관리 > 도구 탭에 보이는 목록. 실제 등록은 orchestrator/mcp_server.py 가 한다.
 TOOLS: list[dict[str, str]] = [
+    {"name": "context_share_projects", "group": "맥락 공유", "who": "모든 실행", "desc": "외부 AI 에 공유할 수 있는 프로젝트와 게시 상태(본문 없음)"},
+    {"name": "context_share_sources", "group": "맥락 공유", "who": "모든 실행", "desc": "프로젝트의 색인 문서 목록(초안에 고를 수 있는 것)"},
+    {"name": "context_share_drafts", "group": "맥락 공유", "who": "모든 실행", "desc": "공유 초안 목록과 민감정보 개수"},
+    {"name": "context_share_draft", "group": "맥락 공유", "who": "모든 실행", "desc": "공유 초안 한 건의 문서·출처·미리보기"},
+    {"name": "context_share_draft_create", "group": "맥락 공유", "who": "모든 실행", "desc": "선택한 문서로 공유 초안만 만든다(게시·키 발급은 사용자 앱에서만)"},
     {"name": "knowledge_extraction_status", "group": "맥락", "who": "모든 실행", "desc": "추출 실행 기록·실패 사유·재처리 계보"},
     {"name": "knowledge_retry_extraction", "group": "맥락", "who": "모든 실행", "desc": "재처리 가능한 실패만 최대3회 재개"},
     {"name": "kb_search", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 문서 검색·원문 근거 후보"},

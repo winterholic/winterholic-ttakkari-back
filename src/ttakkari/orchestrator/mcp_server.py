@@ -900,6 +900,52 @@ async def search_meetings(query: str, project: str | None = None,
 
 
 
+# ---- 프로젝트 맥락 공유. 확인과 초안 생성·읽기까지만 둔다. 게시·키 발급·철회는 소유자 앱 전용이라 도구가 없다.
+
+_UUID = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+
+async def _context_share(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
+    return await _call(method, path, body, prefix="/api/agent/context-sharing", params=params)
+
+
+@query_tool
+async def context_share_projects() -> str:
+    """List library projects that can be shared with outside AI, with their gateway publication state. Read-only; no document bodies."""
+    return await _context_share("GET", "/projects")
+
+
+@query_tool
+async def context_share_sources(entity_id: Annotated[str, Field(pattern=_UUID)]) -> str:
+    """List one project's indexed documents (document_id, title, logical path, size) you may select for a share draft. Read-only."""
+    return await _context_share("GET", f"/projects/{entity_id}/sources")
+
+
+@query_tool
+async def context_share_drafts(entity_id: Annotated[str | None, Field(pattern=_UUID)] = None) -> str:
+    """List share drafts (newest first) with status and sensitive-content counts, optionally for one project. Read-only."""
+    return await _context_share("GET", "/drafts", entity_id=entity_id)
+
+
+@query_tool
+async def context_share_draft(draft_id: Annotated[str, Field(pattern=_UUID)]) -> str:
+    """Read one share draft: documents, provenance, digest and the sensitive-content preview. Read-only."""
+    return await _context_share("GET", f"/drafts/{draft_id}")
+
+
+@server.tool()
+async def context_share_draft_create(entity_id: Annotated[str, Field(pattern=_UUID)],
+                                     document_ids: Annotated[list[str], Field(min_length=1, max_length=50)],
+                                     title: str | None = None, summary: str = "") -> str:
+    """Create a share DRAFT from documents the user chose (document_ids from context_share_sources). Only the selected
+    indexed documents of that project are copied. This never publishes anything and cannot issue keys: the user reviews,
+    edits and approves the draft in the app. Work-scope projects are refused; the user must create those drafts."""
+    body: dict[str, Any] = {"entity_id": entity_id, "document_ids": document_ids, "summary": summary}
+    if title is not None:
+        body["title"] = title
+    return await _context_share("POST", "/drafts", body)
+
+
 @server.tool()
 async def request_backend_deploy(revision: str) -> str:
     """Reserve deployment of a committed, clean Ttakkari backend SHA. An independent controller tests it,

@@ -14,6 +14,7 @@ READ_ONLY_TOOLS = frozenset({
     "reverse_list", "reverse_get", "tossinvest_status",
     "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
     "list_scheduled_actions",
+    "context_share_projects", "context_share_sources", "context_share_drafts", "context_share_draft",
     "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
     "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
     "creative_v2_auto_assets_status", "creative_v2_styles", "creative_v2_style",
@@ -65,6 +66,9 @@ CREATIVE_TOOLS = frozenset({
     "creative_v2_production_assets", "creative_v2_production_dispatch", "creative_v2_production_render",
     "creative_v2_production_media_link", "creative_v2_production_status",
 })
+# 프로젝트 맥락 공유 초안 생성(소유자 승인 전 단계). 게시·키 발급·철회는 도구가 없고 소유자 JWT 경로에서만 가능하다.
+CONTEXT_SHARE_TOOLS = frozenset({"context_share_draft_create"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
                        | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS
-                       | HOST_OPERATION_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS)
+                       | HOST_OPERATION_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS
+                       | CONTEXT_SHARE_TOOLS)

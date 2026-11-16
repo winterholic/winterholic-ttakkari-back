@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import ttakkari.collector.budget_models
 import ttakkari.collector.control_models
+import ttakkari.context_sharing.models
 import ttakkari.delivery_models
 import ttakkari.kb_models
 import ttakkari.kb_ontology_models

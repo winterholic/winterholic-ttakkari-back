@@ -69,7 +69,7 @@ async def _restore_schema_version(_schema_and_app):
         await db.commit()
 
 
-async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0078_repo_appraisals"):
+async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0079_context_sharing"):
     from ttakkari import generation
     from ttakkari.config import get_settings
     from ttakkari.models import RuntimeControl, RuntimeGeneration
@@ -115,10 +115,10 @@ async def test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent(monk
 
 
 @pytest.mark.parametrize("previous,active,version,reason", [
-    ("draining", True, "0078_repo_appraisals", "previous_generation_not_drained"),
-    ("standby", True, "0078_repo_appraisals", "previous_generation_not_drained"),
-    ("offline_executor", True, "0078_repo_appraisals", "previous_generation_not_drained"),
-    (None, False, "0078_repo_appraisals", "inactive_generation"),
+    ("draining", True, "0079_context_sharing", "previous_generation_not_drained"),
+    ("standby", True, "0079_context_sharing", "previous_generation_not_drained"),
+    ("offline_executor", True, "0079_context_sharing", "previous_generation_not_drained"),
+    (None, False, "0079_context_sharing", "inactive_generation"),
     (None, True, "0073_research_reuse_source", "schema_not_ready"),
     (None, True, "0075_collection_research_merge", "schema_not_ready"),
 ])

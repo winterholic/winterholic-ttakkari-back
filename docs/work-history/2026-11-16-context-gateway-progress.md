@@ -167,3 +167,13 @@
 - 이번 Run 전용 홈서버 DB `test_cg_deploy_4277e61d`와 SSH loopback forward를 사용했다. `test_audit_insert_with_insert_only_role_does_not_require_select`에서 NOLOGIN 임시 역할에 INSERT만 부여해 실제 ORM flush를 재현했고 RED `InsufficientPrivilegeError`를 확인했다. 수정 뒤 Gateway 전체 `30 passed in 20.97s`. 임시 역할은 외부 트랜잭션 rollback으로 제거하고 SSH 자식 프로세스는 종료했다. 운영 Gateway DB는 시험용으로 drop/create하지 않았다.
 - Public 컨테이너의 실제 검증: 외부 1.1.1.1:443 및 홈서버 Tailscale DB 주소 연결은 errno 101, snapshot write는 EROFS(30), project UPDATE는 42501, control 토큰은 환경에 없었다. 이 관측은 해당 주소·권한의 실행 증거이며 모든 가능한 목적지의 전수 검사는 아니다.
 - Public HTTPS 화면·health 200, 무자격 프로젝트 401, control 경로 404를 관측했다. 모바일 390×844와 데스크톱 1280×900의 접속 폼은 configured browser로 렌더했고 닫았다. console에는 Cloudflare analytics script CSP 차단과 favicon 404가 있었으며 CSP를 완화하지 않았다. 인증된 UI 전체 여정의 운영 브라우저 검증은 이번 범위에 포함하지 않았다.
+
+## 14:14 KST 외부 HTTPS 검증 결과
+
+- 최종 Gateway 컨테이너 image·revision label과 current 링크는 `515b565dc652e67e806daff921fa26e86695d581`이다. control/public 모두 running, root FS read-only, public snapshot mount read-only, 호스트 publish port 없음, 내부 브리지 `172.31.0.0/24`를 실제 inspect했다. public에는 Docker HEALTHCHECK가 없으므로 running과 외부 `/healthz` HTTP 200으로 확인한다(control/DB는 Docker healthcheck도 있음).
+- 원본 프로젝트를 게시하지 않고 실제 `share.winterholic.net` 및 `share-control.winterholic.net`에서 합성 검증을 수행했다. 결과 정본: `docs/work-history/2026-11-16-context-gateway-external-verification.json`의 status passed. 발급 TTL 3600초, 교환 200·재사용 401·세션 만료 연장 없음, 프로젝트 ACL 목록·타 프로젝트404, MD/JSON/ZIP·ZIP 무결성, 검색·개별 문서, 문서 verified_at null, 실제 Python MCP SDK의 읽기 도구 4개 및 REST/MCP 동일 스냅샷을 확인했다.
+- read-only 키의 export는404, 키 폐기 뒤 기존 세션은401이었다. control 직접 프로젝트 철회 뒤 REST 프로젝트 조회는404로 존재를 숨긴다. 앞선 검사에서401을 기대한 것은 Private의 키 폐기까지 포함한 흐름과 control 단독 프로젝트 철회를 혼동한 시험 기대값이었다. 이404는 제품 변경 없이 현재 ACL 계약과 대조해 확인했다. 합성 프로젝트 6개는 모두 철회 상태이며 활성 프로젝트 수는0이었다.
+- 초기 검사 스크립트가 잘못된 빈 projects 요청을 보내422를 받은 것도 확인했다. 유효한 본문으로 무자격 control 요청을 다시 검사해401을 관측했다. 실패한 시험 기대값을 운영 성공 증거로 취급하지 않는다.
+- 기존 gosu HTTPS는200이었다. 전체 기존 홈서버 서비스의 전수 회귀 검증은 아니다. 브라우저는 닫았다. 이번 전용 시험 DB는 검증 뒤 정리하고, 이전 Run의 정리 차단 대상은 건드리지 않는다.
+- 두 소스 커밋은 기존 pre-push gate를 유지하고 main에 push했다. 9289e176 gate: Ruff, contract87, 변경unit33 pass. 515b565d gate: Ruff, contract87 pass; Gateway 별도 패키지 검증은 위30건과 외부 검증으로 보완했다.
+- Private backend 예약: 기존 dd861485는 schema-head 검사 실패로 종료됐다. 수정본 예약 ff7de520 뒤 core 감사 수정까지 담은 최신 예약 `e7e8252a-5fce-4669-b89a-9e43031889eb`(515b565d, skip_tests=false)는 requested로 접수됐다. 컨트롤러가 전체 검사와 세대 전환을 담당한다. 이 Run에서 결과를 기다리거나 polling하지 않는다. 운영 Private API의 gateway configured 상태와 실제 owner UI 게시 연결은 해당 배포 결과 뒤 최종 확인해야 하므로 R5 전체 완료를 선언하지 않는다.

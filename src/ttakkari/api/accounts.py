@@ -478,7 +478,7 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
         windows_out = [UsageWindowOut(**w.__dict__, state="unavailable" if w.resets_at and w.resets_at <= now
                                       else "stale" if stale or u.error else "current") for w in valid_windows]
     err = u.error or error
-    if aged and not err and u.windows and not is_muse:
+    if aged and not err and u.windows and not is_muse and a.engine != "codex":
         err = f"새 사용량을 읽지 못했어요 · 마지막 측정 {_age_text(now - u.updated_at) if u.updated_at else '시각 불명'}"
     if is_muse and not muse_current and not err:
         err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"

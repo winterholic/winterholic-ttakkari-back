@@ -292,3 +292,16 @@ async def test_running_legacy_user_request_across_reset_suppresses_activation(ne
         await db.commit()
     current["now"] = 1010
     assert (await m.check(aid, now=1010))["status"] == "already_used"
+
+
+async def test_planned_low_frequency_observation_is_stale_without_fabricated_failure(client, auth):
+    import time
+
+    from ttakkari.runs import usage
+    aid = await account()
+    observed = sample(time.time() - 3600, reset=int(time.time() + 86400), percent=20)
+    usage.seed(aid, observed)
+    response = await client.get("/api/accounts/usage/cached", headers=auth)
+    row = next(item for item in response.json() if item["id"] == str(aid))
+    assert row["stale"] is True
+    assert row["error"] is None, "a scheduled 12-hour observation is not a failed read"

@@ -691,6 +691,18 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
         data.setdefault("work_enabled", True)
     if data.get("work_enabled") is not None and (data.get("pool") or a.pool) != "work":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "회사 모드에 넣은 계정만 회사 모드 켜기를 바꿀 수 있어요.")
+    if a.engine == "codex" and data.get("name") is not None:
+        # Serialize rename with subscription checks and retain historical Run.profile values.
+        from ttakkari.runs.subscription_monitor import _locked
+
+        a, subscription = await _locked(db, account_id)
+        if data["name"] != a.name:
+            state = dict(subscription.value)
+            aliases = list(state.get("user_used_profile_aliases", []))
+            if a.name not in aliases:
+                aliases.append(a.name)
+            state["user_used_profile_aliases"] = aliases
+            subscription.value = state
     for k, v in data.items():
         setattr(a, k, v)
     revived = bool(data.get("enabled") or data.get("work_enabled"))

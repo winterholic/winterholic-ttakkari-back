@@ -51,3 +51,20 @@ vitest run src/features/accounts/SubscriptionRow.test.tsx src/features/accounts/
 ## 다음 동작
 
 독립 검토는 코드·요구·공식 인터페이스의 정합성과 테스트 사각을 확인한다. 지적은 재현/교정 후 좁게 재검증한다. 검토를 마친 후보를 원격 main에 통합하고 backend full SHA 배포를 예약한다. 배포 접수와 성공을 구분한다. 운영 리비전을 확인한 뒤 지원 API로 계정 상태를 한 번 읽고 실제 resetsAt에 맞춰 관측 후속을 예약한다. 실제 주간 경계를 기다리려고 활성 Run을 유지하거나 미리 폴링하지 않는다.
+
+## 독립 검토 P1 교정 — 2026-11-18
+
+- 원인: 완료 Run은 `Run.profile`에 Codex 계정 이름만 기록한다. 계정 이름 변경 뒤 `_user_used`가 새 이름만 비교해 경계 이후 완료 Run을 놓친다.
+- 변경: Codex 계정 이름 변경을 monitor의 기존 계정 행 잠금으로 직렬화하고, 이전 이름을 구독 AppSetting의 `user_used_profile_aliases`에 누적한다. `_user_used`는 현재 이름과 이전 이름 전체를 비교한다.
+- 데이터 범위: AppSetting JSON 값만 확장했다. DB 스키마/마이그레이션은 필요하지 않으며 Run 행이나 기존 profile 값은 수정하지 않았다.
+- 회귀: `codex-old`의 경계 이후 완료 Run → `codex-new` → `codex-latest` 이름 변경 뒤 선사용 True, 별칭 누적, 원본 Run 행 유지를 테스트했다. 구현 전 격리 PostgreSQL에서 기대 assert 실패를 확인했다.
+
+```text
+PYTHONPATH=src ../back/.venv/bin/pytest -q tests/test_subscription_monitor.py tests/test_usage_collector.py tests/test_scheduled_actions.py tests/test_accounts.py tests/test_notifications.py tests/test_notification_preferences.py tests/test_push.py tests/test_route_inventory.py unit_tests/test_subscription_policy.py unit_tests/test_codex_subscription_client.py unit_tests/test_usage_failure_visibility.py unit_tests/test_muse_usage.py tests/test_weather.py tests/test_weather_api.py tests/test_weather_engine.py
+244 passed, 1 warning in 12.41s
+
+../back/.venv/bin/ruff check src/ttakkari/runs/subscription_monitor.py src/ttakkari/api/accounts.py tests/test_subscription_monitor.py
+All checks passed!
+```
+
+경고는 기존 Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation이다. 실제 Codex RPC/모델 호출 및 인증 파일·키체인 접근은 하지 않았다. 이번 작업 범위대로 main 병합과 배포 요청은 하지 않는다.

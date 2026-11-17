@@ -108,9 +108,11 @@ async def _user_used(db, account: EngineAccount, boundary: int | None) -> bool:
         return False
     since = datetime.fromtimestamp(boundary, UTC)
     running = select(RuntimeLease.run_id).where(RuntimeLease.account_id == account.id)
+    row = await db.get(AppSetting, state_key(account.id))
+    profile_names = {account.name, *(row.value.get("user_used_profile_aliases", []) if row else [])}
     return await db.scalar(select(Run.id).where(
         Run.engine == "codex",
-        or_((Run.profile == account.name) & or_(Run.started_at >= since, Run.status == RunStatus.running),
+        or_((Run.profile.in_(profile_names)) & or_(Run.started_at >= since, Run.status == RunStatus.running),
             (Run.id.in_(running)) & (Run.status == RunStatus.running)),
     ).limit(1)) is not None
 

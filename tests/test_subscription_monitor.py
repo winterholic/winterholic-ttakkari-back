@@ -15,9 +15,9 @@ def monitor():
     return importlib.import_module(name)
 
 
-async def account():
+async def account(name="subscription test"):
     async with sessionmaker()() as db:
-        a = EngineAccount(name="subscription test", engine="codex", enabled=True)
+        a = EngineAccount(name=name, engine="codex", enabled=True)
         db.add(a)
         await db.commit()
         return a.id
@@ -292,6 +292,34 @@ async def test_running_legacy_user_request_across_reset_suppresses_activation(ne
         await db.commit()
     current["now"] = 1010
     assert (await m.check(aid, now=1010))["status"] == "already_used"
+
+
+async def test_completed_run_after_rename_is_still_counted_as_user_usage(client, auth, new_session):
+    import uuid
+    from datetime import UTC, datetime
+
+    from ttakkari.models import Run, RunStatus
+
+    m, aid = monitor(), await account("codex-old")
+    ws, sess = await new_session()
+    async with sessionmaker()() as db:
+        db.add(Run(workspace_id=uuid.UUID(ws["id"]), session_id=uuid.UUID(sess["id"]), prompt="user request",
+                   engine="codex", profile="codex-old", status=RunStatus.succeeded,
+                   started_at=datetime.fromtimestamp(1100, UTC)))
+        await db.commit()
+
+    renamed = await client.patch(f"/api/accounts/{aid}", json={"name": "codex-new"}, headers=auth)
+    assert renamed.status_code == 200, renamed.text
+    renamed_again = await client.patch(f"/api/accounts/{aid}", json={"name": "codex-latest"}, headers=auth)
+    assert renamed_again.status_code == 200, renamed_again.text
+
+    async with sessionmaker()() as db:
+        codex_account = await db.get(EngineAccount, aid)
+        assert await m._user_used(db, codex_account, 1000) is True
+        state = await db.get(AppSetting, m.state_key(aid))
+        assert state.value["user_used_profile_aliases"] == ["codex-old", "codex-new"]
+        run = await db.scalar(select(Run).where(Run.profile == "codex-old"))
+        assert run is not None, "rename handling must preserve the historical Run row"
 
 
 async def test_planned_low_frequency_observation_is_stale_without_fabricated_failure(client, auth):

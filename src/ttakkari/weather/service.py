@@ -48,7 +48,7 @@ API_URL = "https://api.open-meteo.com/v1/forecast"
 MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 MET_NO_USER_AGENT = "ttakkari-weather/1.0 (+https://github.com/winterholic)"
 COLLECTION_RETRY_INTERVAL = timedelta(hours=3)
-COLLECTION_ALERT_ATTEMPTS = 4
+COLLECTION_ALERT_AFTER = timedelta(hours=9)
 
 
 class BriefingContent(BaseModel):
@@ -431,16 +431,20 @@ async def _notify_collection_failure(row_id, day: date) -> None:
     """Use the existing weather push channel and persist the once-per-day alert attempt."""
     async with sessionmaker()() as db:
         row = await db.get(WeatherBriefing, row_id)
-        if row is None or row.failure_notified_at is not None:
+        if row is None or row.push_sent_at is not None:
             return
         body = (row.failure or "예보 수집에 실패했습니다.")[:300]
+        delivery = None
         try:
-            await notify(PushKind.weather, "오늘의 날씨 브리핑 수집 실패", body,
-                         url=f"/weather?date={day.isoformat()}", tag=f"weather-failure:{day.isoformat()}",
-                         target_id=row.id, dedupe_key=f"weather-failure:{day.isoformat()}")
+            delivery = await notify(PushKind.weather, "오늘의 날씨 브리핑 수집 실패", body,
+                                    url=f"/weather?date={day.isoformat()}", tag=f"weather-failure:{day.isoformat()}",
+                                    target_id=row.id, dedupe_key=f"weather-failure:{day.isoformat()}")
         except Exception as exc:  # noqa: BLE001 - record the attempt so scans do not spam notifications
             log.warning("weather failure notification failed: %s", type(exc).__name__)
-        row.failure_notified_at = utcnow()
+        row.push_sent_at = utcnow()
+        row.push_error = ("failure_notification_suppressed" if delivery and delivery.get("suppressed") else
+                          "failure_notification_not_delivered" if delivery and (delivery["sent"] == 0 or delivery["failed"] > 0) else
+                          "failure_notification_failed" if delivery is None else None)
         row.updated_at = utcnow()
         await db.commit()
 
@@ -508,8 +512,8 @@ async def advance(row_id) -> None:
                 row.raw_forecasts, row.forecast = raws, forecast
                 row.source_errors = errors
                 row.failure = None
-                row.collection_attempts = 0
-                row.retry_after = None
+                row.push_sent_at = None
+                row.push_error = None
                 row.status = "starting"
                 row.updated_at = utcnow()
                 await db.commit()
@@ -524,11 +528,11 @@ async def advance(row_id) -> None:
                 reason = str(exc).strip()
                 row.failure = (f"{type(exc).__name__}: {reason}" if reason else type(exc).__name__)[:500]
                 if was_collecting:
-                    row.collection_attempts = (row.collection_attempts or 0) + 1
-                    row.retry_after = utcnow() + COLLECTION_RETRY_INTERVAL
-                    notify_failure = (row.collection_attempts >= COLLECTION_ALERT_ATTEMPTS
-                                      and row.failure_notified_at is None)
-                row.lease_until = None
+                    row.lease_until = utcnow() + COLLECTION_RETRY_INTERVAL
+                    notify_failure = (utcnow() - row.created_at >= COLLECTION_ALERT_AFTER
+                                      and row.push_sent_at is None)
+                else:
+                    row.lease_until = None
                 row.updated_at = utcnow()
                 await db.commit()
         log.warning("weather pipeline failed: %s", type(exc).__name__)
@@ -561,7 +565,6 @@ async def start_for_day(day: date, source: str) -> WeatherBriefing:
         elif row.status == "failed":
             row.status = "collecting"
             row.failure = None
-            row.retry_after = None
             row.request_source = source
             row.lease_until = None
             row.updated_at = utcnow()
@@ -589,7 +592,7 @@ async def scan() -> None:
         pending = list(await db.scalars(select(WeatherBriefing.id).where(
             WeatherBriefing.status.in_(["collecting", "starting", "generating", "ready", "degraded"])
             | ((WeatherBriefing.status == "failed") & (WeatherBriefing.day == now.date())
-               & ((WeatherBriefing.retry_after.is_(None)) | (WeatherBriefing.retry_after <= utc_now))),
+               & ((WeatherBriefing.lease_until.is_(None)) | (WeatherBriefing.lease_until <= utc_now))),
             ((WeatherBriefing.lease_until.is_(None)) | (WeatherBriefing.lease_until <= utc_now)),
             ((WeatherBriefing.status.not_in(["ready", "degraded"])) | WeatherBriefing.push_error.is_(None)),
         ).order_by(WeatherBriefing.day.desc()).limit(10)))

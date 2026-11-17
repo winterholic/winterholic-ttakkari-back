@@ -80,7 +80,7 @@ async def test_scan_retries_due_collection_failure_once_and_reschedules(monkeypa
     today = datetime.now(service.KST).date()
     async with sessionmaker()() as db:
         row = WeatherBriefing(day=today, status="failed", request_source="scheduled", failure="both providers failed",
-                              collection_attempts=1, retry_after=utcnow() - timedelta(seconds=1))
+                              lease_until=utcnow() - timedelta(seconds=1))
         db.add(row)
         await db.commit()
         row_id = row.id
@@ -99,8 +99,7 @@ async def test_scan_retries_due_collection_failure_once_and_reschedules(monkeypa
     saved = await _reload(row_id)
     assert attempts == 1
     assert saved.status == "failed"
-    assert saved.collection_attempts == 2
-    assert saved.retry_after > utcnow()
+    assert saved.lease_until > utcnow()
     assert "Open-Meteo=TimeoutException" in saved.failure
     assert "met.no=HTTP 503" in saved.failure
 
@@ -109,7 +108,7 @@ async def test_repeated_collection_failure_notifies_once(monkeypatch):
     today = datetime.now(service.KST).date()
     async with sessionmaker()() as db:
         row = WeatherBriefing(day=today, status="failed", request_source="scheduled", failure="previous failure",
-                              collection_attempts=3, retry_after=utcnow() - timedelta(seconds=1))
+                              created_at=utcnow() - timedelta(hours=10), lease_until=utcnow() - timedelta(seconds=1))
         db.add(row)
         await db.commit()
         row_id = row.id
@@ -134,8 +133,7 @@ async def test_repeated_collection_failure_notifies_once(monkeypatch):
     assert deliveries[0][1]["dedupe_key"] == f"weather-failure:{today.isoformat()}"
     assert "Open-Meteo=TimeoutException" in deliveries[0][0][2]
     assert "met.no=HTTP 503" in deliveries[0][0][2]
-    assert saved.failure_notified_at is not None
-    assert saved.collection_attempts == 4
+    assert saved.push_sent_at is not None
 
 
 def _limit(*accounts: EngineAccount) -> None:

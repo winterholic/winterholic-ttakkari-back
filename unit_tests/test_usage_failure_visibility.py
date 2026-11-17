@@ -242,6 +242,15 @@ async def test_collector_retries_at_once_when_a_run_leaves_a_newer_observation(m
     monkeypatch.setattr(profiles, "running_counts_async", counts)
     monkeypatch.setattr(profiles, "limited_until", lambda *_: None)
 
+    # Codex now hands ownership to the persistent date scheduler. This unit's
+    # synthetic account has no DB row; keep its scheduler boundary isolated.
+    from ttakkari.runs import subscription_monitor
+
+    async def ensure(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(subscription_monitor, "ensure", ensure)
+
     async def noop():
         return None
 

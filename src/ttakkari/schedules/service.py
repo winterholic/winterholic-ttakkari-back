@@ -27,7 +27,7 @@ from ttakkari.models import (
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_ACTIONS = frozenset({"stop_all", "cancel_run", "send_message"})
+SUPPORTED_ACTIONS = frozenset({"stop_all", "cancel_run", "send_message", "subscription_check"})
 LEASE_SECONDS = 60.0
 
 
@@ -194,6 +194,10 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
 
     action = schedule.action_type
     payload = schedule.payload or {}
+
+    if action == "subscription_check":
+        from ttakkari.runs.subscription_monitor import check
+        return await check(uuid.UUID(payload["account_id"]), now=now.timestamp(), schedule_id=str(schedule.id))
 
     if action == "stop_all":
         from ttakkari.runs.agent_control import stop_all_agents

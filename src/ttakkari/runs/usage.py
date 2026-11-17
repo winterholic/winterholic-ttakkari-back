@@ -73,6 +73,8 @@ class Usage:
     updated_at: float | None = None
     login: str | None = None  # official read-only account state, when supplied by the provider
     quota_unlimited: dict[str, str] = field(default_factory=dict)  # key -> label; no invented percentage
+    # Codex's explicit included-usage permission. Unknown is never reset confirmation.
+    ordinary_usage_allowed: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -129,6 +131,22 @@ def seed(account_id: uuid.UUID, u: Usage, *, refresh: bool = False) -> None:
     newer = refresh and prior is not None and (u.updated_at or 0) > prior[0]
     if u.updated_at and (prior is None or newer):
         _cache[account_id] = (u.updated_at, u)
+
+
+def publish_live_observation(account_id: uuid.UUID, observed: Usage) -> None:
+    """Publish a completed live read, including failure and same-clock updates.
+
+    Unlike DB seeding, a fresh read may replace the prior value even within the
+    same second. Failed reads retain historical windows but expose their error.
+    """
+    prior = cached(account_id)
+    value = observed
+    if observed.error and not observed.windows and prior:
+        value = replace(prior, error=observed.error, login=observed.login or prior.login,
+                        ordinary_usage_allowed=None)
+    _cache[account_id] = (time.time(), value)
+    if observed.windows and not observed.error:
+        _emit(account_id, observed)
 
 
 def label_of(key: str) -> str:
@@ -573,34 +591,19 @@ def _codex_token_expires_in(config_dir: str | None) -> float | None:
     return None
 
 
-# Claude 와 같다: access token 은 Codex CLI 가 실행될 때만 갱신된다. 오래 안 쓴 계정은 401 이 이어진다.
-# 만료·401 이면 그 계정으로 아주 작은 codex 호출을 한 번 보내 CLI 가 스스로 갱신하게 한다. 우리가 refresh token 을 쓰거나
-# auth.json 에 쓰지 않는다(refresh token 은 한 번만 쓸 수 있어 CLI 와 경합하면 로그인이 깨진다).
+# CLI-owned account/read refreshes authentication without model inference.
 _codex_refresh_at: dict[str | None, float] = {}
 
 
 async def _refresh_codex_login(config_dir: str | None) -> str | None:
-    """CLI 로 토큰 갱신을 유도한다. 실제로 호출했으면 None, 건너뛰었거나 실패했으면 사유(짧은 문구)."""
+    """Read-only official RPC refresh; never start a usage-bearing turn."""
     now = time.time()
     if now - _codex_refresh_at.get(config_dir, 0.0) < LOGIN_REFRESH_GAP:
         return "최근에 갱신을 시도함"
     _codex_refresh_at[config_dir] = now
-    from ttakkari.runs.profiles import Profile
-    env = Profile(uuid.uuid4(), "", "codex", Path(config_dir) if config_dir else None).env(os.environ.copy())
-    proc = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            get_settings().codex_bin, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "ok",
-            cwd=os.path.realpath("/tmp"), env=env, stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        await asyncio.wait_for(proc.communicate(), LOGIN_REFRESH_TIMEOUT)
-        return None if proc.returncode == 0 else f"codex 종료 코드 {proc.returncode}"
-    except (OSError, TimeoutError) as e:
-        return f"codex 실행 실패({type(e).__name__})"
-    finally:
-        if proc is not None and proc.returncode is None:
-            proc.kill()
-            await proc.wait()
+    from ttakkari.runs.codex_subscription import read_usage
+    u = await read_usage(config_dir, refresh_token=True)
+    return None if u.login == "ok" else (u.error or "Codex 로그인 미확인")
 
 
 def _codex_failure_text(e: Exception, note: str = "") -> str:
@@ -762,6 +765,12 @@ def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, ref
         hit = None
     # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
     ttl = max(TTL, get_settings().usage_poll_seconds)
+    if engine == "codex":
+        # The durable subscription timer owns reset checks. Rendering dashboards
+        # must not turn an expired short/weekly window into repeated API reads.
+        if hit and not refresh and time.time() - hit[0] < 12 * 3600:
+            return hit[1]
+        return None
     if hit and not refresh and time.time() - hit[0] < ttl:
         cached_u = hit[1]
         now = time.time()

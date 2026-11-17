@@ -60,8 +60,9 @@ Run 이 사용량 한도로 실패하면(출력·오류 문구 휴리스틱, 아
 ### `account_usage` 도구(오케스트레이터 전용)
 - `GET /api/orchestrator/accounts/usage` 를 부른다. 계정마다 엔진·범위(personal/work)·켜짐·우선순위·`available`·한도 대기(`limit.waiting/until/reason`)·`running_runs`·`headroom_per_run_percent`(신선한 상한 여유를 현재 실행 수 + 1로 나눈 신규 배정 점수, 미확인 시 null)·지정 가능한 모델(설정 `engine_models`)·오케스트레이터 허용 모델·사용량(5시간·주간·모델별 주간의 사용/잔여 퍼센트, 초기화 시각, 측정 시각, 나이, `stale`)을 낸다.
 - 사용량은 앱이 마지막으로 본 값만 쓴다. 채우는 쪽은 둘이다(2026-10-13).
+  - **2026-11-18 Codex 예외(ADR 0074):** 고빈도 수집기에서 제외한다. 기존 영속 예약 큐로 평소 12시간마다 공식 App Server 사용량을 읽고 주간 `resetsAt+10초`에 초기화를 확인한다. 일반 화면 조회는 12시간 캐시, 수동 새로고침은 별도다. 자동 활성화는 포함 사용 가능 여부·사용자 선사용·영속 실행 표식을 확인한 뒤 임시 디렉터리의 구독 CLI로 실행한다. 조회 중 인증 갱신은 읽기 RPC로 처리하며 모델을 호출하지 않는다. 아래 5분/90초 설명은 Codex의 현행 수집 정책이 아니다.
   - 주기 수집기(`runs/usage_collector.py`): 켜진 계정마다 사용량 조회 API(Claude OAuth `/api/oauth/usage`, Codex `wham/usage`)를 읽는다. 모델 호출은 없다. 평소 5분(`usage_poll_seconds`), Run 이 그 계정을 쓰는 중이거나 5시간·주간 잔여가 20% 미만이면 90초(`usage_poll_busy_seconds`, `usage_low_remaining_percent`). 알려진 초기화 시각이 지나면 바로 한 번 더 읽는다. 실패하면 두 배씩 늦추고(최대 30분) 주기에 ±15% 지터, 계정 사이에 0.5~2초 간격을 둔다. 실측: 계정 7개(Claude 4·Codex 3) 모두 `source=api` 로 5시간·주간·(Claude)모델별 주간 퍼센트와 초기화 시각을 받았다.
-  - 실행 스트림의 `rate_limit_event`: Run 이 도는 동안 이벤트가 올 때마다 반영한다(Claude만. Codex 는 API 수집이 90초 주기로 대신한다).
+  - 실행 스트림의 `rate_limit_event`: Run 이 도는 동안 이벤트가 올 때마다 반영한다(Claude만. Codex의 현행 조회는 위 영속 예약 정책을 따른다).
   - 저장: `account_usage_samples`(0015). 계정별 가장 최근 행이 최신값이고 재시작하면 거기서 캐시를 복원한다. 나머지는 이력(14일, `usage_history_days`)이며 계정별 마지막 행은 지우지 않는다. 같은 값은 10분, 바뀐 값도 1분에 한 번만 쓴다. 토큰은 어디에도 두지 않는다.
   - 소모 속도: 이력에서 같은 초기화 주기 안의 최근 구간(5시간 창 2시간, 그 밖 24시간)의 증가분으로 `burn_percent_per_hour`, 이 속도로 찰 때까지 `exhausts_in_seconds`, 초기화 전에 차는지 `exhausts_before_reset` 을 계산한다. 구간이 5분 미만이거나 줄었으면 null.
 - (이전 설명) 사용량 화면이 채우는 캐시와 실행 스트림의 `rate_limit_event` 만 쓰던 때에는 수집기가 없어 화면을 열지 않으면 비어 있었다. 이 도구는 새로 조회하지 않으므로 인증 파일·키체인을 읽지 않고, 계정 폴더·이메일·토큰도 내지 않는다. 값이 없으면 `usage: null`, `usage_stale_seconds`(기본 15분, 수집 주기의 3배)보다 오래됐으면 `stale: true`, 측정 뒤 초기화 시각이 지났으면 `reset_since_measured: true`(잔여 null).

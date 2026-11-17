@@ -48,6 +48,7 @@ class PushKind(enum.StrEnum):
     weather = "push.weather"  # 매일 날씨 브리핑
     notebooklm = "push.notebooklm"  # NotebookLM 단독 시절의 로그인 만료 알림(이미 쌓인 알림함 기록용으로 유지)
     google_account = "push.google_account"  # Google 계정 세션 만료(재로그인 필요) 계정당 1회 알림
+    subscription = "push.subscription"  # Codex 주간 자동 활성화 결과
 
 
 INBOX_CATEGORY = {
@@ -57,6 +58,7 @@ INBOX_CATEGORY = {
     PushKind.worker_agent: "tasks", PushKind.worker_failed: "tasks", PushKind.worker_waiting: "tasks",
     PushKind.stall: "tasks",
     PushKind.weather: "weather", PushKind.notebooklm: "system", PushKind.google_account: "system",
+    PushKind.subscription: "system",
 }
 
 

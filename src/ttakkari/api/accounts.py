@@ -624,6 +624,54 @@ async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request:
     return _usage_out(i, a, work_rank, u, refreshing=False)
 
 
+class SubscriptionPatch(BaseModel):
+    auto_enabled: bool
+
+
+async def _subscription_account(db: Db, account_id: uuid.UUID) -> EngineAccount:
+    account = await _get(db, account_id)
+    if account.engine != "codex":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "현재 자동 활성화는 Codex 계정만 지원해요.")
+    return account
+
+
+@router.get("/{account_id}/subscription")
+async def subscription_state(account_id: uuid.UUID, _: User, db: Db) -> dict:
+    """Durable metadata only: opening the dashboard does not query a provider."""
+    await _subscription_account(db, account_id)
+    from ttakkari.runs.subscription_monitor import get_state
+    return await get_state(account_id)
+
+
+@router.patch("/{account_id}/subscription")
+async def update_subscription(account_id: uuid.UUID, body: SubscriptionPatch, _: User, db: Db,
+                              request: Request) -> dict:
+    await _subscription_account(db, account_id)
+    await db.commit()
+    from ttakkari.runs.subscription_monitor import set_enabled
+    state = await set_enabled(account_id, body.auto_enabled, now=time.time())
+    record(db, action="account.subscription_toggle", target_type="account", target_id=account_id,
+           detail={"auto_enabled": body.auto_enabled}, ip=client_ip(request))
+    await _commit(db)
+    return state
+
+
+@router.post("/{account_id}/subscription/{action}")
+async def subscription_action(account_id: uuid.UUID, action: Literal["refresh", "activate"], _: User,
+                              db: Db, request: Request) -> dict:
+    await _subscription_account(db, account_id)
+    await db.commit()
+    from ttakkari.runs.subscription_monitor import check, get_state
+    try:
+        result = await asyncio.wait_for(check(account_id, now=time.time(), manual_activation=action == "activate"), 150)
+    except TimeoutError:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "구독 확인 시간이 초과됐어요. 실행 중인 요청은 중복 전송하지 않아요.") from None
+    record(db, action=f"account.subscription_{action}", target_type="account", target_id=account_id,
+           detail={"status": result.get("status")}, ip=client_ip(request))
+    await _commit(db)
+    return {**await get_state(account_id), "action_result": result}
+
+
 @router.patch("/{account_id}", response_model=AccountOut)
 async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: Db, request: Request) -> AccountOut:
     a = await _get(db, account_id)

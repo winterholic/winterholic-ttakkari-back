@@ -10,6 +10,7 @@ from ttakkari.push.service import INBOX_CATEGORY, PushKind
 
 # kind, 표시 이름, 설명, 기본 수신. 과거 NotebookLM 유형은 Google 로그인 설정을 따른다.
 CATALOG = (
+    (PushKind.subscription, "AI 구독 자동 활성화", "주간 자동 활성화 결과와 초기화 확인 실패를 알려드려요.", True),
     (PushKind.weather, "날씨 브리핑", "오늘의 날씨와 우산·옷차림 정보를 알려드려요.", True),
     (PushKind.calendar_reminder, "일정 알림", "일정마다 지정한 시간에 알려드려요.", True),
     (PushKind.checklist_reminder, "할 일 알림", "체크리스트의 할 일을 챙겨드려요.", True),

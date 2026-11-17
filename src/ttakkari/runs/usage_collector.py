@@ -70,6 +70,7 @@ class Collector:
         self._fetch = fetch or self._default_fetch
         self._state: dict[uuid.UUID, _State] = {}
         self._last_prune = 0.0
+        self._subscription_accounts: set[uuid.UUID] = set()
 
     @staticmethod
     async def _default_fetch(account_id: uuid.UUID, engine: str, config_dir: str | None) -> usage_mod.Usage:
@@ -82,11 +83,20 @@ class Collector:
         async with sessionmaker()() as db:
             rows = [(a.id, a.engine, a.config_dir) for a in await profiles.accounts(db) if profiles.is_on(a) or profiles.is_on(a, "work")]
         live = {r[0] for r in rows}
+        self._subscription_accounts.intersection_update(live)
         for gone in set(self._state) - live:
             del self._state[gone]
         counts = await profiles.running_counts_async()
         done: list[uuid.UUID] = []
         for i, (aid, engine, cdir) in enumerate(rows):
+            if engine == "codex":
+                # External usage reads are date jobs, not this collector's busy/
+                # low-quota/reset polling. Startup refresh happens once; later
+                # ticks only repair missing/failed DB reservations.
+                from ttakkari.runs.subscription_monitor import ensure
+                await ensure(aid, now=now, recover=aid not in self._subscription_accounts)
+                self._subscription_accounts.add(aid)
+                continue
             st = self._state.get(aid)
             if st is None:
                 # 시작 직후에 몰리지 않게 계정마다 몇 초씩 엇갈려 첫 수집을 한다.

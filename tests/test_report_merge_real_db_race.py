@@ -193,3 +193,32 @@ async def test_real_db_claim_lock_precedes_enqueue_and_new_report_is_separate(mo
         assert original.prompt == "existing queued report"
         assert len(reports) == 2
         assert "fresh worker result" in reports[1].prompt
+
+
+@pytest.mark.asyncio
+async def test_real_db_enqueue_skips_locked_queued_report_instead_of_deadlocking():
+    """Run 행을 먼저 잡고 부모 세션을 기다리는 쪽과 세션→Run 순서인 enqueue 가 교착하지 않아야 한다."""
+    import sqlalchemy as sa
+
+    _, _, parent_id, worker_id, report_id, completion_id = await _seed()
+    async with sessionmaker()() as holder:
+        # holder 는 heartbeat·_collect_artifacts 처럼 Run 행을 먼저 잡는다.
+        await holder.execute(sa.select(Run.id).where(Run.id == report_id).with_for_update())
+        enqueue_task = asyncio.create_task(_enqueue(worker_id, completion_id))
+        await asyncio.sleep(0.2)  # enqueue 가 부모 세션 행을 잡고 Run 행으로 넘어갈 시간
+        # 수정 전에는 enqueue 가 Run 행에서 멈춰 이 세션 잠금과 맞물려 교착했다.
+        await asyncio.wait_for(
+            holder.execute(sa.select(ChatSession.id).where(ChatSession.id == parent_id).with_for_update()),
+            timeout=5,
+        )
+        await asyncio.wait_for(enqueue_task, timeout=5)
+        await holder.rollback()
+
+    async with sessionmaker()() as db:
+        reports = list(await db.scalars(
+            sa.select(Run).where(Run.session_id == parent_id, Run.origin == RunOrigin.report)
+            .order_by(Run.created_at, Run.id)
+        ))
+        assert len(reports) == 2
+        assert reports[0].prompt == "existing queued report"
+        assert "fresh worker result" in reports[1].prompt

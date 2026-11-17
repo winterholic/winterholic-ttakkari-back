@@ -2924,7 +2924,10 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run, *, noti
     text = notice if notice is not None else "\n".join(body)
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
-        .order_by(Run.created_at.desc()).limit(1).with_for_update())
+        .order_by(Run.created_at.desc()).limit(1).with_for_update(skip_locked=True))
+    # NOTE: skip_locked 는 의도다. 이 Run 행을 먼저 잡은 쪽(heartbeat·_collect_artifacts)이 뒤이어 부모 세션 행을
+    # 기다리면 세션→Run 순서인 이 경로와 교착한다(2026-11 실측, 11-10 이후 실서비스 교착 33건 중 32건).
+    # 다른 트랜잭션이 잡고 있으면 이미 진행 중이라는 뜻이므로 합치지 않고 새 보고 Run 을 만든다.
     if pending is not None:
         try:
             owned = await manager.is_owned(pending.id, db=db)

@@ -24,6 +24,7 @@ from ttakkari.models import (
     utcnow,
 )
 from ttakkari.push.service import PushKind, notify
+from ttakkari.weather.met_no import normalize_met_no
 from ttakkari.weather.open_meteo import normalize_forecast
 
 log = logging.getLogger("ttakkari.weather")
@@ -44,6 +45,10 @@ LOCATIONS = {
     "seoul": ("서울", 37.5665, 126.9780),
 }
 API_URL = "https://api.open-meteo.com/v1/forecast"
+MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+MET_NO_USER_AGENT = "ttakkari-weather/1.0 (+https://github.com/winterholic)"
+COLLECTION_RETRY_INTERVAL = timedelta(hours=3)
+COLLECTION_ALERT_ATTEMPTS = 4
 
 
 class BriefingContent(BaseModel):
@@ -173,13 +178,13 @@ def model_prompt(forecast: dict[str, Any], day: date, source_errors: dict[str, s
 수원 중심이며 서울과 비교하세요. 출퇴근은 08~09시와 18~19시로 가정하고, 가정임을 commute에 표시하세요.
 비 조언은 시간별 강수확률·강수량 데이터만 사용하고, 옷차림은 기온·체감 자료만 사용하세요.
 자료 없는 안개·노면·시야·강풍 위험을 만들지 말고 자전거 조언도 하지 마세요. 결측은 추측하지 말고 부족하다고 말하세요.
-주간 요약에 7일 최저/최고, 비 예상일, 주말을 포함하세요. 출처는 Open-Meteo이며 갱신 정보는 시스템이 따로 표시합니다.
+주간 요약에 7일 최저/최고, 비 예상일, 주말을 포함하세요. 출처는 각 지역 입력의 provider이며 갱신 정보는 시스템이 따로 표시합니다.
 지역별 수집 오류(이 지역 값은 추정하지 말 것): {json.dumps(source_errors or {}, ensure_ascii=False)}
 입력:
 {payload}"""
 
 
-async def _fetch_one(location: tuple[str, float, float]) -> dict[str, Any]:
+async def _fetch_open_meteo(location: tuple[str, float, float]) -> dict[str, Any]:
     name, lat, lon = location
     params = {
         "latitude": lat, "longitude": lon, "timezone": "Asia/Seoul", "forecast_days": 7,
@@ -188,28 +193,60 @@ async def _fetch_one(location: tuple[str, float, float]) -> dict[str, Any]:
         "hourly": "temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,visibility",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum",
     }
-    last_error: Exception | None = None
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(timeout=12) as client:
-                response = await client.get(API_URL, params=params)
-                response.raise_for_status()
-                raw = response.json()
-            break
-        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as exc:
-            last_error = exc
-            status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-            if status_code is not None and status_code < 500 and status_code not in (408, 429):
-                raise
-            if attempt == 2:
-                raise
-            await asyncio.sleep(2**attempt)
-    else:
-        assert last_error is not None
-        raise last_error
+    async with httpx.AsyncClient(timeout=12) as client:
+        response = await client.get(API_URL, params=params)
+        response.raise_for_status()
+        raw = response.json()
     if not isinstance(raw, dict) or not isinstance(raw.get("current"), dict):
         raise TypeError(f"{name} 예보 응답에 현재 날씨가 없습니다.")
     return raw
+
+
+async def _fetch_met_no(location: tuple[str, float, float]) -> dict[str, Any]:
+    _, lat, lon = location
+    async with httpx.AsyncClient(timeout=12, headers={"User-Agent": MET_NO_USER_AGENT}) as client:
+        response = await client.get(MET_NO_URL, params={"lat": lat, "lon": lon})
+        response.raise_for_status()
+        raw = response.json()
+    if not isinstance(raw, dict) or not raw.get("properties", {}).get("timeseries"):
+        raise TypeError("met.no returned no forecast timeseries")
+    return raw
+
+
+class ProviderFetchError(RuntimeError):
+    """Both providers failed; message retains a concise reason for each source."""
+
+
+def _provider_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
+async def _fetch_one(location: tuple[str, float, float]) -> dict[str, Any]:
+    open_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            return await _fetch_open_meteo(location)
+        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as exc:
+            open_error = exc
+            status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            if status_code is not None and status_code < 500 and status_code not in (408, 429):
+                break
+            if attempt < 2:
+                await asyncio.sleep(2**attempt)
+        except Exception as exc:  # noqa: BLE001 - malformed upstream response also triggers provider fallback
+            open_error = exc
+            break
+    try:
+        result = await _fetch_met_no(location)
+        result["_provider"] = "met.no"
+        result["_open_meteo_error"] = _provider_error(open_error or RuntimeError("unknown"))
+        return result
+    except Exception as met_error:
+        raise ProviderFetchError(
+            f"Open-Meteo={_provider_error(open_error or RuntimeError('unknown'))}; met.no={_provider_error(met_error)}"
+        ) from met_error
 
 
 async def _collect() -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
@@ -222,12 +259,18 @@ async def _collect() -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
         value = outcomes[i]
         if isinstance(value, BaseException):
             status_code = value.response.status_code if isinstance(value, httpx.HTTPStatusError) else None
-            errors[key] = f"http_{status_code}" if status_code else type(value).__name__
+            errors[key] = str(value)[:240] if isinstance(value, ProviderFetchError) else (
+                f"http_{status_code}" if status_code else type(value).__name__
+            )
             continue
         raw_result[key] = value
-        normalized[key] = normalize_forecast(value, location=loc[0], fetched_at=fetched)
+        if value.get("_provider") == "met.no":
+            normalized[key] = normalize_met_no(value, location=loc[0], latitude=loc[1], longitude=loc[2], fetched_at=fetched)
+        else:
+            normalized[key] = normalize_forecast(value, location=loc[0], fetched_at=fetched)
     if not normalized:
-        raise RuntimeError("두 지역 모두 예보를 가져오지 못했습니다.")
+        details = "; ".join(f"{LOCATIONS[key][0]}({reason})" for key, reason in errors.items())
+        raise RuntimeError(f"예보 수집 실패: {details or 'all providers failed'}")
     return raw_result, normalized, errors
 
 
@@ -384,6 +427,24 @@ async def _publish(row_id) -> None:
         await db.commit()
 
 
+async def _notify_collection_failure(row_id, day: date) -> None:
+    """Use the existing weather push channel and persist the once-per-day alert attempt."""
+    async with sessionmaker()() as db:
+        row = await db.get(WeatherBriefing, row_id)
+        if row is None or row.failure_notified_at is not None:
+            return
+        body = (row.failure or "예보 수집에 실패했습니다.")[:300]
+        try:
+            await notify(PushKind.weather, "오늘의 날씨 브리핑 수집 실패", body,
+                         url=f"/weather?date={day.isoformat()}", tag=f"weather-failure:{day.isoformat()}",
+                         target_id=row.id, dedupe_key=f"weather-failure:{day.isoformat()}")
+        except Exception as exc:  # noqa: BLE001 - record the attempt so scans do not spam notifications
+            log.warning("weather failure notification failed: %s", type(exc).__name__)
+        row.failure_notified_at = utcnow()
+        row.updated_at = utcnow()
+        await db.commit()
+
+
 async def advance(row_id) -> None:
     """Advance one durable state. A short DB lease makes old/new generations and manual/scheduled work race-safe."""
     now = utcnow()
@@ -437,6 +498,8 @@ async def advance(row_id) -> None:
         state, day, rid = row.status, row.day, row.id
         await db.commit()
 
+    was_collecting = state in {"collecting", "failed"}
+    notify_failure = False
     try:
         if state in {"collecting", "failed"}:
             raws, forecast, errors = await _collect()
@@ -445,6 +508,8 @@ async def advance(row_id) -> None:
                 row.raw_forecasts, row.forecast = raws, forecast
                 row.source_errors = errors
                 row.failure = None
+                row.collection_attempts = 0
+                row.retry_after = None
                 row.status = "starting"
                 row.updated_at = utcnow()
                 await db.commit()
@@ -455,15 +520,20 @@ async def advance(row_id) -> None:
         async with sessionmaker()() as db:
             row = await db.get(WeatherBriefing, rid)
             if row:
-                if row.forecast:
-                    row.status = "failed"
-                else:
-                    row.status = "failed"
-                row.failure = type(exc).__name__
+                row.status = "failed"
+                reason = str(exc).strip()
+                row.failure = (f"{type(exc).__name__}: {reason}" if reason else type(exc).__name__)[:500]
+                if was_collecting:
+                    row.collection_attempts = (row.collection_attempts or 0) + 1
+                    row.retry_after = utcnow() + COLLECTION_RETRY_INTERVAL
+                    notify_failure = (row.collection_attempts >= COLLECTION_ALERT_ATTEMPTS
+                                      and row.failure_notified_at is None)
                 row.lease_until = None
                 row.updated_at = utcnow()
                 await db.commit()
         log.warning("weather pipeline failed: %s", type(exc).__name__)
+        if notify_failure:
+            await _notify_collection_failure(rid, day)
         return
     async with sessionmaker()() as db:
         row = await db.get(WeatherBriefing, rid)
@@ -491,6 +561,7 @@ async def start_for_day(day: date, source: str) -> WeatherBriefing:
         elif row.status == "failed":
             row.status = "collecting"
             row.failure = None
+            row.retry_after = None
             row.request_source = source
             row.lease_until = None
             row.updated_at = utcnow()
@@ -508,6 +579,7 @@ async def start_for_day(day: date, source: str) -> WeatherBriefing:
 
 async def scan() -> None:
     now = datetime.now(KST)
+    utc_now = utcnow()
     if now.time() >= BRIEFING_TIME:
         async with sessionmaker()() as db:
             row = await db.scalar(select(WeatherBriefing.id).where(WeatherBriefing.day == now.date()))
@@ -515,8 +587,10 @@ async def scan() -> None:
             await start_for_day(now.date(), "scheduled")
     async with sessionmaker()() as db:
         pending = list(await db.scalars(select(WeatherBriefing.id).where(
-            WeatherBriefing.status.in_(["collecting", "starting", "generating", "ready", "degraded"]),
-            ((WeatherBriefing.lease_until.is_(None)) | (WeatherBriefing.lease_until <= utcnow())),
+            WeatherBriefing.status.in_(["collecting", "starting", "generating", "ready", "degraded"])
+            | ((WeatherBriefing.status == "failed") & (WeatherBriefing.day == now.date())
+               & ((WeatherBriefing.retry_after.is_(None)) | (WeatherBriefing.retry_after <= utc_now))),
+            ((WeatherBriefing.lease_until.is_(None)) | (WeatherBriefing.lease_until <= utc_now)),
             ((WeatherBriefing.status.not_in(["ready", "degraded"])) | WeatherBriefing.push_error.is_(None)),
         ).order_by(WeatherBriefing.day.desc()).limit(10)))
     for row_id in pending:

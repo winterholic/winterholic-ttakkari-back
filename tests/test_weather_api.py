@@ -57,12 +57,13 @@ async def test_manual_and_scheduler_share_one_daily_auto_run(client, auth, monke
 
 async def test_open_meteo_failure_is_visible_and_retryable(client, auth, monkeypatch):
     async def fail():
-        raise TimeoutError("upstream timeout detail")
+        raise RuntimeError("예보 수집 실패: 수원(Open-Meteo=ConnectTimeout; met.no=HTTP 503)")
 
     monkeypatch.setattr(service, "_collect", fail)
     response = await client.post("/api/weather/generate", headers=auth)
     assert response.status_code == 202
     assert response.json()["status"] == "failed"
-    assert response.json()["failure"] == "TimeoutError"
+    assert "Open-Meteo=ConnectTimeout" in response.json()["failure"]
+    assert "met.no=HTTP 503" in response.json()["failure"]
     history = await client.get("/api/weather/briefings?limit=10", headers=auth)
     assert history.json()[0]["day"] == response.json()["day"]

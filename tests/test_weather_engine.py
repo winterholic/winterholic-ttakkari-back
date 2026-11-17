@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,6 +17,7 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     WeatherBriefing,
+    utcnow,
 )
 from ttakkari.runs import profiles
 from ttakkari.weather import service
@@ -73,6 +74,68 @@ async def _row(**kw) -> WeatherBriefing:
 async def _reload(row_id) -> WeatherBriefing:
     async with sessionmaker()() as db:
         return await db.get(WeatherBriefing, row_id)
+
+
+async def test_scan_retries_due_collection_failure_once_and_reschedules(monkeypatch):
+    today = datetime.now(service.KST).date()
+    async with sessionmaker()() as db:
+        row = WeatherBriefing(day=today, status="failed", request_source="scheduled", failure="both providers failed",
+                              collection_attempts=1, retry_after=utcnow() - timedelta(seconds=1))
+        db.add(row)
+        await db.commit()
+        row_id = row.id
+
+    attempts = 0
+    async def failed_collection():
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("예보 수집 실패: 수원(Open-Meteo=TimeoutException; met.no=HTTP 503)")
+
+    monkeypatch.setattr(service, "_collect", failed_collection)
+
+    await service.scan()
+    await service.scan()
+
+    saved = await _reload(row_id)
+    assert attempts == 1
+    assert saved.status == "failed"
+    assert saved.collection_attempts == 2
+    assert saved.retry_after > utcnow()
+    assert "Open-Meteo=TimeoutException" in saved.failure
+    assert "met.no=HTTP 503" in saved.failure
+
+
+async def test_repeated_collection_failure_notifies_once(monkeypatch):
+    today = datetime.now(service.KST).date()
+    async with sessionmaker()() as db:
+        row = WeatherBriefing(day=today, status="failed", request_source="scheduled", failure="previous failure",
+                              collection_attempts=3, retry_after=utcnow() - timedelta(seconds=1))
+        db.add(row)
+        await db.commit()
+        row_id = row.id
+
+    async def failed_collection():
+        raise RuntimeError("예보 수집 실패: 수원(Open-Meteo=TimeoutException; met.no=HTTP 503)")
+
+    deliveries = []
+    async def notify(*args, **kwargs):
+        deliveries.append((args, kwargs))
+        return {"sent": 1, "failed": 0}
+
+    monkeypatch.setattr(service, "_collect", failed_collection)
+    monkeypatch.setattr(service, "notify", notify)
+
+    await service.scan()
+    await service.scan()
+
+    saved = await _reload(row_id)
+    assert len(deliveries) == 1
+    assert deliveries[0][0][0] == service.PushKind.weather
+    assert deliveries[0][1]["dedupe_key"] == f"weather-failure:{today.isoformat()}"
+    assert "Open-Meteo=TimeoutException" in deliveries[0][0][2]
+    assert "met.no=HTTP 503" in deliveries[0][0][2]
+    assert saved.failure_notified_at is not None
+    assert saved.collection_attempts == 4
 
 
 def _limit(*accounts: EngineAccount) -> None:

@@ -661,6 +661,9 @@ class WeatherBriefing(Base):
         JSONB, default=None
     )
     failure: Mapped[str | None] = mapped_column(Text)
+    collection_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    retry_after: Mapped[datetime | None]
+    failure_notified_at: Mapped[datetime | None]
     session_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("sessions.id", ondelete="SET NULL")
     )

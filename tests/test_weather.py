@@ -53,6 +53,85 @@ def test_normalize_forecast_keeps_nulls_and_source_timestamps():
     assert result["daily"][1]["temperature_max_c"] is None
 
 
+def test_met_no_compact_normalizes_to_weather_shape_and_maps_symbols():
+    from ttakkari.weather.met_no import normalize_met_no
+
+    raw = {
+        "geometry": {"coordinates": [127.03, 37.26]},
+        "properties": {"meta": {"updated_at": "2026-11-18T00:00:00Z"}, "timeseries": [
+            {"time": "2026-11-18T00:00:00Z", "data": {
+                "instant": {"details": {"air_temperature": 12.5, "relative_humidity": 60,
+                                          "wind_speed": 2.5, "cloud_area_fraction": 35}},
+                "next_1_hours": {"summary": {"symbol_code": "partlycloudy_day"},
+                                  "details": {"precipitation_amount": 0.2}},
+            }},
+            {"time": "2026-11-18T01:00:00Z", "data": {
+                "instant": {"details": {"air_temperature": 10, "relative_humidity": 65,
+                                          "wind_speed": 3, "cloud_area_fraction": 90}},
+                "next_1_hours": {"summary": {"symbol_code": "rain"},
+                                  "details": {"precipitation_amount": 1.2}},
+            }},
+        ]},
+    }
+
+    result = normalize_met_no(raw, location="수원", latitude=37.26, longitude=127.03,
+                              fetched_at=datetime(2026, 11, 18, tzinfo=UTC))
+
+    assert result["provider"] == "met.no"
+    assert result["current"]["temperature_c"] == 12.5
+    assert result["current"]["weather_code"] == 2
+    assert result["hourly"][1]["weather_code"] == 63
+    assert result["hourly"][1]["precipitation_mm"] == 1.2
+    assert result["hourly"][1]["precipitation_probability_percent"] is None
+    assert result["daily"][0]["temperature_min_c"] == 10
+    assert result["daily"][0]["temperature_max_c"] == 12.5
+
+
+@pytest.mark.asyncio
+async def test_fetch_one_retries_open_meteo_then_uses_met_no(monkeypatch):
+    attempts = []
+    async def open_meteo(_location):
+        attempts.append("open-meteo")
+        raise httpx.ConnectTimeout("timeout")
+
+    async def met_no(_location):
+        attempts.append("met.no")
+        return {"provider": "met.no", "current": {"time": "now"}}
+
+    async def no_sleep(_):
+        return None
+
+    monkeypatch.setattr(service, "_fetch_open_meteo", open_meteo)
+    monkeypatch.setattr(service, "_fetch_met_no", met_no)
+    monkeypatch.setattr(service.asyncio, "sleep", no_sleep)
+
+    result = await service._fetch_one(("수원", 37.26, 127.03))
+
+    assert attempts == ["open-meteo"] * 3 + ["met.no"]
+    assert result["provider"] == "met.no"
+
+
+@pytest.mark.asyncio
+async def test_collection_keeps_met_no_provider_on_normalized_region(monkeypatch):
+    raw = {"properties": {"timeseries": [{
+        "time": "2026-11-18T00:00:00Z",
+        "data": {"instant": {"details": {"air_temperature": 8}},
+                 "next_1_hours": {"summary": {"symbol_code": "cloudy"},
+                                  "details": {"precipitation_amount": 0}}},
+    }]}}
+
+    async def fetch(_location):
+        return {**raw, "_provider": "met.no"}
+
+    monkeypatch.setattr(service, "_fetch_one", fetch)
+
+    raw_results, forecasts, errors = await service._collect()
+
+    assert not errors
+    assert all(raw_results[key]["_provider"] == "met.no" for key in service.LOCATIONS)
+    assert all(forecasts[key]["provider"] == "met.no" for key in service.LOCATIONS)
+
+
 def test_fallback_reports_missing_data_without_inventing_risk_advice():
     result = fallback_content({
         "suwon": {

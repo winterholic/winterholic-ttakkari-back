@@ -290,6 +290,8 @@ class Settings(BaseSettings):
     collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
     context_source_roots: list[Path] = [HOME]
+    # 승인된 host operation(context_catalog_preview/apply)이 읽는 고정 목록 파일. 에이전트·사용자 입력으로 바꿀 수 없다.
+    context_catalog_file: Path = HOME / "docs/ttakkari-context/catalog.json"
 
     # 회의록(ADR 0010). 전사 한 건의 최대 글자 수(분석 Run 의 인자 길이·컨텍스트 한도), 분석 Run 의 모델·생각 수준(비우면 세션 기본).
     meeting_transcript_max_chars: int = 120_000

@@ -287,6 +287,9 @@ async def run(kind: str, db: AsyncSession) -> dict:
     if kind in {"collection_scope_preview", "collection_scope_apply"}:
         from ttakkari.collector.scope_merge import operate
         return await asyncio.wait_for(operate(db, apply=kind == "collection_scope_apply"), timeout=60)
+    if kind in {"context_catalog_preview", "context_catalog_apply"}:
+        from ttakkari.context.library import import_catalog_file
+        return await asyncio.wait_for(import_catalog_file(db, apply=kind == "context_catalog_apply"), timeout=60)
     if kind == "runtime_report":
         return await runtime_report(db)
     if kind == "performance_baseline":

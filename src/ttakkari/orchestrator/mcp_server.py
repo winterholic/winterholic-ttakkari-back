@@ -1038,6 +1038,7 @@ async def collection_mission_retry(mission_id: str, expected_run_seq: int) -> st
 async def host_operation_start(kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db",
                                             "data_snapshot", "restore_rehearsal", "snapshot_verify",
                                             "collection_scope_preview", "collection_scope_apply",
+                                            "context_catalog_preview", "context_catalog_apply",
                                             "kb_v3_verify"]) -> str:
     """Run one approved host operation through the backend (no shell, paths or DB URLs; only `kind`).
     Read-only and instant: runtime_report (execution ownership, generations, leases), performance_baseline
@@ -1048,6 +1049,11 @@ async def host_operation_start(kind: Literal["runtime_report", "performance_base
     temp dir, compare hashes, delete). One heavy job runs at a time; repeating the same kind returns the running
     job. collection_scope_preview and collection_scope_apply run the existing library merge with schema and
     generation/drain guards; preview rolls back and apply preserves history and access pools. These have a 60s cap.
+    context_catalog_preview and context_catalog_apply import the one fixed library catalog file configured on the
+    server (no path argument; sensitive paths, non-.json and files over 2MB are refused). Preview rolls back and
+    reports counts of new/changed projects, facts, sources and relations, how many existing values the file
+    overwrites, and the project names plus the file's sha256. Apply commits, then requests indexing of new
+    or never-indexed sources. Results hold counts, names and hashes only. Same 60s cap.
     kb_v3_verify runs the real KB v3 pipeline with 1 synthetic PDF and 2 conflicting policy docs (30d vs 90d)
     and validates L2 extraction and ontology conflict detection without shell or arbitrary input; personal sessions only.
     Poll host_operation_status; results hold counts/hashes/times only, never dumps or keys. Personal and work sessions."""

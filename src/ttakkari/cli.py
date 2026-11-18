@@ -183,13 +183,9 @@ def _cmd_context_import(args: argparse.Namespace) -> int:
     import json
 
     from ttakkari import db
-    from ttakkari.broker.policy import is_sensitive
-    from ttakkari.context.library import import_catalog
+    from ttakkari.context.library import import_catalog, load_catalog_file
 
-    path = Path(args.catalog).expanduser().resolve()
-    if is_sensitive(path) or path.suffix.lower() != ".json" or path.stat().st_size > 2 * 1024 * 1024:
-        raise ValueError("2MB 이하의 일반 JSON 목록 파일을 지정해 주세요.")
-    data = json.loads(path.read_text())
+    data, _ = load_catalog_file(Path(args.catalog))
 
     async def run():
         db.init_engine()

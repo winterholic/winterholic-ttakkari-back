@@ -35,6 +35,8 @@ INLINE = (
     "backup_status",
     "collection_scope_preview",
     "collection_scope_apply",
+    "context_catalog_preview",
+    "context_catalog_apply",
 )
 KINDS = (*HEAVY, *INLINE)
 TIMEOUT_SECONDS = {

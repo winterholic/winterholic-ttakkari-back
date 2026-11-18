@@ -28,6 +28,8 @@ DESCRIPTIONS = {
     "snapshot_verify": "최근 데이터 스냅샷을 격리 임시 위치에 풀어 파일 해시를 대조하고 지움",
     "collection_scope_preview": "스키마·활성 세대·이전 세대 종료를 확인하고 단일 도서관 통합을 실행한 뒤 롤백",
     "collection_scope_apply": "이전 세대 종료 후 기존 이력·접근 pool을 보존해 단일 도서관 통합 적용",
+    "context_catalog_preview": "고정 도서관 목록 파일을 검증해 가져오기를 실행한 뒤 롤백하고, 추가·변경될 프로젝트·출처 수와 덮어쓰기 수를 보고",
+    "context_catalog_apply": "고정 도서관 목록 파일을 가져오고 새 출처(또는 미색인 출처)의 색인을 요청",
     "kb_v3_verify": "지식 도서관 v3 L2 추출·상충 실검증 (공개 합성 PDF 1건 + 상충 30일/90일 정책 2건 제품 파이프라인 검증)",
 }
 
@@ -44,6 +46,8 @@ class StartIn(BaseModel):
         "snapshot_verify",
         "collection_scope_preview",
         "collection_scope_apply",
+        "context_catalog_preview",
+        "context_catalog_apply",
         "kb_v3_verify",
     ]
 

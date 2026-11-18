@@ -262,12 +262,10 @@ async def create_draft(db: AsyncSession, adapter: ContextSourceAdapter, *, entit
         raise ShareError(422, "invalid_selection", f"문서는 1개 이상 {MAX_DOCUMENTS}개 이하로 골라 주세요.")
     docs = await adapter.read_documents(entity_id, document_ids)
     scope = "work" if project_info.scope == "work" or any(d.ref.source_scope == "work" for d in docs) else project_info.scope
-    if scope == "work":
-        if actor == "agent":
-            raise ShareError(403, "work_scope_owner_only", "회사(work) 범위 프로젝트의 초안은 사용자가 직접 만들어야 합니다.")
-        if not confirm_work_scope:
-            raise ShareError(403, "work_scope_confirmation_required",
-                             "회사(work) 범위 프로젝트입니다. 외부 공유 의도를 확인하려면 confirm_work_scope=true 로 다시 요청하세요.")
+    if scope == "work" and not confirm_work_scope:
+        # 에이전트도 사용자가 직접 요청했다는 확인(confirm_work_scope=true)을 명시해야 한다.
+        raise ShareError(403, "work_scope_confirmation_required",
+                         "회사(work) 범위 프로젝트입니다. 외부 공유 의도를 확인하려면 confirm_work_scope=true 로 다시 요청하세요.")
     if any(len(d.content) > MAX_DOCUMENT_CHARS for d in docs) or sum(len(d.content) for d in docs) > MAX_DRAFT_CHARS:
         raise ShareError(422, "draft_too_large", "선택한 문서가 너무 큽니다. 문서 수를 줄여 주세요.")
     entity = await db.get(CtxEntity, entity_id)
@@ -288,21 +286,25 @@ async def create_draft(db: AsyncSession, adapter: ContextSourceAdapter, *, entit
     await db.flush()
     draft.digest = compute_digest(draft, rows)
     record(db, action="context_share.draft_create", actor=actor, target_type="share_draft", target_id=draft.id,
-           detail={"entity_id": str(entity_id), "documents": len(rows), "digest": draft.digest, "scope": scope},
+           detail={"entity_id": str(entity_id), "documents": len(rows), "digest": draft.digest, "scope": scope,
+                   **({"confirm_work_scope": True} if scope == "work" else {})},
            ip=ip, user_agent=user_agent)
     await db.commit()
     return await get_draft(db, draft.id)
 
 
 async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, gateway: GatewayControl, *,
-                              entity_id: uuid.UUID, ip: str | None = None,
+                              entity_id: uuid.UUID, confirm_work_scope: bool = False, ip: str | None = None,
                               user_agent: str | None = None) -> dict[str, Any]:
-    """Publish every currently listed indexed document of one explicitly named project."""
+    """Publish every currently listed indexed document of one explicitly named project.
+
+    work 범위 프로젝트는 confirm_work_scope=True 일 때만 게시한다. 스캐너와 문서 한도는 범위와 무관하게 적용한다."""
     project_info = await adapter.get_project(entity_id)
     if project_info is None:
         raise ShareError(404, "project_not_found", "라이브러리에 그런 프로젝트가 없습니다.")
-    if project_info.scope == "work":
-        raise ShareError(403, "work_scope_owner_only", "회사(work) 범위 프로젝트는 소유자 경로에서 공유해야 합니다.")
+    if project_info.scope == "work" and not confirm_work_scope:
+        raise ShareError(403, "work_scope_confirmation_required",
+                         "회사(work) 범위 프로젝트입니다. 사용자가 직접 요청했다면 confirm_work_scope=true 로 다시 요청하세요.")
     groups = await adapter.list_documents(entity_id)
     if any(group.truncated for group in groups):
         raise ShareError(422, "source_listing_truncated", "문서 목록이 제한을 넘어 전체 범위를 확인할 수 없습니다.")
@@ -312,7 +314,7 @@ async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, g
     if len(document_ids) > MAX_DOCUMENTS:
         raise ShareError(422, "too_many_documents", f"한 번에 {MAX_DOCUMENTS}개 이하 문서만 게시할 수 있습니다.")
     draft = await create_draft(db, adapter, entity_id=entity_id, document_ids=document_ids, title=None,
-                               summary=project_info.summary[:2000], actor="agent", confirm_work_scope=False,
+                               summary=project_info.summary[:2000], actor="agent", confirm_work_scope=confirm_work_scope,
                                ip=ip, user_agent=user_agent)
     if draft["preview"]["blocked"]:
         raise ShareError(422, "sensitive_content_blocked",
@@ -320,7 +322,8 @@ async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, g
                          extra={"draft_id": draft["id"], "findings": draft["preview"]["findings"],
                                 "counts": draft["preview"]["counts"]})
     return await publish_draft(db, gateway, uuid.UUID(draft["id"]), draft["preview"]["digest"],
-                               actor="agent", ip=ip, user_agent=user_agent)
+                               actor="agent", confirm_work_scope=confirm_work_scope if draft["scope"] == "work" else None,
+                               ip=ip, user_agent=user_agent)
 
 
 async def update_draft(db: AsyncSession, draft_id: uuid.UUID, patch: dict[str, Any], *, ip: str | None = None,
@@ -464,7 +467,8 @@ def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareD
 
 
 async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uuid.UUID, approved_digest: str, *,
-                        ip: str | None = None, user_agent: str | None = None, actor: str = "user") -> dict[str, Any]:
+                        ip: str | None = None, user_agent: str | None = None, actor: str = "user",
+                        confirm_work_scope: bool | None = None) -> dict[str, Any]:
     draft = await _load_draft(db, draft_id, lock=True)
     if draft.status != "draft":
         raise ShareError(409, "draft_not_editable", "이미 게시한 초안입니다. 변경하려면 새 초안을 만드세요.")
@@ -479,6 +483,8 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
                          extra={"findings": pv["findings"], "counts": pv["counts"]})
     project = await _project_of(db, draft)
     detail = {"digest": digest, "slug": project.slug, "documents": len(docs)}
+    if confirm_work_scope is not None:
+        detail.update(scope=draft.scope, confirm_work_scope=confirm_work_scope)
     try:
         receipt = await gateway.publish_snapshot(snapshot_payload(project, draft, docs))
         if project.gateway_project_id not in (None, receipt["project_id"]):

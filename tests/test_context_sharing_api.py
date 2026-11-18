@@ -551,16 +551,24 @@ async def test_republish_supersedes_previous_publication(client, auth, gateway):
 
 # ---- work 범위
 
-async def test_work_scope_requires_owner_confirmation_and_agents_cannot_confirm(client, auth, gateway):
+async def test_work_scope_requires_confirmation_for_owner_and_agent_drafts(client, auth, gateway):
     project = await make_project("Corp", {"a.md": DOC}, scope="work")
     payload = {"entity_id": project["entity_id"], "document_ids": [project["docs"]["a.md"]]}
     r = await client.post(f"{BASE}/drafts", headers=auth, json=payload)
     assert r.status_code == 403 and r.json()["code"] == "work_scope_confirmation_required"
     ok = await client.post(f"{BASE}/drafts", headers=auth, json={**payload, "confirm_work_scope": True})
     assert ok.status_code == 201 and ok.json()["scope"] == "work"
-    agent = await client.post("/api/agent/context-sharing/drafts", headers=await agent_headers(),
-                              json={**payload, "confirm_work_scope": True})
-    assert agent.status_code == 403 and agent.json()["code"] == "work_scope_owner_only"
+    agent_url, agent_auth = "/api/agent/context-sharing/drafts", await agent_headers()
+    for body in (payload, {**payload, "confirm_work_scope": False}):
+        denied = await client.post(agent_url, headers=agent_auth, json=body)
+        assert denied.status_code == 403 and denied.json()["code"] == "work_scope_confirmation_required"
+    agent = await client.post(agent_url, headers=agent_auth, json={**payload, "confirm_work_scope": True})
+    assert agent.status_code == 201 and agent.json()["scope"] == "work" and agent.json()["created_by"] == "agent"
+    async with sessionmaker()() as db:
+        audit = (await db.execute(text(
+            "SELECT actor, detail->>'confirm_work_scope', detail->>'scope' FROM audit_logs "
+            "WHERE action = 'context_share.draft_create' AND actor = 'agent'"))).all()
+    assert [tuple(row) for row in audit] == [("agent", "true", "work")]
 
 
 # ---- agent 경로

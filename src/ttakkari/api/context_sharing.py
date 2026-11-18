@@ -80,6 +80,7 @@ class SiteEnabledIn(BaseModel):
 class AgentPublishIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     entity_id: uuid.UUID
+    confirm_work_scope: bool = False
 
 
 async def user_access(_: User) -> None:
@@ -282,10 +283,10 @@ async def agent_sources(entity_id: uuid.UUID, db: Db) -> dict[str, Any]:
 
 @agent_router.post("/drafts", status_code=201)
 async def agent_create_draft(body: DraftCreate, request: Request, db: Db) -> dict[str, Any]:
-    # 에이전트는 work 범위 확인을 대신할 수 없다. 서비스가 actor 로 거부한다.
+    # work 범위는 사용자가 직접 요청해 에이전트가 confirm_work_scope=true 를 보낼 때만 통과한다. 서비스가 거부 여부를 정한다.
     return await service.create_draft(db, LibraryAdapter(db), entity_id=body.entity_id, document_ids=body.document_ids,
                                       title=body.title, summary=body.summary, actor="agent",
-                                      confirm_work_scope=False, **_meta(request))
+                                      confirm_work_scope=body.confirm_work_scope, **_meta(request))
 
 
 @agent_router.get("/drafts")
@@ -303,7 +304,8 @@ async def agent_get_draft(draft_id: uuid.UUID, db: Db) -> dict[str, Any]:
 async def agent_publish(body: AgentPublishIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
     if error := _site_configuration_error(gateway):
         return error
-    return await service.collect_and_publish(db, LibraryAdapter(db), gateway, entity_id=body.entity_id, **_meta(request))
+    return await service.collect_and_publish(db, LibraryAdapter(db), gateway, entity_id=body.entity_id,
+                                          confirm_work_scope=body.confirm_work_scope, **_meta(request))
 
 
 @agent_router.get("/keys")

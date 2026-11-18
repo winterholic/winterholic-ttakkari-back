@@ -54,6 +54,9 @@ from ttakkari.runs import (
     task_card,
     worker_routing,
 )
+from ttakkari.runs import (
+    completion as completion_mod,
+)
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
@@ -420,8 +423,10 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
             break
         streak += 1
     if streak >= 2:
+        newest = ((runs[0].usage or {}).get("completion") or {}).get("remaining")
         out.advisory = (f"최근 {streak}회 연속 완료 기준 미달(부분·막힘·상태 줄 없음)이다. 같은 지시를 또 보내지 말고 "
-                        "미충족 항목을 좁힌 단위로 나누거나 다른 엔진·fresh_context로 재계획하라.")
+                        + completion_mod.REMAINING_ADVICE.get(
+                            newest, "미충족 항목을 좁힌 단위로 나누거나 다른 엔진·fresh_context로 재계획하라."))
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None

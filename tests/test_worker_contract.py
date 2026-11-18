@@ -66,3 +66,22 @@ async def test_worker_session_gets_worker_note_and_lead_keeps_full_note(client, 
         lead = await m._system_note(None, Path("/tmp/o"), SimpleNamespace(kind=SessionKind.orchestrator, parent_id="d"))
     assert runtime.AGENT_NOTE_WORKER in worker and runtime.AGENT_NOTE not in worker
     assert runtime.AGENT_NOTE in lead and runtime.AGENT_NOTE_WORKER not in lead
+
+
+def test_remaining_kind_is_parsed_only_for_partial_and_blocked():
+    from ttakkari.runs import completion
+
+    text = "상태: 부분\n남은 일: 대기 — CI 큐에서 결과를 못 받았다\n1. 테스트 작성: 완료"
+    assert completion.parse(text) == "부분" and completion.parse_remaining(text) == "대기"
+    assert completion.parse_remaining("**상태: 막힘**\n> 남은 일: **환경** 브라우저가 없다") == "환경"
+    assert completion.parse_remaining("상태: 부분\n1. 일부만 했다") is None
+    assert completion.parse_remaining("상태: 부분\n\n\n\n\n\n\n\n\n남은 일: 범위") is None  # 첫머리 밖은 계약으로 보지 않는다
+
+
+def test_report_line_and_worker_contract_carry_remaining_advice():
+    from ttakkari.runs import completion
+
+    line = completion.report_line({"status": "부분", "violation": False, "remaining": "환경"})
+    assert "남은 일=환경" in line and "사용자 확인 항목" in line
+    assert "두 번 진전이 없으면" in completion.report_line({"status": "부분", "violation": False})  # 종류가 없으면 기존 문구
+    assert "남은 일: 대기 | 환경 | 범위" in instructions.WORKER_DEFAULT

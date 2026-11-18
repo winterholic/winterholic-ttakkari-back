@@ -238,7 +238,7 @@ payload 는 `{title, body, url, tag}`:
 | PATCH | `/api/accounts/{id}/subscription` | `{auto_enabled: boolean}`. 예약을 교체하고 설정을 영속화한다. 다른 요청이 이미 시작한 모델 호출은 재전송하거나 취소하지 않는다. |
 | POST | `/api/accounts/{id}/subscription/{refresh\|activate}` | 신선한 구독 상태를 확인한 뒤 영속 정책을 적용한다. `activate`는 자동 설정이 꺼져 있어도 미사용·미실행 주기를 수동 활성화할 수 있다. 사용자 선사용·중복·결과 불명 요청의 방지는 그대로다. 응답은 상태에 `action_result: {status}` 추가. `refresh`도 자동 활성화가 켜진 도래 주기에는 기존 자동 정책을 적용한다. 최대 150초 후 504, 불명 요청 재전송 금지. |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
-| POST | `/api/accounts/{id}/login/check` | 재로그인한 Claude·Codex 계정 즉시 재확인 |
+| POST | `/api/accounts/{id}/login/check` | 재로그인한 Claude·Codex·기본 Antigravity 계정 즉시 재확인 |
 
 Codex 주간 활성화 정책은 [ADR 0074](adr/0074-codex-weekly-activation.md)를 따른다. `next_activation_at`은 초기화 확인 작업의 예약 시각이며 모델 요청을 보장하는 시각이 아니다. `last_result`에는 실행 상태·주기·시작 시각·실행 전후 사용량 및 토큰 수가 들어간다. `unknown`은 재시작/통신 실패 등으로 결과를 확정하지 못한 상태이고 성공으로 표시하지 않는다. 기존 계정 사용량의 비명시적 조회는 Codex에서 12시간 캐시를 사용하며 수동 새로고침은 이를 우회한다.
 

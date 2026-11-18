@@ -406,3 +406,24 @@ async def test_collector_reset_refetch_follows_backoff_while_failures_continue(c
         async with sessionmaker()() as db:
             await db.delete(await db.get(EngineAccount, account_id))
             await db.commit()
+
+
+# ---- 로그인 만료 판별(따까리 Claude 만료 사례와 같은 문제가 agy 에도 있었다)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detail", ["Authentication failed", "token expired", "Not logged in"])
+async def test_agy_auth_failure_is_reported_as_login_lost(monkeypatch, detail):
+    async def fake(name, config_dir=None):
+        raise usage.AgyCommandError("agy usage exited 1", detail)
+
+    monkeypatch.setattr(usage, "_agy_command", fake)
+    assert (await usage._fetch_antigravity()).error == usage.AGY_LOGIN_LOST
+
+
+@pytest.mark.asyncio
+async def test_agy_auth_or_timeout_message_is_not_login_lost(monkeypatch):
+    async def fake(name, config_dir=None):
+        raise usage.AgyCommandError("agy usage exited 1", "Authentication failed: request timed out")
+
+    monkeypatch.setattr(usage, "_agy_command", fake)
+    assert (await usage._fetch_antigravity()).error != usage.AGY_LOGIN_LOST

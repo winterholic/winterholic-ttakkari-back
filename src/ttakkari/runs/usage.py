@@ -268,17 +268,33 @@ async def _agy_command(command: str, config_dir: str | None = None) -> dict[str,
     return body
 
 
+# api/accounts.py 가 이 문구로 "로그인 만료"를 판별한다. 바꾸면 거기 마커도 같이 바꾼다.
+AGY_LOGIN_LOST = "Antigravity 로그인이 만료됐거나 필요해요"
+_AGY_AUTH_PHRASES = ("not logged in", "sign in", "login required", "not authenticated", "authentication failed",
+                     "unauthenticated", "token expired", "invalid credentials")
+
+
+def _agy_auth_lost(text: str) -> bool:
+    """agy 는 인증 실패와 전송 타임아웃을 같은 문구로 낸다. 타임아웃이 섞이면 만료로 단정하지 않는다."""
+    low = text.lower()
+    if "timed out" in low or "timeout" in low:
+        return False
+    return any(p in low for p in _AGY_AUTH_PHRASES)
+
+
 async def _fetch_antigravity(config_dir: str | None = None) -> Usage:
     try:
         commands = [_agy_command(cmd, config_dir) if config_dir else _agy_command(cmd) for cmd in ("usage", "credits")]
         usage_body, credits_body = await asyncio.gather(*commands, return_exceptions=True)
         if isinstance(usage_body, BaseException):
+            if isinstance(usage_body, AgyCommandError) and _agy_auth_lost(usage_body.detail):
+                return Usage(error=AGY_LOGIN_LOST)
             return Usage(error=f"Antigravity quota 조회 실패({type(usage_body).__name__})")
         windows = windows_from_antigravity(usage_body)
         if not windows:
             response = str(usage_body.get("response") or "").lower()
-            if usage_body.get("status") != "SUCCESS" and any(x in response for x in ("not logged in", "sign in", "login required", "not authenticated")):
-                return Usage(error="Antigravity CLI 로그인 상태를 확인하지 못했어요")
+            if usage_body.get("status") != "SUCCESS" and _agy_auth_lost(response):
+                return Usage(error=AGY_LOGIN_LOST)
             return Usage(error="Antigravity CLI quota 응답을 읽지 못했어요")
         credits = None if isinstance(credits_body, BaseException) else credits_from_antigravity(credits_body)
         credits_error = None

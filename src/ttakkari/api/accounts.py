@@ -152,12 +152,13 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
     return max((r.work_priority for r in rows if r.pool == "work"), default=-1) + 1
 
 
-_LOGIN_LOST_MARKERS = ("로그인 토큰을 찾지 못했어요", "갱신하지 못했어요")
+_LOGIN_LOST_MARKERS = ("로그인 토큰을 찾지 못했어요", "갱신하지 못했어요", usage_mod.AGY_LOGIN_LOST)
 
 
 def _login_lost(a: EngineAccount) -> bool:
     """폴더에 로그인 흔적이 남아 있어도 실제 토큰이 죽었으면 True. 이때 "로그인됨"으로 보이면 재로그인할 방법이 없다."""
-    if a.engine not in ("claude", "codex"):
+    # 전용 HOME 을 쓰는 Antigravity 는 manifest 의 auth_state 가 따로 있어 여기서 다루지 않는다.
+    if a.engine not in ("claude", "codex") and not (a.engine == "antigravity" and not a.config_dir):
         return False
     if profiles.auth_failed(a.id):
         return True
@@ -167,7 +168,8 @@ def _login_lost(a: EngineAccount) -> bool:
 
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
-    if login == "ok" and _login_lost(a):
+    # 기본 agy 는 로그인 상태를 읽을 방법이 없어 identity 가 unknown 이다. 만료 흔적이 있으면 그대로 두지 않는다.
+    if (login == "ok" or (login == "unknown" and a.engine == "antigravity")) and _login_lost(a):
         login = "expired"
     if a.engine == "muse":
         # Authentication is observed even when usage/read has no quota snapshot.
@@ -441,7 +443,8 @@ def _age_text(seconds: float) -> str:
 def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
-    if login == "ok" and _login_lost(a):
+    # 기본 agy 는 로그인 상태를 읽을 방법이 없어 identity 가 unknown 이다. 만료 흔적이 있으면 그대로 두지 않는다.
+    if (login == "ok" or (login == "unknown" and a.engine == "antigravity")) and _login_lost(a):
         login = "expired"
     now = time.time()
     is_muse = a.engine == "muse"
@@ -790,9 +793,10 @@ async def clear(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
 
 @router.post("/{account_id}/login/check", response_model=AccountOut)
 async def check_login(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
-    """터미널에서 다시 로그인한 Claude·Codex 계정을 즉시 재확인한다. 표식과 인증 실패 쉬기를 풀고 사용량을 새로 읽는다."""
+    """터미널에서 다시 로그인한 Claude·Codex·기본 Antigravity 계정을 즉시 재확인한다. 표식과 인증 실패 쉬기를 풀고 사용량을 새로 읽는다.
+    전용 HOME 을 쓰는 Antigravity 는 로그인 계정 확인이 필요해 /antigravity/check 로 한다."""
     a = await _get(db, account_id)
-    if a.engine not in ("claude", "codex"):
+    if a.engine not in ("claude", "codex", "antigravity") or (a.engine == "antigravity" and a.config_dir):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "이 계정은 로그인 확인을 지원하지 않아요.")
     profiles.clear_auth_failed(a.id)
     try:
@@ -884,5 +888,7 @@ async def antigravity_check(account_id: uuid.UUID, body: AntigravityConfirmIn, _
     record(db, action="account.antigravity_check", target_type="account", target_id=a.id,
            detail={"ok": True, "confirmed": body.confirm}, ip=client_ip(request))
     await _commit(db)
+    # 실행 중 인증 실패로 걸린 표식과 30분 쉬기가 남으면 로그인이 살아도 배정되지 않는다.
+    profiles.clear_auth_failed(a.id)
     await manager.release_waiting()
     return _out(a)

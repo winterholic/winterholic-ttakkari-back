@@ -788,3 +788,42 @@ async def test_login_check_clears_expired_state_after_relogin(client, auth, make
     r = await client.post(f"/api/accounts/{aid}/login/check", headers=auth)
     assert r.status_code == 200, r.text
     assert r.json()["login"] == "ok" and r.json()["cooldown_seconds"] == 0
+
+
+async def test_default_antigravity_login_lost_shows_expired_and_can_be_rechecked(client, auth, monkeypatch):
+    from ttakkari.runs import profiles
+    from ttakkari.runs import usage as usage_mod
+    await client.post("/api/accounts", json={"name": "agy-host", "engine": "antigravity"}, headers=auth)
+    host = next(a for a in await _accounts(client, auth) if a["engine"] == "antigravity" and a["config_dir"] is None)
+    aid = uuid.UUID(host["id"])
+    usage_mod._cache[aid] = (1.0, usage_mod.Usage(error=usage_mod.AGY_LOGIN_LOST))
+    listed = {x["id"]: x for x in await _accounts(client, auth)}
+    assert listed[str(aid)]["login"] == "expired" and listed[str(aid)]["login_command"] == "agy"
+
+    async def fresh(*_a, **_k):
+        return usage_mod.Usage(windows=[usage_mod.Window(key="agy_x_weekly", label="x", percent=1, resets_at=None)],
+                               source="antigravity_cli", updated_at=1.0)
+    monkeypatch.setattr(usage_mod, "usage_for", fresh)
+    usage_mod._cache.pop(aid, None)
+    profiles.mark_auth_failed(aid)
+    profiles.cool_down(aid, 600)
+    r = await client.post(f"/api/accounts/{aid}/login/check", headers=auth)
+    assert r.status_code == 200, r.text
+    assert r.json()["login"] != "expired" and r.json()["cooldown_seconds"] == 0
+
+
+async def test_managed_antigravity_check_clears_auth_failed_marker(client, auth, monkeypatch):
+    from ttakkari import antigravity_accounts as managed
+    from ttakkari.runs import profiles
+    await client.post("/api/accounts", json={"name": "agy-a", "engine": "antigravity"}, headers=auth)
+    second = (await client.post("/api/accounts", json={"name": "agy-b", "engine": "antigravity"}, headers=auth)).json()
+    aid = uuid.UUID(second["id"])
+    monkeypatch.setattr(managed, "check", lambda home, **_k: managed.record_probe(home, success=True))
+    profiles.mark_auth_failed(aid)
+    profiles.cool_down(aid, 600)
+    refused = await client.post(f"/api/accounts/{aid}/login/check", headers=auth)
+    assert refused.status_code == 400  # 전용 HOME 계정은 로그인 계정 확인이 필요하다
+    ok = await client.post(f"/api/accounts/{aid}/antigravity/check",
+                           json={"principal": "b@example.test", "confirm": True}, headers=auth)
+    assert ok.status_code == 200, ok.text
+    assert not profiles.auth_failed(aid) and ok.json()["cooldown_seconds"] == 0

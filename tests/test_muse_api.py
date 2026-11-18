@@ -17,7 +17,7 @@ async def test_muse_account_list_checks_login_without_usage_windows(client, auth
     rows = (await client.get('/api/accounts', headers=auth)).json()
     row = next(row for row in rows if row['id'] == account_id)
     assert row['login'] == 'ok'
-    assert row['login_command'] is None
+    assert row['login_command']  # 로그인돼 있어도 재인증 명령을 준다
     # No quota snapshot is needed to establish authentication.
     quota = (await client.get('/api/accounts/usage', headers=auth)).json()
     quota_row = next(row for row in quota if row['id'] == account_id)

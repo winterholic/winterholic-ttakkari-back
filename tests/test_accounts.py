@@ -827,3 +827,17 @@ async def test_managed_antigravity_check_clears_auth_failed_marker(client, auth,
                            json={"principal": "b@example.test", "confirm": True}, headers=auth)
     assert ok.status_code == 200, ok.text
     assert not profiles.auth_failed(aid) and ok.json()["cooldown_seconds"] == 0
+
+
+async def test_codex_forbidden_usage_error_shows_expired_and_keeps_relogin_command(client, auth, make_dir, monkeypatch):
+    from ttakkari.runs import profiles
+    from ttakkari.runs import usage as usage_mod
+    d = make_dir()
+    r = await client.post("/api/accounts", json={"name": "cx", "engine": "codex", "config_dir": str(d)}, headers=auth)
+    aid = uuid.UUID(r.json()["id"])
+    monkeypatch.setattr(profiles, "identity", lambda engine, config_dir: ("ok", None))
+    ok = next(x for x in await _accounts(client, auth) if x["id"] == str(aid))
+    assert ok["login"] == "ok" and ok["login_command"]  # 정상이어도 재인증 명령은 모달에서 쓴다
+    usage_mod._cache[aid] = (1.0, usage_mod.Usage(error="사용량 API 403 · Codex 로그인이 만료됐거나 거절됐어요. 재로그인이 필요할 수 있어요"))
+    row = next(x for x in await _accounts(client, auth) if x["id"] == str(aid))
+    assert row["login"] == "expired"

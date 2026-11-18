@@ -107,7 +107,7 @@ class AccountOut(BaseModel):
     login: str
     login_label: str | None
     cooldown_seconds: int
-    # 처음 한 번 Mac Studio 터미널에서 실행할 로그인 명령(브라우저 인증). 이미 로그인됐으면 None.
+    # Mac Studio 터미널에서 실행할 로그인 명령(브라우저 인증). 로그인돼 있어도 재인증할 수 있게 항상 준다(목록의 status_pending 행만 None).
     login_command: str | None = None
     auth_state: str | None = None
     auth_error: str | None = None
@@ -152,7 +152,9 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
     return max((r.work_priority for r in rows if r.pool == "work"), default=-1) + 1
 
 
-_LOGIN_LOST_MARKERS = ("로그인 토큰을 찾지 못했어요", "갱신하지 못했어요", usage_mod.AGY_LOGIN_LOST)
+# Codex 의 401·403 거절과 auth.json 소실 문구도 포함한다(runs/usage.py 의 _codex_failure_text·_fetch_codex).
+_LOGIN_LOST_MARKERS = ("로그인 토큰을 찾지 못했어요", "갱신하지 못했어요", "만료됐거나 거절됐어요",
+                       "로그인 정보(auth.json)를 찾지 못했어요", usage_mod.AGY_LOGIN_LOST)
 
 
 def _login_lost(a: EngineAccount) -> bool:
@@ -203,7 +205,7 @@ def _out(a: EngineAccount) -> AccountOut:
     )
     return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir, enabled=a.enabled,
                       priority=a.priority, max_used_percent=a.max_used_percent, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
-                      login_command=None if login == "ok" else login_command(a.engine, a.config_dir),
+                      login_command=login_command(a.engine, a.config_dir),
                       auth_state=managed_status.get('auth_state'), auth_error=managed_status.get('last_error'),
                       isolation_mode=iso_mode,
                       execution_enabled=profiles.execution_ready(profiles._profile(a)))

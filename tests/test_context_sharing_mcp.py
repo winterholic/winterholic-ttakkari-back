@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from context_sharing_support import FakeGateway, agent_headers, make_project
-
 from sqlalchemy import text
 
 from ttakkari.api import context_sharing as api

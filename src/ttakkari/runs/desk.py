@@ -309,19 +309,63 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
     return Decision(q.action, q.reply, q.lead_id)
 
 
-async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) -> list[str]:
+async def _history_blocks(db: AsyncSession, sess: ChatSession, run: Run, turns: int) -> list[list[str]]:
+    """최근 끝난 Run 을 오래된 순으로, Run 하나를 줄 묶음 하나로 돌려준다."""
     rows = list(await db.scalars(
         select(Run).where(Run.session_id == sess.id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
         .order_by(Run.created_at.desc()).limit(turns)))
-    lines: list[str] = []
+    blocks: list[list[str]] = []
     for r in reversed(rows):
         if r.origin == RunOrigin.report:
-            lines.append(f"기획 보고: {(r.result_text or '')[:HISTORY_CHARS]}")
+            blocks.append([f"기획 보고: {(r.result_text or '')[:HISTORY_CHARS]}"])
             continue
-        lines.append(f"사용자: {r.prompt[:HISTORY_CHARS]}")
+        block = [f"사용자: {r.prompt[:HISTORY_CHARS]}"]
         if r.result_text:
-            lines.append(f"따까리: {r.result_text[:HISTORY_CHARS]}")
-    return lines
+            block.append(f"따까리: {r.result_text[:HISTORY_CHARS]}")
+        blocks.append(block)
+    return blocks
+
+
+async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) -> list[str]:
+    return [line for block in await _history_blocks(db, sess, run, turns) for line in block]
+
+
+# 기획에 넘기는 참고 대화는 요청과 관련 있는 묶음만 고른다. 접수 세션은 하나가 오래 이어지고 모든 기획의 보고가 거기 쌓여서,
+# 최근 N개를 그대로 붙이면 직전에 끝난 다른 주제가 새 요청에 섞인다(2026-10-25 이후 위임 94건 중 49%가 요청과 공유 단어 2개 이하,
+# 99%에 다른 기획의 보고가 포함). "참고만"이라는 안내문은 모델이 지켜주길 바라는 산문이라 입력 단계에서 거른다.
+_REF_RE = re.compile(r"그거|그건|그걸|그게|그것|아까|방금|이전|직전|위에|위의|저거|이어서|계속|다시|그대로|같은\s*(걸|거|것)|그\s*(작업|세션|기획|파일|결과)")
+_JOSA_RE = re.compile(r"(에서|으로|에게|까지|부터|이랑|하고|은|는|이|가|을|를|의|에|로|도|와|과|만)$")
+_TOKEN_RE = re.compile(r"[가-힣A-Za-z0-9_.\-]{2,}")
+# 거의 모든 대화에 나오는 말이라 겹쳐도 같은 주제라는 근거가 못 된다.
+_COMMON_WORDS = frozenset(
+    ["작업", "세션", "기획", "보고", "진행", "확인", "해줘", "해주", "알려", "알려줘", "어떻게", "뭐야", "이유", "이거", "지금", "오늘", "어제", "현재", "상태", "결과", "문서", "파일", "완료", "실패", "전체", "목표", "미완료", "성공", "요청", "사용자", "따까리", "해서", "하고", "있어", "있는", "없어", "해봐", "좀더", "먼저", "다시", "계속", "이어서"])
+
+
+def _topic_tokens(text: str) -> set[str]:
+    out: set[str] = set()
+    for tok in _TOKEN_RE.findall(text.lower()):
+        tok = _JOSA_RE.sub("", tok) if re.search(r"[가-힣]$", tok) else tok
+        if len(tok) >= 2 and not tok.isdigit() and tok not in _COMMON_WORDS:
+            out.add(tok)
+    return out
+
+
+def _lead_history(blocks: list[list[str]], prompt: str) -> list[str]:
+    """요청과 같은 주제의 묶음만 남긴다. 지시어("그거", "아까")가 있으면 가장 최근 사용자 대화 한 묶음은 더한다."""
+    want = _topic_tokens(prompt)
+    keep: set[int] = set()
+    for i, block in enumerate(blocks):
+        text = "\n".join(block).lower()
+        have = _topic_tokens(text)
+        # 두 글자 낱말은 우연히 겹치기 쉬워 낱말 단위로만 맞추고, 세 글자부터는 조사가 붙은 꼴도 같은 말로 본다.
+        if any(t in have if len(t) < 3 else t in text for t in want):
+            keep.add(i)
+    if _REF_RE.search(prompt):
+        for i in range(len(blocks) - 1, -1, -1):
+            if blocks[i][0].startswith("사용자:"):
+                keep.add(i)
+                break
+    return [line for i, block in enumerate(blocks) if i in keep for line in block]
 
 
 _NEW_SESSION_RE = re.compile(
@@ -390,7 +434,7 @@ async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Dec
                                kind=SessionKind.orchestrator, parent_id=sess.id, pool=sess.pool)
             db.add(lead)
             await db.flush()
-    history = await _history(db, sess, run, LEAD_HISTORY_TURNS)
+    history = _lead_history(await _history_blocks(db, sess, run, LEAD_HISTORY_TURNS), run.prompt)
     body = ["[접수에서 넘긴 사용자 요청]", run.prompt]
     if history:
         body += ["", "[최근 대화 — 참고만]", *history]

@@ -579,3 +579,36 @@ async def test_desk_route_is_unchanged_when_observer_is_disabled_or_queue_is_ful
         assert candidate[2]["action"] == baseline[2]["action"] == "answer"
         assert candidate[3]["argv"] == baseline[3]["argv"]
         assert candidate[4] == baseline[4]
+
+
+# 기획에 넘기는 참고 대화는 요청과 같은 주제의 묶음만 남긴다(다른 기획의 보고가 새 요청에 섞이던 문제).
+_AIP_REPORT = ["기획 보고: main `a0fa2729`의 릴리스 게이트가 성공했습니다. PR15 문서 검사는 실행 중입니다."]
+_REGNA_REPORT = ["기획 보고: 레그나 iOS 메모리 경합 실측을 마쳤습니다. 결과 문서를 갱신했습니다."]
+_CHAT = ["사용자: ezwork git pull 받아와줘", "따까리: 받아왔어요."]
+
+
+def test_lead_history_drops_unrelated_reports():
+    got = desk_module._lead_history([_AIP_REPORT, _AIP_REPORT, _CHAT], "어제부터 날씨브리핑 실패중 이유가뭐야?")
+    assert got == []
+
+
+def test_lead_history_keeps_same_topic_only():
+    got = desk_module._lead_history([_AIP_REPORT, _REGNA_REPORT, _CHAT], "레그나 조사는 어디까지 진행됐어?")
+    assert got == _REGNA_REPORT
+
+
+def test_lead_history_ignores_common_words_and_short_coincidences():
+    # "작업"·"보고"·"결과"는 어디에나 나오는 말이고, 두 글자 낱말은 조사 없이 통째로 맞아야 한다.
+    assert desk_module._lead_history([_AIP_REPORT], "작업 결과 보고해줘") == []
+    assert desk_module._lead_history([["사용자: 서버 재시작해줘"]], "서버리스 비용 비교해줘") == []
+
+
+def test_lead_history_adds_latest_user_turn_for_reference_words():
+    got = desk_module._lead_history([_CHAT, _AIP_REPORT, ["사용자: 배포 상태 알려줘", "따까리: 정상입니다."]], "그거 다시 해줘")
+    assert got == ["사용자: 배포 상태 알려줘", "따까리: 정상입니다."]
+    assert desk_module._lead_history([_AIP_REPORT], "그거 다시 해줘") == []  # 사용자 대화가 없으면 보고를 대신 붙이지 않는다
+
+
+def test_lead_history_keeps_order_and_original_lines():
+    a, b = ["사용자: 레그나 연구 시작해줘", "따까리: 시작했어요."], _REGNA_REPORT
+    assert desk_module._lead_history([a, _AIP_REPORT, b], "레그나 어디까지 됐어") == a + b

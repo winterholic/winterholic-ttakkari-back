@@ -27,11 +27,13 @@ def _load(name):
 def test_c1_and_c2_form_a_serial_migration_path_and_generation_contract():
     runs = _load("0073_collection_mission_runs")
     library = _load("0074_collection_single_library")
+    context_sharing = _load("0080_ctx_share_v2_keys")
     contract = json.loads((ROOT / "deploy/generation-contract.json").read_text())
 
     assert runs.down_revision == "0072_collection_missions"
     assert library.down_revision == runs.revision
-    assert contract["schema_revision"] == "0079_context_sharing"
+    assert context_sharing.down_revision == "0079_context_sharing"
+    assert contract["schema_revision"] == context_sharing.revision
     assert _load("0075_collection_research_merge").revision in contract["online_migration_from"]
     assert library.revision in contract["online_migration_from"]
     assert runs.revision in contract["online_migration_from"]
@@ -39,6 +41,7 @@ def test_c1_and_c2_form_a_serial_migration_path_and_generation_contract():
     assert "0076_kb_v3_collection_merge" in contract["online_migration_from"]
     assert "0077_artcraft_account_pin" in contract["online_migration_from"]
     assert "0078_repo_appraisals" in contract["online_migration_from"]
+    assert context_sharing.down_revision in contract["online_migration_from"]
 
 
 def test_previous_c1_generation_is_admitted_for_the_additive_c2_upgrade(monkeypatch, tmp_path):

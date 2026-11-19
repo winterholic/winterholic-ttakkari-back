@@ -1,4 +1,4 @@
-"""Private → 실제 Gateway 합성 수락 여정. 모든 DB는 명시적 test_cg_v2_private_verify_*만 쓴다."""
+"""Private → 실제 Gateway 합성 수락 여정. conftest 시험 DB와 격리 Gateway DB만 쓴다."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,9 @@ from context_sharing_support import make_project
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from test_context_sharing_real_gateway import create_core_database
 
 from ttakkari.api import context_sharing as private_api
 from ttakkari.context_sharing.gateway import GatewayControl, HttpGatewayTransport
@@ -30,21 +32,20 @@ pytestmark = pytest.mark.skipif(
 
 BASE = "/api/context-sharing"
 GATEWAY_TOKEN = "synthetic-private-acceptance-control-token"
-GATEWAY_DB = "test_cg_v2_private_verify_20261119_gateway"
-PRIVATE_DB = "test_cg_v2_private_verify_20261119_private"
 CORE_SRC = Path(__file__).resolve().parents[1] / "context_gateway" / "src"
 
 
 @pytest.fixture
 async def gateway_apps(tmp_path):
-    """사전에 만든 전용 Gateway DB만 연결한다. 임의 DB 생성·삭제를 하지 않는다."""
+    """conftest Private DB와 create_core_database가 만든 Gateway DB를 분리한다."""
     from context_gateway.apps import create_control_app, create_public_app
     from context_gateway.config import Settings
-    from sqlalchemy.engine import make_url
 
     private_url = make_url(conftest.TEST_DB)
-    assert private_url.database == PRIVATE_DB
-    gateway_url = private_url.set(database=GATEWAY_DB).render_as_string(hide_password=False)
+    conftest.assert_test_db_isolated(conftest.TEST_DB)
+    gateway_url = await create_core_database(f"gateway_{uuid.uuid4().hex[:8]}")
+    assert make_url(gateway_url).database != private_url.database
+    conftest.assert_test_db_isolated(gateway_url)
     settings = Settings(gateway_url, tmp_path / "snapshots", GATEWAY_TOKEN)
     control, public = create_control_app(settings), create_public_app(settings)
     # Gateway SDK의 MCP lifespan은 자체 task group을 시작하며 test fixture teardown task와 공유하지 않는다.

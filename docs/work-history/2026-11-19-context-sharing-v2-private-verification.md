@@ -60,3 +60,39 @@
 - 기존 전체 Private regression 및 Gateway core 전체 suite는 다시 실행하지 않았다. 카드에서 제외한 기존 유효 코어 검증 반복을 피했고, 신규 수락 파일만 실행했다.
 - 운영 Gateway/DB, 실제 문서, 공개 서비스 활성화, 브라우저 UI/실기기, push, 배포 및 서비스 재시작은 실행하지 않았다. 이 검수는 별도 합성 DB와 ASGI 앱에 한정된다.
 - `gateway_apps` fixture가 사용하는 Gateway 전용 DB는 유지하며 매 테스트마다 초기화하지 않는다. 반복 실행에도 slug 충돌이 나지 않도록 폐기 재시도 프로젝트 이름은 실행별 합성 ID를 쓴다.
+
+## 후속: 표준 pytest DB 이식성 교정 (2026-11-19)
+
+- **기준 revision:** `4e9a199889fbf9883b788b6d643c5fbdac18717e` (작업 시작 시 `HEAD`).
+- **수정 범위:** `tests/test_context_sharing_v2_private_acceptance.py`의 Gateway fixture만 수정했다. Private은 `conftest.TEST_DB`와 `assert_test_db_isolated`를 재사용하고, Gateway는 `test_context_sharing_real_gateway.create_core_database`에 `gateway_<8 hex>` 이름을 전달한다. 두 URL의 database가 다름을 확인한다. 기존 보안 assertion 본문은 변경하지 않았다.
+- **기준 실패(RED):** 새 합성 DB `test_cg_v2_portability_20261119`를 만들어 원래 파일을 실행했을 때 세 테스트가 모두 setup 중 고정 `PRIVATE_DB` assertion에서 실패했다.
+
+  ```text
+  PGPORT=5432 TTAKKARI_TEST_DB=postgresql+asyncpg://127.0.0.1:5432/test_cg_v2_portability_20261119 PYTHONPATH=src:context_gateway/src ../back/.venv/bin/python -m pytest -q tests/test_context_sharing_v2_private_acceptance.py
+  3 errors in 0.83s — expected test DB name, got test_cg_v2_portability_20261119
+  ```
+
+- **명시적 합성 Private DB (GREEN):** 같은 새 DB로 수정 파일을 실행해 세 테스트를 통과했다. Gateway DB는 기존 helper가 매 fixture마다 독립 `gateway_` DB로 할당한다. DB 이름은 난수라 pytest 출력에는 찍히지 않는다. `test_cg_v2_private_verify_20261119_private` 및 기존 검수 DB들은 사용하거나 reset하지 않았다.
+
+  ```text
+  PGPORT=5432 TTAKKARI_TEST_DB=postgresql+asyncpg://127.0.0.1:5432/test_cg_v2_portability_20261119 PYTHONPATH=src:context_gateway/src ../back/.venv/bin/python -m pytest -q tests/test_context_sharing_v2_private_acceptance.py
+  3 passed in 2.21s
+  db reset: 3 selective (avg 9.3/138 tables), 0 forced full, 0 fell back to full
+  ```
+
+- **정적 검사:** 수정된 수락 파일 Ruff 및 `git diff --check` 통과. Diff상 보안 assertion은 그대로이고, import·fixture setup만 바뀌었다.
+
+  ```text
+  ../back/.venv/bin/ruff check tests/test_context_sharing_v2_private_acceptance.py
+  All checks passed!; git diff --check → exit 0
+  ```
+
+- **기본 `pg_sandbox` 경로:** 실제 격리 클러스터 실행은 이 환경에서 미검증이다. `env -u TTAKKARI_TEST_DB ... pytest`로 시도했으나 `tests/conftest.py`의 `pg_sandbox.start_cluster()`가 `initdb`를 실행하는 단계에서 종료 코드 1을 받았다. 출력에는 stderr가 없어 원인은 확인되지 않았다. 코드 경로는 확인했다: conftest가 `PG_CLUSTER`를 만들고, 기존 `create_core_database`는 `CLUSTER is not None`일 때 `CLUSTER.create_database(name)`을 호출한다. 이는 로컬 코드 경로 확인이며 실제 CI 실행 증거는 아니다.
+
+  ```text
+  env -u TTAKKARI_TEST_DB PGPORT=5432 PYTHONPATH=src:context_gateway/src ../back/.venv/bin/python -m pytest -q tests/test_context_sharing_v2_private_acceptance.py
+  ImportError while loading tests/conftest.py → pg_sandbox.start_cluster → initdb -D /tmp/ttakkari-test-.../data → exit 1
+  ```
+
+- **미실행:** 표준 deploy gate, 실제 CI, 운영 DB/서버, 브라우저, push 및 배포. 별도 `private_b9` gate DB는 접속·초기화하지 않았다. 삭제도 하지 않았다.
+- **작업 후 revision:** 커밋하지 않았으므로 `HEAD`는 기준 SHA 그대로다. 변경 파일은 worktree diff로 남겼다.

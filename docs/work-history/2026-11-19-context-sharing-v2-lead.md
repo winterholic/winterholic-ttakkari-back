@@ -8,7 +8,7 @@
 - 기존 구조 조사: [backend 분석](../context-sharing-v2-analysis.md), front checkout `docs/context-sharing-v2-ui-analysis.md`.
 - backend 작업 위치: `/Users/winterholic/development/projects/winterholic-ttakkari/back-context-sharing-v2-20261119`, branch 같은 이름, 기준 `978cb5ace5115743b32f375ce065120e8d068d82`.
 - 관리 front: `/Users/winterholic/development/projects/winterholic-ttakkari/front-context-sharing-v2-20261119`, branch 같은 이름, 기준 `f6dfe5b`.
-- 기존 `back`/`front` main은 다른 작업의 dirty 변경과 오래된 checkout이다. reset/stash/일괄 add하지 않는다. backend 구현과 교정은 `4aa21b99cff27f0c82e22ee0d0d4f2880137f78e`, 관리 front는 `1a5f011c8768cc3ad96d6295e6d1e3c1a63e6e36`로 각 원격 main에 반영했다. backend 배포 예약 `02de35fb-5677-4ded-a704-b8be6136df73`는 20:17 KST 조회에서 `security_gate`, `error=null`이다. 예약과 실제 활성화를 구분한다. Gateway 별도 운영 배포 및 Vercel 실제 배포는 미검증이다.
+- 기존 `back`/`front` main은 다른 작업의 dirty 변경과 오래된 checkout이다. reset/stash/일괄 add하지 않는다. backend 구현과 교정은 `4aa21b99cff27f0c82e22ee0d0d4f2880137f78e`, 관리 front는 `1a5f011c8768cc3ad96d6295e6d1e3c1a63e6e36`로 각 원격 main에 반영했다. backend 배포 예약 `02de35fb-5677-4ded-a704-b8be6136df73`는 이후 `security_gate`에서 실패했다. 테스트 fixture가 현재 head를 0079로 고정한 것이 원인이며 아래 교정 기록을 따른다. 예약과 실제 활성화를 구분한다. Gateway 별도 운영 배포 및 Vercel 실제 배포는 미검증이다.
 
 ### 결정과 불변식
 
@@ -33,7 +33,7 @@
 | `b0864d0a-b4d9-494d-8996-caa2503ff73e` | 종료 `1a5b0bdb-620b-460c-ad54-c394fe67b4a5` | 현재3f6b303e에서 AST import이름 기반 합성 pytest등록 core/real_gateway 모두registered, Ruff/compile통과. 실제앱/DB검증은범위밖이다. |
 
 | `6ddbd439-de27-4d55-a01d-e834ebe32a79` | 종료 `efc96089-061f-4002-9e09-ae83cd2b7819` | 4aa21b99 독립 게이트: Ruff 44개, 계약 87 passed, 변경 테스트 194 passed, exit 0. 이전 4876d358의 실패 5건은 교정됐다. |
-| 배포 컨트롤러 | 예약 `02de35fb-5677-4ded-a704-b8be6136df73` | full SHA 4aa21b99의 security_gate 및 세대 준비를 소유한다. 진행 중 heartbeat를 관측했으며 실제 활성/실패 판정은 아직 없다. |
+| 배포 컨트롤러 | 예약 `02de35fb-5677-4ded-a704-b8be6136df73` | full SHA 4aa21b99는 security_gate 실패로 종료했다. 새 fixture 교정 커밋의 지정 게이트·배포 예약은 기획이 소유한다. |
 | `216f3ccb-a288-4828-b99d-e3730a2df656` | 종료 `6e7bc27c-6b66-4a11-9832-dd0dd15d4731` 부분 | 명시적 DB 이식성은 기획 3개 재실행 및 assertion AST 동일성으로 수락했다. 기본 pg_sandbox 실행은 해당 Codex 환경 initdb exit 1로 미검증이며 재시도하지 않는다. |
 
 수락된 구현/검수: 코어 d90d3a2e + 독립 1ec1cc4b(48 tests), Private 30c6bb6a + 독립 216f3ccb(실제 ASGI A/B/C 및 장애 수락 3 tests), 관리 UI 교정 342f5fb8(기획 집중 95 tests). 공개 Reader는 후속 7aade468의 쿠키/토큰 추적 및 음성 대조와 기획 전체 120 passed/기존 live 5 skip·build로 수락했다. 이전 104개 및 최초 반례 수락 보류는 아래 세션 로그의 역사다. 실제 Gateway HTTP·390/1280px 검수는 [독립 기록](2026-11-19-context-sharing-v2-public-verification.md) 범위로 유지한다. 8afd25fa는 83%여서 교정에 fresh context를 사용했다. 독립 검수자 add3f6ad는 86%로 종료했으며 임시 폴더 삭제 거부를 같은 환경에서 재시도하지 않는다. 216f3ccb는 72%, 1ec1cc4b는 65%이므로 새 단계는 새 대화를 검토한다.
@@ -61,10 +61,10 @@ Private 최초 완료 보고는 194개 green이지만 retry가 `main._retention_
 
 ## 다음 할 일
 
-1. [관측/원 요구] CG-R1~R7은 구현 검증 수락, CG-R8은 백엔드 배포 결과 판정을 남겨 review다. 구현·로컬 A/B/C·문서화와 최종 구현 보고 및 증거 ZIP 전달은 끝났다. 과거 Reader 실패나 이미 수락한 검사를 반복하지 않는다.
+1. [관측/원 요구] CG-R1~R7은 구현 검증 수락, CG-R8은 배포 게이트에서 발견한 현재 head fixture 교정과 새 배포 결과 판정을 남겨 review다. 구현·로컬 A/B/C·문서화와 최종 구현 보고 및 증거 ZIP 전달은 끝났다. 과거 Reader 실패나 이미 수락한 검사를 반복하지 않는다.
 2. [관측] backend 4aa21b99와 front 1a5f011은 원격 main에 반영됐다. backend 필수 pre-push도 Ruff 44개·계약 87 passed·변경 194 passed, 0 fallback, exit 0이다. 이는 전체 pytest 통과나 운영 활성화 증거가 아니다.
-3. [실행 소유자] 배포 컨트롤러가 예약 02de35fb-5677-4ded-a704-b8be6136df73의 full SHA 4aa21b99를 검증한다. 다음 상태 변경 보고/자동 후속에서 지원 도구 backend_deploy_status로 한 번 확인한다. Run을 대기·폴링으로 유지하거나 같은 예약을 다시 만들지 않는다. 실패 시 ops_deploy_log의 실제 단계/오류를 확인한다.
-4. [판정 기준] draining은 신규 세대 활성 및 구 세대 종료 대기, succeeded는 구 세대 종료까지 확인한 상태다. 아직 둘 중 어느 상태도 관측하지 않았다. 배포 결과 뒤 manage_work의 CG-R8과 최종 상태를 갱신한다. 이 문서만의 후속 변경은 제품 SHA 4aa21b99에 대한 기존 테스트를 무효화하지 않는다.
+3. [실행 소유자] 기획이 배포 security_gate의 현재 head fixture 교정을 소유한다. 기존 예약 02de35fb는 실패로 종료했으므로 같은 SHA를 재요청하지 않는다. 테스트 2파일만 교정한 새 커밋의 필수 pre-push를 실행하고 성공 시 새 full SHA를 request_backend_deploy에 넘긴다.
+4. [판정 기준] 기존 제품 코드는 보안 guard를 유지했다. 현재 head fixture는 Alembic 실제 head에서 얻고 0079는 구 head 거부 반례로 남긴다. 집중 회귀 20 passed 및 기존 assert AST 불변을 확인했으며 지정 커밋 게이트와 독립 배포 컨트롤러의 재검증은 아직 남았다. draining과 succeeded의 범위는 구분한다.
 5. [원 요구] Gateway 외부 공개 활성화·실제 사용자 문서 게시·회사 정책 변경은 하지 않는다. 운영 Gateway revision/TLS/DB role/nginx 실행·실제 회사 PC 클라이언트·Vercel 배포는 미검증이다. 기본 pg_sandbox의 Codex worker initdb exit 1과 front 전체 ui-lint의 기존 CSS 실패를 통과로 바꾸지 않는다. 원 A/B/C 대조는 19:59 로그를 따른다.
 
 ## suggested skills
@@ -279,3 +279,11 @@ Private 최초 완료 보고는 194개 green이지만 retry가 `main._retention_
 - request_backend_deploy는 full SHA 4aa21b99를 예약 02de35fb-5677-4ded-a704-b8be6136df73로 접수했다. 20:17 KST 조회는 security_gate, error null, prepare heartbeat 2026-11-19T11:17:00.136328Z이다. 진행 중이며 성공·실패 판정은 아직 아니다.
 - 지정 backend/front 커밋의 분석·계약·운영·독립 검수 13문서와 manifest를 ZIP으로 export해 SHA 13/13 및 ZIP 무결성을 확인한 뒤 share_file로 전달했다. artifact 659690b1-bb45-424a-a017-403dc91a5e35, archive SHA-256 432c741f1b6a792ff5dc5643cfc38d80d7d1e9abdab33350f477c59a3f95f5ae다. 다른 Run의 보호 outbox 원본은 읽지 않았다.
 - 최종 구현 보고에서 기존 구조·새 인증 모델·수정 파일·교정 결함·시험 결과·로컬 시나리오·운영 필요 항목·잔여 한계를 구분했다. 남은 판정 소유자는 배포 컨트롤러다. Gateway 별도 운영 배포·nginx 적용·회사 PC·TLS/role·외부 공개는 여전히 미실행/미검증이다.
+
+### 배포 security_gate의 현재 head fixture 교정
+
+- 실제 예약 02de35fb의 `ops_deploy_log`에서 `security_gate`, exit 1, `test_collection_scope_merge.py`의 schema_not_ready 실패를 확인했다. 배포 후보 4aa21b99에서 fixture는 0079를 넣지만 제품 guard는 generation 계약의 0080과 비교했다. helper를 공유하는 KB current-head 테스트에도 같은 고정값이 있었다. 앞선 20:10 검토에서 이 참조를 과거 세대 fixture로 분류한 것은 잘못이었다. production 장애 증거로 확대하지 않는다.
+- 기획 Codex 환경에서 명시적 b9 시험 DB로 dry-run/idempotent 한 검사를 실행해 동일 `schema_not_ready`, 1 failed in 0.81s를 재현했다. 실제 배포 로그와 로컬 원인을 대조한 뒤 교정했다.
+- `tests/test_collection_scope_merge.py::_operation_generation`은 version 미지정 시 실제 Alembic single head를 읽는다. runtime guard 검사용 네 정상 스키마 사례는 이 기본값을 쓰고, 구 0079는 schema_not_ready 반례로 추가했다. `tests/test_kb_v3_collection_access_delta.py`의 current-head 여정도 helper 기본값을 쓴다. 제품 코드와 migration 및 기존 assertions는 바꾸지 않았다.
+- 명령: `PGPORT=5432 TTAKKARI_TEST_DB=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_v2_private_20261119_b9f28799 PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_scope_merge.py tests/test_kb_v3_collection_access_delta.py` → 20 passed, 기존 deprecated 경고 4개, 2.42s; 20 selective/0 forced full/0 fallback. Ruff All checks passed, git diff --check exit 0. 두 파일의 모든 기존 test assert AST가 HEAD와 같음을 확인했다.
+- 이전 문서만의 커밋 23e53d28은 원격 main 반영됐고 필수 pre-push 계약 87 passed/7427 deselected, exit 0이었다. 제품 코드가 같은 4aa21b99의 실패를 해결하지는 않으며, 이번 fixture 교정 커밋을 실제 배포 대상에 포함해야 한다.

@@ -14,6 +14,7 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +22,7 @@ import pytest_asyncio
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from test_collector_stage_migration import _load
@@ -69,10 +71,13 @@ async def _restore_schema_version(_schema_and_app):
         await db.commit()
 
 
-async def _operation_generation(monkeypatch, *, previous=None, active=True, version="0079_context_sharing"):
+async def _operation_generation(monkeypatch, *, previous=None, active=True, version=None):
     from ttakkari import generation
     from ttakkari.config import get_settings
     from ttakkari.models import RuntimeControl, RuntimeGeneration
+
+    if version is None:
+        version = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic")).get_current_head()
 
     current = uuid.uuid4()
     revision = "a" * 40
@@ -115,10 +120,11 @@ async def test_operational_merge_dry_run_rolls_back_and_apply_is_idempotent(monk
 
 
 @pytest.mark.parametrize("previous,active,version,reason", [
-    ("draining", True, "0079_context_sharing", "previous_generation_not_drained"),
-    ("standby", True, "0079_context_sharing", "previous_generation_not_drained"),
-    ("offline_executor", True, "0079_context_sharing", "previous_generation_not_drained"),
-    (None, False, "0079_context_sharing", "inactive_generation"),
+    ("draining", True, None, "previous_generation_not_drained"),
+    ("standby", True, None, "previous_generation_not_drained"),
+    ("offline_executor", True, None, "previous_generation_not_drained"),
+    (None, False, None, "inactive_generation"),
+    (None, True, "0079_context_sharing", "schema_not_ready"),
     (None, True, "0073_research_reuse_source", "schema_not_ready"),
     (None, True, "0075_collection_research_merge", "schema_not_ready"),
 ])

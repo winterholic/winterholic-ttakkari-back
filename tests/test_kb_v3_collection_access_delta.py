@@ -16,7 +16,7 @@ from ttakkari.kb_models import KbPassage
 
 
 async def test_scope_merge_operates_on_current_head_without_weakening_runtime_guards(monkeypatch):
-    await _operation_generation(monkeypatch, version='0079_context_sharing')
+    await _operation_generation(monkeypatch)
     async with sessionmaker()() as db:
         report = await scope_merge.operate(db, apply=False)
         assert report['applied'] is False

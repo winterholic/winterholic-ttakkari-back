@@ -58,6 +58,8 @@ const SCENARIOS = {
 };
 const used = new Set();
 const sessions = new Map();
+const shareSessions = new Map();
+const shareDownOnce = new Set();
 let seq = 0;
 
 const json = (res, status, body, headers = {}) => {
@@ -69,6 +71,7 @@ const meta = (d) => ({ id: d.id, title: d.title, content_type: d.type, extension
 const snapOut = (s) => ({ id: s.id, source_refs: s.refs, source_revision: s.rev, generated_at: s.generated, verified_at: s.verified, published_at: s.published, manifest_sha256: "f".repeat(64), documents: s.docs.map(meta) });
 
 async function synthetic(req, res, url) {
+  if (url.pathname.startsWith("/api/v1/share/")) return syntheticShare(req, res, url);
   const m = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "");
   const token = m?.[1];
   if (url.pathname === "/api/v1/auth/exchange" && req.method === "POST") {
@@ -121,6 +124,45 @@ async function synthetic(req, res, url) {
   return json(res, 422, { detail: "bad format" });
 }
 
+async function syntheticShare(req, res, url) {
+  if (url.pathname === "/api/v1/share/exchange" && req.method === "POST") {
+    let input;
+    try { input = JSON.parse(await new Promise((resolve, reject) => { let body = ""; req.setEncoding("utf8"); req.on("data", (chunk) => { body += chunk; }); req.on("end", () => resolve(body)); req.on("error", reject); })); }
+    catch { return json(res, 400, { detail: "bad request" }); }
+    const token = input?.token;
+    if (typeof token !== "string" || !/^synthetic-share-(read|export|revoked|down)-[1-9]$/.test(token) || token.includes("revoked")) return json(res, 401, { detail: "unauthorized" });
+    if (token.includes("down") && !shareDownOnce.has(token)) {
+      shareDownOnce.add(token);
+      return json(res, 503, { detail: "synthetic unavailable" });
+    }
+    const session = `synthetic-share-session-${++seq}`;
+    shareSessions.set(session, { token, expires: Date.now() + 15 * 60_000 });
+    res.writeHead(204, { "set-cookie": `cg_share_session=${session}; Path=/api/v1/share; Max-Age=900; HttpOnly; Secure; SameSite=Strict`, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+    return res.end();
+  }
+  const cookie = /(?:^|;\s*)cg_share_session=([^;]+)/.exec(req.headers.cookie ?? "")?.[1];
+  const session = cookie && shareSessions.get(cookie);
+  if (!session || session.expires <= Date.now()) return json(res, 401, { detail: "unauthorized" });
+  const hasExport = session.token.includes("export");
+  if (url.pathname === "/api/v1/share/context" && req.method === "GET") {
+    const project = { id: A, slug: "synthetic-share", name: "합성 승인 맥락", description: "합성 API가 반환한 승인 요약입니다.", latest_snapshot_id: S_NEW };
+    const docs = [{ id: "overview", title: "승인 맥락", content_type: "text/markdown", content: HOSTILE, source_refs: ["repo://synthetic-share"], source_revision: "synth123", generated_at: "2026-11-19T00:00:00Z", verified_at: null }];
+    return json(res, 200, { project, snapshot: { ...snapOut(snapshots[0]), documents: docs.map(meta) }, documents: docs, link: { label: "합성 동료 검토", expires_at: new Date(Date.now() + 3 * 86400_000).toISOString(), snapshot_policy: "pinned", scopes: hasExport ? ["read", "export"] : ["read"] }, session_expires_at: new Date(session.expires).toISOString() });
+  }
+  if (url.pathname === "/api/v1/share/export" && req.method === "GET") {
+    if (!hasExport) return json(res, 403, { detail: "scope denied" });
+    if (url.searchParams.get("format") !== "markdown") return json(res, 422, { detail: "bad format" });
+    res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+    return res.end("# 합성 승인 맥락\n\n합성 응답입니다.\n");
+  }
+  if (url.pathname === "/api/v1/share/logout" && req.method === "POST") {
+    shareSessions.delete(cookie);
+    res.writeHead(204, { "set-cookie": "cg_share_session=; Path=/api/v1/share; Max-Age=0; HttpOnly; Secure; SameSite=Strict", "cache-control": "no-store" });
+    return res.end();
+  }
+  return json(res, 404, { detail: "not found" });
+}
+
 function proxy(req, res) {
   const target = new URL(UPSTREAM);
   const up = httpRequest({ hostname: target.hostname, port: target.port, path: req.url, method: req.method, headers: { ...req.headers, host: target.host } }, (r) => {
@@ -139,12 +181,14 @@ createServer(async (req, res) => {
   if (url.pathname === "/__synthetic/reset" && req.method === "POST" && !UPSTREAM) {
     used.clear();
     sessions.clear();
+    shareSessions.clear();
+    shareDownOnce.clear();
     return json(res, 200, { reset: true });
   }
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/mcp")) {
     return UPSTREAM ? proxy(req, res) : synthetic(req, res, url).catch(() => json(res, 500, { detail: "synthetic error" }));
   }
-  const rel = normalize(url.pathname === "/" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
+  const rel = normalize(url.pathname === "/" || url.pathname === "/s" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
   try {
     const body = await readFile(join(DIST, rel));
     res.writeHead(200, { "content-type": TYPES[extname(rel)] ?? "application/octet-stream", "content-security-policy": CSP, "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "cache-control": "no-store" });

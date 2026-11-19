@@ -109,6 +109,9 @@ async def test_publish_and_revoke_against_the_real_control_app(client, auth, rea
     draft = r.json()
     published = await publish_real(client, auth, draft)
     assert published.status_code == 200, published.text
+    operation = await core_rows(real_gateway["url"],
+        f"SELECT operation_id::text FROM gateway_publish_operations WHERE operation_id = '{draft['id']}'")
+    assert operation == [(draft["id"],)]
     snap_id = published.json()["publication"]["snapshot_id"]
     rows = await core_rows(real_gateway["url"], "SELECT s.id::text, s.revoked_at, p.slug, p.latest_snapshot_id::text, s.manifest "
                                                 "FROM gateway_snapshots s JOIN gateway_projects p ON p.id = s.project_id")
@@ -296,3 +299,34 @@ async def test_private_site_switch_controls_real_gateway_without_changing_snapsh
         assert (await public_client.post(
             "/api/v1/auth/exchange", headers={"Authorization": f"Bearer {issued.json()['key']}"}
         )).status_code == 401
+
+
+async def test_private_v2_key_and_link_contract_against_real_control_and_public_apps(client, auth, real_gateway):
+    project = await make_project("V2Private", {"README.md": "# V2\nSynthetic v2 test content.\n"})
+    draft = (await client.post(f"{BASE}/drafts", headers=auth, json={
+        "entity_id": project["entity_id"], "document_ids": list(project["docs"].values())})).json()
+    draft = (await client.patch(f"{BASE}/drafts/{draft['id']}", headers=auth, json={
+        "documents": [{"id": d["id"], "owner_verified": True} for d in draft["documents"]]})).json()
+    published = await publish_real(client, auth, draft)
+    assert published.status_code == 200, published.text
+    key = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"],
+        "credential_type": "reusable_api_v2", "ttl_days": 3, "scopes": ["read"], "snapshot_policy": "pinned"})
+    assert key.status_code == 201, key.text
+    raw_key = key.json()["key"]
+    public = httpx.AsyncClient(transport=httpx.ASGITransport(app=real_gateway["public"]), base_url="http://public")
+    async with public:
+        first = await public.post("/api/v1/auth/exchange", headers={"Authorization": f"Bearer {raw_key}"})
+        second = await public.post("/api/v1/auth/exchange", headers={"Authorization": f"Bearer {raw_key}"})
+        assert first.status_code == second.status_code == 200
+        pid = (await core_rows(real_gateway["url"], "SELECT id::text FROM gateway_projects WHERE slug = 'v2private'"))[0][0]
+        direct = await public.get(f"/api/v1/projects/{pid}/context", headers={"Authorization": f"Bearer {raw_key}"})
+        assert direct.status_code == 200 and "Synthetic v2" in direct.text
+    listed = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
+    assert listed[0]["usage_status"] == "available"
+    assert listed[0]["credential_type"] == "reusable_api_v2" and listed[0]["last_used_at"]
+    assert raw_key not in json.dumps(listed)
+    link = await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"], "ttl_days": 1})
+    assert link.status_code == 201, link.text
+    assert link.json()["url"].startswith("https://share.example.test/s#token=")
+    token = link.json()["url"].split("#token=", 1)[1]
+    assert token not in (await client.get(f"{BASE}/links", headers=auth)).text

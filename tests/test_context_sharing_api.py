@@ -16,6 +16,7 @@ from sqlalchemy import text
 from ttakkari.api import context_sharing as api
 from ttakkari.config import get_settings
 from ttakkari.context_sharing.gateway import GatewayControl, GatewayUnavailable
+from ttakkari.context_sharing.models import ShareDraft
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 
@@ -79,6 +80,7 @@ OWNER_ROUTES = [
     ("PATCH", "/drafts/00000000-0000-0000-0000-000000000000"),
     ("POST", "/drafts/00000000-0000-0000-0000-000000000000/publish"),
     ("POST", "/keys"), ("GET", "/keys"), ("POST", "/keys/00000000-0000-0000-0000-000000000000/revoke"),
+    ("POST", "/links"), ("GET", "/links"), ("POST", "/links/00000000-0000-0000-0000-000000000000/revoke"),
     ("POST", "/projects/alpha/revoke"),
 ]
 
@@ -460,6 +462,18 @@ async def test_key_requires_an_active_publication_and_accepts_only_fixed_one_hou
     assert fixed.status_code == 201 and fixed.json()["ttl_seconds"] == 3600
 
 
+@pytest.mark.parametrize("scopes", [["search"], ["export"]])
+async def test_v2_connect_includes_gateway_project_id_without_read_scope(client, auth, gateway, scopes):
+    _, draft, _ = await published_project(client, auth, gateway)
+    issued = await client.post(f"{BASE}/keys", headers=auth, json={
+        "project_slug": draft["slug"], "credential_type": "reusable_api_v2",
+        "scopes": scopes, "snapshot_policy": "latest"})
+    assert issued.status_code == 201, issued.text
+    project_id = gateway.projects[draft["slug"]]["id"]
+    assert issued.json()["connect"]["project_id"] == project_id
+    assert issued.json()["connect"]["url"] == "https://ctx.example.test"
+
+
 async def test_key_issue_failure_leaves_no_local_key(client, auth, gateway):
     _, draft, _ = await published_project(client, auth, gateway)
     gateway.fail_with = GatewayUnavailable("down")
@@ -474,7 +488,8 @@ async def test_key_revoke_is_recorded_only_after_gateway_confirms(client, auth, 
     gateway.fail_with = GatewayUnavailable("down")
     r = await client.post(f"{BASE}/keys/{issued['id']}/revoke", headers=auth)
     assert r.status_code == 503
-    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"][0]["status"] == "active"
+    # 강화된 보안 기대치: 폐기 의도를 내구 저장해 원격 미확인 시에도 재시도 대상이 남는다.
+    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"][0]["status"] == "revoking"
     gateway.fail_with = None
     ok = await client.post(f"{BASE}/keys/{issued['id']}/revoke", headers=auth)
     assert ok.status_code == 200 and ok.json()["status"] == "revoked" and ok.json()["revoked_at"]
@@ -484,21 +499,129 @@ async def test_key_revoke_is_recorded_only_after_gateway_confirms(client, auth, 
     assert missing.status_code == 404
 
 
+async def test_v2_key_and_link_management_are_separate_and_return_secret_only_once(client, auth, gateway):
+    _, draft, publication = await published_project(client, auth, gateway)
+    key = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"],
+        "credential_type": "reusable_api_v2", "ttl_days": 7, "scopes": ["read"], "snapshot_policy": "pinned"})
+    assert key.status_code == 201, key.text
+    assert key.json()["credential_type"] == "reusable_api_v2" and key.json()["single_use"] is False
+    assert key.json()["pinned_snapshot_id"] == publication["publication"]["snapshot_id"]
+    link = await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"], "ttl_days": 3})
+    assert link.status_code == 201, link.text
+    secret = link.json()["url"].split("#token=", 1)[1]
+    assert link.json()["credential_type"] == "share_link_v2" and "key" not in link.json()
+    listed_keys = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
+    listed_links = (await client.get(f"{BASE}/links", headers=auth)).json()["links"]
+    assert {k["credential_type"] for k in listed_keys} == {"reusable_api_v2"}
+    assert {k["credential_type"] for k in listed_links} == {"share_link_v2"}
+    assert secret not in json.dumps(listed_keys) + json.dumps(listed_links)
+    gateway.fail_paths["/control/v2/credentials/status"] = 503
+    unavailable = (await client.get(f"{BASE}/links", headers=auth)).json()["links"]
+    assert unavailable[0]["usage_status"] == "unavailable"
+    gateway.fail_paths.clear()
+    latest_key = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"],
+        "credential_type": "reusable_api_v2", "ttl_days": 1, "scopes": ["read", "export"],
+        "snapshot_policy": "latest"})
+    assert latest_key.status_code == 201 and latest_key.json()["pinned_snapshot_id"] is None
+    state = (await client.get(f"{BASE}/projects", headers=auth)).json()["projects"]
+    state = next(p for p in state if p["slug"] == draft["slug"])
+    assert state["active_key_count"] == 2 and state["active_link_count"] == 1 and state["last_published_at"]
+    wrong_kind = await client.post(f"{BASE}/keys/{link.json()['id']}/revoke", headers=auth)
+    assert wrong_kind.status_code == 404
+    wrong_kind = await client.post(f"{BASE}/links/{key.json()['id']}/revoke", headers=auth)
+    assert wrong_kind.status_code == 404
+
+
+@pytest.mark.parametrize("body", [
+    {"credential_type": "reusable_api_v2", "ttl_days": 2},
+    {"credential_type": "share_link_v2"},
+])
+async def test_key_route_rejects_invalid_v2_ttl_and_mixed_link_type(client, auth, body):
+    rejected = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": "alpha", **body})
+    assert rejected.status_code == 422
+
+
+async def test_work_publication_blocks_new_v1_and_v2_keys_without_reinterpreting_existing_v1(client, auth, gateway):
+    _, draft, _ = await published_project(client, auth, gateway)
+    existing = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
+    assert existing.status_code == 201
+    async with sessionmaker()() as db:
+        row = await db.get(ShareDraft, draft["id"])
+        row.scope = "work"
+        await db.commit()
+    calls_before = list(gateway.calls)
+    v1 = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
+    v2 = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"],
+        "credential_type": "reusable_api_v2"})
+    link = await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"]})
+    agent_v1 = await client.post("/api/agent/context-sharing/keys", headers=await agent_headers(), json={
+        "project_slug": draft["slug"], "credential_type": "single_use_v1"})
+    assert v1.status_code == v2.status_code == link.status_code == agent_v1.status_code == 403
+    assert {v1.json()["code"], v2.json()["code"], link.json()["code"], agent_v1.json()["code"]} == {
+        "work_sharing_policy_required"}
+    assert gateway.calls == calls_before
+    listing = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
+    old = next(item for item in listing if item["id"] == existing.json()["id"])
+    assert old["credential_type"] == "single_use_v1" and old["status"] == "active"
+
+
+async def test_production_and_legacy_maintenance_register_short_context_share_retry(client, monkeypatch):
+    from ttakkari import generation_service, main
+    from ttakkari.context_sharing import service
+
+    jobs = {name: (operation, interval) for name, operation, interval in generation_service.maintenance_jobs(get_settings())}
+    operation, interval = jobs["context-sharing-revocations"]
+    assert callable(operation)
+    assert 0 < interval <= 60
+    assert main.CONTEXT_SHARING_RETRY_INTERVAL == 30
+    assert "_retry_context_sharing_revocations" in __import__("inspect").getsource(main._context_sharing_revocation_loop)
+    calls = []
+
+    async def retry(_db, _gateway, *, limit):
+        calls.append(limit)
+        return {"projects": 0, "credentials": 0}
+
+    monkeypatch.setattr(service, "retry_pending_revocations", retry)
+    await operation()
+    assert calls == [50]
+
+
+async def test_link_revoke_failure_is_durable_and_maintenance_retries(client, auth, gateway):
+    from ttakkari.context_sharing.service import retry_pending_revocations
+
+    _, draft, _ = await published_project(client, auth, gateway)
+    link = await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"]})
+    assert link.status_code == 201, link.text
+    gateway.fail_with = GatewayUnavailable("down")
+    failed = await client.post(f"{BASE}/links/{link.json()['id']}/revoke", headers=auth)
+    assert failed.status_code == 503
+    listed = (await client.get(f"{BASE}/links", headers=auth)).json()["links"]
+    assert listed[0]["status"] == "revoking"
+    gateway.fail_with = None
+    async with sessionmaker()() as db:
+        result = await retry_pending_revocations(db, GatewayControl(gateway, public_url="https://ctx.example.test"))
+    assert result["credentials"] == 1
+    assert (await client.get(f"{BASE}/links", headers=auth)).json()["links"][0]["status"] == "revoked"
+
+
 async def test_project_revoke_requires_gateway_confirmation(client, auth, gateway):
     _, draft, _ = await published_project(client, auth, gateway)
     await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
+    await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"]})
     gateway.reply_status = 409
     r = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
     assert r.status_code == 502
     detail = (await client.get(f"{BASE}/drafts/{draft['id']}", headers=auth)).json()
     assert detail["publication"]["status"] == "active"
     assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"][0]["status"] == "active"
+    assert (await client.get(f"{BASE}/links", headers=auth)).json()["links"][0]["status"] == "active"
     gateway.reply_status = None
     ok = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
     assert ok.status_code == 200 and ok.json()["publication"]["status"] == "revoked"
-    assert ok.json()["revoked_snapshots"] == 1 and ok.json()["revoked_keys"] == 1
+    assert ok.json()["revoked_snapshots"] == 1 and ok.json()["revoked_keys"] == 2
     assert gateway.latest(draft["slug"]) is None
     assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"][0]["status"] == "revoked"
+    assert (await client.get(f"{BASE}/links", headers=auth)).json()["links"][0]["status"] == "revoked"
     again = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     assert again.status_code == 409 and again.json()["code"] == "project_not_published"
     repeat = await client.post(f"{BASE}/projects/{draft['slug']}/revoke", headers=auth)
@@ -531,9 +654,13 @@ async def test_project_revoke_partial_failure_records_only_what_gateway_confirme
     assert r.json()["partial"] == {"revoked_snapshots": 0, "remaining_snapshots": 2, "revoked_keys": 0, "remaining_keys": 0}
     state = (await client.get(f"{BASE}/projects", headers=auth)).json()["projects"][0]["publication"]
     assert state["status"] == "active" and state["draft_id"] == second["id"]
+    pending = (await client.get(f"{BASE}/projects", headers=auth)).json()["projects"][0]
+    assert pending["revoke_state"] == "revoking"
     gateway.fail_paths.clear()
     ok = await client.post(f"{BASE}/projects/{first['slug']}/revoke", headers=auth)
     assert ok.status_code == 200 and ok.json()["revoked_snapshots"] == 2
+    complete = (await client.get(f"{BASE}/projects", headers=auth)).json()["projects"][0]
+    assert complete["revoke_state"] == "active"
 
 
 async def test_republish_supersedes_previous_publication(client, auth, gateway):
@@ -607,11 +734,19 @@ async def test_key_cleanup_revoke_failure_is_audited_without_key_material(client
     r = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     assert r.status_code == 502 and r.json()["code"] == "gateway_bad_response"
     assert RAW_KEY_PREFIX not in r.text
-    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"] == []
+    # cleanup 실패한 키 metadata를 보존해 maintenance가 원격 폐기를 재시도한다.
+    keys = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
+    assert len(keys) == 1 and keys[0]["status"] == "revoking"
     async with sessionmaker()() as db:
         audit = (await db.execute(text("SELECT detail::text FROM audit_logs WHERE action = 'context_share.key_cleanup_failed'"))).scalar_one()
     assert "gateway_key_id" in audit and "gateway_unavailable" in audit
     assert RAW_KEY_PREFIX not in audit
+    gateway.fail_paths.clear()
+    from ttakkari.context_sharing.service import retry_pending_revocations
+    async with sessionmaker()() as db:
+        retried = await retry_pending_revocations(db, GatewayControl(gateway))
+    assert retried["credentials"] == 1
+    assert (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"][0]["status"] == "revoked"
 
 
 async def test_key_that_outlives_the_fixed_ttl_is_revoked_and_not_returned(client, auth, gateway):

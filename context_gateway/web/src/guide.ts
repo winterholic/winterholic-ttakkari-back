@@ -3,7 +3,7 @@
 // (세션 Bearer로 initialize·tools/list 200, /mcp/mcp는 404). core가 바꾸면 이 상수 한 곳만 고친다.
 export const MCP_PATH = "/mcp";
 
-export function connectionGuide(origin: string): { curl: string; mcp: string } {
+export function connectionGuide(origin: string): { curl: string; mcp: string; reusableCurl: string; reusableMcp: string } {
   const curl = [
     "# 1) 이 화면과 같은 주소",
     `export CONTEXT_GATEWAY_URL="${origin}"`,
@@ -34,5 +34,20 @@ export function connectionGuide(origin: string): { curl: string; mcp: string } {
     null,
     2,
   );
-  return { curl, mcp };
+  const reusableCurl = [
+    `export CONTEXT_GATEWAY_URL="${origin}"`,
+    "read -rs CONTEXT_GATEWAY_KEY",
+    'curl -fsS "$CONTEXT_GATEWAY_URL/api/v1/projects" -H "Authorization: Bearer $CONTEXT_GATEWAY_KEY"',
+    "unset CONTEXT_GATEWAY_KEY",
+  ].join("\n");
+  const reusableMcp = JSON.stringify({
+    mcpServers: {
+      "context-gateway": {
+        type: "http",
+        url: `\${CONTEXT_GATEWAY_URL}${MCP_PATH}`,
+        headers: { Authorization: "Bearer ${CONTEXT_GATEWAY_KEY}" },
+      },
+    },
+  }, null, 2);
+  return { curl, mcp, reusableCurl, reusableMcp };
 }

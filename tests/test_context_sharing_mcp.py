@@ -19,9 +19,9 @@ from ttakkari.orchestrator import tool_policy
 
 pytestmark = pytest.mark.security
 READ = {"context_share_projects", "context_share_sources", "context_share_drafts", "context_share_draft",
-        "context_share_keys", "context_share_site"}
+        "context_share_keys", "context_share_links", "context_share_site"}
 WRITE = {"context_share_draft_create", "context_share_publish", "context_share_key_issue",
-         "context_share_key_revoke", "context_share_site_set"}
+         "context_share_key_revoke", "context_share_link_issue", "context_share_link_revoke", "context_share_site_set"}
 
 
 async def tools():
@@ -70,8 +70,12 @@ async def test_tools_call_only_agent_context_sharing_routes(monkeypatch):
                                                              "confirm_work_scope": True})
     await ms.server.call_tool("context_share_publish", {"entity_id": pid, "confirm_work_scope": True})
     await ms.server.call_tool("context_share_keys", {"project_slug": "alpha"})
+    await ms.server.call_tool("context_share_links", {"project_slug": "alpha"})
     await ms.server.call_tool("context_share_key_issue", {"project_slug": "alpha", "label": "agent"})
+    await ms.server.call_tool("context_share_link_issue", {"project_slug": "alpha", "ttl_days": 7,
+                                                            "snapshot_policy": "latest", "allow_export": True})
     await ms.server.call_tool("context_share_key_revoke", {"key_id": did})
+    await ms.server.call_tool("context_share_link_revoke", {"link_id": did})
     await ms.server.call_tool("context_share_site", {})
     await ms.server.call_tool("context_share_site_set", {"enabled": False})
     seen = [(c.args[0], c.args[1], c.kwargs["prefix"]) for c in call.await_args_list]
@@ -84,8 +88,11 @@ async def test_tools_call_only_agent_context_sharing_routes(monkeypatch):
                     ("POST", "/drafts", "/api/agent/context-sharing"),
                     ("POST", "/publish", "/api/agent/context-sharing"),
                     ("GET", "/keys", "/api/agent/context-sharing"),
+                    ("GET", "/links", "/api/agent/context-sharing"),
                     ("POST", "/keys", "/api/agent/context-sharing"),
+                    ("POST", "/links", "/api/agent/context-sharing"),
                     ("POST", f"/keys/{did}/revoke", "/api/agent/context-sharing"),
+                    ("POST", f"/links/{did}/revoke", "/api/agent/context-sharing"),
                     ("GET", "/site", "/api/agent/context-sharing"),
                     ("PATCH", "/site", "/api/agent/context-sharing")]
     assert call.await_args_list[4].args[2] == {"entity_id": pid, "document_ids": [did], "title": "t", "summary": ""}
@@ -93,7 +100,10 @@ async def test_tools_call_only_agent_context_sharing_routes(monkeypatch):
     assert call.await_args_list[6].args[2] == {"entity_id": pid, "document_ids": [did], "summary": "",
                                                "confirm_work_scope": True}
     assert call.await_args_list[7].args[2] == {"entity_id": pid, "confirm_work_scope": True}
-    assert call.await_args_list[12].args[2] == {"enabled": False}
+    assert call.await_args_list[10].args[2]["credential_type"] == "single_use_v1"
+    assert call.await_args_list[11].args[2] == {"project_slug": "alpha", "label": "", "ttl_days": 7,
+                                                "snapshot_policy": "latest", "allow_export": True}
+    assert call.await_args_list[15].args[2] == {"enabled": False}
 
 
 async def test_agent_draft_through_the_tool_path_reaches_a_draft_but_never_the_gateway(monkeypatch):
@@ -208,23 +218,19 @@ async def test_publish_tool_rejects_high_risk_and_unconfirmed_work_scope_sources
         app.dependency_overrides.pop(api.get_gateway, None)
 
 
-async def test_work_scope_publish_with_confirmation_issues_key_and_audits_agent_confirmation(monkeypatch):
+async def test_work_scope_confirmation_cannot_publish_external_content(monkeypatch):
     fake = FakeGateway()
     app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(fake, public_url="https://ctx.example.test")
     try:
         work = await make_project("Work", {"a.md": "# work context\ninternal summary\n"}, scope="work")
         _via_asgi(monkeypatch, await agent_headers())
-        published = await _result("context_share_publish", {"entity_id": work["entity_id"], "confirm_work_scope": True})
-        assert published["draft"]["status"] == "published" and published["draft"]["scope"] == "work"
-        assert published["draft"]["created_by"] == "agent" and len(fake.snapshots) == 1
-        slug = next(iter(fake.projects))
-        issued = await _result("context_share_key_issue", {"project_slug": slug, "label": "agent"})
-        assert issued["key"] and issued["single_use"] is True and issued["ttl_seconds"] == 3600
-        drafts = await _audit("context_share.draft_create")
+        denied = await _result("context_share_publish", {"entity_id": work["entity_id"], "confirm_work_scope": True})
+        assert denied["code"] == "work_sharing_policy_required"
+        assert fake.snapshots == {}
         publishes = await _audit("context_share.publish")
-        assert [(a, o, d["scope"], d["confirm_work_scope"]) for a, o, d in drafts] == [("agent", "ok", "work", True)]
-        assert [(a, o, d["scope"], d["confirm_work_scope"]) for a, o, d in publishes] == [("agent", "ok", "work", True)]
-        assert [a for a, _, _ in await _audit("context_share.key_issue")] == ["agent"]
+        # 조직 정책이 없는 현재 조건에서는 외부 게시 작업 자체를 시작하지 않아 임시 snapshot/draft도 만들지 않는다.
+        assert await _audit("context_share.draft_create") == []
+        assert publishes == []
     finally:
         app.dependency_overrides.pop(api.get_gateway, None)
 
@@ -252,9 +258,9 @@ async def test_confirmed_work_scope_keeps_scanner_and_document_limits(monkeypatc
         big = await make_project("WorkBig", {"a.md": "x" * (200_000 + 1)}, scope="work")
         _via_asgi(monkeypatch, await agent_headers())
         confirmed = {"confirm_work_scope": True}
-        assert (await _result("context_share_publish", {"entity_id": risky["entity_id"], **confirmed}))["code"] == "sensitive_content_blocked"
-        assert (await _result("context_share_publish", {"entity_id": many["entity_id"], **confirmed}))["code"] == "too_many_documents"
-        assert (await _result("context_share_publish", {"entity_id": big["entity_id"], **confirmed}))["code"] == "draft_too_large"
+        results = [await _result("context_share_publish", {"entity_id": item["entity_id"], **confirmed})
+                   for item in (risky, many, big)]
+        assert all(result["code"] == "work_sharing_policy_required" for result in results)
         assert fake.snapshots == {}
         assert all(d["confirm_work_scope"] for _, _, d in await _audit("context_share.draft_create"))
     finally:

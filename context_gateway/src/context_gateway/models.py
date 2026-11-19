@@ -59,6 +59,15 @@ class Snapshot(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PublishOperation(Base):
+    __tablename__ = "gateway_publish_operations"
+
+    operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_snapshots.id"), nullable=False)
+    receipt: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
 class APIKey(Base):
     __tablename__ = "gateway_api_keys"
 
@@ -66,6 +75,16 @@ class APIKey(Base):
     label: Mapped[str] = mapped_column(String(160))
     credential_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    credential_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="single_use_v1", server_default="single_use_v1"
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    window_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    window_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -81,6 +100,12 @@ class KeyACL(Base):
         ForeignKey("gateway_projects.id", ondelete="CASCADE"), primary_key=True
     )
     scopes: Mapped[list[str]] = mapped_column(JSONB)
+    snapshot_policy: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="latest", server_default="latest"
+    )
+    snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    project_name: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    project_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Session(Base):

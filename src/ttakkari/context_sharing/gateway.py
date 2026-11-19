@@ -11,6 +11,7 @@ import re
 import stat
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -58,6 +59,11 @@ class GatewayRejected(GatewayError):
 
 class GatewayBadResponse(GatewayError):
     """성공 응답이지만 계약과 다르다(필수 필드 누락·digest 불일치)."""
+
+    def __init__(self, message: str, *, cleanup_receipt: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        # Compensation can use identifiers and expiry only. Never retain or expose the raw credential.
+        self.cleanup_receipt = cleanup_receipt
 
 
 @dataclass(frozen=True)
@@ -205,7 +211,9 @@ class GatewayControl:
         return body["enabled"]
 
     async def _send(self, method: str, path: str, body: dict[str, Any] | None, ok: set[int]) -> dict[str, Any]:
-        reply = await self.require().request(method, f"{CONTROL_PREFIX}{path}", body)
+        prefix = "/control/v2" if path.startswith("/v2/") else CONTROL_PREFIX
+        suffix = path.removeprefix("/v2") if prefix == "/control/v2" else path
+        reply = await self.require().request(method, f"{prefix}{suffix}", body)
         if reply.status in ok:
             return reply.body
         if reply.status >= 500:
@@ -242,6 +250,57 @@ class GatewayControl:
             received[doc["id"]] = doc["sha256"]
         if received != sent:
             raise GatewayBadResponse("snapshot receipt does not match what was published")
+        return body
+
+    async def issue_v2_credential(self, credential_type: str, project_id: str, *, label: str, ttl_days: int,
+                                  scopes: list[str], snapshot_policy: str,
+                                  snapshot_id: str | None = None) -> dict[str, Any]:
+        if credential_type not in {"reusable_api_v2", "share_link_v2"} or not _is_uuid(project_id):
+            raise GatewayBadResponse("invalid v2 credential request")
+        if ttl_days not in {1, 3, 7, 30} or snapshot_policy not in {"pinned", "latest"}:
+            raise GatewayBadResponse("invalid v2 credential policy")
+        if (snapshot_policy == "pinned") != (snapshot_id is not None) or (snapshot_id is not None and not _is_uuid(snapshot_id)):
+            raise GatewayBadResponse("invalid v2 snapshot selection")
+        grant: dict[str, Any] = {"scopes": scopes, "snapshot_policy": snapshot_policy}
+        if snapshot_id:
+            grant["snapshot_id"] = snapshot_id
+        body = await self._send("POST", "/v2/credentials", {
+            "credential_type": credential_type, "label": label, "ttl_days": ttl_days,
+            "projects": {project_id: grant},
+        }, {201})
+        projects = body.get("projects")
+        receipt_grant = projects.get(project_id) if isinstance(projects, dict) else None
+        try:
+            created_at = datetime.fromisoformat(str(body.get("created_at", "")))
+            expires_at = datetime.fromisoformat(str(body.get("expires_at", "")))
+        except ValueError:
+            raise GatewayBadResponse("v2 credential expiry is invalid") from None
+        expected = {"scopes": scopes, "snapshot_policy": snapshot_policy, "snapshot_id": snapshot_id}
+        if (not isinstance(projects, dict) or not _is_uuid(body.get("key_id"))
+                or not isinstance(body.get("key"), str) or not body["key"]
+                or body.get("credential_type") != credential_type or body.get("ttl_days") != ttl_days
+                or body.get("label") != label or not isinstance(body.get("created_at"), str)
+                or not isinstance(body.get("expires_at"), str)
+                or "last_used_at" not in body or "revoked_at" not in body
+                or body.get("last_used_at") is not None or body.get("revoked_at") is not None
+                or created_at.tzinfo is None or expires_at.tzinfo is None
+                or expires_at <= created_at or abs((expires_at - created_at).total_seconds() - ttl_days * 86400) > 180
+                or receipt_grant != expected or len(projects) != 1):
+            cleanup_receipt = ({"key_id": body["key_id"], "expires_at": body.get("expires_at"),
+                                "label": body.get("label")}
+                               if _is_uuid(body.get("key_id")) else None)
+            raise GatewayBadResponse("v2 credential receipt does not match request", cleanup_receipt=cleanup_receipt)
+        return body
+
+    async def credential_status(self, key_ids: list[str]) -> dict[str, Any]:
+        if not key_ids or len(key_ids) > 200 or not all(_is_uuid(item) for item in key_ids):
+            raise GatewayBadResponse("invalid credential status request")
+        body = await self._send("POST", "/v2/credentials/status", {"key_ids": key_ids}, {200})
+        rows = body.get("credentials")
+        if (not isinstance(rows, list) or any(not isinstance(row, dict) or not _is_uuid(row.get("key_id"))
+                or not isinstance(row.get("credential_type"), str) for row in rows)
+                or {row["key_id"] for row in rows} != set(key_ids)):
+            raise GatewayBadResponse("credential status receipt is incomplete")
         return body
 
     async def revoke_snapshot(self, snapshot_id: str) -> dict[str, Any]:

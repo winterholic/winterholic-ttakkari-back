@@ -271,6 +271,15 @@ async def _retention() -> None:
     await cleanup()
 
 
+async def _retry_context_sharing_revocations() -> None:
+    """짧은 주기로 pending 폐기를 제한된 양만 재시도한다. 원격 revoke는 반복 호출에 안전하다."""
+    from ttakkari.context_sharing import service as context_sharing_service
+    from ttakkari.context_sharing.gateway import build_control
+
+    async with sessionmaker()() as db:
+        await context_sharing_service.retry_pending_revocations(db, build_control(), limit=50)
+
+
 async def _reminders() -> None:
     from ttakkari.planner import checklist_reminders, reminders
     await reminders.send_due()
@@ -424,7 +433,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
 
     jobs: list[tuple[str, object, float]] = [
-        ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
+        ("retention", _retention, 3600), ("context-sharing-revocations", _retry_context_sharing_revocations,
+                                           max(10, min(60, float(s.runtime_poll_seconds)))),
+        ("vectors", _vectors, s.runtime_poll_seconds),
         ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2),
         ("schedules", _schedules, s.runtime_poll_seconds),
         ("research-recovery", recover_orphaned_runs, s.runtime_poll_seconds),

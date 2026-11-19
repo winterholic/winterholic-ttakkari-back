@@ -52,6 +52,11 @@ async def test_serves_built_index_and_assets_with_security_headers(client: Async
         assert response.headers["x-frame-options"] == "DENY"
         assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
 
+    share_shell = await client.get("/s#token=secret-does-not-reach-server")
+    assert share_shell.status_code == 200
+    assert "Gateway UI" in share_shell.text
+    assert share_shell.headers["x-robots-tag"].startswith("noindex")
+
 
 @pytest.mark.asyncio
 async def test_api_mcp_and_health_are_forwarded_without_static_fallback(client: AsyncClient):

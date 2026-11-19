@@ -70,7 +70,7 @@ def test_project_share_revoke_is_control_only() -> None:
         asyncio.run(control.state.session_factory.kw["bind"].dispose())
 
 
-def test_python_mcp_sdk_registers_only_four_read_only_tools() -> None:
+def test_python_mcp_sdk_registers_read_only_context_and_export_tools() -> None:
     from mcp.client import Client
 
     settings = Settings(
@@ -89,6 +89,7 @@ def test_python_mcp_sdk_registers_only_four_read_only_tools() -> None:
             "get_project_context",
             "search_project_context",
             "get_document",
+            "export_project_context",
         }
         assert all(tool.annotations and tool.annotations.read_only_hint for tool in tools.tools)
     finally:

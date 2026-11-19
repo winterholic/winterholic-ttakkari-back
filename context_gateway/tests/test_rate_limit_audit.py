@@ -12,7 +12,12 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from context_gateway.apps import create_control_app, create_public_app
-from context_gateway.auth import AuthenticationError, authenticate_session, hash_credential
+from context_gateway.auth import (
+    AuthenticationError,
+    authenticate_api_key,
+    authenticate_session,
+    hash_credential,
+)
 from context_gateway.config import Settings
 from context_gateway.models import APIKey, AuditEvent, KeyACL, Project, Session
 
@@ -38,7 +43,9 @@ async def test_audit_insert_with_insert_only_role_does_not_require_select(postgr
                     await db.commit()
                 async with connection.begin_nested():
                     with pytest.raises(DBAPIError):
-                        await connection.execute(text("SELECT created_at FROM gateway_audit_events"))
+                        await connection.execute(
+                            text("SELECT created_at FROM gateway_audit_events")
+                        )
                     # Roll back the deliberately rejected statement before leaving
                     # the savepoint; the outer transaction still owns the test role.
                     await connection.get_nested_transaction().rollback()
@@ -114,9 +121,11 @@ async def test_rate_limit_boundary_and_window_refresh_are_database_backed(
             now=now + timedelta(minutes=1),
         )
         await db.commit()
+        await db.refresh(key)
+        assert key.window_started_at == now + timedelta(minutes=1)
+        assert key.window_count == 1
         await db.refresh(session_record)
-        assert session_record.window_started_at == now + timedelta(minutes=1)
-        assert session_record.window_count == 1
+        assert session_record.window_count == 0
 
 
 @pytest.mark.asyncio
@@ -203,3 +212,59 @@ async def test_rest_and_mcp_share_counter_and_persist_nonsecret_audit_events(
             )
             for event in events
         )
+
+
+@pytest.mark.asyncio
+async def test_reusable_key_and_its_sessions_share_one_rate_limit(db_sessions) -> None:
+    now = datetime(2026, 11, 19, tzinfo=UTC)
+    async with db_sessions() as db:
+        project = Project(slug=f"shared-rate-{uuid4().hex}", name="Shared Rate")
+        key = APIKey(
+            label="synthetic reusable rate",
+            credential_hash=hash_credential("synthetic reusable bearer"),
+            expires_at=now + timedelta(days=1),
+            credential_type="reusable_api_v2",
+        )
+        db.add_all([project, key])
+        await db.flush()
+        db.add(KeyACL(key_id=key.id, project_id=project.id, scopes=["read"]))
+        db.add(
+            Session(
+                key_id=key.id,
+                credential_hash=hash_credential("synthetic reusable session"),
+                expires_at=now + timedelta(hours=1),
+                window_started_at=now,
+                window_count=0,
+            )
+        )
+        await db.commit()
+
+        await authenticate_api_key(
+            db,
+            "synthetic reusable bearer",
+            project_id=project.id,
+            required_scope="read",
+            rate_limit_per_minute=2,
+            now=now,
+        )
+        await db.commit()
+        await authenticate_session(
+            db,
+            "synthetic reusable session",
+            project_id=project.id,
+            required_scope="read",
+            rate_limit_per_minute=2,
+            now=now + timedelta(seconds=1),
+        )
+        await db.commit()
+        with pytest.raises(AuthenticationError) as rejected:
+            await authenticate_api_key(
+                db,
+                "synthetic reusable bearer",
+                project_id=project.id,
+                required_scope="read",
+                rate_limit_per_minute=2,
+                now=now + timedelta(seconds=2),
+            )
+
+    assert rejected.value.status_code == 429

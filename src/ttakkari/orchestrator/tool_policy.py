@@ -15,7 +15,7 @@ READ_ONLY_TOOLS = frozenset({
     "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
     "list_scheduled_actions",
     "context_share_projects", "context_share_sources", "context_share_drafts", "context_share_draft",
-    "context_share_keys", "context_share_site",
+    "context_share_keys", "context_share_links", "context_share_site",
     "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
     "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
     "creative_v2_auto_assets_status", "creative_v2_styles", "creative_v2_style",
@@ -69,7 +69,8 @@ CREATIVE_TOOLS = frozenset({
 })
 # 사용자 대화의 명시적 프로젝트 공유·키·사이트 요청에 따라 수행한다. 세션·프로젝트 ACL과 scanner는 API/service가 강제한다.
 CONTEXT_SHARE_TOOLS = frozenset({"context_share_draft_create", "context_share_publish", "context_share_key_issue",
-                                 "context_share_key_revoke", "context_share_site_set"})
+                                 "context_share_key_revoke", "context_share_link_issue", "context_share_link_revoke",
+                                 "context_share_site_set"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
                        | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS
                        | HOST_OPERATION_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS

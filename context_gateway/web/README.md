@@ -19,14 +19,13 @@ npm run dev         # 개발 서버. API는 같은 origin이어야 하므로 아
 
 ## 동작 요약
 
-1. 키 입력 → `POST /api/v1/auth/exchange` (`Authorization: Bearer <키>`)를 **한 번** 호출해 세션 토큰을 받는다.
-2. 세션으로 `GET /api/v1/projects`부터 조회한다. 프로젝트 메타데이터·스냅샷 선택·전체 맥락·개별 문서·검색·내보내기(MD/JSON/ZIP)가 나머지 REST 경로다.
-3. 키와 세션은 메모리(`SessionStore`와 `GatewayClient`의 `#token` 필드)에만 있다. localStorage·sessionStorage·쿠키·URL·콘솔·분석 도구로 내보내지 않는다. 새로고침하면 사라지고 다시 키를 넣어야 한다.
-4. 만료 시각(교환 응답의 `expires_at`)이 되거나 데이터 요청이 401을 받거나 로그아웃하면 토큰과 화면의 문서를 지운다.
-5. 호출 경로는 `src/api/paths.ts`의 허용 목록(교환 + 공개 REST 7개)뿐이다. Private API·로그인·refresh 경로는 만들 수 없다. 모든 요청은 `credentials: "omit"`, `referrerPolicy: "no-referrer"`, 상대 경로(같은 origin)다.
-6. 다운로드는 Authorization을 붙인 `fetch` → `Blob` → `blob:` URL 앵커로 저장한다. URL에는 자격이 없다.
-7. Markdown은 `react-markdown` + `remark-gfm`으로 그린다. 원시 HTML은 요소가 되지 않고 글자로 보이며, 링크는 `http(s):`·`mailto:`만 새 탭(`noopener noreferrer nofollow`)으로 열고, 이미지는 외부를 불러오지 않고 대체 텍스트만 보인다.
-8. 문서별 `source_refs`·`source_revision`·`generated_at`·`verified_at`을 보인다. `verified_at`이 null이거나 응답에서 빠지면 "미검증" 배지로 표시한다. 최신 [Gateway 계약](../../docs/context-gateway-contract.md)은 문서 provenance를 스냅샷과 독립된 문서 값으로 정의하며, 생략과 명시적 `null`은 미상이다. 빈 `source_refs`도 실제 문서 값으로 보존하고 스냅샷 값으로 채우지 않는다.
+1. 기존 `/` Reader는 키 입력 → `POST /api/v1/auth/exchange` → 공개 프로젝트·문서 API를 호출한다. `single_use_v1`은 한 번 교환하고, `reusable_api_v2`는 raw Bearer 또는 반복 교환을 지원한다.
+2. `/s#token=SECRET`은 최초 렌더 전에 fragment를 메모리로 옮기고 `history.replaceState`로 지운다. `/s`는 API Key 입력 화면을 렌더하지 않으며 `POST /api/v1/share/exchange` JSON으로 쿠키 세션을 만든다.
+3. share Reader는 `/api/v1/share/context`, `/api/v1/share/export?format=markdown`, `/api/v1/share/logout`만 같은 origin으로 요청한다. 쿠키는 브라우저가 붙이고 설정한 경로 allowlist, `credentials: "same-origin"`, `cache: "no-store"`, `referrerPolicy: "no-referrer"`, `redirect: "error"`를 사용한다. raw 링크 토큰·세션 본문을 localStorage, sessionStorage, query, 오류 문구, 로그, 일반 REST Query cache에 저장하지 않는다.
+4. 공유 세션은 브라우저 쿠키를 사용해 재방문할 수 있다. 원 링크 재열기는 같은 링크 재교환을 허용한다. 만료·폐기·401은 원 링크 재열기 또는 소유자 문의를 안내한다. 5xx/네트워크 오류에는 비밀 없는 재시도 안내가 나온다. 로그아웃은 공유 세션만 폐기한다.
+5. 공개 Reader는 API가 허용한 프로젝트 하나와 승인 snapshot만 표시한다. 이름·요약·문서 목록/본문·snapshot 생성/게시 시각·출처/검증 상태·링크 만료를 보여 준다. 전체 복사는 read scope에서도 가능하고 Markdown 다운로드는 export scope에서만 보인다. 서버 403/404도 처리한다. 일반 REST 프로젝트 목록, 다른 snapshot, MCP로 권한을 넓히지 않는다.
+6. 두 Reader의 Markdown은 `SafeMarkdown`을 재사용한다. raw HTML은 요소로 만들지 않고, 외부 이미지는 네트워크 요청 없이 대체 텍스트로, 링크는 `http(s):`·`mailto:`만 새 탭(`noopener noreferrer nofollow`)으로 연다.
+7. 기존 Reader의 문서별 `source_refs`·`source_revision`·`generated_at`·`verified_at` 표시도 유지한다. `verified_at`이 null이거나 응답에서 빠지면 "미검증"으로 표시한다. 빈 `source_refs`를 snapshot 값으로 채우지 않는다.
 
    과거 UI 기록에는 문서 단건 응답에 출처 필드가 없다는 구 계약을 전제로 `mergeProvenance`가 스냅샷 값을 상속한다고 적혀 있었다. 그 fallback은 현재 계약과 맞지 않아 제거했다. 단건 응답과 전체 context 응답 모두 각 문서가 돌려준 provenance만 표시한다.
 
@@ -81,7 +80,13 @@ core working tree의 `web_public.py`는 `CONTEXT_GATEWAY_WEB_DIR`(기본 `/app/w
 
 ## 연결 안내(curl·MCP)
 
-화면의 "curl·MCP로 쓰려면"은 환경변수 이름(`$CONTEXT_GATEWAY_URL`, `$CONTEXT_GATEWAY_KEY`, `$CONTEXT_GATEWAY_SESSION`)만 쓴다. 키는 `read -rs`로 받고 교환 직후 `unset`한다. 화면이 쓰는 키·세션 값은 이 문자열 생성 코드(`src/guide.ts`)로 들어가지 않는다.
+화면의 "curl·MCP로 쓰려면"은 별도로 발급한 `reusable_api_v2` 키를 raw Bearer로 REST·MCP에 연결하는 예시를 먼저 제공한다. 키는 `read -rs`로 받고 사용 뒤 `unset`한다. 기존 `single_use_v1` 키는 exchange 후 세션 Bearer를 쓰는 예시로 보존했다. `share_link_v2`는 REST·MCP Bearer가 아니며 이 공개 Reader의 cookie 교환만 사용한다. 실제 키·세션 값은 문자열 생성 코드(`src/guide.ts`)에 전달되지 않는다.
+
+## 공개 공유 Reader 구현 경계
+
+- `/s` 라우트는 core의 정적 shell과 v2 share API를 사용한다. API가 발급하는 Secure·HttpOnly·SameSite=Strict 쿠키의 생성/검증은 Gateway 소유다. 웹은 `Secure`를 낮추거나 쿠키를 직접 읽지 않는다.
+- share 전용 fetch allowlist는 세 share endpoint뿐이다. 응답은 React 메모리 상태에서만 보관하고 브라우저 일반 Query 캐시를 사용하지 않는다.
+- 이 checkout의 `scripts/serve-web.mjs` share API는 브라우저 검증 전용 합성 응답이다. 실제 Gateway 연동·운영 링크 발급·공개 활성화는 이 UI 검증에서 수행하지 않는다.
 
 ## 디자인 토큰
 
@@ -90,6 +95,12 @@ core working tree의 `web_public.py`는 `CONTEXT_GATEWAY_WEB_DIR`(기본 `/app/w
 ```bash
 node scripts/extract-tokens.mjs <front>/src/vendor/ttakkari/tokens.css
 ```
+
+## v2 공개 Reader 검증 (2026-11-19)
+
+`/s#token=...` 공개 Reader와 합성 API 브라우저 확인을 추가했다. `npm test`는 104 passed / 5 skipped(기존 live 전용), `npm run typecheck`, `npm run build`, 변경 파일 `design-lint.py`가 통과했다. 브라우저에서 390×844·1280×800, fragment 정리·같은 탭 재열기·복사·scope export 다운로드·read-only 버튼 숨김·revoked 401·일시 503 후 재시도·logout을 합성 key/API로 확인했다. 성공 네트워크는 share exchange/context뿐이며, export scope에서만 share export가 호출됐다. 외부 이미지 요청은 없었다.
+
+재현 명령·세부 출력·캡처 경로는 [v2 웹 작업 기록](work-history/2026-11-19-context-gateway-v2-web.md)에 있다. 이는 실제 Gateway/Private 연동이나 운영 공개·TLS cookie 검증이 아니다. 운영 데이터 발급·공개 활성화·push·배포는 실행하지 않았다.
 
 ## 검증 상태
 

@@ -6,7 +6,7 @@ import json
 import zipfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -20,18 +20,33 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .auth import (
     AuthenticationError,
+    authenticate_api_key,
     authenticate_session,
     exchange_key,
-    validate_session,
+    exchange_share_link,
+    hash_credential,
+    session_validation_error,
 )
 from .config import Settings
 from .database import make_session_factory
-from .models import Base, Project, Session, SiteControlAudit, SiteControlState, Snapshot
+from .models import (
+    APIKey,
+    Base,
+    KeyACL,
+    Project,
+    PublishOperation,
+    Session,
+    SiteControlAudit,
+    SiteControlState,
+    Snapshot,
+)
 from .publishing import (
+    IdempotencyConflictError,
     IntegrityError,
     ProjectSharingRevokedError,
     PublishError,
     issue_api_key,
+    issue_v2_credential,
     publish_snapshot,
     revoke_api_key,
     revoke_project_sharing,
@@ -59,7 +74,40 @@ class IssueKeyRequest(BaseModel):
     projects: dict[UUID, ProjectKeyGrant] = Field(min_length=1)
 
 
+class V2ProjectGrant(BaseModel):
+    scopes: list[Literal["read", "search", "export"]] = Field(min_length=1)
+    snapshot_policy: Literal["pinned", "latest"] = "pinned"
+    snapshot_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_snapshot(self):
+        if (self.snapshot_policy == "pinned") != (self.snapshot_id is not None):
+            raise ValueError("pinned policy requires snapshot_id; latest forbids it")
+        return self
+
+
+class IssueCredentialV2Request(BaseModel):
+    credential_type: Literal["reusable_api_v2", "share_link_v2"]
+    label: str = Field(min_length=1, max_length=160)
+    ttl_days: Literal[1, 3, 7, 30] = 3
+    projects: dict[UUID, V2ProjectGrant] = Field(min_length=1, max_length=1)
+
+    @model_validator(mode="after")
+    def validate_type_scopes(self):
+        grant = next(iter(self.projects.values()))
+        if self.credential_type == "share_link_v2" and (
+            "read" not in grant.scopes or "search" in grant.scopes
+        ):
+            raise ValueError("share links require read and do not support search")
+        return self
+
+
+class CredentialStatusRequest(BaseModel):
+    key_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
 class SnapshotPublishRequest(BaseModel):
+    operation_id: UUID | None = None
     project_slug: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     project_name: str = Field(min_length=1, max_length=240)
     project_description: str = Field(default="", max_length=4000)
@@ -147,6 +195,33 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
             text("SELECT to_regclass('public.gateway_site_control_audit') IS NOT NULL")
         )
         await connection.run_sync(Base.metadata.create_all)
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_api_keys ADD COLUMN IF NOT EXISTS credential_type VARCHAR(32) NOT NULL DEFAULT 'single_use_v1'"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_api_keys ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_api_keys ADD COLUMN IF NOT EXISTS window_started_at TIMESTAMPTZ"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_api_keys ADD COLUMN IF NOT EXISTS window_count INTEGER NOT NULL DEFAULT 0"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_key_acls ADD COLUMN IF NOT EXISTS snapshot_policy VARCHAR(16) NOT NULL DEFAULT 'latest'"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_key_acls ADD COLUMN IF NOT EXISTS snapshot_id UUID"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_key_acls ADD COLUMN IF NOT EXISTS project_name VARCHAR(240)"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_key_acls ADD COLUMN IF NOT EXISTS project_description TEXT"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE gateway_publish_operations ADD COLUMN IF NOT EXISTS receipt JSONB"
+        )
         if not site_control_was_initialized:
             await connection.exec_driver_sql(
                 "INSERT INTO gateway_site_control (id, enabled) VALUES (1, TRUE) ON CONFLICT (id) DO NOTHING"
@@ -191,6 +266,9 @@ async def _initialize_schema(factory: async_sessionmaker[AsyncSession]) -> None:
             )
             await connection.exec_driver_sql(
                 "GRANT UPDATE (consumed_at) ON gateway_api_keys TO context_gateway_public"
+            )
+            await connection.exec_driver_sql(
+                "GRANT UPDATE (last_used_at, window_started_at, window_count) ON gateway_api_keys TO context_gateway_public"
             )
             await connection.exec_driver_sql(
                 "GRANT INSERT, UPDATE ON gateway_sessions TO context_gateway_public"
@@ -257,23 +335,78 @@ async def _authorize(
             required_scope=scope,
             rate_limit_per_minute=settings.rate_limit_per_minute,
         )
-    except AuthenticationError as exc:
-        if exc.status_code == 401:
+    except AuthenticationError as session_error:
+        try:
+            return await authenticate_api_key(
+                session,
+                raw,
+                project_id=project_id,
+                required_scope=scope,
+                rate_limit_per_minute=settings.rate_limit_per_minute,
+            )
+        except AuthenticationError as key_error:
+            failure = (
+                session_error
+                if (key_error.status_code == 401 and session_error.status_code != 401)
+                or (
+                    key_error.error_code == "unauthorized"
+                    and session_error.error_code != "unauthorized"
+                )
+                else key_error
+            )
+        if failure.status_code == 401:
             raise HTTPException(
-                401, "unauthorized", headers={"WWW-Authenticate": "Bearer"}
-            ) from exc
-        if exc.status_code == 429:
-            raise HTTPException(429, "rate limit exceeded", headers={"Retry-After": "60"}) from exc
-        raise HTTPException(404, "not found") from exc
+                401, failure.error_code, headers={"WWW-Authenticate": "Bearer"}
+            ) from failure
+        if failure.status_code == 429:
+            raise HTTPException(
+                429, "rate limit exceeded", headers={"Retry-After": "60"}
+            ) from failure
+        raise HTTPException(404, "not found") from failure
 
 
-def _project_out(project: Project) -> ProjectOut:
+def _project_out(
+    project: Project,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    latest_snapshot_id: UUID | None = None,
+) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         slug=project.slug,
-        name=project.name,
-        description=project.description,
-        latest_snapshot_id=project.latest_snapshot_id,
+        name=name if name is not None else project.name,
+        description=description if description is not None else project.description,
+        latest_snapshot_id=(
+            latest_snapshot_id if latest_snapshot_id is not None else project.latest_snapshot_id
+        ),
+    )
+
+
+async def _credential_project_out(
+    db: AsyncSession, principal: Session | APIKey, project: Project
+) -> ProjectOut:
+    key = principal if isinstance(principal, APIKey) else await db.get(APIKey, principal.key_id)
+    if key is None or key.credential_type == "single_use_v1":
+        return _project_out(project)
+    acl = await db.get(KeyACL, (key.id, project.id))
+    if acl is None or acl.snapshot_policy != "pinned":
+        return _project_out(project)
+    snapshot = await db.get(Snapshot, acl.snapshot_id) if acl.snapshot_id else None
+    manifest = snapshot.manifest if snapshot is not None else {}
+    # Existing manifests have no immutable metadata. Old grants without grant-time values
+    # fall back to non-sensitive stable values instead of current Project metadata.
+    name = acl.project_name or manifest.get("project_name") or project.slug
+    description = (
+        acl.project_description
+        if acl.project_description is not None
+        else manifest.get("project_description", "")
+    )
+    return _project_out(
+        project,
+        name=name,
+        description=description,
+        latest_snapshot_id=acl.snapshot_id,
     )
 
 
@@ -319,6 +452,27 @@ async def _project_by_id(
     return project
 
 
+async def _credential_snapshot(
+    db: AsyncSession,
+    principal: Session | APIKey,
+    project: Project,
+    requested_id: UUID | None,
+) -> Snapshot | None:
+    key = principal if isinstance(principal, APIKey) else await db.get(APIKey, principal.key_id)
+    if key is None or key.credential_type == "single_use_v1":
+        return await get_snapshot(db, project, requested_id)
+    acl = await db.get(KeyACL, (key.id, project.id))
+    if acl is None:
+        return None
+    if acl.snapshot_policy == "pinned":
+        if requested_id is not None and requested_id != acl.snapshot_id:
+            return None
+        return await get_snapshot(db, project, acl.snapshot_id)
+    if requested_id is not None and requested_id != project.latest_snapshot_id:
+        return None
+    return await get_snapshot(db, project, project.latest_snapshot_id)
+
+
 def create_public_app(settings: Settings | None = None) -> FastAPI:
     config = _settings(settings)
     factory = make_session_factory(config)
@@ -345,7 +499,9 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         path = request.url.path
         if path == "/api/v1/site":
             return await call_next(request)
-        if path.startswith(("/api/v1/", "/mcp")) and request.headers.get("authorization"):
+        if path.startswith(("/api/v1/", "/mcp")) and (
+            request.headers.get("authorization") or path.startswith("/api/v1/share")
+        ):
             async with factory() as db:
                 enabled = await _site_enabled(db)
             if not enabled:
@@ -354,7 +510,17 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
                     content={"detail": "site_temporarily_unavailable"},
                     headers={"Cache-Control": "no-store", "Retry-After": "60"},
                 )
-        return await call_next(request)
+        response = await call_next(request)
+        if path.startswith("/api/v1/share"):
+            response.headers.update(
+                {
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "no-referrer",
+                    "X-Robots-Tag": "noindex, nofollow, noarchive",
+                    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+                }
+            )
+        return response
 
     @app.get("/api/v1/site", include_in_schema=True)
     async def public_site_status(response: Response, db: AsyncSession = Depends(db_dep)):
@@ -374,10 +540,11 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
                     headers=exc.headers,
                 )
             async with factory() as db:
-                if not await validate_session(db, raw):
+                auth_error = await session_validation_error(db, raw)
+                if auth_error is not None:
                     return JSONResponse(
                         status_code=401,
-                        content={"detail": "unauthorized"},
+                        content={"detail": auth_error},
                         headers={"WWW-Authenticate": "Bearer"},
                     )
         return await call_next(request)
@@ -395,19 +562,138 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
             token, expiry = await exchange_key(db, raw)
         except AuthenticationError as exc:
             raise HTTPException(
-                401, "unauthorized", headers={"WWW-Authenticate": "Bearer"}
+                401, exc.error_code, headers={"WWW-Authenticate": "Bearer"}
             ) from exc
         return ExchangeResponse(access_token=token, expires_at=expiry)
+
+    async def _share_session(db: AsyncSession, request: Request, *, scope: str = "read"):
+        raw = request.cookies.get("context_gateway_share")
+        if not raw:
+            raise HTTPException(401, "share_session_required")
+        try:
+            principal, ids = await authenticate_session(
+                db,
+                raw,
+                project_id=None,
+                required_scope=scope,
+                rate_limit_per_minute=config.rate_limit_per_minute,
+                allow_share=True,
+            )
+        except AuthenticationError as exc:
+            raise HTTPException(401, exc.error_code) from exc
+        key = await db.get(APIKey, principal.key_id)
+        if key is None or key.credential_type != "share_link_v2":
+            raise HTTPException(401, "audience_mismatch")
+        if len(ids) != 1:
+            raise HTTPException(404, "not found")
+        return principal, key, ids[0]
+
+    @app.post("/api/v1/share/exchange")
+    async def share_exchange(
+        request: Request, response: Response, db: AsyncSession = Depends(db_dep)
+    ):
+        if request.headers.get("content-type", "").split(";", 1)[0].lower() != "application/json":
+            raise HTTPException(415, "unsupported_media_type")
+        if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+            raise HTTPException(403, "cross_site_request")
+        origin = request.headers.get("origin")
+        host = request.headers.get("host", "")
+        forwarded_proto = (
+            request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip()
+        )
+        if not origin or origin.rstrip("/").lower() != f"{forwarded_proto}://{host}".lower():
+            raise HTTPException(403, "cross_site_request")
+        try:
+            body = await request.json()
+            raw = body.get("token") if isinstance(body, dict) else None
+        except (ValueError, UnicodeDecodeError):
+            raw = None
+        if not isinstance(raw, str) or not raw or len(raw) > 256:
+            raise HTTPException(401, "unauthorized")
+        try:
+            token, expiry = await exchange_share_link(db, raw)
+        except AuthenticationError as exc:
+            raise HTTPException(401, exc.error_code) from exc
+        response.status_code = 200
+        response.headers["Cache-Control"] = "no-store"
+        response.set_cookie(
+            "context_gateway_share",
+            token,
+            expires=expiry,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            path="/api/v1/share",
+        )
+        return {"expires_at": expiry.isoformat()}
+
+    @app.get("/api/v1/share/context")
+    async def share_context(request: Request, db: AsyncSession = Depends(db_dep)):
+        principal, key, project_id = await _share_session(db, request)
+        project = await _project_by_id(db, project_id, [project_id])
+        snapshot = await _credential_snapshot(db, principal, project, None)
+        if snapshot is None:
+            raise HTTPException(404, "not found")
+        acl = await db.get(KeyACL, (key.id, project_id))
+        project_out = await _credential_project_out(db, principal, project)
+        return {
+            "project": project_out.model_dump(mode="json"),
+            "snapshot": _snapshot_out(snapshot).model_dump(mode="json"),
+            "documents": read_all_documents(snapshot),
+            "link": {
+                "label": key.label,
+                "expires_at": key.expires_at.isoformat(),
+                "snapshot_policy": acl.snapshot_policy,
+                "scopes": acl.scopes,
+            },
+            "session_expires_at": principal.expires_at.isoformat(),
+        }
+
+    @app.get("/api/v1/share/export")
+    async def share_export(
+        request: Request,
+        format: Literal["markdown"] = "markdown",
+        db: AsyncSession = Depends(db_dep),
+    ):
+        principal, _, project_id = await _share_session(db, request, scope="export")
+        project = await _project_by_id(db, project_id, [project_id])
+        snapshot = await _credential_snapshot(db, principal, project, None)
+        if snapshot is None:
+            raise HTTPException(404, "not found")
+        body = "\n\n".join(
+            f"# {doc['title']}\n\n{doc['content']}" for doc in read_all_documents(snapshot)
+        )
+        return Response(body, media_type="text/markdown; charset=utf-8")
+
+    @app.post("/api/v1/share/logout")
+    async def share_logout(
+        request: Request, response: Response, db: AsyncSession = Depends(db_dep)
+    ):
+        raw = request.cookies.get("context_gateway_share")
+        if raw:
+            token_hash = hash_credential(raw)
+            record = await db.scalar(select(Session).where(Session.credential_hash == token_hash))
+            if record is not None:
+                record.revoked_at = datetime.now(UTC)
+        response.delete_cookie(
+            "context_gateway_share",
+            path="/api/v1/share",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return {"logged_out": True}
 
     @app.get("/api/v1/projects", response_model=list[ProjectOut])
     async def list_projects(
         authorization: str | None = Header(default=None), db: AsyncSession = Depends(db_dep)
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=None)
+        principal, ids = await _authorize(db, authorization, config, project_id=None)
         if not ids:
             return []
-        rows = await db.scalars(select(Project).where(Project.id.in_(ids)).order_by(Project.name))
-        return [_project_out(item) for item in rows]
+        rows = await db.scalars(select(Project).where(Project.id.in_(ids)))
+        projects = [await _credential_project_out(db, principal, item) for item in rows]
+        return sorted(projects, key=lambda item: item.name)
 
     @app.get("/api/v1/projects/{project_id}")
     async def get_project(
@@ -416,12 +702,13 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id)
+        principal, ids = await _authorize(db, authorization, config, project_id=project_id)
         project = await _project_by_id(db, project_id, ids)
+        output = await _credential_project_out(db, principal, project)
         return _negotiate(
             request.headers.get("accept"),
-            f"# {project.name}\n\n{project.description}\n",
-            _project_out(project).model_dump(mode="json"),
+            f"# {output.name}\n\n{output.description}\n",
+            output.model_dump(mode="json"),
         )
 
     @app.get("/api/v1/projects/{project_id}/snapshots", response_model=list[SnapshotOut])
@@ -430,8 +717,14 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id)
-        await _project_by_id(db, project_id, ids)
+        principal, ids = await _authorize(db, authorization, config, project_id=project_id)
+        project = await _project_by_id(db, project_id, ids)
+        key = principal if isinstance(principal, APIKey) else await db.get(APIKey, principal.key_id)
+        if key is not None and key.credential_type != "single_use_v1":
+            snapshot = await _credential_snapshot(db, principal, project, None)
+            if snapshot is None:
+                return []
+            return [_snapshot_out(snapshot)]
         rows = await db.scalars(
             select(Snapshot)
             .where(Snapshot.project_id == project_id, Snapshot.revoked_at.is_(None))
@@ -447,16 +740,17 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id)
+        principal, ids = await _authorize(db, authorization, config, project_id=project_id)
         project = await _project_by_id(db, project_id, ids)
-        snapshot = await get_snapshot(db, project, snapshot_id)
+        snapshot = await _credential_snapshot(db, principal, project, snapshot_id)
         if snapshot is None:
             raise HTTPException(404, "not found")
         docs = read_all_documents(snapshot)
+        project_out = await _credential_project_out(db, principal, project)
         body = "\n\n".join(f"## {doc['title']}\n\n{doc['content']}" for doc in docs)
-        md = f"# {project.name}\n\n{body}\n"
+        md = f"# {project_out.name}\n\n{body}\n"
         data = {
-            "project": _project_out(project).model_dump(mode="json"),
+            "project": project_out.model_dump(mode="json"),
             "snapshot": _snapshot_out(snapshot).model_dump(mode="json"),
             "documents": docs,
         }
@@ -471,9 +765,9 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id)
+        principal, ids = await _authorize(db, authorization, config, project_id=project_id)
         project = await _project_by_id(db, project_id, ids)
-        snapshot = await get_snapshot(db, project, snapshot_id)
+        snapshot = await _credential_snapshot(db, principal, project, snapshot_id)
         document = read_document(snapshot, doc_id) if snapshot else None
         if document is None:
             raise HTTPException(404, "not found")
@@ -491,9 +785,11 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id, scope="search")
+        principal, ids = await _authorize(
+            db, authorization, config, project_id=project_id, scope="search"
+        )
         project = await _project_by_id(db, project_id, ids)
-        snapshot = await get_snapshot(db, project, snapshot_id)
+        snapshot = await _credential_snapshot(db, principal, project, snapshot_id)
         if snapshot is None:
             raise HTTPException(404, "not found")
         needle = q.casefold()
@@ -525,9 +821,11 @@ def create_public_app(settings: Settings | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
         db: AsyncSession = Depends(db_dep),
     ):
-        _, ids = await _authorize(db, authorization, config, project_id=project_id, scope="export")
+        principal, ids = await _authorize(
+            db, authorization, config, project_id=project_id, scope="export"
+        )
         project = await _project_by_id(db, project_id, ids)
-        snapshot = await get_snapshot(db, project, snapshot_id)
+        snapshot = await _credential_snapshot(db, principal, project, snapshot_id)
         if snapshot is None:
             raise HTTPException(404, "not found")
         docs = read_all_documents(snapshot)
@@ -601,13 +899,13 @@ def _build_mcp_server(factory: async_sessionmaker[AsyncSession], settings: Setti
 
     @server.tool(annotations=read_only)
     async def list_projects(ctx: Context) -> list[dict[str, Any]]:
-        async with authorized(ctx, None, "read") as (db, _, ids):
-            rows = (
-                await db.scalars(select(Project).where(Project.id.in_(ids)).order_by(Project.name))
-                if ids
-                else []
-            )
-            return [_project_out(row).model_dump(mode="json") for row in rows]
+        async with authorized(ctx, None, "read") as (db, principal, ids):
+            rows = await db.scalars(select(Project).where(Project.id.in_(ids))) if ids else []
+            projects = [await _credential_project_out(db, principal, row) for row in rows]
+            return [
+                item.model_dump(mode="json")
+                for item in sorted(projects, key=lambda item: item.name)
+            ]
 
     @server.tool(annotations=read_only)
     async def get_project_context(
@@ -615,13 +913,15 @@ def _build_mcp_server(factory: async_sessionmaker[AsyncSession], settings: Setti
     ) -> dict[str, Any]:
         target = UUID(project_id)
         selected = UUID(snapshot_id) if snapshot_id else None
-        async with authorized(ctx, target, "read") as (db, _, ids):
+        async with authorized(ctx, target, "read") as (db, principal, ids):
             project = await _project_by_id(db, target, ids)
-            snapshot = await get_snapshot(db, project, selected)
+            snapshot = await _credential_snapshot(db, principal, project, selected)
             if snapshot is None:
                 raise ValueError("not found")
             return {
-                "project": _project_out(project).model_dump(mode="json"),
+                "project": (await _credential_project_out(db, principal, project)).model_dump(
+                    mode="json"
+                ),
                 "snapshot": _snapshot_out(snapshot).model_dump(mode="json"),
                 "documents": read_all_documents(snapshot),
             }
@@ -632,9 +932,9 @@ def _build_mcp_server(factory: async_sessionmaker[AsyncSession], settings: Setti
     ) -> dict[str, Any]:
         target = UUID(project_id)
         selected = UUID(snapshot_id) if snapshot_id else None
-        async with authorized(ctx, target, "search") as (db, _, ids):
+        async with authorized(ctx, target, "search") as (db, principal, ids):
             project = await _project_by_id(db, target, ids)
-            snapshot = await get_snapshot(db, project, selected)
+            snapshot = await _credential_snapshot(db, principal, project, selected)
             if snapshot is None:
                 raise ValueError("not found")
             needle = query.casefold()
@@ -660,13 +960,28 @@ def _build_mcp_server(factory: async_sessionmaker[AsyncSession], settings: Setti
     ) -> dict[str, Any]:
         target = UUID(project_id)
         selected = UUID(snapshot_id) if snapshot_id else None
-        async with authorized(ctx, target, "read") as (db, _, ids):
+        async with authorized(ctx, target, "read") as (db, principal, ids):
             project = await _project_by_id(db, target, ids)
-            snapshot = await get_snapshot(db, project, selected)
+            snapshot = await _credential_snapshot(db, principal, project, selected)
             document = read_document(snapshot, document_id) if snapshot else None
             if document is None:
                 raise ValueError("not found")
             return document
+
+    @server.tool(annotations=read_only)
+    async def export_project_context(
+        project_id: str, ctx: Context, snapshot_id: str | None = None
+    ) -> str:
+        target = UUID(project_id)
+        selected = UUID(snapshot_id) if snapshot_id else None
+        async with authorized(ctx, target, "export") as (db, principal, ids):
+            project = await _project_by_id(db, target, ids)
+            snapshot = await _credential_snapshot(db, principal, project, selected)
+            if snapshot is None:
+                raise ValueError("not found")
+            return "\n\n".join(
+                f"# {doc['title']}\n\n{doc['content']}" for doc in read_all_documents(snapshot)
+            )
 
     return server
 
@@ -739,6 +1054,8 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
         payload = body.model_dump(mode="python")
         try:
             snapshot = await publish_snapshot(db, config.snapshot_dir, payload)
+        except IdempotencyConflictError as exc:
+            raise HTTPException(409, "operation_id payload conflict") from exc
         except ProjectSharingRevokedError as exc:
             raise HTTPException(409, str(exc)) from exc
         except (PublishError, IntegrityError) as exc:
@@ -748,6 +1065,10 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
                 else 409,
                 str(exc),
             ) from exc
+        if body.operation_id is not None:
+            operation = await db.get(PublishOperation, body.operation_id)
+            if operation is not None and operation.receipt is not None:
+                return operation.receipt
         return _snapshot_out(snapshot).model_dump(mode="json")
 
     @app.post("/control/v1/snapshots/{snapshot_id}/revoke")
@@ -794,6 +1115,70 @@ def create_control_app(settings: Settings | None = None) -> FastAPI:
         except PublishError as exc:
             raise HTTPException(422, str(exc)) from exc
         return {"key_id": str(key.id), "key": raw, "expires_at": key.expires_at.isoformat()}
+
+    @app.post("/control/v2/credentials", status_code=201)
+    async def issue_v2_credential_endpoint(
+        body: IssueCredentialV2Request,
+        authorization: str | None = Header(default=None),
+        db: AsyncSession = Depends(db_dep),
+    ):
+        control_auth(authorization)
+        grants = {
+            project_id: {
+                "scopes": grant.scopes,
+                "snapshot_policy": grant.snapshot_policy,
+                "snapshot_id": grant.snapshot_id,
+            }
+            for project_id, grant in body.projects.items()
+        }
+        try:
+            _key, raw, receipt = await issue_v2_credential(
+                db,
+                label=body.label,
+                credential_type=body.credential_type,
+                ttl_days=body.ttl_days,
+                project_grants=grants,
+            )
+        except ProjectSharingRevokedError as exc:
+            raise HTTPException(409, "project sharing has been revoked") from exc
+        except PublishError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {**receipt, "key": raw}
+
+    @app.post("/control/v2/credentials/status")
+    async def credential_status_endpoint(
+        body: CredentialStatusRequest,
+        authorization: str | None = Header(default=None),
+        db: AsyncSession = Depends(db_dep),
+    ):
+        control_auth(authorization)
+        keys = list(await db.scalars(select(APIKey).where(APIKey.id.in_(body.key_ids))))
+        acls = list(await db.scalars(select(KeyACL).where(KeyACL.key_id.in_(body.key_ids))))
+        by_key: dict[UUID, list[KeyACL]] = {}
+        for acl in acls:
+            by_key.setdefault(acl.key_id, []).append(acl)
+        return {
+            "credentials": [
+                {
+                    "key_id": str(key.id),
+                    "credential_type": key.credential_type or "single_use_v1",
+                    "label": key.label,
+                    "created_at": key.created_at.isoformat() if key.created_at else None,
+                    "expires_at": key.expires_at.isoformat(),
+                    "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+                    "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
+                    "projects": {
+                        str(acl.project_id): {
+                            "scopes": acl.scopes,
+                            "snapshot_policy": acl.snapshot_policy or "latest",
+                            "snapshot_id": str(acl.snapshot_id) if acl.snapshot_id else None,
+                        }
+                        for acl in by_key.get(key.id, [])
+                    },
+                }
+                for key in keys
+            ]
+        }
 
     @app.post("/control/v1/keys/{key_id}/revoke")
     async def revoke_key_endpoint(

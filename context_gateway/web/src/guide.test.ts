@@ -25,6 +25,12 @@ describe("connectionGuide", () => {
     }
   });
 
+  it("reusable_api_v2는 raw Bearer로 REST·MCP에 연결하고 share 링크를 자격증명으로 오해하지 않게 한다", () => {
+    expect(guide.reusableCurl).toContain("Authorization: Bearer $CONTEXT_GATEWAY_KEY");
+    expect(guide.reusableMcp).toContain("Bearer ${CONTEXT_GATEWAY_KEY}");
+    expect(guide.reusableCurl).toContain("unset CONTEXT_GATEWAY_KEY");
+  });
+
   it("이 화면의 origin만 URL로 보여 준다", () => {
     expect(guide.curl).toContain('export CONTEXT_GATEWAY_URL="https://gateway.example.test"');
     expect(guide.mcp).toContain(MCP_PATH);

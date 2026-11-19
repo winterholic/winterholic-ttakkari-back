@@ -31,9 +31,16 @@ export function ConnectGuide() {
     <details className="guide">
       <summary>curl·MCP로 쓰려면</summary>
       <div className="guide-body">
-        <p className="guide-note">이 화면에서 쓴 키는 이미 교환돼 다시 쓸 수 없습니다. 다른 도구에는 별도의 새 1회용 키가 필요하고, 키와 세션은 아래처럼 환경변수로만 다룹니다.</p>
-        <Snippet label="curl 예시" text={guide.curl} />
-        <Snippet label="MCP 설정" text={guide.mcp} />
+        <p className="guide-note">프로그램 연결에는 별도로 발급한 reusable_api_v2 키를 raw Bearer로 반복 사용할 수 있습니다. 아래 연결 예시는 키를 환경변수로만 다룹니다. 기존 single_use_v1 키는 한 번 교환해 세션으로 사용하세요. share_link_v2 링크 원문은 REST·MCP Bearer로 사용할 수 없습니다.</p>
+        <Snippet label="재사용 API 키 · curl" text={guide.reusableCurl} />
+        <Snippet label="재사용 API 키 · MCP" text={guide.reusableMcp} />
+        <details>
+          <summary>기존 1회용 키 연결</summary>
+          <div className="guide-body">
+            <Snippet label="1회용 키 · curl 교환" text={guide.curl} />
+            <Snippet label="세션 · MCP" text={guide.mcp} />
+          </div>
+        </details>
       </div>
     </details>
   );

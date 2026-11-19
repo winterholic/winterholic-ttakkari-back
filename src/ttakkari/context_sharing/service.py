@@ -211,6 +211,11 @@ async def _active_publication(db: AsyncSession, project_id: uuid.UUID, *, lock: 
     return await db.scalar(q.with_for_update() if lock else q)
 
 
+async def _publication_scope(db: AsyncSession, publication: SharePublication) -> str:
+    draft = await db.get(ShareDraft, publication.draft_id)
+    return draft.scope if draft else "personal"
+
+
 async def project_states(db: AsyncSession, entity_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
     if not entity_ids:
         return {}
@@ -226,11 +231,20 @@ async def project_states(db: AsyncSession, entity_ids: list[uuid.UUID]) -> dict[
             latest[p.project_id] = p
     now_ = now()
     keys = (await db.execute(select(ShareKey.project_id, func.count(ShareKey.id))
-                             .where(ShareKey.project_id.in_(by_id), ShareKey.status == "active", ShareKey.expires_at > now_)
+                             .where(ShareKey.project_id.in_(by_id), ShareKey.credential_type != "share_link_v2",
+                                    ShareKey.status == "active", ShareKey.expires_at > now_)
                              .group_by(ShareKey.project_id))).all()
     key_counts = dict(keys)
+    links = (await db.execute(select(ShareKey.project_id, func.count(ShareKey.id))
+                              .where(ShareKey.project_id.in_(by_id), ShareKey.credential_type == "share_link_v2",
+                                     ShareKey.status == "active", ShareKey.expires_at > now_)
+                              .group_by(ShareKey.project_id))).all()
+    link_counts = dict(links)
+    published = {p.project_id: p.published_at for p in pubs if p.status in {"active", "revoked", "superseded"}}
     return {p.entity_id: {"slug": p.slug, "publication": publication_out(latest.get(p.id)),
-                          "active_key_count": key_counts.get(p.id, 0)} for p in projects if p.entity_id}
+                          "active_key_count": key_counts.get(p.id, 0), "active_link_count": link_counts.get(p.id, 0),
+                          "last_published_at": iso(published.get(p.id)), "revoke_state": p.revoke_state}
+            for p in projects if p.entity_id}
 
 
 # ---- 초안 생성·편집
@@ -298,13 +312,16 @@ async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, g
                               user_agent: str | None = None) -> dict[str, Any]:
     """Publish every currently listed indexed document of one explicitly named project.
 
-    work 범위 프로젝트는 confirm_work_scope=True 일 때만 게시한다. 스캐너와 문서 한도는 범위와 무관하게 적용한다."""
+    work 범위는 내부 draft 검토만 허용하고 외부 게시를 조직 정책 증명 없이 차단한다."""
     project_info = await adapter.get_project(entity_id)
     if project_info is None:
         raise ShareError(404, "project_not_found", "라이브러리에 그런 프로젝트가 없습니다.")
     if project_info.scope == "work" and not confirm_work_scope:
         raise ShareError(403, "work_scope_confirmation_required",
                          "회사(work) 범위 프로젝트입니다. 사용자가 직접 요청했다면 confirm_work_scope=true 로 다시 요청하세요.")
+    if project_info.scope == "work":
+        raise ShareError(403, "work_sharing_policy_required",
+                         "조직 공유 정책 증명 없이는 회사 자료를 외부에 게시할 수 없습니다.")
     groups = await adapter.list_documents(entity_id)
     if any(group.truncated for group in groups):
         raise ShareError(422, "source_listing_truncated", "문서 목록이 제한을 넘어 전체 범위를 확인할 수 없습니다.")
@@ -410,13 +427,30 @@ async def _fail(db: AsyncSession, action: str, exc: GatewayError, *, target_type
     return err
 
 
-def _record_key_cleanup_failure(db: AsyncSession, project: ShareProject, key_id: str,
-                                exc: GatewayError, *, ip: str | None, user_agent: str | None,
-                                actor: str = "user") -> None:
-    """발급 뒤 보상 폐기가 실패하면 원문 없이 식별자와 오류 코드만 기록한다."""
+async def _record_key_cleanup_failure(db: AsyncSession, project: ShareProject, key_id: str,
+                                      exc: GatewayError, *, ip: str | None, user_agent: str | None,
+                                      actor: str = "user", issued: dict[str, Any] | None = None,
+                                      credential_type: str = "single_use_v1", scopes: list[str] | None = None,
+                                      snapshot_policy: str = "latest", pinned_snapshot_id: str | None = None,
+                                      ttl_seconds: int = KEY_TTL_SECONDS) -> None:
+    """보상 폐기 실패를 metadata row로 내구 저장해 maintenance가 재시도하게 한다."""
+    publication = await _active_publication(db, project.id)
+    if publication is not None and issued is not None:
+        try:
+            expires = datetime.fromisoformat(str(issued.get("expires_at", "")))
+            if expires.tzinfo is None:
+                raise ValueError
+        except ValueError:
+            expires = now() + timedelta(seconds=ttl_seconds)
+        db.add(ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
+            gateway_key_id=key_id, label=str(issued.get("label") or "")[:160], status="revoking",
+            ttl_seconds=ttl_seconds, issued_at=now(), expires_at=expires, credential_type=credential_type,
+            scopes=scopes or [], snapshot_policy=snapshot_policy, pinned_snapshot_id=pinned_snapshot_id,
+            revoke_error=gateway_problem(exc).code))
     record(db, action="context_share.key_cleanup_failed", outcome="error", actor=actor, target_type="share_project",
            target_id=project.id,
            detail={"gateway_key_id": key_id, "error": gateway_problem(exc).code}, ip=ip, user_agent=user_agent)
+    await db.commit()
 
 
 # ---- 게시
@@ -450,6 +484,7 @@ def snapshot_payload(project: ShareProject, draft: ShareDraft, docs: list[ShareD
     verified = [d.verified_at for d in ordered]
     snapshot_verified_at = min(verified) if all(value is not None for value in verified) else None
     return {
+        "operation_id": str(draft.id),
         "project_slug": project.slug,
         "project_name": project.name,
         "project_description": draft.summary,
@@ -482,6 +517,10 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
         raise ShareError(422, "sensitive_content_blocked", "인증정보·내부 주소·로컬 경로 같은 고위험 항목이 남아 있어 게시할 수 없습니다. 초안을 고쳐 제거하세요.",
                          extra={"findings": pv["findings"], "counts": pv["counts"]})
     project = await _project_of(db, draft)
+    if draft.scope == "work":
+        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료를 외부에 게시할 수 없습니다.")
+    if project.revoke_state == "revoking":
+        raise ShareError(409, "project_revocation_pending", "프로젝트 공유 철회가 대기 중입니다.")
     detail = {"digest": digest, "slug": project.slug, "documents": len(docs)}
     if confirm_work_scope is not None:
         detail.update(scope=draft.scope, confirm_work_scope=confirm_work_scope)
@@ -517,8 +556,12 @@ def key_out(k: ShareKey, project: ShareProject) -> dict[str, Any]:
     if status == "active" and k.expires_at <= now():
         status = "expired"
     return {"id": str(k.id), "project_slug": project.slug, "label": k.label, "status": status,
-            "ttl_seconds": k.ttl_seconds, "single_use": True, "issued_at": iso(k.issued_at),
-            "expires_at": iso(k.expires_at), "revoked_at": iso(k.revoked_at), "publication_id": str(k.publication_id)}
+            "credential_type": k.credential_type, "snapshot_policy": k.snapshot_policy,
+            "pinned_snapshot_id": k.pinned_snapshot_id, "scopes": k.scopes or [],
+            "last_used_at": iso(k.last_used_at), "usage_status": "unavailable",
+            "ttl_seconds": k.ttl_seconds, "single_use": k.credential_type == "single_use_v1",
+            "issued_at": iso(k.issued_at), "expires_at": iso(k.expires_at),
+            "revoked_at": iso(k.revoked_at), "publication_id": str(k.publication_id)}
 
 
 KEY_SCOPES = ("read", "search", "export")
@@ -526,8 +569,11 @@ KEY_SCOPES = ("read", "search", "export")
 
 async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, label: str,
                     scopes: list[str], ip: str | None = None, user_agent: str | None = None,
-                    actor: str = "user") -> dict[str, Any]:
+                    actor: str = "user", credential_type: str = "single_use_v1", ttl_days: int = 3,
+                    snapshot_policy: str = "pinned") -> dict[str, Any]:
     project = await _project_by_slug(db, slug)
+    if project.revoke_state == "revoking":
+        raise ShareError(409, "project_revocation_pending", "프로젝트 공유 철회가 대기 중입니다.")
     publication = await _active_publication(db, project.id)
     if publication is None:
         raise ShareError(409, "project_not_published", "게시된 스냅샷이 없는 프로젝트입니다. 먼저 초안을 승인해 게시하세요.")
@@ -535,33 +581,53 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
         raise ShareError(503, "gateway_contract_incomplete",
                          "이전 게시 기록에 Gateway 프로젝트 ID가 없어 키를 발급할 수 없습니다. 새 초안을 게시해 주세요.",
                          headers={"Retry-After": "3600"})
-    detail = {"slug": slug, "ttl_seconds": KEY_TTL_SECONDS, "scopes": scopes, "publication_id": str(publication.id)}
+    if await _publication_scope(db, publication) == "work":
+        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료 키를 발급할 수 없습니다.")
+    v2 = credential_type == "reusable_api_v2"
+    if credential_type not in {"single_use_v1", "reusable_api_v2"} or (v2 and ttl_days not in {1, 3, 7, 30}):
+        raise ShareError(422, "invalid_credential_type", "키 종류 또는 만료 기간이 올바르지 않습니다.")
+    pinned = publication.gateway_snapshot_id if v2 and snapshot_policy == "pinned" else None
+    if v2 and snapshot_policy not in {"pinned", "latest"}:
+        raise ShareError(422, "invalid_snapshot_policy", "snapshot_policy는 pinned 또는 latest여야 합니다.")
+    detail = {"slug": slug, "ttl_seconds": KEY_TTL_SECONDS if not v2 else ttl_days * 86400,
+              "scopes": scopes, "publication_id": str(publication.id), "credential_type": credential_type}
     issued_at = now()
+    expected_ttl = ttl_days * 86400 if v2 else KEY_TTL_SECONDS
     issued: dict[str, Any] | None = None
     try:
-        issued = await gateway.issue_key(project.gateway_project_id, label=label or f"{project.name} 외부 공유",
-                                         scopes=scopes)
+        issued = (await gateway.issue_v2_credential(credential_type, project.gateway_project_id,
+                    label=label or f"{project.name} 외부 공유", ttl_days=ttl_days, scopes=scopes,
+                    snapshot_policy=snapshot_policy, snapshot_id=pinned) if v2 else
+                  await gateway.issue_key(project.gateway_project_id, label=label or f"{project.name} 외부 공유",
+                                          scopes=scopes))
         try:
             expires_at = datetime.fromisoformat(issued["expires_at"])
         except ValueError:
             raise GatewayBadResponse("expires_at") from None
+        tolerance = 60 if not v2 else 180
         if (expires_at.tzinfo is None
-                or expires_at < issued_at + timedelta(seconds=KEY_TTL_SECONDS - 60)
-                or expires_at > issued_at + timedelta(seconds=KEY_TTL_SECONDS + 60)):
+                or expires_at < issued_at + timedelta(seconds=expected_ttl - tolerance)
+                or expires_at > issued_at + timedelta(seconds=expected_ttl + tolerance)):
             # 코어가 고정 1시간 계약을 벗어난 키를 줬다. 그대로 넘기지 않고 폐기한다.
             raise GatewayBadResponse("key expiry is outside the fixed ttl")
     except GatewayError as exc:
+        if issued is None and isinstance(exc, GatewayBadResponse):
+            issued = exc.cleanup_receipt
         if issued is not None:
             try:
                 await gateway.revoke_key(str(issued["key_id"]))
             except GatewayError as cleanup_exc:
-                _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
-                                            ip=ip, user_agent=user_agent, actor=actor)
+                await _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
+                    ip=ip, user_agent=user_agent, actor=actor, issued=issued, credential_type=credential_type,
+                    scopes=scopes, snapshot_policy=snapshot_policy if v2 else "latest",
+                    pinned_snapshot_id=pinned, ttl_seconds=expected_ttl)
         raise await _fail(db, "context_share.key_issue", exc, target_type="share_project", target_id=project.id,
                           detail=detail, ip=ip, user_agent=user_agent, actor=actor) from None
     key = ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
                    gateway_key_id=str(issued["key_id"])[:64], label=label, ttl_seconds=KEY_TTL_SECONDS, issued_at=issued_at,
-                   expires_at=expires_at)
+                   expires_at=expires_at, credential_type=credential_type,
+                   snapshot_policy=snapshot_policy if v2 else "latest", pinned_snapshot_id=pinned, scopes=scopes)
+    key.ttl_seconds = expected_ttl
     try:
         db.add(key)
         record(db, action="context_share.key_issue", actor=actor, target_type="share_key", target_id=key.id,
@@ -572,44 +638,160 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
         try:  # 로컬에 남지 않은 키가 Gateway 에서 살아 있으면 안 된다.
             await gateway.revoke_key(str(issued["key_id"]))
         except GatewayError as cleanup_exc:
-            _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
-                                        ip=ip, user_agent=user_agent, actor=actor)
-            await db.commit()
+            await _record_key_cleanup_failure(db, project, str(issued["key_id"]), cleanup_exc,
+                ip=ip, user_agent=user_agent, actor=actor, issued=issued, credential_type=credential_type,
+                scopes=scopes, snapshot_policy=snapshot_policy if v2 else "latest",
+                pinned_snapshot_id=pinned, ttl_seconds=expected_ttl)
         raise
     out = key_out(key, project)
     out["scopes"] = scopes
     out["key"] = issued["key"]
-    out["connect"] = {"url": gateway.public_url, "note": "이 키는 지금 한 번만 보입니다. 외부 AI 에 1회 교환용으로 전달하세요."}
+    out["connect"] = {"url": gateway.public_url, "project_id": project.gateway_project_id,
+                       "note": "발급 원문은 이 응답에서만 확인할 수 있습니다." if v2 else
+                               "이 키는 1시간·1회 교환용이며 원문은 이 응답에서만 확인할 수 있습니다."}
     return out
 
 
-async def list_keys(db: AsyncSession, slug: str | None) -> dict[str, Any]:
+async def issue_link(db: AsyncSession, gateway: GatewayControl, slug: str, *, label: str, ttl_days: int,
+                     snapshot_policy: str, allow_export: bool, ip: str | None = None,
+                     user_agent: str | None = None, actor: str = "user") -> dict[str, Any]:
+    project = await _project_by_slug(db, slug)
+    if project.revoke_state == "revoking":
+        raise ShareError(409, "project_revocation_pending", "프로젝트 공유 철회가 대기 중입니다.")
+    publication = await _active_publication(db, project.id)
+    if publication is None or not project.gateway_project_id:
+        raise ShareError(409, "project_not_published", "게시된 스냅샷이 없어 링크를 발급할 수 없습니다.")
+    if not gateway.public_url:
+        raise ShareError(503, "gateway_not_configured", "공유 링크 public origin이 설정되지 않았습니다.")
+    if await _publication_scope(db, publication) == "work":
+        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료 링크를 발급할 수 없습니다.")
+    scopes = ["read", *( ["export"] if allow_export else [])]
+    snapshot_id = publication.gateway_snapshot_id if snapshot_policy == "pinned" else None
+    effective_label = label or f"{project.name} 공유 링크"
+    issued: dict[str, Any] | None = None
+    try:
+        issued = await gateway.issue_v2_credential("share_link_v2", project.gateway_project_id, label=effective_label,
+            ttl_days=ttl_days, scopes=scopes, snapshot_policy=snapshot_policy, snapshot_id=snapshot_id)
+        try:
+            expires_at = datetime.fromisoformat(issued["expires_at"])
+        except (KeyError, ValueError):
+            raise GatewayBadResponse("link expiry is invalid") from None
+        expected = now() + timedelta(days=ttl_days)
+        if (expires_at.tzinfo is None or abs((expires_at - expected).total_seconds()) > 180):
+            raise GatewayBadResponse("link expiry does not match requested ttl")
+    except GatewayError as exc:
+        if issued is None and isinstance(exc, GatewayBadResponse):
+            issued = exc.cleanup_receipt
+        if issued is not None:
+            try:
+                await gateway.revoke_key(issued["key_id"])
+            except GatewayError as cleanup_exc:
+                await _record_key_cleanup_failure(db, project, issued["key_id"], cleanup_exc,
+                    ip=ip, user_agent=user_agent, actor=actor, issued=issued, credential_type="share_link_v2",
+                    scopes=scopes, snapshot_policy=snapshot_policy, pinned_snapshot_id=snapshot_id,
+                    ttl_seconds=ttl_days * 86400)
+        raise await _fail(db, "context_share.link_issue", exc, target_type="share_project", target_id=project.id,
+                          detail={"slug": slug, "ttl_days": ttl_days}, ip=ip, user_agent=user_agent, actor=actor) from None
+    key = ShareKey(id=uuid.uuid4(), project_id=project.id, publication_id=publication.id,
+        gateway_key_id=issued["key_id"], label=effective_label, status="active", ttl_seconds=ttl_days * 86400,
+        issued_at=now(), expires_at=expires_at, credential_type="share_link_v2", snapshot_policy=snapshot_policy,
+        pinned_snapshot_id=snapshot_id, scopes=scopes)
+    try:
+        db.add(key)
+        record(db, action="context_share.link_issue", actor=actor, target_type="share_link", target_id=key.id,
+               detail={"slug": slug, "credential_type": "share_link_v2", "ttl_days": ttl_days,
+                       "snapshot_policy": snapshot_policy}, ip=ip, user_agent=user_agent)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            await gateway.revoke_key(issued["key_id"])
+        except GatewayError as cleanup_exc:
+            await _record_key_cleanup_failure(db, project, issued["key_id"], cleanup_exc,
+                ip=ip, user_agent=user_agent, actor=actor, issued=issued, credential_type="share_link_v2",
+                scopes=scopes, snapshot_policy=snapshot_policy, pinned_snapshot_id=snapshot_id,
+                ttl_seconds=ttl_days * 86400)
+        raise
+    return {**key_out(key, project), "url": f"{gateway.public_url.rstrip('/')}/s#token={issued['key']}"}
+
+
+async def list_keys(db: AsyncSession, slug: str | None, gateway: GatewayControl | None = None) -> dict[str, Any]:
     q = select(ShareKey, ShareProject).join(ShareProject, ShareProject.id == ShareKey.project_id)
+    q = q.where(ShareKey.credential_type != "share_link_v2")
     if slug:
         q = q.where(ShareProject.slug == slug)
     rows = (await db.execute(q.order_by(ShareKey.issued_at.desc()).limit(200))).all()
-    return {"keys": [key_out(k, p) for k, p in rows]}
+    return {"keys": await _with_usage(gateway=gateway, rows=rows)}
+
+
+async def list_links(db: AsyncSession, slug: str | None, gateway: GatewayControl | None = None) -> dict[str, Any]:
+    q = select(ShareKey, ShareProject).join(ShareProject, ShareProject.id == ShareKey.project_id).where(
+        ShareKey.credential_type == "share_link_v2")
+    if slug:
+        q = q.where(ShareProject.slug == slug)
+    rows = (await db.execute(q.order_by(ShareKey.issued_at.desc()).limit(200))).all()
+    return {"links": await _with_usage(gateway=gateway, rows=rows)}
+
+
+async def _with_usage(gateway: GatewayControl | None, rows: list[tuple[ShareKey, ShareProject]]) -> list[dict[str, Any]]:
+    output = [key_out(key, project) for key, project in rows]
+    active = [(key, item) for (key, _), item in zip(rows, output, strict=True)
+              if key.status not in {"revoked"} and key.expires_at > now()]
+    if not active or gateway is None:
+        return output
+    try:
+        remote = await gateway.credential_status([str(key.gateway_key_id) for key, _ in active])
+    except GatewayError:
+        return output
+    by_id = {row["key_id"]: row for row in remote["credentials"]}
+    for key, item in active:
+        row = by_id[key.gateway_key_id]
+        if row.get("credential_type") != key.credential_type:
+            continue
+        item["usage_status"] = "available"
+        used = row.get("last_used_at")
+        if isinstance(used, str):
+            try:
+                key.last_used_at = datetime.fromisoformat(used)
+                item["last_used_at"] = iso(key.last_used_at)
+            except ValueError:
+                item["usage_status"] = "unavailable"
+    return output
 
 
 async def revoke_key(db: AsyncSession, gateway: GatewayControl, key_id: uuid.UUID, *, ip: str | None = None,
-                     user_agent: str | None = None, actor: str = "user") -> dict[str, Any]:
+                     user_agent: str | None = None, actor: str = "user", link: bool = False) -> dict[str, Any]:
     key = await db.scalar(select(ShareKey).where(ShareKey.id == key_id).with_for_update())
     if key is None:
         raise ShareError(404, "key_not_found", "발급한 적 없는 키입니다.")
+    if (key.credential_type == "share_link_v2") != link:
+        raise ShareError(404, "link_not_found" if link else "key_not_found", "발급한 적 없는 공유 자격증명입니다.")
     project = await db.get(ShareProject, key.project_id)
     assert project is not None
     if key.status == "revoked":
         return key_out(key, project)
+    key.status = "revoking"
+    key.revoke_error = None
+    await db.commit()  # 폐기 의도를 Gateway 호출 전에 내구 저장한다.
     try:
         await gateway.revoke_key(key.gateway_key_id)
     except GatewayError as exc:
-        raise await _fail(db, "context_share.key_revoke", exc, target_type="share_key", target_id=key.id,
-                          detail={"slug": project.slug}, ip=ip, user_agent=user_agent, actor=actor) from None
+        key.revoke_error = gateway_problem(exc).code
+        err = await _fail(db, "context_share.link_revoke" if link else "context_share.key_revoke", exc,
+            target_type="share_link" if link else "share_key", target_id=key.id,
+            detail={"slug": project.slug, "status": "revoking"}, ip=ip, user_agent=user_agent, actor=actor)
+        err.extra.update(status="revoking", retryable=True)
+        raise err from None
     key.status, key.revoked_at = "revoked", now()  # 코어 영수증에는 시각이 없어 확인한 시각을 쓴다
+    key.revoke_error = None
     record(db, action="context_share.key_revoke", actor=actor, target_type="share_key", target_id=key.id,
            detail={"slug": project.slug}, ip=ip, user_agent=user_agent)
     await db.commit()
     return key_out(key, project)
+
+
+async def revoke_link(db: AsyncSession, gateway: GatewayControl, link_id: uuid.UUID, **kwargs: Any) -> dict[str, Any]:
+    return await revoke_key(db, gateway, link_id, link=True, **kwargs)
 
 
 async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *, ip: str | None = None,
@@ -620,7 +802,8 @@ async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *
         SharePublication.project_id == project.id, SharePublication.status.in_(("active", "superseded")))
         .order_by(SharePublication.status.desc(), SharePublication.published_at).with_for_update())).all())
     # status 내림차순: superseded 가 active 보다 먼저 온다.
-    keys = list((await db.scalars(select(ShareKey).where(ShareKey.project_id == project.id, ShareKey.status == "active")
+    keys = list((await db.scalars(select(ShareKey).where(ShareKey.project_id == project.id,
+                                                       ShareKey.status.in_(("active", "revoking")))
                                   .with_for_update())).all())
     if not pubs and not keys:
         latest = await db.scalar(select(SharePublication).where(SharePublication.project_id == project.id)
@@ -629,6 +812,9 @@ async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *
             raise ShareError(409, "project_not_published", "게시된 적 없는 프로젝트라 철회할 것이 없습니다.")
         return {"project_slug": slug, "publication": publication_out(latest), "revoked_snapshots": 0, "revoked_keys": 0,
                 "already_revoked": True}
+    if project.revoke_state != "revoking":
+        project.revoke_state, project.revoke_error = "revoking", None
+        await db.commit()
     done_snapshots = done_keys = 0
     try:
         if pubs:
@@ -648,16 +834,42 @@ async def revoke_project(db: AsyncSession, gateway: GatewayControl, slug: str, *
             done_keys += 1
             await db.commit()
     except GatewayError as exc:
+        project.revoke_state = "revoking"
+        project.revoke_error = gateway_problem(exc).code
         err = await _fail(db, "context_share.project_revoke", exc, target_type="share_project", target_id=project.id,
                           detail={"slug": slug, "revoked_snapshots": done_snapshots, "revoked_keys": done_keys},
                           ip=ip, user_agent=user_agent)
         err.extra.update({"partial": {"revoked_snapshots": done_snapshots, "remaining_snapshots": len(pubs) - done_snapshots,
-                                      "revoked_keys": done_keys, "remaining_keys": len(keys) - done_keys}})
+                                      "revoked_keys": done_keys, "remaining_keys": len(keys) - done_keys},
+                         "status": "revoking", "retryable": True})
         raise err from None
     record(db, action="context_share.project_revoke", target_type="share_project", target_id=project.id,
            detail={"slug": slug, "revoked_snapshots": done_snapshots, "revoked_keys": done_keys}, ip=ip, user_agent=user_agent)
+    project.revoke_state, project.revoke_error = "active", None
     await db.commit()
     latest = await db.scalar(select(SharePublication).where(SharePublication.project_id == project.id)
                              .order_by(SharePublication.published_at.desc()))
     return {"project_slug": slug, "publication": publication_out(latest), "revoked_snapshots": done_snapshots,
             "revoked_keys": done_keys, "already_revoked": False}
+
+
+async def retry_pending_revocations(db: AsyncSession, gateway: GatewayControl, *, limit: int = 50) -> dict[str, int]:
+    """Bounded maintenance reconciliation; remote idempotency makes retries safe."""
+    projects = list((await db.scalars(select(ShareProject).where(ShareProject.revoke_state == "revoking")
+                                      .order_by(ShareProject.created_at).limit(limit))).all())
+    keys = list((await db.scalars(select(ShareKey).where(ShareKey.status == "revoking")
+                                  .order_by(ShareKey.issued_at).limit(limit))).all())
+    completed_projects = completed_keys = 0
+    for project in projects:
+        try:
+            await revoke_project(db, gateway, project.slug)
+            completed_projects += 1
+        except (ShareError, GatewayError):
+            continue
+    for key in keys:
+        try:
+            await revoke_key(db, gateway, key.id, link=key.credential_type == "share_link_v2")
+            completed_keys += 1
+        except (ShareError, GatewayError):
+            continue
+    return {"projects": completed_projects, "credentials": completed_keys}

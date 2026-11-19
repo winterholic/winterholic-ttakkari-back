@@ -73,3 +73,30 @@ async def test_session_expiry_is_capped_at_the_original_key_expiry(db_sessions) 
         await session.commit()
 
     assert session_expiry == key_expiry
+
+
+@pytest.mark.asyncio
+async def test_reusable_v2_key_can_exchange_repeatedly(db_sessions) -> None:
+    now = datetime.now(UTC)
+    raw_key, key_hash, _expires_at = issue_key(now=now)
+    async with db_sessions() as session:
+        project = Project(slug=f"reusable-{uuid4().hex}", name="Reusable")
+        key = APIKey(
+            label="reusable fixture",
+            credential_hash=key_hash,
+            expires_at=now + timedelta(days=3),
+            credential_type="reusable_api_v2",
+        )
+        session.add_all([project, key])
+        await session.flush()
+        session.add(KeyACL(key_id=key.id, project_id=project.id, scopes=["read"]))
+        await session.commit()
+
+    async with db_sessions() as session:
+        first, _ = await exchange_key(session, raw_key, now=now)
+        await session.commit()
+    async with db_sessions() as session:
+        second, _ = await exchange_key(session, raw_key, now=now)
+        await session.commit()
+
+    assert first != second

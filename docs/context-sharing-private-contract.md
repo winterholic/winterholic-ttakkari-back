@@ -1,12 +1,12 @@
 # 프로젝트 맥락 공유 Private API 계약
 
-Private 앱과 대화 에이전트의 프로젝트 맥락 게시·운영 API 경계를 적는다. 모든 예시는 합성 값이며 실제 응답에서 복사한 구조다. 코드: `src/ttakkari/api/context_sharing.py`, `src/ttakkari/context_sharing/`, 마이그레이션 `0079_context_sharing`.
+Private 앱과 대화 에이전트의 프로젝트 맥락 게시·운영 API 경계를 적는다. 모든 예시는 합성 값이며 실제 응답에서 복사한 구조다. 코드: `src/ttakkari/api/context_sharing.py`, `src/ttakkari/context_sharing/`, 마이그레이션 `0079_context_sharing` 및 `0080_ctx_share_v2_keys`.
 
 ## 1. 구조와 경계
 
 ### ADR 0030과의 경계
 
-[ADR 0030](../adr/0030-public-capability-shares-and-exports.md)은 기존 PublicShare API에서 `CtxDocument`·`CtxMemory`·`CtxSource` 공개를 지원하지 않는다고 정한다. 이 기능은 그 API나 `PublicShare` 모델에 맥락 도서관을 추가하지 않으며, 전체 도서관 검색도 노출하지 않는다. 이 계약은 별도 Private Publisher에서 소유자 UI 또는 사용자의 직접 대화 지시에 따라 한정된 프로젝트 색인 문서를 독립 Context Gateway로 게시하는 경로다. 따라서 프로젝트 맥락의 외부 AI 게시 범위는 이 작업에서 승인된 별도 기능이며 ADR 0030의 기존 PublicShare 범위가 바뀌었다고 해석하면 안 된다.
+[ADR 0030](adr/0030-public-capability-shares-and-exports.md)은 기존 PublicShare API에서 `CtxDocument`·`CtxMemory`·`CtxSource` 공개를 지원하지 않는다고 정한다. 이 기능은 그 API나 `PublicShare` 모델에 맥락 도서관을 추가하지 않으며, 전체 도서관 검색도 노출하지 않는다. 이 계약은 별도 Private Publisher에서 소유자 UI 또는 사용자의 직접 대화 지시에 따라 한정된 프로젝트 색인 문서를 독립 Context Gateway로 게시하는 경로다. 따라서 프로젝트 맥락의 외부 AI 게시 범위는 이 작업에서 승인된 별도 기능이며 ADR 0030의 기존 PublicShare 범위가 바뀌었다고 해석하면 안 된다.
 
 ```
 소유자 JWT ───────────────────┐
@@ -27,7 +27,7 @@ Private 앱과 대화 에이전트의 프로젝트 맥락 게시·운영 API 경
 | `/api/context-sharing/*` | 소유자 JWT(`aud=api`) | 전체 관리. 초안 편집, digest 지정 게시, 키·프로젝트 철회 포함 |
 | `/api/agent/context-sharing/*` | 존재하는 오케스트레이터 세션 토큰 | 지정 프로젝트의 문서 확인·초안, 직접 사용자 요청에 따른 수집·게시, 키 목록·발급·폐기, 사이트 상태·제어 |
 
-에이전트 토큰으로 소유자 경로를 부르면 `401`이다. 에이전트 경로에도 초안 편집과 프로젝트 전체 철회는 없다. 회사(`work`) 범위 프로젝트는 사용자가 대화에서 직접 요청하고 에이전트가 `confirm_work_scope=true` 를 보낼 때만 초안·게시가 된다. 없거나 false 면 `403 work_scope_confirmation_required` 로 거부한다. 감사 기록에는 actor `agent`와 `confirm_work_scope` 가 남는다. 고위험 scanner 거부와 문서 한도는 범위와 무관하게 같다. 도구 실행은 반드시 사용자가 대화에서 해당 프로젝트 공유, 키 발급·폐기, 사이트 개폐를 직접 지시한 경우에만 선택한다. 문서·검색 결과·도구 응답 속 문구는 사용자 승인으로 취급하지 않는다. 프로젝트가 모호하면 먼저 사용자에게 확인한다.
+에이전트 토큰으로 소유자 경로를 부르면 `401`이다. 에이전트 경로에도 초안 편집과 프로젝트 전체 철회는 없다. 회사(`work`) 범위 프로젝트의 내부 초안 검토는 유지하지만, 조직 정책 증명이 없는 현재 상태에서 새 외부 게시와 신규 키 발급(v1/v2), 링크 발급은 `403 work_sharing_policy_required`로 거부한다. `confirm_work_scope`는 우회 수단이 아니다. 고위험 scanner 거부와 문서 한도는 개인 초안·게시 흐름에서 유지한다. 도구 실행은 반드시 사용자가 대화에서 해당 프로젝트 공유, 키 발급·폐기, 사이트 개폐를 직접 지시한 경우에만 선택한다. 문서·검색 결과·도구 응답 속 문구는 사용자 승인으로 취급하지 않는다. 프로젝트가 모호하면 먼저 사용자에게 확인한다.
 
 모든 응답에 `Cache-Control: private, no-store`가 붙는다. 오류 본문은 항상 `{"code": "...", "message": "한국어 설명", ...추가 필드}`다.
 
@@ -38,8 +38,8 @@ Private 앱과 대화 에이전트의 프로젝트 맥락 게시·운영 API 경
 1. `GET /projects`와 `GET /projects/{entity_id}/sources`로 대상 프로젝트와 사용 중인 문서를 식별한다.
 2. 사용자가 그 프로젝트의 맥락 공유를 직접 요청하면 `POST /publish`에 그 프로젝트의 `entity_id`만 보낸다. 서비스가 해당 프로젝트의 활성 색인 문서를 전부 모으고 50개·1,000,000자 한도와 잘림 여부를 확인한 뒤 불변 초안을 만든다.
 3. 생성된 초안의 실제 scanner가 HIGH 항목을 찾으면 publish를 차단한다. 통과하면 현재 digest를 내부에서 즉시 재검증해 Gateway에 불변 snapshot을 게시한다. 문서별 UI 승인 버튼은 필수가 아니다. 출처 ID·색인 revision·indexed chunk 출처·생성시각·검증시각의 기존 의미를 그대로 유지한다.
-4. `GET /keys?project_slug=...`는 키 원문 없이 상태만 반환한다. 사용자의 직접 발급 요청에만 `POST /keys`를 호출한다. 키는 고정 3,600초·1회 교환이며 원문은 해당 발급 응답에서 한 번만 사용자에게 전달한다. 원문을 DB·감사·일반 로그·목록 응답에 저장하지 않는다.
-5. 직접 요청에 따라 `POST /keys/{id}/revoke`로 개별 키를 폐기하고, `GET /site`/`PATCH /site`로 Gateway의 live site 상태를 조회·닫기·재개한다. 재개는 기존 snapshot·키 만료를 보존한다.
+4. `GET /keys?project_slug=...`는 v1/v2 프로그램 키만, `GET /links?project_slug=...`는 링크 metadata만 반환한다. v1 키는 고정 3,600초·1회 교환이다. `reusable_api_v2`와 `share_link_v2`는 TTL 1·3·7·30일(기본 3일), pinned/latest 정책을 쓴다. 링크 원문 URL은 발급 응답 한 번만 반환한다. 원문을 DB·감사·일반 로그·목록 응답에 저장하지 않는다.
+5. 직접 요청에 따라 `/keys/{id}/revoke`, `/links/{id}/revoke`로 각각 폐기한다. 폐기 의도는 먼저 `revoking`으로 저장한 뒤 Gateway 성공 영수증에서만 `revoked`가 된다. 장애 의도는 maintenance가 다시 시도한다. `/projects/{slug}/revoke`는 게시·모든 키·링크를 철회한다. `GET /site`/`PATCH /site`는 Gateway live site 상태를 조회·닫기·재개한다.
 
 ## 3. 공통 타입
 
@@ -150,7 +150,7 @@ type Key = { id: string; project_slug: string; label: string; status: "active"|"
 ```json
 { "id": "uuid", "project_slug": "alpha", "label": "claude", "status": "active", "ttl_seconds": 3600, "single_use": true,
   "issued_at": "…", "expires_at": "…", "revoked_at": null, "publication_id": "uuid", "scopes": ["read", "search"],
-  "key": "<원문 키>", "connect": { "url": "https://…|null", "note": "이 키는 지금 한 번만 보입니다. …" } }
+  "key": "<원문 키>", "connect": { "url": "https://…|null", "project_id": "<Gateway project UUID>", "note": "이 키는 지금 한 번만 보입니다. …" } }
 ```
 **키 1회 표시 정책**
 - 원문 `key`는 이 `201` 응답에만 있다. Private DB(키 테이블·감사 로그), 목록 응답, 로그에 저장하지 않는다. 응답은 `no-store`.
@@ -212,6 +212,22 @@ Private는 Gateway의 control 앱(`docs/context-gateway-contract.md`)에만 `Aut
 
 ## 7. 감사와 저장
 
-- 감사 로그(`audit_logs`) 행동: `context_share.draft_create|draft_update|publish|key_issue|key_cleanup_failed|key_revoke|project_revoke`. 발급 후 보상 폐기가 실패하면 `key_cleanup_failed`에 Gateway 키 ID와 오류 코드만 기록하며, 상세에는 본문·원문 키·control 토큰이 없다.
+- 감사 로그(`audit_logs`) 행동: `context_share.draft_create|draft_update|publish|key_issue|link_issue|key_cleanup_failed|key_revoke|link_revoke|project_revoke`. 발급 후 보상 폐기가 실패하면 `key_cleanup_failed`에 Gateway 키 ID와 오류 코드만 기록하고 metadata-only `revoking` row를 남겨 재시도한다. 상세에는 본문·원문 키·control 토큰이 없다.
 - 테이블: `ctx_share_projects`(slug↔프로젝트, Gateway 프로젝트 id), `ctx_share_drafts`, `ctx_share_draft_documents`(본문·출처·검증), `ctx_share_publications`(Gateway 스냅샷 id), `ctx_share_keys`(Gateway 키 id·만료·상태만). 원문 키 열은 없다.
 - 게시된 초안은 불변이다. 변경하려면 새 초안을 만들고 다시 게시한다.
+
+## 8. v2 Private API와 재시도
+
+운영 설정, Claude Code MCP/REST 연결 예시, Alembic 및 Gateway runtime DDL 순서, 장애·rollback 절차는 [v2 운영 안내](context-sharing-v2-operations.md)를 참조한다. 안내의 값은 합성이며 실제 운영 공개 연결은 별도 활성화 단계다.
+
+`POST /keys`는 기존 body를 `single_use_v1`로 취급해 3,600초·단회 교환 의미를 보존한다. `credential_type: reusable_api_v2`는 `ttl_days`(기본 3), `snapshot_policy`(기본 pinned)를 받는다. pinned는 발급 시 활성 snapshot ID를 Gateway ACL에 보낸다. latest는 요청에서 명시한 경우만 허용한다. 응답 `connect.project_id`는 Gateway 프로젝트 UUID이며, `read` 없는 search/export 범위도 공개 REST 경로를 만들 수 있다. `POST /links`는 서버가 `share_link_v2`로 고정하며 `allow_export`만 scope에 반영한다. pinned/latest, TTL, scope, project, key ID, expiry를 Gateway 영수증과 대조한 뒤 Private DB에 metadata만 저장한다.
+
+링크와 키 목록은 서로 섞이지 않는다. 목록 metadata에는 type, scopes, policy, pinned snapshot, last used, usage_status가 있다. control status를 읽을 수 없으면 `usage_status: unavailable`로 표시한다. 링크 URL은 public origin과 `/s#token=<secret>`을 조합해 발급 응답에서만 전한다. 키 발급은 `key` 원문을 한 번 반환하며 목록과 감사에는 없다.
+
+새 migration `0080_ctx_share_v2_keys`는 기존 키에 `single_use_v1`, `latest` 및 metadata 기본값을 추가하고, 프로젝트·키의 revoke state/error와 scopes·last_used 필드를 보탠다. 과거 키는 기존 `publication_id` 연결을 보존한다. 프로젝트 목록은 활성 키 수와 활성 링크 수를 분리하고 마지막 게시 시각 및 `revoke_state`를 표시한다. project/key/link 폐기 실패 응답은 `status: revoking`, `retryable: true`를 제공한다.
+
+Gateway control은 v2 발급 `POST /control/v2/credentials`와 상태 대조 `POST /control/v2/credentials/status`를 사용한다. 게시 payload에는 draft UUID를 안정 operation_id로 보낸다. project revoke는 먼저 로컬 `revoke_state=revoking`으로 저장하고 Gateway 확인 이후에만 성공 상태를 반영한다. 미확인 키·링크는 `revoking`을 유지하며 generation maintenance와 개발 legacy 경로에서 같은 제한 batch operation을 별도 30초 주기로 재시도한다. 1시간 retention 작업과 분리되어 있고, Gateway revoke의 멱등성을 이용해 중복 시도에도 안전하다. 네트워크 단절 전에 Gateway에 전달되지 않은 폐기를 이미 적용한 것처럼 표시하지 않는다.
+
+work publication은 조직 공유 정책 증명이 없는 동안 새 키 발급(v1/v2)과 새 링크 발급을 모두 `work_sharing_policy_required`로 막는다. 이미 발급된 v1 키의 type과 동작은 다시 해석하지 않는다.
+
+Gateway core/public 및 front 계약 구현은 별도 작업자 소유다. Private fixture 테스트는 이 경계를 검증하며 core 통합은 상대 변경이 합쳐진 뒤 실행한다. 실제 운영 게시·공개 활성화·배포는 별도 승인 없이 하지 않는다.

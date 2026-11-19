@@ -425,6 +425,7 @@ async def test_mcp_streamable_http_uses_real_python_sdk_client(settings) -> None
                     "get_project_context",
                     "search_project_context",
                     "get_document",
+                    "export_project_context",
                 }
                 assert all(
                     tool.annotations and tool.annotations.read_only_hint for tool in tools.tools

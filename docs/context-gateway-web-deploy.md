@@ -76,8 +76,14 @@ Mac의 Docker 소켓 부재와 별개로 기존 `hs-ops`/`hs-edge` 계정에서 
 - 상태: `/opt/homeserver/apps/context-gateway/runtime/`. `/srv`는 root 소유이고 ops 비대화형 sudo 조회가 비밀번호를 요구해 기존 권한을 변경하지 않았다. 이번 서비스의 상태는 release 디렉터리 밖의 별도 bind 경로에 유지한다. 이 경로는 기존 `/opt/homeserver` 백업 범위에 포함하되 실제 백업 실행·복원은 이번 검증 범위가 아니다. 향후 `/srv/context-gateway`가 준비되면 중지·백업 후 mount 원본만 이전한다.
 - 자격 파일: `runtime/secrets/deployment.env`, mode 0600. 원문은 git·보고서·빌드 문맥에 넣지 않는다.
 - 네트워크: `172.31.0.0/24` 내부 브리지. control `.2:8788`, public `.3:8787`, DB `.4:5432`. 컨테이너는 호스트 포트를 공개하지 않는다. 해당 subnet은 이 홈서버에서 예약한 값이며 다른 호스트에서는 충돌 여부를 먼저 확인한다.
-- 기존 host nginx가 이 브리지에만 접속한다. `share.winterholic.net`은 public만, `share-control.winterholic.net`은 `/control/v1/`만 전달한다. 두 주소의 nginx access log는 꺼져 있다. 게시 인증은 control 앱의 별도 Bearer 토큰이 담당한다.
+- 기존 host nginx는 이 브리지에 접속한다. `share.winterholic.net`은 public만, `share-control.winterholic.net`은 control 앱으로 전달하며 두 주소의 nginx access log는 꺼져 있다. 게시 인증은 control 앱의 별도 Bearer 토큰이 담당한다.
 - 기존 Cloudflare `homeserver` Tunnel에 위 두 hostname만 추가했다. 설정은 변경 전 백업했으며 `edgectl`로 nginx/ingress 검사와 적용을 한다. Tunnel 자격 파일을 읽거나 변경하지 않는다.
+
+### Context Sharing v2 control proxy 경로
+
+기존 배포 문서와 당시 운영 경로는 `share-control.winterholic.net`에서 `/control/v1/`만 control 컨테이너(`172.31.0.2:8788`)로 전달하는 상태를 기록했다. Gateway control 앱의 신규 `POST /control/v2/credentials`와 `POST /control/v2/credentials/status`는 Private v2 발급·상태 확인에 필요하므로, control server에도 `/control/v2/`를 같은 control upstream으로 전달하는 별도 경로가 필요하다.
+
+현재 worktree의 `deploy/context-gateway/nginx.homeserver.conf`에는 `location ^~ /control/v2/`가 추가되어 control upstream(`172.31.0.2:8788`)으로 전달한다. 이 location은 별도 control hostname에만 있고, 나머지 경로의 fallback 404와 public hostname 격리는 유지한다. 이 저장소 설정 변경은 아직 운영에 적용되지 않았다. 이 문서 교정에서는 nginx/Tunnel 설정을 바꾸거나 현재 운영 nginx를 조회하지 않았다. v2 발급을 별도 승인해 활성화하기 전에 승인된 운영 절차로 이 설정을 적용하고 `nginx -t`·`edgectl` 검증 및 control route 전달을 확인해야 한다.
 
 실제 Docker 실행에서 교정한 항목: tmpfs flow list의 쉼표를 문자열로 묶었고, builder/runtime의 venv 절대 경로를 `/app/.venv`로 일치시켰다. Gateway Python 패키지를 `--no-editable`로 설치해 builder 소스 경로에 의존하지 않도록 했다. Node 22의 fetch Blob은 DOM Blob과 생성자가 달라 다운로드 검사를 ZIP MIME 및 실제 4바이트로 대조한다.
 

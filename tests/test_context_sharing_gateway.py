@@ -54,6 +54,42 @@ async def test_snapshot_adapter_uses_flat_post_contract_and_only_the_control_tok
     assert json.loads(req.content) == payload
 
 
+async def test_v2_credential_adapter_uses_v2_contract_and_validates_full_metadata_receipt():
+    project_id = "7bf808c4-b492-442e-9e7e-c753b42b420d"
+    snapshot_id = "4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67"
+    key_id = "b13f8a12-bac6-4ea1-8f0c-720ed8c5a668"
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(201, json={"key_id": key_id, "key": "one-time-secret", "credential_type": "reusable_api_v2",
+                                         "label": "agent", "ttl_days": 3, "created_at": "2026-11-19T00:00:00Z",
+                                         "expires_at": "2026-11-22T00:00:00Z", "last_used_at": None, "revoked_at": None,
+                                         "projects": {project_id: {"scopes": ["read"], "snapshot_policy": "pinned",
+                                                                    "snapshot_id": snapshot_id}}})
+
+    result = await GatewayControl(transport(handler)).issue_v2_credential(
+        "reusable_api_v2", project_id, label="agent", ttl_days=3, scopes=["read"],
+        snapshot_policy="pinned", snapshot_id=snapshot_id)
+    assert str(sent[0].url) == "https://control.example.test/control/v2/credentials"
+    assert json.loads(sent[0].content)["projects"][project_id] == {
+        "scopes": ["read"], "snapshot_policy": "pinned", "snapshot_id": snapshot_id}
+    assert result["key"] == "one-time-secret"
+
+
+async def test_v2_credential_adapter_rejects_mismatched_snapshot_receipt():
+    project_id = "7bf808c4-b492-442e-9e7e-c753b42b420d"
+    receipt = {"key_id": "b13f8a12-bac6-4ea1-8f0c-720ed8c5a668", "key": "one-time-secret",
+              "credential_type": "reusable_api_v2", "expires_at": "2026-11-22T00:00:00Z",
+              "projects": {project_id: {"scopes": ["read"], "snapshot_policy": "pinned",
+                                         "snapshot_id": "11111111-1111-1111-1111-111111111111"}}}
+    control = GatewayControl(transport(lambda _: httpx.Response(201, json=receipt)))
+    with pytest.raises(GatewayBadResponse):
+        await control.issue_v2_credential("reusable_api_v2", project_id, label="agent", ttl_days=3,
+                                          scopes=["read"], snapshot_policy="pinned",
+                                          snapshot_id="4f9b23e2-fd9e-4b93-92be-cbb5b88a4f67")
+
+
 async def test_redirects_are_not_followed_so_the_token_cannot_leak():
     calls = []
 

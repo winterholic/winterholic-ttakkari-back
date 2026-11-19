@@ -6,15 +6,16 @@ import os
 import re
 import shutil
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import APIKey, AuditEvent, KeyACL, Project, Snapshot
+from .models import APIKey, AuditEvent, KeyACL, Project, PublishOperation, Snapshot
 
 DOC_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 
@@ -28,6 +29,10 @@ class IntegrityError(PublishError):
 
 
 class ProjectSharingRevokedError(PublishError):
+    pass
+
+
+class IdempotencyConflictError(PublishError):
     pass
 
 
@@ -55,6 +60,30 @@ def canonical_json(value: Any) -> bytes:
 async def publish_snapshot(
     session: AsyncSession, snapshot_dir: Path, payload: dict[str, Any]
 ) -> Snapshot:
+    operation_id = payload.get("operation_id")
+    operation_digest = None
+    if operation_id is not None:
+        normalized_payload = {key: value for key, value in payload.items() if key != "operation_id"}
+        encoded_payload = json.dumps(
+            normalized_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=lambda value: value.isoformat() if hasattr(value, "isoformat") else str(value),
+        ).encode("utf-8")
+        operation_digest = hashlib.sha256(encoded_payload).hexdigest()
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:operation_id))"),
+            {"operation_id": str(operation_id)},
+        )
+        prior = await session.get(PublishOperation, operation_id)
+        if prior is not None:
+            if prior.payload_sha256 != operation_digest:
+                raise IdempotencyConflictError("operation_id payload conflict")
+            snapshot = await session.get(Snapshot, prior.snapshot_id)
+            if snapshot is None:
+                raise PublishError("idempotent publish receipt is unavailable")
+            return snapshot
     slug = payload["project_slug"]
     project = await session.scalar(select(Project).where(Project.slug == slug).with_for_update())
     if project is None:
@@ -67,7 +96,7 @@ async def publish_snapshot(
         await session.flush()
     elif project.sharing_revoked_at is not None:
         raise ProjectSharingRevokedError("project sharing has been revoked")
-    elif payload["project_name"] != project.name:
+    else:
         project.name = payload["project_name"]
         project.description = payload.get("project_description", project.description)
 
@@ -133,6 +162,8 @@ async def publish_snapshot(
         "snapshot_id": str(snapshot_id),
         "project_id": str(project.id),
         "project_slug": slug,
+        "project_name": project.name,
+        "project_description": project.description,
         "version": version,
         "created_at": created_at.isoformat(),
         "status": "published",
@@ -177,6 +208,32 @@ async def publish_snapshot(
         )
         session.add(snapshot)
         project.latest_snapshot_id = snapshot_id
+        await session.flush()
+        if operation_id is not None:
+            session.add(
+                PublishOperation(
+                    operation_id=operation_id,
+                    payload_sha256=operation_digest,
+                    snapshot_id=snapshot_id,
+                    receipt=jsonable_encoder(
+                        {
+                            "id": snapshot.id,
+                            "project_id": snapshot.project_id,
+                            "schema_version": snapshot.manifest.get("schema_version", 0),
+                            "version": snapshot.manifest.get("version", 0),
+                            "created_at": snapshot.published_at,
+                            "status": "active",
+                            "source_refs": snapshot.source_refs,
+                            "source_revision": snapshot.source_revision,
+                            "generated_at": snapshot.generated_at,
+                            "verified_at": snapshot.verified_at,
+                            "published_at": snapshot.published_at,
+                            "manifest_sha256": snapshot.manifest_sha256,
+                            "documents": snapshot.manifest["documents"],
+                        }
+                    ),
+                )
+            )
         session.add(
             AuditEvent(event="snapshot_published", project_id=project.id, detail=str(snapshot_id))
         )
@@ -300,6 +357,93 @@ async def issue_api_key(
     session.add(AuditEvent(key_id=record.id, event="key_issued", detail=label))
     await session.commit()
     return record, raw
+
+
+async def issue_v2_credential(
+    session: AsyncSession,
+    *,
+    label: str,
+    credential_type: str,
+    ttl_days: int,
+    project_grants: dict[UUID, dict[str, Any]],
+) -> tuple[APIKey, str, dict[str, Any]]:
+    from .auth import issue_key
+
+    project_id, grant = next(iter(project_grants.items()))
+    project = await session.scalar(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    if project is None:
+        raise PublishError("one or more projects do not exist")
+    if project.sharing_revoked_at is not None:
+        raise ProjectSharingRevokedError("project sharing has been revoked")
+    scopes = sorted(set(grant["scopes"]))
+    if not scopes or not set(scopes) <= {"read", "search", "export"}:
+        raise PublishError("invalid scopes")
+    policy = grant["snapshot_policy"]
+    snapshot_id = grant.get("snapshot_id")
+    snapshot = None
+    if policy == "pinned":
+        snapshot = await session.scalar(
+            select(Snapshot).where(
+                Snapshot.id == snapshot_id,
+                Snapshot.project_id == project_id,
+                Snapshot.revoked_at.is_(None),
+            )
+        )
+        if snapshot is None:
+            raise PublishError("pinned snapshot is not active for project")
+    elif policy != "latest" or snapshot_id is not None:
+        raise PublishError("invalid snapshot policy")
+    issued_at = datetime.now(UTC)
+    raw, digest, _ = issue_key(now=issued_at)
+    record = APIKey(
+        label=label,
+        credential_hash=digest,
+        expires_at=issued_at + timedelta(days=ttl_days),
+        credential_type=credential_type,
+    )
+    session.add(record)
+    await session.flush()
+    session.add(
+        KeyACL(
+            key_id=record.id,
+            project_id=project_id,
+            scopes=scopes,
+            snapshot_policy=policy,
+            snapshot_id=snapshot_id,
+            project_name=(
+                snapshot.manifest.get("project_name", project.name)
+                if snapshot is not None
+                else None
+            ),
+            project_description=(
+                snapshot.manifest.get("project_description", project.description)
+                if snapshot is not None
+                else None
+            ),
+        )
+    )
+    session.add(AuditEvent(key_id=record.id, event="credential_issued", detail=credential_type))
+    await session.commit()
+    receipt = {
+        "key_id": str(record.id),
+        "credential_type": credential_type,
+        "label": label,
+        "ttl_days": ttl_days,
+        "created_at": record.created_at.isoformat() if record.created_at else issued_at.isoformat(),
+        "expires_at": record.expires_at.isoformat(),
+        "last_used_at": None,
+        "revoked_at": None,
+        "projects": {
+            str(project_id): {
+                "scopes": scopes,
+                "snapshot_policy": policy,
+                "snapshot_id": str(snapshot_id) if snapshot_id else None,
+            }
+        },
+    }
+    return record, raw, receipt
 
 
 async def revoke_api_key(session: AsyncSession, key_id: UUID) -> bool:

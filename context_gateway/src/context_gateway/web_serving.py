@@ -21,6 +21,7 @@ _SECURITY_HEADERS = {
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
+    "x-robots-tag": "noindex, nofollow, noarchive",
 }
 
 
@@ -53,7 +54,7 @@ class WebServingApp:
             await PlainTextResponse("Not Found", status_code=404)(scope, receive, secure_send)
             return
 
-        static_scope = {**scope, "path": "/index.html" if path == "/" else path}
+        static_scope = {**scope, "path": "/index.html" if path in {"/", "/s"} else path}
         try:
             await self.static_app(static_scope, receive, secure_send)
         except HTTPException as exc:
@@ -75,12 +76,12 @@ class WebServingApp:
         schema_json = json.dumps(self.public_app.openapi(), ensure_ascii=False, indent=2)
         escaped_schema = html.escape(schema_json)
         body = (
-            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
             "<title>Context Gateway API</title></head><body>"
             "<h1>Context Gateway API</h1>"
             "<p>Public REST API OpenAPI 3.1 document. The control API is not included.</p>"
-            "<p><a href=\"/openapi.json\">Download the OpenAPI JSON</a></p>"
+            '<p><a href="/openapi.json">Download the OpenAPI JSON</a></p>'
             f"<pre>{escaped_schema}</pre></body></html>"
         )
         return HTMLResponse(body)
@@ -92,7 +93,7 @@ class WebServingApp:
         parts = PurePosixPath(path).parts
         if any(part in {".", ".."} or part.startswith(".") for part in parts):
             return False
-        if path in {"/", "/index.html"}:
+        if path in {"/", "/s", "/index.html"}:
             return True
         if not path.startswith("/assets/"):
             return False
@@ -112,7 +113,9 @@ class WebServingApp:
                     for key, value in message.get("headers", [])
                     if key.lower() not in _SECURITY_HEADERS
                 ]
-                headers.extend((key.encode(), value.encode()) for key, value in _SECURITY_HEADERS.items())
+                headers.extend(
+                    (key.encode(), value.encode()) for key, value in _SECURITY_HEADERS.items()
+                )
                 message = {**message, "headers": headers}
             await send(message)
 

@@ -84,6 +84,7 @@ from ttakkari.transfer import service as transfer_service
 
 log = logging.getLogger("ttakkari")
 RETENTION_INTERVAL = 3600
+CONTEXT_SHARING_RETRY_INTERVAL = 30
 
 
 async def _retention_loop() -> None:
@@ -102,6 +103,19 @@ async def _retention_loop() -> None:
         except Exception:  # noqa: BLE001 -- bounded maintenance: log failure without SQL/body/secret
             log.warning("public share cleanup failed")
         await asyncio.sleep(RETENTION_INTERVAL)
+
+
+async def _context_sharing_revocation_loop() -> None:
+    """레거시/개발 실행에서도 retention과 분리해 짧은 간격으로 pending 폐기를 재시도한다."""
+    while True:
+        try:
+            from ttakkari.generation_service import _retry_context_sharing_revocations
+            await _retry_context_sharing_revocations()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- bounded retry; 다음 주기에 다시 시도한다
+            log.warning("context sharing revoke reconciliation failed")
+        await asyncio.sleep(CONTEXT_SHARING_RETRY_INTERVAL)
 
 
 async def _kb_repair_loop(interval: int) -> None:
@@ -259,6 +273,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ttakkari.creative.render import legacy_loop
     creative_worker = asyncio.create_task(legacy_loop())
     retention = asyncio.create_task(_retention_loop())
+    context_sharing_revocations = asyncio.create_task(_context_sharing_revocation_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
     kb_repair = asyncio.create_task(_kb_repair_loop(s.kb_repair_interval_seconds)) if s.kb_repair_interval_seconds > 0 else None
@@ -296,6 +311,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if ops_sync:
             ops_sync.cancel()
         retention.cancel()
+        context_sharing_revocations.cancel()
+        await asyncio.gather(context_sharing_revocations, return_exceptions=True)
         if collector:
             collector.cancel()
         if kb_repair:

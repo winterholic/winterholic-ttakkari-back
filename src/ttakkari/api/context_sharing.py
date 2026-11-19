@@ -70,6 +70,18 @@ class KeyIn(BaseModel):
     label: str = Field(default="", max_length=160)
     scopes: list[Literal["read", "search", "export"]] = Field(default_factory=lambda: ["read", "search"], min_length=1)
     ttl_seconds: Literal[3600] = 3600
+    credential_type: Literal["single_use_v1", "reusable_api_v2"] = "single_use_v1"
+    ttl_days: Literal[1, 3, 7, 30] = 3
+    snapshot_policy: Literal["pinned", "latest"] = "pinned"
+
+
+class LinkIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_slug: str = Field(pattern=SLUG)
+    label: str = Field(default="", max_length=160)
+    ttl_days: Literal[1, 3, 7, 30] = 3
+    snapshot_policy: Literal["pinned", "latest"] = "pinned"
+    allow_export: bool = False
 
 
 class SiteEnabledIn(BaseModel):
@@ -151,7 +163,10 @@ def _project_out(p, state: dict[str, Any] | None) -> dict[str, Any]:
     return {"entity_id": str(p.entity_id), "name": p.name, "aliases": p.aliases, "summary": p.summary[:240],
             "scope": p.scope, "source_count": p.source_count, "document_count": p.document_count,
             "slug": state.get("slug"), "publication": state.get("publication"),
-            "active_key_count": state.get("active_key_count", 0)}
+            "active_key_count": state.get("active_key_count", 0),
+            "active_link_count": state.get("active_link_count", 0),
+            "last_published_at": state.get("last_published_at"),
+            "revoke_state": state.get("revoke_state", "active")}
 
 
 def _source_out(g) -> dict[str, Any]:
@@ -251,17 +266,34 @@ async def publish(draft_id: uuid.UUID, body: PublishIn, request: Request, db: Db
 async def issue_key(body: KeyIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
     """원문 키는 이 응답에 한 번만 담긴다. Private DB·감사 로그·목록 응답에는 없다."""
     return await service.issue_key(db, gateway, body.project_slug, label=body.label,
-                                   scopes=sorted(set(body.scopes)), **_meta(request))
+                                   scopes=sorted(set(body.scopes)), credential_type=body.credential_type,
+                                   ttl_days=body.ttl_days, snapshot_policy=body.snapshot_policy, **_meta(request))
 
 
 @router.get("/keys")
-async def list_keys(db: Db, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
-    return await service.list_keys(db, project_slug)
+async def list_keys(db: Db, gateway: Gateway, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_keys(db, project_slug, gateway)
 
 
 @router.post("/keys/{key_id}/revoke")
 async def revoke_key(key_id: uuid.UUID, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
     return await service.revoke_key(db, gateway, key_id, **_meta(request))
+
+
+@router.post("/links", status_code=201)
+async def issue_link(body: LinkIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    return await service.issue_link(db, gateway, body.project_slug, label=body.label, ttl_days=body.ttl_days,
+                                    snapshot_policy=body.snapshot_policy, allow_export=body.allow_export, **_meta(request))
+
+
+@router.get("/links")
+async def list_links(db: Db, gateway: Gateway, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_links(db, project_slug, gateway)
+
+
+@router.post("/links/{link_id}/revoke")
+async def revoke_link(link_id: uuid.UUID, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    return await service.revoke_link(db, gateway, link_id, **_meta(request))
 
 
 @router.post("/projects/{slug}/revoke")
@@ -309,8 +341,8 @@ async def agent_publish(body: AgentPublishIn, request: Request, db: Db, gateway:
 
 
 @agent_router.get("/keys")
-async def agent_list_keys(db: Db, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
-    return await service.list_keys(db, project_slug)
+async def agent_list_keys(db: Db, gateway: Gateway, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_keys(db, project_slug, gateway)
 
 
 @agent_router.post("/keys", status_code=201)
@@ -318,7 +350,9 @@ async def agent_issue_key(body: KeyIn, request: Request, db: Db, gateway: Gatewa
     if error := _site_configuration_error(gateway):
         return error
     return await service.issue_key(db, gateway, body.project_slug, label=body.label,
-                                   scopes=sorted(set(body.scopes)), actor="agent", **_meta(request))
+                                   scopes=sorted(set(body.scopes)), credential_type=body.credential_type,
+                                   ttl_days=body.ttl_days, snapshot_policy=body.snapshot_policy,
+                                   actor="agent", **_meta(request))
 
 
 @agent_router.post("/keys/{key_id}/revoke")
@@ -326,6 +360,27 @@ async def agent_revoke_key(key_id: uuid.UUID, request: Request, db: Db, gateway:
     if error := _site_configuration_error(gateway):
         return error
     return await service.revoke_key(db, gateway, key_id, actor="agent", **_meta(request))
+
+
+@agent_router.get("/links")
+async def agent_list_links(db: Db, gateway: Gateway, project_slug: Annotated[str | None, Query(pattern=SLUG)] = None) -> dict[str, Any]:
+    return await service.list_links(db, project_slug, gateway)
+
+
+@agent_router.post("/links", status_code=201)
+async def agent_issue_link(body: LinkIn, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    if error := _site_configuration_error(gateway):
+        return error
+    return await service.issue_link(db, gateway, body.project_slug, label=body.label, ttl_days=body.ttl_days,
+                                    snapshot_policy=body.snapshot_policy, allow_export=body.allow_export,
+                                    actor="agent", **_meta(request))
+
+
+@agent_router.post("/links/{link_id}/revoke")
+async def agent_revoke_link(link_id: uuid.UUID, request: Request, db: Db, gateway: Gateway) -> dict[str, Any]:
+    if error := _site_configuration_error(gateway):
+        return error
+    return await service.revoke_link(db, gateway, link_id, actor="agent", **_meta(request))
 
 
 @agent_router.get("/site")

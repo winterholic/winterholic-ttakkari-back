@@ -66,6 +66,14 @@ class FakeGateway:
             return self._revoke_snapshot(parts[3])
         if (method, path) == ("POST", "/control/v1/keys"):
             return self._issue_key(json)
+        if (method, path) == ("POST", "/control/v2/credentials"):
+            return self._issue_v2_credential(json)
+        if (method, path) == ("POST", "/control/v2/credentials/status"):
+            return GatewayReply(200, {"credentials": [{"key_id": key_id,
+                "credential_type": value.get("credential_type", "single_use_v1"), "last_used_at": value.get("last_used_at"),
+                "revoked_at": "now" if value["revoked"] else None,
+                "expires_at": "2099-01-01T00:00:00+00:00"} for key_id, value in self.keys.items()
+                if key_id in json.get("key_ids", [])]})
         if method == "POST" and parts[:3] == ["control", "v1", "keys"] and parts[-1] == "revoke":
             key = self.keys.get(parts[3])
             if key is None:
@@ -131,9 +139,27 @@ class FakeGateway:
         key_id = str(uuid.uuid4())
         raw = RAW_KEY_PREFIX + uuid.uuid4().hex
         ttl = self.key_lifetime if self.key_lifetime is not None else 3600
-        self.keys[key_id] = {"raw": raw, "project_id": pid, "revoked": False, "scopes": grant["scopes"], "body": body}
+        self.keys[key_id] = {"raw": raw, "project_id": pid, "revoked": False, "scopes": grant["scopes"],
+                             "body": body, "credential_type": "single_use_v1"}
         return GatewayReply(201, {"key_id": key_id, "key": raw,
                                   "expires_at": (datetime.now(UTC) + timedelta(seconds=ttl)).isoformat()})
+
+    def _issue_v2_credential(self, body: dict[str, Any]) -> GatewayReply:
+        (pid, grant), = body["projects"].items()
+        key_id, raw = str(uuid.uuid4()), RAW_KEY_PREFIX + uuid.uuid4().hex
+        credential_type = body["credential_type"]
+        self.keys[key_id] = {"raw": raw, "project_id": pid, "revoked": False,
+                             "scopes": grant["scopes"], "body": body, "credential_type": credential_type}
+        days = body["ttl_days"]
+        receipt_grant = {"scopes": grant["scopes"], "snapshot_policy": grant["snapshot_policy"]}
+        receipt_grant["snapshot_id"] = grant.get("snapshot_id")
+        result = {"key_id": key_id, "key": raw, "credential_type": credential_type,
+                  "label": body["label"], "ttl_days": days, "created_at": datetime.now(UTC).isoformat(),
+                  "expires_at": (datetime.now(UTC) + timedelta(days=days)).isoformat(), "last_used_at": None,
+                  "revoked_at": None, "projects": {pid: receipt_grant}}
+        if credential_type == "share_link_v2":
+            result["url"] = f"https://ctx.example.test/s#token={raw}"
+        return GatewayReply(201, result)
 
 
 def sha(text: str) -> str:

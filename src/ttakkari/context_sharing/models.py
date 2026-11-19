@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ttakkari.models import Base, utcnow
@@ -30,6 +31,8 @@ class ShareProject(Base):
     name: Mapped[str] = mapped_column(String(200))
     # Gateway 가 정한 프로젝트 UUID. 첫 게시 영수증에서 받고, 키 발급 ACL 에 쓴다.
     gateway_project_id: Mapped[str | None] = mapped_column(String(36))
+    revoke_state: Mapped[str] = mapped_column(String(16), default="active")  # active | revoking
+    revoke_error: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -101,3 +104,9 @@ class ShareKey(Base):
     issued_at: Mapped[datetime] = mapped_column(default=utcnow)
     expires_at: Mapped[datetime]
     revoked_at: Mapped[datetime | None]
+    credential_type: Mapped[str] = mapped_column(String(24), default="single_use_v1")
+    snapshot_policy: Mapped[str] = mapped_column(String(8), default="latest")
+    pinned_snapshot_id: Mapped[str | None] = mapped_column(String(36))
+    scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    last_used_at: Mapped[datetime | None]
+    revoke_error: Mapped[str | None] = mapped_column(String(64))

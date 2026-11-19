@@ -52,9 +52,7 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
                 "source_revision": "parity-rev-001",
                 "generated_at": "2026-11-16T00:00:00Z",
                 "verified_at": "2026-11-16T00:00:00Z",
-                "documents": [
-                    {"id": "brief", "title": "Brief", "content": content}
-                ],
+                "documents": [{"id": "brief", "title": "Brief", "content": content}],
             },
         )
         assert published.status_code == 201, published.text
@@ -92,9 +90,7 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
         async with sdk_http:
             transport = streamable_http_client("http://localhost/mcp", http_client=sdk_http)
             async with Client(transport) as sdk:
-                mcp_context = await sdk.call_tool(
-                    "get_project_context", {"project_id": project_id}
-                )
+                mcp_context = await sdk.call_tool("get_project_context", {"project_id": project_id})
                 mcp_search = await sdk.call_tool(
                     "search_project_context",
                     {"project_id": project_id, "query": "synthetic"},
@@ -104,6 +100,42 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
         assert mcp_context.structured_content["documents"] == rest_context.json()["documents"]
         assert mcp_context.structured_content["snapshot"] == rest_context.json()["snapshot"]
         assert mcp_search.structured_content["results"] == rest_search.json()["results"]
+
+        reusable = await admin.post(
+            "/control/v2/credentials",
+            headers={"Authorization": "Bearer synthetic-parity-token"},
+            json={
+                "credential_type": "reusable_api_v2",
+                "label": "synthetic reusable parity",
+                "projects": {
+                    project_id: {
+                        "scopes": ["read", "search", "export"],
+                        "snapshot_policy": "pinned",
+                        "snapshot_id": published.json()["id"],
+                    }
+                },
+            },
+        )
+        assert reusable.status_code == 201, reusable.text
+        raw_headers = {"Authorization": f"Bearer {reusable.json()['key']}"}
+        raw_context = await rest.get(f"/api/v1/projects/{project_id}/context", headers=raw_headers)
+        raw_search = await rest.get(
+            f"/api/v1/projects/{project_id}/search", headers=raw_headers, params={"q": "synthetic"}
+        )
+        assert raw_context.status_code == raw_search.status_code == 200
+        async with httpx2.AsyncClient(
+            headers=raw_headers, transport=httpx2.ASGITransport(app=public)
+        ) as raw_mcp_http:
+            transport = streamable_http_client("http://localhost/mcp", http_client=raw_mcp_http)
+            async with Client(transport) as sdk:
+                raw_mcp_context = await sdk.call_tool(
+                    "get_project_context", {"project_id": project_id}
+                )
+                raw_mcp_export = await sdk.call_tool(
+                    "export_project_context", {"project_id": project_id}
+                )
+        assert not raw_mcp_context.is_error and not raw_mcp_export.is_error
+        assert raw_mcp_context.structured_content["documents"] == raw_context.json()["documents"]
 
         read_only_key = await admin.post(
             "/control/v1/keys",
@@ -116,9 +148,7 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
             headers={"Authorization": f"Bearer {read_only_key.json()['key']}"},
         )
         assert read_only_exchange.status_code == 200, read_only_exchange.text
-        read_only_headers = {
-            "Authorization": f"Bearer {read_only_exchange.json()['access_token']}"
-        }
+        read_only_headers = {"Authorization": f"Bearer {read_only_exchange.json()['access_token']}"}
         denied_search = await rest.get(
             f"/api/v1/projects/{project_id}/search",
             headers=read_only_headers,
@@ -157,7 +187,9 @@ async def test_rest_and_mcp_sdk_return_identical_context_and_search_data(setting
 
 
 @pytest.mark.asyncio
-async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resumes_without_ttl_reset(settings, db_sessions) -> None:
+async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resumes_without_ttl_reset(
+    settings, db_sessions
+) -> None:
     control = create_control_app(settings)
     public = create_public_app(settings)
     slug = f"synthetic-pause-{uuid4().hex[:8]}"
@@ -165,30 +197,42 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
     async with (
         control.router.lifespan_context(control),
         public.router.lifespan_context(public),
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=control), base_url="http://control") as admin,
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=public), base_url="http://public") as rest,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=control), base_url="http://control"
+        ) as admin,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=public), base_url="http://public"
+        ) as rest,
     ):
         before = await rest.get("/api/v1/site")
         assert before.status_code == 200 and before.json() == {"enabled": True}
         live_status = await admin.get("/control/v1/site", headers=control_headers)
         assert live_status.status_code == 200 and live_status.json() == {"enabled": True}
         published = await admin.post(
-            "/control/v1/snapshots", headers=control_headers,
-            json={"project_slug": slug, "project_name": "Synthetic Pause",
-                  "source_refs": ["fixture://pause"], "source_revision": "pause-rev",
-                  "generated_at": "2026-11-16T00:00:00Z", "verified_at": "2026-11-16T00:00:00Z",
-                  "documents": [{"id": "brief", "title": "Brief", "content": "synthetic data"}]},
+            "/control/v1/snapshots",
+            headers=control_headers,
+            json={
+                "project_slug": slug,
+                "project_name": "Synthetic Pause",
+                "source_refs": ["fixture://pause"],
+                "source_revision": "pause-rev",
+                "generated_at": "2026-11-16T00:00:00Z",
+                "verified_at": "2026-11-16T00:00:00Z",
+                "documents": [{"id": "brief", "title": "Brief", "content": "synthetic data"}],
+            },
         )
         assert published.status_code == 201, published.text
         project_id = published.json()["project_id"]
         issued = await admin.post(
-            "/control/v1/keys", headers=control_headers,
+            "/control/v1/keys",
+            headers=control_headers,
             json={"label": "synthetic", "projects": {project_id: {"scopes": ["read", "export"]}}},
         )
         assert issued.status_code == 201, issued.text
         expires_at = issued.json()["expires_at"]
         unexchanged = await admin.post(
-            "/control/v1/keys", headers=control_headers,
+            "/control/v1/keys",
+            headers=control_headers,
             json={"label": "synthetic unexchanged", "projects": {project_id: {"scopes": ["read"]}}},
         )
         assert unexchanged.status_code == 201, unexchanged.text
@@ -199,13 +243,16 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
                     APIKey.credential_hash == hash_credential(unexchanged.json()["key"])
                 )
             )
-        exchanged = await rest.post("/api/v1/auth/exchange",
-                                    headers={"Authorization": f"Bearer {issued.json()['key']}"})
+        exchanged = await rest.post(
+            "/api/v1/auth/exchange", headers={"Authorization": f"Bearer {issued.json()['key']}"}
+        )
         assert exchanged.status_code == 200, exchanged.text
         session_token = exchanged.json()["access_token"]
         session_expires_at = exchanged.json()["expires_at"]
         session_headers = {"Authorization": f"Bearer {session_token}"}
-        assert (await rest.get(f"/api/v1/projects/{project_id}", headers=session_headers)).status_code == 200
+        assert (
+            await rest.get(f"/api/v1/projects/{project_id}", headers=session_headers)
+        ).status_code == 200
         original_snapshots = await rest.get(
             f"/api/v1/projects/{project_id}/snapshots", headers=session_headers
         )
@@ -271,11 +318,14 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
                 assert resumed_unexchanged.status_code == 200, resumed_unexchanged.text
                 assert unexchanged.json()["expires_at"] == unexchanged_expires_at
                 async with control.state.session_factory() as db:
-                    assert await db.scalar(
-                        select(APIKey.expires_at).where(
-                            APIKey.credential_hash == hash_credential(unexchanged.json()["key"])
+                    assert (
+                        await db.scalar(
+                            select(APIKey.expires_at).where(
+                                APIKey.credential_hash == hash_credential(unexchanged.json()["key"])
+                            )
                         )
-                    ) == stored_key_expiry
+                        == stored_key_expiry
+                    )
                 resumed_snapshots = await rest.get(
                     f"/api/v1/projects/{project_id}/snapshots", headers=session_headers
                 )
@@ -289,32 +339,48 @@ async def test_site_pause_blocks_exchange_existing_rest_mcp_and_export_then_resu
                 Session.credential_hash == hash_credential(session_token)
             )
         )
-        assert stored_session_expiry.isoformat().replace("+00:00", "Z") == session_expires_at.replace("+00:00", "Z")
+        assert stored_session_expiry.isoformat().replace(
+            "+00:00", "Z"
+        ) == session_expires_at.replace("+00:00", "Z")
 
 
 @pytest.mark.asyncio
-async def test_site_control_requires_control_token_and_public_role_cannot_change_site(settings) -> None:
+async def test_site_control_requires_control_token_and_public_role_cannot_change_site(
+    settings,
+) -> None:
     control = create_control_app(settings)
-    async with control.router.lifespan_context(control), httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=control), base_url="http://control"
-    ) as client:
+    async with (
+        control.router.lifespan_context(control),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=control), base_url="http://control"
+        ) as client,
+    ):
         assert (await client.get("/control/v1/site")).status_code == 401
         assert (await client.patch("/control/v1/site", json={"enabled": False})).status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_missing_site_state_stays_closed_after_restart_until_explicit_resume(settings) -> None:
+async def test_missing_site_state_stays_closed_after_restart_until_explicit_resume(
+    settings,
+) -> None:
     control = create_control_app(settings)
     public = create_public_app(settings)
     auth = {"Authorization": "Bearer synthetic-parity-token"}
     async with (
         control.router.lifespan_context(control),
         public.router.lifespan_context(public),
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=control), base_url="http://control") as admin,
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=public), base_url="http://public") as rest,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=control), base_url="http://control"
+        ) as admin,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=public), base_url="http://public"
+        ) as rest,
     ):
         async with control.state.session_factory() as db:
-            assert await db.scalar(text("SELECT current_database()")) == make_url(settings.database_url).database
+            assert (
+                await db.scalar(text("SELECT current_database()"))
+                == make_url(settings.database_url).database
+            )
         assert (await rest.get("/api/v1/site")).json() == {"enabled": True}
         async with control.state.session_factory() as db:
             await db.execute(text("DELETE FROM gateway_site_control WHERE id = 1"))
@@ -339,8 +405,11 @@ async def test_missing_site_state_stays_closed_after_restart_until_explicit_resu
         assert resumed_status.headers["cache-control"] == "no-store"
         assert (await rest.get("/api/v1/projects/not-a-project", headers=auth)).status_code != 503
 
+
 @pytest.mark.asyncio
-async def test_public_database_role_can_read_site_switch_but_cannot_write_or_read_audit(postgres_url, tmp_path):
+async def test_public_database_role_can_read_site_switch_but_cannot_write_or_read_audit(
+    postgres_url, tmp_path
+):
     from context_gateway.apps import _initialize_schema
     from context_gateway.database import make_session_factory
 
@@ -363,14 +432,35 @@ async def test_public_database_role_can_read_site_switch_but_cannot_write_or_rea
             transaction = await connection.begin()
             try:
                 await connection.execute(text(f'SET LOCAL ROLE "{role}"'))
-                assert await connection.scalar(text("SELECT enabled FROM gateway_site_control WHERE id = 1")) is True
+                assert (
+                    await connection.scalar(
+                        text("SELECT enabled FROM gateway_site_control WHERE id = 1")
+                    )
+                    is True
+                )
+                for column in ("last_used_at", "window_started_at", "window_count"):
+                    assert await connection.scalar(
+                        text(
+                            "SELECT has_column_privilege(current_user, 'gateway_api_keys', :column, 'UPDATE')"
+                        ),
+                        {"column": column},
+                    )
+                assert not await connection.scalar(
+                    text(
+                        "SELECT has_column_privilege(current_user, 'gateway_api_keys', 'credential_type', 'UPDATE')"
+                    )
+                )
                 async with connection.begin_nested():
                     with pytest.raises(DBAPIError):
-                        await connection.execute(text("UPDATE gateway_site_control SET enabled = FALSE WHERE id = 1"))
+                        await connection.execute(
+                            text("UPDATE gateway_site_control SET enabled = FALSE WHERE id = 1")
+                        )
                     await connection.get_nested_transaction().rollback()
                 async with connection.begin_nested():
                     with pytest.raises(DBAPIError):
-                        await connection.execute(text("SELECT enabled FROM gateway_site_control_audit"))
+                        await connection.execute(
+                            text("SELECT enabled FROM gateway_site_control_audit")
+                        )
                     await connection.get_nested_transaction().rollback()
             finally:
                 await transaction.rollback()

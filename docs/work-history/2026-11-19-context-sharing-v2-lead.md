@@ -2,13 +2,13 @@
 
 ## Living Brief
 
-전체 목표는 사용자 원 요청의 공유 링크·API Key·관리 UI·공개 Reader를 기존 아키텍처 위에서 구현하고 A/B/C 및 보안·마이그레이션·REST/MCP·UI 검증과 문서화를 마치는 것이다. 전체 상태는 **active**이며 완료가 아니다. 정본 요구 ID와 원문은 이 기획 세션의 `manage_work get`에 있다. CG-R1~R7은 구현 및 해당 범위 검증을 수락해 done이며 CG-R8은 최종 커밋·통합·배포 게이트를 남겨 review다. 운영 활성화 완료를 뜻하지 않는다. 다음 대화는 `manage_work get`으로 최신 revision을 복원하고 이 Living Brief 및 관련 검수 기록부터 읽는다.
+전체 목표는 사용자 원 요청의 공유 링크·API Key·관리 UI·공개 Reader를 기존 아키텍처 위에서 구현하고 A/B/C 및 보안·마이그레이션·REST/MCP·UI 검증과 문서화를 마치는 것이다. 전체 상태는 **active**이며 완료가 아니다. 정본 요구 ID와 원문은 이 기획 세션의 `manage_work get`에 있다. CG-R1~R7은 구현 및 해당 범위 검증을 수락해 done이며 CG-R8은 코드 통합과 지정 커밋 사전 게이트를 수락했으며, 백엔드 배포 결과 판정을 남겨 review다. 운영 활성화 완료를 뜻하지 않는다. 다음 대화는 `manage_work get`으로 최신 revision을 복원하고 이 Living Brief 및 관련 검수 기록부터 읽는다.
 
 - 확정 계약: [context-sharing-v2-contract.md](../context-sharing-v2-contract.md).
 - 기존 구조 조사: [backend 분석](../context-sharing-v2-analysis.md), front checkout `docs/context-sharing-v2-ui-analysis.md`.
 - backend 작업 위치: `/Users/winterholic/development/projects/winterholic-ttakkari/back-context-sharing-v2-20261119`, branch 같은 이름, 기준 `978cb5ace5115743b32f375ce065120e8d068d82`.
 - 관리 front: `/Users/winterholic/development/projects/winterholic-ttakkari/front-context-sharing-v2-20261119`, branch 같은 이름, 기준 `f6dfe5b`.
-- 기존 `back`/`front` main은 다른 작업의 dirty 변경과 오래된 checkout이다. reset/stash/일괄 add하지 않는다. backend 구현은 로컬 커밋 `4e9a199889fbf9883b788b6d643c5fbdac18717e`, 관리 front는 `1a5f011`로 보존했다. 후속 DB 이식성 및 generation 계약 교정은 아래 20:10 KST 기록에서 수락했으며, 표준 게이트용 후속 커밋에 포함한다. 두 기능 branch 모두 미푸시·미배포다.
+- 기존 `back`/`front` main은 다른 작업의 dirty 변경과 오래된 checkout이다. reset/stash/일괄 add하지 않는다. backend 구현과 교정은 `4aa21b99cff27f0c82e22ee0d0d4f2880137f78e`, 관리 front는 `1a5f011c8768cc3ad96d6295e6d1e3c1a63e6e36`로 각 원격 main에 반영했다. backend 배포 예약 `02de35fb-5677-4ded-a704-b8be6136df73`는 20:17 KST 조회에서 `security_gate`, `error=null`이다. 예약과 실제 활성화를 구분한다. Gateway 별도 운영 배포 및 Vercel 실제 배포는 미검증이다.
 
 ### 결정과 불변식
 
@@ -24,7 +24,7 @@
 
 | worker | 현재 Run | 소유 범위와 다음 결과 |
 |---|---|---|
-| `30c6bb6a-ef5e-4476-8755-d177518ae20e` | 종료 `b422bc01-f678-4b76-9fb7-331951060741` | generation 계약과 현재 head 교정을 기획 24개 집중 검사로 수락했다. 실제 지정 커밋의 표준 게이트는 6ddbd439가 소유한다. |
+| `30c6bb6a-ef5e-4476-8755-d177518ae20e` | 종료 `b422bc01-f678-4b76-9fb7-331951060741` | generation 계약과 현재 head 교정을 기획 24개 집중 검사로 수락했다. 지정 커밋 4aa21b99의 독립 표준 게이트 efc96089를 수락했다. |
 | `f09987a6-7ca9-44f7-b464-8e1f59c55ca5` | 종료 `4d75cfb1-803e-4f73-9841-fac31502be11` | 최종 계약 검수 수락. 신규 문서 수·크기 반례 2건을 기획이 재현했다. 컨텍스트 74%이므로 새 단계는 fresh context가 필요하다. 공개 Reader는 검수 범위 밖이다. |
 | `8afd25fa-a3f0-4d0b-b4c1-58f7117996ec` | 종료 `52db3f94-220c-4da8-9718-8954b351356a` | 제품 지문59d34ac5에서 독립 검수를 수락하고 verification passed 기록. 컨텍스트73%이므로 새 단계는 fresh context 필요. |
 | `add3f6ad-1633-4027-bcfa-42b61c543303` | 종료 `7aade468-fc0f-4987-8360-be6a092669fc` | 쿠키/토큰별context 추적으로 검증을 강화하고 잘못된 쿠키 RED·원복 GREEN을 확인했다. 기획 전체web120passed/5기존live skip·build와SHA일치 재현으로 수락. |
@@ -32,10 +32,11 @@
 | `0b1529c6-e7c3-480a-a8f0-21a0f8a62716` | 종료 `eb0cbd66-a76d-453d-acd6-115e33bdccbc` | 원 이름 등록 복원을 독립1a5b0bdb와 현재3f6b303e지문으로 수락하고 verification passed 기록. 실제3af36c66 라우팅은Codex Luna였다. |
 | `b0864d0a-b4d9-494d-8996-caa2503ff73e` | 종료 `1a5b0bdb-620b-460c-ad54-c394fe67b4a5` | 현재3f6b303e에서 AST import이름 기반 합성 pytest등록 core/real_gateway 모두registered, Ruff/compile통과. 실제앱/DB검증은범위밖이다. |
 
-| `6ddbd439-de27-4d55-a01d-e834ebe32a79` | 종료 `4876d358-2acc-4312-8d02-67817f971684` | 4e9a1998 게이트 실패: Ruff41통과, 계약85pass/2fail, 변경tests171pass/3error. 두교정커밋후 같은검수자를재사용해새지정커밋게이트를실행한다. |
+| `6ddbd439-de27-4d55-a01d-e834ebe32a79` | 종료 `efc96089-061f-4002-9e09-ae83cd2b7819` | 4aa21b99 독립 게이트: Ruff 44개, 계약 87 passed, 변경 테스트 194 passed, exit 0. 이전 4876d358의 실패 5건은 교정됐다. |
+| 배포 컨트롤러 | 예약 `02de35fb-5677-4ded-a704-b8be6136df73` | full SHA 4aa21b99의 security_gate 및 세대 준비를 소유한다. 진행 중 heartbeat를 관측했으며 실제 활성/실패 판정은 아직 없다. |
 | `216f3ccb-a288-4828-b99d-e3730a2df656` | 종료 `6e7bc27c-6b66-4a11-9832-dd0dd15d4731` 부분 | 명시적 DB 이식성은 기획 3개 재실행 및 assertion AST 동일성으로 수락했다. 기본 pg_sandbox 실행은 해당 Codex 환경 initdb exit 1로 미검증이며 재시도하지 않는다. |
 
-수락된 구현/검수: 코어 d90d3a2e + 독립 1ec1cc4b(48 tests), Private 30c6bb6a + 독립 216f3ccb(실제 ASGI A/B/C 및 장애 수락 3 tests), 관리 UI 교정 342f5fb8(기획 집중 95 tests). 공개 Reader의 이전 104 tests/기존 live 5 skip은 당시 범위이며, 독립 반례 2건 발견으로 공개 Reader 수락을 보류한다. 실제 Gateway HTTP·390/1280px 검수는 [독립 기록](2026-11-19-context-sharing-v2-public-verification.md) 범위로 유지한다. 8afd25fa는 83%여서 교정에 fresh context를 사용했다. 독립 검수자 add3f6ad는 86%로 종료했으며 임시 폴더 삭제 거부를 같은 환경에서 재시도하지 않는다. 216f3ccb는 72%, 1ec1cc4b는 65%이므로 새 단계는 새 대화를 검토한다.
+수락된 구현/검수: 코어 d90d3a2e + 독립 1ec1cc4b(48 tests), Private 30c6bb6a + 독립 216f3ccb(실제 ASGI A/B/C 및 장애 수락 3 tests), 관리 UI 교정 342f5fb8(기획 집중 95 tests). 공개 Reader는 후속 7aade468의 쿠키/토큰 추적 및 음성 대조와 기획 전체 120 passed/기존 live 5 skip·build로 수락했다. 이전 104개 및 최초 반례 수락 보류는 아래 세션 로그의 역사다. 실제 Gateway HTTP·390/1280px 검수는 [독립 기록](2026-11-19-context-sharing-v2-public-verification.md) 범위로 유지한다. 8afd25fa는 83%여서 교정에 fresh context를 사용했다. 독립 검수자 add3f6ad는 86%로 종료했으며 임시 폴더 삭제 거부를 같은 환경에서 재시도하지 않는다. 216f3ccb는 72%, 1ec1cc4b는 65%이므로 새 단계는 새 대화를 검토한다.
 
 같은 파일을 여러 worker가 고치지 않는다. core는 `context_gateway/src,tests`, Private는 `src/ttakkari` 공유 기능·관리 MCP·migration·해당 tests, front는 별도 front 저장소, public UI는 `context_gateway/web`만 소유한다. 기획은 공통 계약/이 기록을 소유한다. 완성 보고 뒤 실제 코드·명령·원 요구를 대조하고 빠진 요구가 있으면 같은 턴에 교정을 시작한다. 폴링하지 않는다.
 
@@ -60,11 +61,11 @@ Private 최초 완료 보고는 194개 green이지만 retry가 `main._retention_
 
 ## 다음 할 일
 
-1. [관측/원 요구] 현재 원 목표는 active이며 CG-R1~R7은 구현 검증 수락, CG-R8은 통합 게이트를 남겨 review다. 새 대화는 `manage_work get` 최신 revision과 이 Living Brief, 마지막 세션 로그부터 복원한다. 과거 Reader 실패를 다시 교정하지 않는다.
-2. [관측] generation 계약 및 수락 테스트 DB 이식성 교정을 실제 diff와 기획 24 passed로 수락했다. 기본 pg_sandbox 실행은 Codex worker의 initdb exit 1로 미검증이다. 명시적 격리 DB의 표준 게이트 결과와 구분하며 같은 실패를 재시도하지 않는다.
-3. [관측] 두 교정과 기획 기록 후속을 자기 경로만 지정해 새 커밋으로 만든다. 제품기준4e9a1998, front1a5f011은 둘다 미푸시다. 게이트6ddbd439/4876d358는 실패 결과이므로 통과로 혼동하지 않는다. 새커밋에 표준사전게이트를 같은검수자에게 실행시키고 실제 full SHA/명령/출력을 대조한다. 전체 UI/Reader/core의 변경 없는 유효검증을 반복하지 않는다.
-4. [개발자 실행 계약] 게이트 통과 뒤 원격fetch를 다시 확인하고 남의dirty checkout을 건드리지 않는 안전한fast-forward통합/push 및 backend배포예약을 실행한다. GitHub계정은winterholic을명령별사용하며auth switch는금지다. 배포예약수락과실제활성/종료상태는구분한다.
-5. [원 요구] Gateway공개활성화·실제사용자문서게시·회사정책변경은하지않는다. 운영Gatewayrevision/TLS/DBrole/nginx실행/실제회사PC클라이언트는미검증이며최종보고에구분한다. front전체ui-lint기존CSS실패도통과로바꾸지않는다. 원A/B/C대조는19:59로그에근거가있다.
+1. [관측/원 요구] CG-R1~R7은 구현 검증 수락, CG-R8은 백엔드 배포 결과 판정을 남겨 review다. 구현·로컬 A/B/C·문서화와 최종 구현 보고 및 증거 ZIP 전달은 끝났다. 과거 Reader 실패나 이미 수락한 검사를 반복하지 않는다.
+2. [관측] backend 4aa21b99와 front 1a5f011은 원격 main에 반영됐다. backend 필수 pre-push도 Ruff 44개·계약 87 passed·변경 194 passed, 0 fallback, exit 0이다. 이는 전체 pytest 통과나 운영 활성화 증거가 아니다.
+3. [실행 소유자] 배포 컨트롤러가 예약 02de35fb-5677-4ded-a704-b8be6136df73의 full SHA 4aa21b99를 검증한다. 다음 상태 변경 보고/자동 후속에서 지원 도구 backend_deploy_status로 한 번 확인한다. Run을 대기·폴링으로 유지하거나 같은 예약을 다시 만들지 않는다. 실패 시 ops_deploy_log의 실제 단계/오류를 확인한다.
+4. [판정 기준] draining은 신규 세대 활성 및 구 세대 종료 대기, succeeded는 구 세대 종료까지 확인한 상태다. 아직 둘 중 어느 상태도 관측하지 않았다. 배포 결과 뒤 manage_work의 CG-R8과 최종 상태를 갱신한다. 이 문서만의 후속 변경은 제품 SHA 4aa21b99에 대한 기존 테스트를 무효화하지 않는다.
+5. [원 요구] Gateway 외부 공개 활성화·실제 사용자 문서 게시·회사 정책 변경은 하지 않는다. 운영 Gateway revision/TLS/DB role/nginx 실행·실제 회사 PC 클라이언트·Vercel 배포는 미검증이다. 기본 pg_sandbox의 Codex worker initdb exit 1과 front 전체 ui-lint의 기존 CSS 실패를 통과로 바꾸지 않는다. 원 A/B/C 대조는 19:59 로그를 따른다.
 
 ## suggested skills
 
@@ -270,3 +271,11 @@ Private 최초 완료 보고는 194개 green이지만 retry가 `main._retention_
 - generation 계약의 schema_revision 0080 및 online predecessor 0079, combined/KB 단일 head와 0080→0079 계보 검사를 실제 migration과 대조했다. additive 컬럼과 v1 상수 default는 기존 의미를 유지하며 기존 KB 보안/lineage assertion을 제거하지 않았다. 검수자가 기록한 Docker realdb 1 passed는 그 실행 범위로 보존한다.
 - 기획 명령: `PGPORT=5432 TTAKKARI_TEST_DB=postgresql+asyncpg://winterholic@127.0.0.1:5432/test_cg_v2_private_20261119_b9f28799 PYTHONPATH=src:context_gateway/src ../back/.venv/bin/python -m pytest -q tests/test_context_sharing_v2_private_acceptance.py tests/test_generation_deployment.py::test_application_generation_contract_matches_its_migration_head tests/test_generation_deployment.py::test_qwen_usage_and_resource_history_migrations_are_allowed_online tests/test_collection_combined_migration_contract.py tests/test_kb_v3_schema_migration.py` → **24 passed in 4.08s**, 24 selective / 0 forced full / 0 fallback, exit 0. `git diff --check` exit 0. 이전 게이트 실패 2개와 setup 오류 3개를 함께 포함한 좁은 회귀이며 표준 게이트 전체 통과로 확대하지 않는다.
 - 다음 동작은 자기 변경 경로만 후속 커밋하고 기존 검수자 6ddbd439에게 그 full SHA로 표준 사전 배포 게이트를 실행시키는 것이다. CG-R8은 review다. 기본 pg_sandbox/실제 CI·운영 TLS·회사 PC 클라이언트·Gateway 외부 활성화는 미검증 또는 미실행으로 유지한다.
+
+### 2026-11-19 20:17 KST · 사전 게이트·원격 통합 및 배포 컨트롤러 이관
+
+- 독립 efc96089의 지정 커밋 4aa21b99 게이트는 Ruff 변경 Python 44개·계약 87 passed/7427 deselected·변경 테스트 194 passed, exit 0이었다. 이전 generation 계약 두 실패와 acceptance setup 세 오류는 해소됐다.
+- 기획의 backend push에서도 필수 pre-push가 같은 범위를 실행해 Ruff 통과, 계약 87 passed in 22.32s, 변경 194 passed in 34.09s/194 selective/0 forced full/0 fallback, 총 69초 및 exit 0이었다. 원격 main은 backend 4aa21b99, front 1a5f011로 확인했다. 남의 기본 checkout은 변경하지 않았다.
+- request_backend_deploy는 full SHA 4aa21b99를 예약 02de35fb-5677-4ded-a704-b8be6136df73로 접수했다. 20:17 KST 조회는 security_gate, error null, prepare heartbeat 2026-11-19T11:17:00.136328Z이다. 진행 중이며 성공·실패 판정은 아직 아니다.
+- 지정 backend/front 커밋의 분석·계약·운영·독립 검수 13문서와 manifest를 ZIP으로 export해 SHA 13/13 및 ZIP 무결성을 확인한 뒤 share_file로 전달했다. artifact 659690b1-bb45-424a-a017-403dc91a5e35, archive SHA-256 432c741f1b6a792ff5dc5643cfc38d80d7d1e9abdab33350f477c59a3f95f5ae다. 다른 Run의 보호 outbox 원본은 읽지 않았다.
+- 최종 구현 보고에서 기존 구조·새 인증 모델·수정 파일·교정 결함·시험 결과·로컬 시나리오·운영 필요 항목·잔여 한계를 구분했다. 남은 판정 소유자는 배포 컨트롤러다. Gateway 별도 운영 배포·nginx 적용·회사 PC·TLS/role·외부 공개는 여전히 미실행/미검증이다.

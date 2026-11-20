@@ -144,7 +144,7 @@ async def test_agent_run_identity_is_observed_by_server_not_supplied_in_payload(
                 prompt="fixture",
                 status="running",
                 engine="codex",
-                model="gpt-6.1-sol",
+                model="gpt-6.2-sol",
                 effort="high",
                 started_at=utcnow(),
             )
@@ -183,7 +183,7 @@ async def test_agent_run_identity_is_observed_by_server_not_supplied_in_payload(
     event = details.json()["batches"][0]
     assert event["execution"]["run_id"] == str(rid)
     assert event["execution"]["session_id"] == session["id"]
-    assert event["execution"]["model"] == "gpt-6.1-sol"
+    assert event["execution"]["model"] == "gpt-6.2-sol"
     assert event["execution"]["cost_scope"] == "entire_run_not_extraction"
     assert len(event["prompt_sha256"]) == 64
     # Identical replay must not duplicate receipt history.

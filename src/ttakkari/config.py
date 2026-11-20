@@ -184,7 +184,7 @@ class Settings(BaseSettings):
     # 메인 오케스트레이터가 엔진별로 쓰는 유일한 모델·생각 수준. 세션에 다른 모델이 저장돼 있어도 이것으로 띄운다(사용자 결정 10-13).
     orchestrator_fallback_models: dict[str, dict[str, str]] = {
         "claude": {"model": "opus", "effort": "medium"},
-        "codex": {"model": "gpt-6.1-sol", "effort": "high"},
+        "codex": {"model": "gpt-6.2-sol", "effort": "high"},
         # 네이티브가 모두 한도면 오케스트레이터 auto 가 이 쌍으로 Muse 에 이어서 돈다.
         "muse": {"model": "muse-spark-1.3", "effort": MUSE_EFFORT},
         "copilot": {"model": COPILOT_DEFAULT, "effort": "high"},
@@ -201,13 +201,13 @@ class Settings(BaseSettings):
         "qwen-local": {"model": "Qwen3.8-Flash-Next-Q2_K", "effort": "high"},
     }
     # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
-    peer_models: list[str] = ["opus", "fable", "gpt-6.1-sol", *[
+    peer_models: list[str] = ["opus", "fable", "gpt-6.2-sol", "gpt-6.1-sol", *[
         m for m in ANTIGRAVITY_MODELS if m.startswith(("claude-opus-", "gemini-4-argon-"))
     ]]
     # 작업 세션이 한도 등으로 다른 엔진 계정으로 넘어갈 때 같은 급의 상대 모델.
     model_counterparts: dict[str, str] = {
         "gpt-6-luna": "sonnet", "sonnet": "gpt-6-luna", "haiku": "gpt-6-luna",
-        "gpt-6.1-sol": "opus", "opus": "gpt-6.1-sol", "fable": "gpt-6.1-sol",
+        "gpt-6.2-sol": "opus", "gpt-6.1-sol": "opus", "opus": "gpt-6.2-sol", "fable": "gpt-6.2-sol",
     }
     # 메인에게 알리는 컨텍스트 사용률 기준(%): review 이상이면 교체 검토, replace 이상이면 교체.
     context_review_percent: int = 50
@@ -215,7 +215,7 @@ class Settings(BaseSettings):
     # 엔진별로 작업 세션에 지정할 수 있는 모델(account_usage 도구가 알려 준다). 프런트 새 세션 화면의 목록과 같다.
     engine_models: dict[str, list[str]] = {
         "claude": ["opus", "sonnet", "haiku"],
-        "codex": ["gpt-6-luna", "gpt-6.1-sol"],
+        "codex": ["gpt-6-luna", "gpt-6.2-sol", "gpt-6.1-sol"],
         "antigravity": ANTIGRAVITY_MODELS,
         "opencode": OPENCODE_COPILOT_MODELS,
         "copilot": COPILOT_MODELS,

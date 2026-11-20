@@ -57,7 +57,7 @@ def quota(aid, *, claude=80, gemini=90, argon=70):
 ])
 def test_newer_quota_observation_can_release_an_obsolete_provider_reset(fresh, newer, remaining, expected):
     aid = uuid.uuid4()
-    prof = profiles.Profile(id=aid, name="quota recovery", engine="codex", model="gpt-6.1-sol")
+    prof = profiles.Profile(id=aid, name="quota recovery", engine="codex", model="gpt-6.2-sol")
     now = time.time()
     profiles.cool_down(aid, 86400 * 3)
     measured = now if fresh else now - 3600

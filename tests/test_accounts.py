@@ -222,7 +222,7 @@ async def test_model_goes_only_to_matching_engine(client, auth, make_dir):
     claude = next(c for c in calls if c["engine"] == "claude")["argv"]
     codex = next(c for c in calls if c["engine"] == "codex")["argv"]
     # claude 모델 이름(opus)은 codex 로 가지 않는다. 오케스트레이터는 지침의 허용 모델로 맞춘다.
-    assert claude[claude.index("--model") + 1] == "opus" and codex[codex.index("-m") + 1] == "gpt-6.1-sol"
+    assert claude[claude.index("--model") + 1] == "opus" and codex[codex.index("-m") + 1] == "gpt-6.2-sol"
 
 
 async def test_usage_from_stream_and_codex_session_log(client, auth, make_dir, monkeypatch):

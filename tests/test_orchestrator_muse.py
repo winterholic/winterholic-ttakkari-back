@@ -87,7 +87,7 @@ async def test_native_orchestrator_precedes_muse_even_with_less_headroom(client,
     assert run['status'] == 'succeeded', run
     assert run['engine'] in {'claude', 'codex'}, run
     argv = agent_calls()[-1]['argv']
-    assert argv[argv.index('--model') + 1] in {'opus', 'gpt-6.1-sol'}, argv
+    assert argv[argv.index('--model') + 1] in {'opus', 'gpt-6.2-sol'}, argv
 
 
 async def test_mid_run_native_limits_still_reach_muse_fallback(client, auth, make_dir, monkeypatch):

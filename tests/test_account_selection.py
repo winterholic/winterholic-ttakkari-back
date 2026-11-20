@@ -272,7 +272,7 @@ async def test_auto_runs_switch_engines_by_usage_and_keep_model_grade(client, au
     second = await run_to_end(client, auth, sid, "second task")
     assert second["engine"] == "codex", second
     second_call = next(c for c in agent_calls() if any("second task" in arg for arg in c["argv"]))
-    assert ("gpt-6-luna" if kind == "worker" else "gpt-6.1-sol") in second_call["argv"]
+    assert ("gpt-6-luna" if kind == "worker" else "gpt-6.2-sol") in second_call["argv"]
 
 
 # ---- 시작할 때: 작업 세션은 놀고 있는 계정으로
@@ -487,7 +487,7 @@ async def test_account_usage_reports_state_without_secrets(client, auth, make_di
     assert by["claude-2"]["usage"] is None
     x = by["codex"]
     assert x["available"] is False and x["limit"]["waiting"] and x["limit"]["reason"] == "cooldown" and x["limit"]["until"]
-    assert x["orchestrator_model"] == {"model": "gpt-6.1-sol", "effort": "high"} and x["models"] == ["gpt-6-luna", "gpt-6.1-sol"]
+    assert x["orchestrator_model"] == {"model": "gpt-6.2-sol", "effort": "high"} and x["models"] == ["gpt-6-luna", "gpt-6.2-sol", "gpt-6.1-sol"]
     # 계정 폴더·로그인 정보는 나오지 않는다.
     raw = r.text
     assert accs["claude-2"]["config_dir"] not in raw and "config_dir" not in raw and "token" not in raw.replace("tokens", "")

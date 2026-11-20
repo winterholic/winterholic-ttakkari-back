@@ -62,9 +62,9 @@ async def test_peer_model_worker_needs_escalation_reason(client, auth, make_dir)
     h = _orch(issue_token(orch["id"]))
     r = await client.post("/api/orchestrator/workers", json={"title": "설계", "prompt": "go", "model": "opus"}, headers=h)
     assert r.status_code == 400 and "escalation_reason" in r.text
-    r = await client.post("/api/orchestrator/workers", json={"title": "설계", "prompt": "go", "model": "gpt-6.1-sol",
+    r = await client.post("/api/orchestrator/workers", json={"title": "설계", "prompt": "go", "model": "gpt-6.2-sol",
                                                             "escalation_reason": "DB 분할 전략 결정"}, headers=h)
-    assert r.status_code == 201 and r.json()["model"] == "gpt-6.1-sol"
+    assert r.status_code == 201 and r.json()["model"] == "gpt-6.2-sol"
     r = await client.post("/api/orchestrator/workers", json={"title": "x", "prompt": "go", "engine": "claude",
                                                             "model": "gpt-6-luna"}, headers=h)
     assert r.status_code == 400

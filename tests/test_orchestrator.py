@@ -832,7 +832,7 @@ async def test_orchestrator_uses_allowed_model_when_switching_engine(client, aut
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     await run_to_end(client, auth, orch["id"], "CLAUDE_LIMIT")
     codex = next(c for c in agent_calls() if c["engine"] == "codex")
-    assert codex["argv"][codex["argv"].index("-m") + 1] == "gpt-6.1-sol"
+    assert codex["argv"][codex["argv"].index("-m") + 1] == "gpt-6.2-sol"
     assert 'model_reasoning_effort="high"' in codex["argv"]
     # 일반 대화는 모델을 건드리지 않는다.
     profiles.reset_cooldowns()

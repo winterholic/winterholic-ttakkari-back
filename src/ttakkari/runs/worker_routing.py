@@ -26,7 +26,7 @@ LUNA = ("codex", "gpt-6-luna")
 NATIVE_SONNET = ("claude", "sonnet")
 ARGON = ("antigravity", "gemini-4-argon-high")
 AGY_OPUS = ("antigravity", "claude-opus-5-5-medium")
-SOL = ("codex", "gpt-6.1-sol")
+SOL = ("codex", "gpt-6.2-sol")
 NATIVE_OPUS = ("claude", "opus")
 COPILOT_AUTO = ("copilot", "auto")
 
@@ -539,7 +539,7 @@ def conversation_key(profile: profiles.Profile) -> str:
 def effort(profile: profiles.Profile, requested: str | None) -> str | None:
     if profile.engine == "muse":
         return MUSE_EFFORT  # 요청·세션 값과 무관하게 고정
-    if profile.model in {"opus", "gpt-6.1-sol"}:
+    if profile.model in {"opus", "gpt-6.2-sol", "gpt-6.1-sol"}:
         return "medium" if profile.model == "opus" else "high"
     if not supports_effort(profile.engine, profile.model):
         return None

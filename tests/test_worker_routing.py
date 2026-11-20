@@ -334,7 +334,7 @@ async def test_worker_applies_only_active_available_supported_temporary_priority
     else:
         if case == "unsupported":
             settings = get_settings()
-            monkeypatch.setattr(settings, "engine_models", {**settings.engine_models, "codex": ["gpt-6.1-sol"]})
+            monkeypatch.setattr(settings, "engine_models", {**settings.engine_models, "codex": ["gpt-6.2-sol"]})
         elif case == "pinned":
             agy = next(a for a in accounts if a["engine"] == "antigravity")
             override_ids = [agy["id"]]
@@ -393,7 +393,7 @@ def test_temporary_priority_skips_model_outside_task_policy():
     from ttakkari.runs import worker_routing as routing
 
     flash = profiles.Profile(uuid.uuid4(), "flash", "antigravity", model=FLASH)
-    unsupported = profiles.Profile(uuid.uuid4(), "codex", "codex", model="gpt-6.1-sol")
+    unsupported = profiles.Profile(uuid.uuid4(), "codex", "codex", model="gpt-6.2-sol")
     assert routing.first_stage([flash, unsupported], "general", priority_ids=[str(unsupported.id)]) == [flash]
 
 
@@ -470,7 +470,7 @@ async def test_incompatible_auto_model_preference_is_rejected_instead_of_ignored
 
 def test_reasoning_fallback_uses_native_peer_effort_instead_of_carrying_argon_level():
     from ttakkari.runs import worker_routing as routing
-    native = profiles.Profile(uuid.uuid4(), "native", "codex", model="gpt-6.1-sol")
+    native = profiles.Profile(uuid.uuid4(), "native", "codex", model="gpt-6.2-sol")
     assert routing.effort(native, "medium") == "high"
     native = replace(native, engine="claude", model="opus")
     assert routing.effort(native, "high") == "medium"
@@ -772,7 +772,7 @@ async def legacy_wait(client, auth, make_dir, accounts, *, last_model=ARGON, str
         s = await db.get(ChatSession, uuid.UUID(sess["id"]))
         s.kind, s.strict_engine = "worker", strict
         s.engine_sessions = {agy["id"]: "original-argon-conversation",
-                             f"{codex['id']}:gpt-6.1-sol": "saved-sol-conversation"}
+                             f"{codex['id']}:gpt-6.2-sol": "saved-sol-conversation"}
         r = Run(session_id=s.id, workspace_id=s.workspace_id, prompt="continue architecture review",
                 engine="antigravity" if last_model == ARGON else "codex", model=last_model,
                 status="queued", started_at=utcnow()-timedelta(hours=2),
@@ -812,7 +812,7 @@ async def test_legacy_argon_wait_rechecks_routes_before_next_week_and_resumes_on
         async with sessionmaker()() as db:
             assert (await db.get(Run, run.id)).resume_after is None, "new policy left the legacy weekly timer armed"
         done = await wait_run(client, auth, str(run.id))
-        assert (done["engine"], done["model"], done["effort"]) == ("codex", "gpt-6.1-sol", "high")
+        assert (done["engine"], done["model"], done["effort"]) == ("codex", "gpt-6.2-sol", "high")
         calls = agent_calls()
         assert len(calls) == 1
         assert "saved-sol-conversation" in calls[0]["argv"]
@@ -833,7 +833,7 @@ async def test_resumed_pinned_reasoning_keeps_original_model_after_native_fallba
 
     agy = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
     quota(agy, claude=75, argon=0)
-    run = await legacy_wait(client, auth, make_dir, accounts, last_model="gpt-6.1-sol")
+    run = await legacy_wait(client, auth, make_dir, accounts, last_model="gpt-6.2-sol")
     async with sessionmaker()() as db:
         row = await db.get(Run, run.id)
         row.resume_after = None

@@ -188,6 +188,9 @@ def test_context_sharing_routes_belong_to_shares(path):
         "context_share_site",
         "context_share_site_set",
         "context_share_sources",
+        "context_share_links",
+        "context_share_link_issue",
+        "context_share_link_revoke",
     ),
 )
 def test_context_sharing_tools_belong_to_shares(name):
@@ -196,6 +199,7 @@ def test_context_sharing_tools_belong_to_shares(name):
 
 def test_context_sharing_migration_belongs_to_shares():
     assert classify_migration("0079_context_sharing") == "domain.shares_artifacts"
+    assert classify_migration("0080_ctx_share_v2_keys") == "domain.shares_artifacts"
 
 
 @pytest.mark.parametrize(

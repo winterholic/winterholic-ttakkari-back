@@ -59,7 +59,8 @@ async def test_multiple_database_heads_refuse_deployment_without_choosing_first(
     (["0076_kb_v3_collection_merge"], ("online", "0076_kb_v3_collection_merge")),
     (["0077_artcraft_account_pin"], ("online", "0077_artcraft_account_pin")),
     (["0078_repo_appraisals"], ("online", "0078_repo_appraisals")),
-    (["0079_context_sharing"], ("current", "0079_context_sharing")),
+    (["0079_context_sharing"], ("online", "0079_context_sharing")),
+    (["0080_ctx_share_v2_keys"], ("current", "0080_ctx_share_v2_keys")),
     (["unknown_branch"], ("idle", "unknown_branch")),
     ([], ("idle", None)),
 ])

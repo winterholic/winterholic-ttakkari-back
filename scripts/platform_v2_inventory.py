@@ -1729,6 +1729,9 @@ def classify_mcp_tool(name: str) -> str:
         "context_share_site",
         "context_share_site_set",
         "context_share_sources",
+        "context_share_links",
+        "context_share_link_issue",
+        "context_share_link_revoke",
     ):
         return "domain.shares_artifacts"
     if n.startswith("ops_"):
@@ -1922,7 +1925,8 @@ def classify_migration(stem: str) -> str:
     if "google_accounts" in s:
         return "domain.external_connectors"
     if any(
-        x in s for x in ("artifact", "public_shares", "library_intent", "context_sharing")
+        x in s
+        for x in ("artifact", "public_shares", "library_intent", "context_sharing", "ctx_share")
     ):
         return "domain.shares_artifacts"
 

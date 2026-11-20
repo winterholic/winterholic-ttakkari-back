@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HEAD_MERGE = "0076_kb_v3_collection_merge"
 PREVIOUS_HEAD = "0077_artcraft_account_pin"
 REPO_APPRAISALS = "0078_repo_appraisals"
-CURRENT_HEAD = "0079_context_sharing"
+CONTEXT_SHARING = "0079_context_sharing"
+CURRENT_HEAD = "0080_ctx_share_v2_keys"
 MERGE = "0075_collection_research_merge"
 COLLECTION = (
     "0072_collection_missions",
@@ -29,7 +30,8 @@ def scripts():
 def test_single_head_preserves_both_published_branch_identities():
     graph = scripts()
     assert graph.get_heads() == [CURRENT_HEAD]
-    assert graph.get_revision(CURRENT_HEAD).down_revision == REPO_APPRAISALS
+    assert graph.get_revision(CURRENT_HEAD).down_revision == CONTEXT_SHARING
+    assert graph.get_revision(CONTEXT_SHARING).down_revision == REPO_APPRAISALS
     assert graph.get_revision(REPO_APPRAISALS).down_revision == PREVIOUS_HEAD
     assert graph.get_revision(PREVIOUS_HEAD).down_revision == HEAD_MERGE
     assert set(graph.get_revision(HEAD_MERGE).down_revision) == {

@@ -604,7 +604,10 @@ AGENT_TOOLS = {"context_share_projects", "context_share_sources", "context_share
                "creative_v2_production_assets", "creative_v2_auto_assets_status",
                "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
                "creative_v2_production_dispatch", "creative_v2_production_render",
-               "creative_v2_production_status", "creative_v2_production_media_link"}
+               "creative_v2_production_status", "creative_v2_production_media_link",
+               "creative_v2_production_render_cancel", "creative_v2_production_review",
+               "creative_v2_production_repair_plan", "creative_v2_production_repair",
+               "creative_v2_production_revision", "creative_v2_production_result_link"}
 # 7bd8be44: 에이전트도 한 단계 위임(spawn/message/list/get/stop worker)을 쓴다.
 AGENT_DELEGATION_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}
 WORKER_TOOLS = {"activate_copilot_account", "spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
@@ -655,6 +658,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
         "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
         "creative_v2_auto_assets_status", "creative_v2_styles", "creative_v2_style",
+        "creative_v2_production_revision",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

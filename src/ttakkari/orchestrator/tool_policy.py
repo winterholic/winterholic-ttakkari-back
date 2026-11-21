@@ -19,6 +19,7 @@ READ_ONLY_TOOLS = frozenset({
     "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
     "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
     "creative_v2_auto_assets_status", "creative_v2_styles", "creative_v2_style",
+    "creative_v2_production_revision",
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
@@ -66,6 +67,9 @@ CREATIVE_TOOLS = frozenset({
     "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
     "creative_v2_production_assets", "creative_v2_production_dispatch", "creative_v2_production_render",
     "creative_v2_production_media_link", "creative_v2_production_status",
+    "creative_v2_production_render_cancel", "creative_v2_production_review",
+    "creative_v2_production_repair_plan", "creative_v2_production_repair",
+    "creative_v2_production_result_link",
 })
 # 사용자 대화의 명시적 프로젝트 공유·키·사이트 요청에 따라 수행한다. 세션·프로젝트 ACL과 scanner는 API/service가 강제한다.
 CONTEXT_SHARE_TOOLS = frozenset({"context_share_draft_create", "context_share_publish", "context_share_key_issue",

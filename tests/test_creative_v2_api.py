@@ -49,7 +49,7 @@ async def test_v2_requires_auth_and_serves_catalog_registries_and_matrix(client,
     )
     matrix = (await client.get(BASE + "/matrix", headers=auth)).json()
     assert [r["recipe_id"] for r in matrix["recipes"]] == [
-        f"R{i:02d}" for i in range(1, 22)
+        f"R{i:02d}" for i in range(1, 23)
     ]
     assert matrix["snapshot"]["available"] is True
     registries = (await client.get(BASE + "/registries", headers=auth)).json()

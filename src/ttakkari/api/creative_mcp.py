@@ -148,7 +148,7 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
     data = body.data
     allowed_fields = {
         "catalog": set(), "capabilities": set(), "recipe_matrix": set(), "registries": set(), "plans": set(),
-        "plan": {"plan_id"}, "plan_create": {"brief", "name", "intent", "duration", "aspect", "style", "resolutions"},
+        "plan": {"plan_id"}, "plan_create": {"brief", "name", "intent", "intent_v2", "duration", "aspect", "style", "resolutions"},
         "plan_edit": {"plan_id", "revision", "scenes", "duration"},
         "plan_approve": {"plan_id", "revision"}, "production_status": {"plan_id"},
         "auto_assets_status": set(), "auto_assets_start": {"plan_id", "revision"},

@@ -275,6 +275,17 @@ def _length(spec: IntentSpecV2) -> LengthAssessment:
     )
 
 
+def content_type_blocking(spec: IntentSpecV2) -> list[str]:
+    """계획 가능 판정 중 콘텐츠 유형(C01) 조건. resolve와 계획 생성이 같은 기준을 쓴다."""
+    types = [c for c in spec.conditions if c.dimension == "C01"]
+    if not types:
+        return ["missing.content_type"]
+    if not any(c.origin == "user_confirmed" for c in types):
+        # 자유 입력·AI가 읽은 유형은 후보일 뿐이다. 계획은 사용자가 유형을 확정한 뒤에 만든다.
+        return ["unconfirmed.content_type"]
+    return []
+
+
 def resolve_intent(req: ResolveRequest) -> ResolveResult:
     prior = load_intent(req.intent, req.brief)
     revision = prior.revision + 1 if req.intent else 1
@@ -486,12 +497,7 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
         migrated_from=prior.migrated_from,
     )
     blocking = [c.id for c in spec.blocking_conflicts]
-    types = [c for c in spec.conditions if c.dimension == "C01"]
-    if not types:
-        blocking.append("missing.content_type")
-    elif not any(c.origin == "user_confirmed" for c in types):
-        # 자유 입력·AI가 읽은 유형은 후보일 뿐이다. 계획은 사용자가 유형을 확정한 뒤에 만든다.
-        blocking.append("unconfirmed.content_type")
+    blocking += content_type_blocking(spec)
     return ResolveResult(
         intent=spec,
         layout=layout,
@@ -501,4 +507,10 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
     )
 
 
-__all__ = ["ResolveRequest", "ResolveResult", "label_of", "resolve_intent"]
+__all__ = [
+    "ResolveRequest",
+    "ResolveResult",
+    "content_type_blocking",
+    "label_of",
+    "resolve_intent",
+]

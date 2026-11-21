@@ -31,6 +31,9 @@ class Selection(Strict):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     source: Source = "llm_inferred"
     evidence: list[Span] = Field(default_factory=list, max_length=5)
+    # 사용자가 구조화 입력·확인 동작으로 직접 정한 값. 브리프에 인용할 문장이 없어도 되지만
+    # source=user_explicit인 구조화 의도에만 쓸 수 있다(v2 user_confirmed의 v1 투영, 계약 문서 §14).
+    confirmed: bool = False
 
 
 class IntentConstraint(Strict):
@@ -147,7 +150,17 @@ def validate_intent(brief: str, intent: IntentSpec) -> IntentValidation:
                         path=path,
                     )
                 )
-        if sel.strength == "hard" and not sel.evidence:
+        if sel.confirmed and (
+            sel.source != "user_explicit" or intent.extraction.method != "user_structured"
+        ):
+            errors.append(
+                IntentIssue(
+                    code="confirmed_requires_user_structured",
+                    message="사용자 확정 표시는 구조화 입력의 사용자 명시 선택에만 쓸 수 있습니다.",
+                    path=path,
+                )
+            )
+        if sel.strength == "hard" and not sel.evidence and not sel.confirmed:
             errors.append(
                 IntentIssue(
                     code="hard_without_evidence",
@@ -155,7 +168,7 @@ def validate_intent(brief: str, intent: IntentSpec) -> IntentValidation:
                     path=path,
                 )
             )
-        if sel.source == "user_explicit" and not sel.evidence:
+        if sel.source == "user_explicit" and not sel.evidence and not sel.confirmed:
             errors.append(
                 IntentIssue(
                     code="explicit_without_evidence",

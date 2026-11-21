@@ -121,10 +121,15 @@ def _priority(sel: Selection, relation: str) -> Literal["must", "should", "prefe
 
 def _fingerprint(registry: Registry, intent: IntentSpec) -> str:
     states = [(s.id, s.installed, sorted(s.levels.items())) for s in registry.states()]
+    dumped = intent.model_dump(mode="json")
+    # confirmed=False는 모양이 추가되기 전 의도와 같은 뜻이다. 키를 빼서 이미 저장·승인된 계획의 지문을 바꾸지 않는다.
+    for sel in dumped["selections"]:
+        if not sel.get("confirmed"):
+            sel.pop("confirmed", None)
     payload = json.dumps(
         {
             "v": MATCHING_VERSION,
-            "intent": intent.model_dump(mode="json"),
+            "intent": dumped,
             "states": states,
         },
         sort_keys=True,

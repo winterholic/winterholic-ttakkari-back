@@ -32,6 +32,44 @@ SURFACES = {
 }
 
 
+class ShotInput(Strict):
+    """샷이 쓰기로 한 자산. 파일 경로·URL은 받지 않고 자산 ID와 내용 해시로만 가리킨다."""
+
+    asset_id: str = Field(min_length=1, max_length=120)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    role: str = Field(default="", max_length=40)
+
+
+class ShotOutputContract(Strict):
+    kind: Literal["video", "image", "audio", "captions"] = "video"
+    min_seconds: float | None = Field(default=None, gt=0, le=900)
+    max_seconds: float | None = Field(default=None, gt=0, le=900)
+    note: str = Field(default="", max_length=300)
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if (
+            self.min_seconds is not None
+            and self.max_seconds is not None
+            and self.min_seconds > self.max_seconds
+        ):
+            raise ValueError("output_contract min_seconds must not exceed max_seconds")
+        return self
+
+
+class QualityCriterion(Strict):
+    id: str = Field(min_length=1, max_length=60)
+    text: str = Field(min_length=1, max_length=400)
+    hard: bool = False
+
+
+class RetryPolicy(Strict):
+    """실패한 샷을 다시 시도하는 규칙. 값이 없으면 자동 재시도는 없다."""
+
+    max_attempts: int = Field(default=1, ge=1, le=5)
+    on_failure: Literal["stop", "retry_same", "ask_user"] = "ask_user"
+
+
 class ShotDirection(Strict):
     shot_id: str = Field(min_length=1, max_length=60)
     action: str = Field(min_length=1, max_length=1000)
@@ -39,11 +77,24 @@ class ShotDirection(Strict):
         default_factory=lambda: ["visual"], max_length=3
     )
     required_capabilities: list[str] = Field(default_factory=list, max_length=20)
+    # 아래 다섯 필드는 단위별 제작 계약이다(백엔드 갭 §4). 모두 선택이며 없던 시절의 계획·입력과 같은 뜻이다.
+    # 엔진이 지금 소비하는 것은 아니다. 소비하지 못하는 엔진은 validate_spec에서 명시적으로 거부한다.
+    inputs: list[ShotInput] = Field(default_factory=list, max_length=20)
+    output_contract: ShotOutputContract | None = None
+    quality_criteria: list[QualityCriterion] = Field(default_factory=list, max_length=20)
+    depends_on: list[str] = Field(default_factory=list, max_length=20)
+    retry_policy: RetryPolicy | None = None
 
     @model_validator(mode="after")
     def known_capabilities(self):
         if any(c not in CAPABILITIES for c in self.required_capabilities):
             raise ValueError("unknown required capability")
+        if self.shot_id in self.depends_on or len(set(self.depends_on)) != len(
+            self.depends_on
+        ):
+            raise ValueError("depends_on must be unique and exclude the shot itself")
+        if len({c.id for c in self.quality_criteria}) != len(self.quality_criteria):
+            raise ValueError("duplicate quality criterion id")
         return self
 
 
@@ -59,7 +110,8 @@ class SceneDirection(Strict):
     interpolation_mode: Literal["hold", "linear"] | None = None
     rationale: str = Field(min_length=1, max_length=1500)
     alternatives: list[StrategyAlternative] = Field(default_factory=list, max_length=5)
-    shots: list[ShotDirection] = Field(min_length=1, max_length=1)
+    # 계약은 장면당 여러 샷을 표현할 수 있지만 엔진은 아직 장면당 한 샷만 실행한다(engines·dispatch의 검증이 막는다).
+    shots: list[ShotDirection] = Field(min_length=1, max_length=12)
 
     @model_validator(mode="after")
     def supported_interpolation(self):
@@ -88,6 +140,20 @@ class ProductionDirection(Strict):
         shots = [shot.shot_id for s in self.scenes for shot in s.shots]
         if len(set(ids)) != len(ids) or len(set(shots)) != len(shots):
             raise ValueError("duplicate scene/shot id")
+        deps = {
+            shot.shot_id: shot.depends_on for s in self.scenes for shot in s.shots
+        }
+        if any(d not in deps for ds in deps.values() for d in ds):
+            raise ValueError("depends_on must reference existing shot ids")
+        done: set[str] = set()
+        pending = dict(deps)
+        while pending:
+            ready = [k for k, ds in pending.items() if all(d in done for d in ds)]
+            if not ready:
+                raise ValueError("shot depends_on must not form a cycle")
+            for k in ready:
+                done.add(k)
+                del pending[k]
         return self
 
 

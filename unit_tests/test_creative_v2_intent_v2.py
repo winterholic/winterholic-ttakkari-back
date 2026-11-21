@@ -75,6 +75,46 @@ def test_scenarios_produce_different_groups_and_questions():
     assert "character.lipsync" in hidden_b and hidden_b["character.lipsync"].reason
 
 
+@pytest.mark.parametrize(
+    ("brief", "content_type", "seconds", "recipe"),
+    [
+        (A, "C01.animation", 120, "R04"),
+        (B, "C01.tech_explainer", 16, "R03"),
+        (C, "C01.music_video", 180, "R19"),
+    ],
+)
+def test_confirmed_v2_intent_survives_plan_storage(tmp_path, brief, content_type, seconds, recipe):
+    from ttakkari.creative.v2.plans import PlanStore, build_plan
+
+    resolved = run(brief, confirm=[content_type])
+    store = PlanStore(tmp_path / "plans")
+    created = store.create(build_plan(brief, None, intent_v2=resolved.intent))
+    plan = store.get(created["id"])
+    assert plan["intent_v2"] == resolved.intent.model_dump(mode="json")
+    assert plan["match"]["primary_recipe"] == recipe
+    assert plan["duration"]["request"]["seconds"] == seconds
+    origin = next(item for item in plan["intent_projection"]["items"] if item["id"] == content_type)
+    assert origin["origin"] == "user_confirmed"
+    assert not plan["render_gate"]
+
+
+def test_plan_duration_edit_creates_new_intent_revision(tmp_path):
+    from ttakkari.creative.v2.duration import DurationRequest
+    from ttakkari.creative.v2.plans import PlanStore, build_plan
+
+    resolved = run(B, confirm=["C01.tech_explainer"])
+    store = PlanStore(tmp_path / "plans")
+    created = store.create(build_plan(B, None, intent_v2=resolved.intent))
+    edited = store.edit(
+        created["id"], created["revision"],
+        duration=DurationRequest(mode="preferred", seconds=18),
+    )
+    assert edited["intent_v2"]["revision"] == resolved.intent.revision + 1
+    assert edited["intent_v2"]["duration"]["seconds"] == 18
+    assert edited["intent_projection"]["source"]["revision"] == edited["intent_v2"]["revision"]
+    assert edited["duration"]["request"]["seconds"] == 18
+
+
 def test_scenario_a_keeps_all_four_conditions_without_duplicate_questions():
     a = run(A)
     ids = {c.id for c in a.intent.conditions}

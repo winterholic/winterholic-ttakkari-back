@@ -330,12 +330,19 @@ async def creative_v2_plan_create(brief: Annotated[str, Field(min_length=1, max_
                                   duration: dict[str, Any] | None = None,
                                   aspect: Literal["16:9", "9:16", "1:1"] | None = None,
                                   style: list[CreativeStyleRef] | None = None,
-                                  resolutions: list[dict[str, Any]] | None = None) -> str:
+                                  resolutions: list[dict[str, Any]] | None = None,
+                                  intent_v2: dict[str, Any] | None = None) -> str:
     """Create a plan from the existing catalog/recipe matcher. Approval is a separate revision-bound step.
     Brief is 1–6000 characters; style is capped at 8 Style DNA refs with style_id and version
-    (for example neutral_base@1.0.0), not catalog entry IDs; resolutions are capped at 60."""
-    return await _creative("plan_create", {"brief": brief, "name": name, "intent": intent,
-        "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []})
+    (for example neutral_base@1.0.0), not catalog entry IDs; resolutions are capped at 60.
+    intent_v2 is the intent document returned by the intent resolve step; it cannot be combined with
+    intent, duration or aspect. A plan is refused with 422 {code, reasons} when the intent still has an
+    open blocking conflict or an unconfirmed content type."""
+    data = {"brief": brief, "name": name, "intent": intent,
+        "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []}
+    if intent_v2 is not None:
+        data["intent_v2"] = intent_v2
+    return await _creative("plan_create", data)
 
 
 @server.tool()

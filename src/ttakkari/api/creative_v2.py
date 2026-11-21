@@ -47,6 +47,8 @@ from ttakkari.creative.v2.intent import (
     hint_intent,
     validate_intent,
 )
+from ttakkari.creative.v2.intent_plan import PlanIntentError
+from ttakkari.creative.v2.intent_v2 import IntentSpecV2
 from ttakkari.creative.v2.matching import match_intent
 from ttakkari.creative.v2.planner import ProductionDirection
 from ttakkari.creative.v2.plans import build_plan, default_plan_store
@@ -104,6 +106,8 @@ class PlanCreate(Strict):
     style: list[StyleRef] = Field(default_factory=list, max_length=8)
     resolutions: list[Resolution] = Field(default_factory=list, max_length=60)
     director: ProductionDirection | None = None
+    # 제작 의도 v2(`POST /intent/resolve`의 intent). 있으면 서버가 계획 가능 여부를 다시 검사한다.
+    intent_v2: IntentSpecV2 | None = None
 
 
 class PlanEdit(Strict):
@@ -327,19 +331,25 @@ async def style_work(work_id: uuid.UUID, _: User):
 
 @router.post("/plans", status_code=201)
 async def plan_create(body: PlanCreate, _: User):
-    def create() -> dict[str, Any]:
-        plan = build_plan(
-            body.brief,
-            body.intent,
-            name=body.name,
-            duration=body.duration,
-            aspect=body.aspect,
-            registry=_registry(),
-            styles=default_style_store(),
-            style_refs=body.style,
-            resolutions=body.resolutions,
-            director=body.director,
-        )
+    def create() -> dict[str, Any] | JSONResponse:
+        try:
+            plan = build_plan(
+                body.brief,
+                body.intent,
+                name=body.name,
+                duration=body.duration,
+                aspect=body.aspect,
+                registry=_registry(),
+                styles=default_style_store(),
+                style_refs=body.style,
+                resolutions=body.resolutions,
+                director=body.director,
+                intent_v2=body.intent_v2,
+            )
+        except PlanIntentError as exc:
+            return JSONResponse(
+                {"code": exc.code, "reasons": exc.reasons}, status_code=422
+            )
         return default_plan_store().create(plan)
 
     return await asyncio.to_thread(perform, create)

@@ -51,6 +51,16 @@ class EngineAdapter(Protocol):
     def preflight(self) -> Preflight: ...
 
 
+def single_shot_reasons(engine_id: str, scenes: list[dict[str, Any]]) -> list[str]:
+    """계획 계약은 장면당 여러 샷을 표현하지만 모든 엔진은 아직 장면당 한 샷만 실행한다."""
+    return [
+        f"{engine_id}: scene {scene.get('scene_id')} has {len(scene['shots'])} shots; "
+        "only one shot per scene is executable"
+        for scene in scenes
+        if len(scene.get("shots", [])) > 1
+    ]
+
+
 class V1SlideshowAdapter:
     """스튜디오 v1 FFmpeg 슬라이드쇼 렌더러(`creative/render.py`)."""
 
@@ -89,6 +99,9 @@ class V1SlideshowAdapter:
         if not CAPTION_FONT.is_file():
             missing.append(f"한국어 자막 글꼴이 없습니다: {CAPTION_FONT}")
         return Preflight(ok=not missing, version=version, missing=missing)
+
+    def validate_spec(self, scenes: list[dict[str, Any]]) -> list[str]:
+        return single_shot_reasons(self.id, scenes)
 
 
 ADAPTERS: list[EngineAdapter] = [V1SlideshowAdapter()]
@@ -164,9 +177,12 @@ class ModuleAdapter:
             reasons.append(f"{self.id}: preset={preset} and one scene required; custom scene/rig not supported")
         if self.module == "hyperframes" and (len(scenes) != 3 or any(s.get("preset") != "kafka_flow" for s in scenes)):
             reasons.append("HyperFrames: preset=kafka_flow and exactly three scenes required")
+        reasons += single_shot_reasons(self.id, scenes)
         for scene in scenes:
             if any(shot.get("required_capabilities") for shot in scene.get("shots", [])):
                 reasons.append(f"{self.id}: arbitrary shot capabilities are not supported by fixed presets")
+            if any(shot.get("inputs") or shot.get("depends_on") for shot in scene.get("shots", [])):
+                reasons.append(f"{self.id}: shot inputs/depends_on are not consumed by fixed presets")
             if scene.get("camera") or scene.get("motion"):
                 reasons.append(f"{self.id}: custom camera/motion is not consumed by the preset")
         return reasons

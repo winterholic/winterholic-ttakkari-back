@@ -223,6 +223,22 @@ def test_hyperframes_style_dna_prevalidation_names_unsupported_core_value():
         HyperFramesAdapter().validate_style_dna(style_dna)
 
 
+def test_kafka_project_uses_reviewed_scene_durations_on_its_render_timeline(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({
+        "seconds": 18,
+        "scenes": [
+            {"title": title, "narration": "데이터가 이동합니다.", "seconds": seconds}
+            for title, seconds in (("Producer", 3), ("Broker", 8), ("Consumer", 7))
+        ],
+    }, tmp_path)
+    output = (project / "index.html").read_text()
+    assert '"scene_seconds": [3.0, 8.0, 7.0]' in output
+    assert 'window.__timelines["main"] = renderTimeline;' in output
+    assert "tl.timeScale" not in output
+
+
 def test_render_segment_rejects_unsupported_core_style_dna_before_preflight(monkeypatch, tmp_path):
     from ttakkari.creative.v2 import hyperframes
 

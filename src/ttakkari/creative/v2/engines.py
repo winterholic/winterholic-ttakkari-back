@@ -202,7 +202,7 @@ class ModuleAdapter:
             # Current A consumes ComposeResult style_dna itself, but rejects
             # editorial shot/strategy metadata. Preserve the full core input in
             # dispatch input.json and project only consumed scene content here.
-            payload = {key: spec[key] for key in ("plan_id", "revision", "segment_id", "aspect", "width", "height", "fps", "seconds", "style_dna", "style") if key in spec}
+            payload = {key: spec[key] for key in ("plan_id", "revision", "segment_id", "aspect", "width", "height", "fps", "seconds", "style_dna", "style", "caption_mode") if key in spec}
             payload["scenes"] = [{key: scene[key] for key in ("scene_id", "title", "narration", "seconds") if key in scene} for scene in spec["scenes"]]
         result = self.delegate.render_segment(payload, output_path=output_path, workdir=workdir)
         if result.get("real_execution") is not True or not output_path.is_file():
@@ -249,7 +249,7 @@ def adapter_for(providers: set[str]) -> EngineAdapter | None:
 
 
 def compose_segment(
-    source: Path, music: Path, output: Path, *, aspect: str, seconds: float,
+    source: Path, music: Path | None, output: Path, *, aspect: str, seconds: float,
     captions: list[dict[str, Any]], caption_style: str = "bottom_card", transition: str = "cut",
     preserve_source_audio: bool = False,
 ) -> dict[str, Any]:
@@ -259,11 +259,17 @@ def compose_segment(
     for concat, and mix source audio into the approved master when present.
     """
     width, height = dimensions(aspect)
+    if music is None and not preserve_source_audio:
+        raise ValueError("선택한 원본에 오디오 트랙이 없습니다. 음악 파일을 추가해 주세요.")
     inputs = (["-loop", "1", "-framerate", "24"] if source.suffix.lower() in {".png", ".jpg", ".webp"}
               else ["-stream_loop", "-1"])
     args = [ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
             "-protocol_whitelist", "file,pipe", "-format_whitelist", "image2,png_pipe,jpeg_pipe,webp_pipe,mov,matroska",
-            *inputs, "-i", str(source), "-protocol_whitelist", "file,pipe", "-i", str(music)]
+            *inputs, "-i", str(source)]
+    caption_input = 1
+    if music is not None:
+        args.extend(["-protocol_whitelist", "file,pipe", "-i", str(music)])
+        caption_input = 2
     filters = f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps=24,format=yuv420p[v0]"
     current = "v0"
     for index, cue in enumerate(captions):
@@ -271,14 +277,15 @@ def compose_segment(
         caption_image(path, cue["text"], width, height, style=caption_style)
         args.extend(["-loop", "1", "-framerate", "24", "-i", str(path)])
         following = f"v{index+1}"
-        filters += f";[{current}][{index+2}:v]overlay=0:0:enable='between(t,{cue['start']:.6f},{cue['end']:.6f})'[{following}]"
+        filters += f";[{current}][{index+caption_input}:v]overlay=0:0:enable='between(t,{cue['start']:.6f},{cue['end']:.6f})'[{following}]"
         current = following
     if transition == "fade":
         filters += f";[{current}]fade=t=in:d=0.25,fade=t=out:st={max(0, seconds-0.25):.6f}:d=0.25[out]"
     else:
         filters += f";[{current}]null[out]"
-    audio_map = "1:a:0"
-    if preserve_source_audio:
+    audio_map = "0:a:0" if music is None else "1:a:0"
+    mixed = preserve_source_audio and music is not None
+    if mixed:
         filters += ";[1:a:0][0:a:0]amix=inputs=2:duration=first:dropout_transition=0[mixed]"
         audio_map = "[mixed]"
     args.extend(["-filter_complex_threads", "1", "-filter_complex", filters, "-map", "[out]", "-map", audio_map,
@@ -288,7 +295,7 @@ def compose_segment(
     if result.returncode:
         raise RuntimeError(f"core compositor exit {result.returncode}: {result.stderr[-1000:]}")
     return {"commands": [args], "real_execution": True, "video_motion": "source video decoded; no still extraction",
-            "source_audio_mixed": preserve_source_audio}
+            "source_audio_mixed": mixed, "source_audio_preserved": preserve_source_audio}
 
 
 # --- 실제 미디어 QA ---------------------------------------------------------

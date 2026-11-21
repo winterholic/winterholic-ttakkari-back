@@ -244,4 +244,7 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 - `POST /plans`와 `POST /storyboard/runs`는 확정한 `intent_v2`를 받는다. 계획용 투영은 기존 매칭·길이 계산·Style DNA를 사용한다. PlanStore는 원래 의도와 투영 결과를 함께 저장하고, 계획에서 길이를 변경하면 의도 revision과 이력을 갱신한다.
 - 스토리보드 결과를 검토하고 생산 계획으로 옮길 때 사용자 의도와 화면 비율을 보존한다. 모델이 제안한 장면은 계획에 기록하고, 참조·답변 중 소비할 수 없는 값은 투영의 미반영 목록에 기록한다. 제작 승인은 별도다.
 - Kafka 기술 설명은 검토한 세 장면이 모두 `kafka_flow`를 지정했을 때 R22를 사용한다. 근거와 제약은 [능력 행렬](creative-studio-v2-capability-matrix.md), 과거 실측은 [실행 기록](../../src/ttakkari/creative/v2/data/execution_records.json)에 남긴다.
+- Kafka 템플릿의 장면은 발행, 파티션 로그 기록, 소비 순서로 구성한다. 오프셋은 파티션 안에서 레코드의 위치를 나타낸다. [Apache Kafka 공식 입문 문서](https://kafka.apache.org/43/getting-started/introduction/)
 - 2026-11-21 검증에서 Kafka 16초 계획은 승인 후 디스패치 사양 검사를 통과했다. Codex 명령 환경에서는 Chromium 권한 검사에서 `mach-register`와 `mach-lookup`이 거부되어 HyperFrames 렌더를 시작하지 않았다. 별도 2D 경로는 실제 8.021초 MP4를 만들었다. 1280×720, 192프레임, 오디오 트랙으로 기계 검사 통과를 확인했고 독립 내용·시청·청취 품질은 미확인으로 남겼다.
+- 같은 날 승인된 브라우저에서 Kafka HTML 컴포지션을 2초, 7초, 13초로 이동해 준비한 각 자막과 메시지 위치를 확인했다. 세 장면의 길이는 4초, 5초, 7초이며 자막은 720px 출력에서 y=627–693px에 표시됐다. 이 확인 범위는 HTML 컴포지션이다.
+- 정지 이미지 편집의 장편 검증에서 75장면을 15구간으로 분할해 큐의 구간 작업을 실행하고 결과를 합쳤다. FFprobe는 900.032초, 1280×720, 영상 21,600프레임과 오디오 트랙을 확인했다. 기계 검사 통과, 내용·시청·청취 미확인으로 기록했다. 합성된 테스트 파일 해시는 `e2fa0f1f047fd6b5be1328c32206ed9a6ea8bbc8519ab22a7abb4bf35abe96c4`다.

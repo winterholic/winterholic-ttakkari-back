@@ -39,6 +39,7 @@ from ttakkari.creative.render import (
 from ttakkari.creative.service import ProjectInput, Scene, Studio
 from ttakkari.creative.v2 import engines, quality
 from ttakkari.creative.v2.plans import PlanStore
+from ttakkari.creative.v2.registry_data import KAFKA_RECIPE_ID
 
 V1_FORMAT = "music_video"
 # 렌더러는 구간 길이를 24fps 프레임으로 반올림한다. 구간이 많을수록 합계 오차가 늘어난다.
@@ -416,9 +417,9 @@ def _assets_state(plan: dict[str, Any], data: dict[str, Any], store: ProductionS
     music = data["assets"]["music"]
     music_problem = None
     total = plan["scenes"][-1]["end_time"] if plan["scenes"] else 0.0
-    if music is None:
+    if music is None and plan["match"].get("primary_recipe") != KAFKA_RECIPE_ID:
         music_problem = "음악 자산이 없습니다."
-    else:
+    elif music is not None:
         duration = (music.get("meta") or {}).get("duration")
         if duration is None or duration + 0.1 < total:
             music_problem = (
@@ -580,7 +581,7 @@ def _create_project(
 
 def _render_producer(
     adapter: engines.EngineAdapter, store: ProductionStore, plan: dict[str, Any],
-    segment: dict[str, Any], key: str,
+    segment: dict[str, Any], key: str, caption_mode: str = "narration",
 ) -> dict[str, Any]:
     """Render the declared preset, then pass its video to the existing compositor.
 
@@ -588,6 +589,8 @@ def _render_producer(
     a model server; Blender's template explicitly uses Cycles CPU.
     """
     workdir = store.folder(plan["id"]) / "engine-work" / key
+    if segment.get("attempts", 1) > 1:
+        workdir /= f"retry-{segment['attempts']:02d}"
     workdir.mkdir(parents=True, exist_ok=True)
     path = workdir / "source.mp4"
     scenes = _segment_scenes(plan, segment)
@@ -600,7 +603,7 @@ def _render_producer(
         "plan_id": plan["id"], "revision": plan["revision"], "segment_id": segment["id"],
         "seconds": segment["seconds"], "aspect": plan["aspect"], "width": width, "height": height,
         "fps": plan["profile"]["fps"], "style_dna": plan.get("style"), "scenes": producer_scenes,
-        "editorial_scenes": scenes,
+        "editorial_scenes": scenes, "caption_mode": caption_mode,
     }
     if adapter.id == "skill.frame_animation_2d" and "interpolation_mode" in scenes[0]:
         spec["interpolation_mode"] = scenes[0]["interpolation_mode"]
@@ -626,19 +629,21 @@ def _render_directed_segment(adapter, store, plan, segment, data, style, key, ca
         if not (segment.get("producer_key") == key and produced
                 and store.asset_path(plan["id"], produced).is_file()
                 and _sha256_file(store.asset_path(plan["id"], produced)) == produced["sha256"]):
-            produced = _render_producer(adapter, store, plan, segment, key)
+            produced = _render_producer(adapter, store, plan, segment, key, caption_mode)
             segment.update(producer_output=produced, producer_key=key)
         asset = produced
     else:
         asset = data["assets"]["scenes"][scene["scene_id"]]
     work = store.folder(plan["id"]) / "engine-work" / key
     work.mkdir(parents=True, exist_ok=True)
-    audio = work / "music.wav"
-    _slice_music(store.asset_path(plan["id"], data["assets"]["music"]),
-                 segment["start_frame"] / plan["profile"]["fps"], segment["seconds"], audio)
+    audio = None
+    if data["assets"].get("music") is not None:
+        audio = work / "music.wav"
+        _slice_music(store.asset_path(plan["id"], data["assets"]["music"]),
+                     segment["start_frame"] / plan["profile"]["fps"], segment["seconds"], audio)
     caption_style = style["applied"].get("caption_style", "bottom_card")
     cues, cursor = [], 0.0
-    for scene in scenes:
+    for scene in scenes if adapter.id != "skill.hyperframes" else []:
         voice = data["assets"].get("voices", {}).get(scene["scene_id"], {})
         voice_seconds = (voice.get("meta") or {}).get("duration")
         seconds = min(voice_seconds, scene["seconds"]) if voice_seconds else scene["seconds"]

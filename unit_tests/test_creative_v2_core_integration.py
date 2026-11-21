@@ -35,6 +35,11 @@ def test_directed_composite_keeps_audio_from_the_original_video(tmp_path):
     )
     assert receipt["source_audio_mixed"]
     assert engines.volume(output)["max_db"] > -40
+    solo = tmp_path / "source-audio-only.mp4"
+    engines.compose_segment(
+        video, None, solo, aspect="16:9", seconds=1, captions=[], preserve_source_audio=True,
+    )
+    assert engines.volume(solo)["max_db"] > -40
 
 
 @pytest.fixture

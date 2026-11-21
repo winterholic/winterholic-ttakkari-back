@@ -314,7 +314,6 @@
       left: 80px;
       right: 80px;
       height: 100px;
-      position: relative;
     }
     .caption-banner {
       position: absolute;
@@ -393,7 +392,7 @@
           </div>
           <h1 class="main-title">분산 메시지 흐름 및 커밋 로그 파이프라인</h1>
         </div>
-        <div class="main-subtitle">High-Throughput Partitioning &amp; Zero Data Loss</div>
+        <div class="main-subtitle">토픽 · 파티션 · 오프셋</div>
       </header>
 
       <!-- 3 Columns Architecture -->
@@ -502,7 +501,7 @@
           <div class="step-indicator step2">2</div>
           <div class="caption-texts">
             <div class="caption-title">02. 브로커의 순차 디스크 커밋 및 고가용성 복제 (Commit Log &amp; ISR)</div>
-            <div class="caption-body">브로커는 파티션 세그먼트에 O(1) 순차 디스크 쓰기(Append-Only)를 수행하고 ISR 팔로워 브로커로 무손실 동기화합니다.</div>
+            <div class="caption-body">브로커는 선택된 파티션의 로그 끝에 레코드를 추가합니다. 레코드에는 파티션 안에서의 위치인 오프셋이 붙습니다.</div>
           </div>
         </div>
 
@@ -511,7 +510,7 @@
           <div class="step-indicator step3">3</div>
           <div class="caption-texts">
             <div class="caption-title">03. 컨슈머 그룹의 병렬 읽기 및 오프셋 커밋 (Parallel Consumption)</div>
-            <div class="caption-body">컨슈머 2가 파티션 1의 새 레코드를 즉시 구독 및 처리한 후 오프셋(Offset 3)을 커밋하여 정확히 한 번 처리를 유지합니다.</div>
+            <div class="caption-body">컨슈머는 읽을 위치부터 레코드를 가져옵니다. 처리한 뒤 다음 위치를 저장하면 재시작할 때 이어서 읽을 수 있습니다.</div>
           </div>
         </div>
       </div>

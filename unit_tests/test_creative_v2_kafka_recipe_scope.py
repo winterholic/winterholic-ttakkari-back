@@ -2,6 +2,7 @@
 
 import pytest
 
+from ttakkari.creative.v2 import dispatch
 from ttakkari.creative.v2.dispatch import dispatch_blockers
 from ttakkari.creative.v2.duration import DurationRequest
 from ttakkari.creative.v2.intent import InfoItem, IntentSpec, Selection
@@ -92,6 +93,9 @@ def test_reviewed_kafka_direction_opens_distinct_route(tmp_path):
     assert approved["render_gate"]
     assert approved["render_plan"]["segments"][0]["seconds"] == 16
     assert not dispatch_blockers(approved, runtime_preflight=False)
+    store = dispatch.ProductionStore(plans)
+    state = dispatch._assets_state(approved, store.read(approved["id"]), store)
+    assert state["complete"] and state["music"] is None
     revised = plans.edit(approved["id"], approved["revision"], duration=DurationRequest(mode="exact", seconds=17))
     assert not revised["render_gate"]
     assert plans.approve(revised["id"], revised["revision"])["render_gate"]

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -327,6 +328,17 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
         raise ValueError("Kafka flow 템플릿은 16:9 출력만 지원합니다.")
     if any(not isinstance(scene, dict) for scene in scenes):
         raise ValueError("각 scene은 object여야 합니다.")
+    lengths = [scene.get("seconds") for scene in scenes]
+    if all(length is None for length in lengths):
+        scene_seconds = [seconds * part / 16 for part in (4.5, 6, 5.5)]
+    else:
+        if any(length is None for length in lengths):
+            raise ValueError("세 장면 길이를 모두 지정해야 합니다.")
+        scene_seconds = [float(length) for length in lengths]
+        if not all(math.isfinite(length) and length > 0 for length in scene_seconds):
+            raise ValueError("장면 길이는 유한한 양수여야 합니다.")
+        if not math.isclose(sum(scene_seconds), seconds, abs_tol=0.005):
+            raise ValueError("세 장면 길이의 합이 전체 길이와 다릅니다.")
     supported_style = {"theme": "dark", "animation": "technical", "transition": "cut", "caption_style": "bottom_card"}
     style = spec.get("style") or {}
     if not isinstance(style, dict):
@@ -353,18 +365,22 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     shutil.copy2(template_dir / "audio.wav", project_dir / "audio.wav")
 
     clean_scenes = []
+    caption_mode = spec.get("caption_mode", "narration")
+    if caption_mode not in {"narration", "title_only"}:
+        raise ValueError("지원하지 않는 자막 모드입니다.")
     for scene in scenes:
         title = str(scene.get("title") or scene.get("caption") or "").strip()
         narration = str(scene.get("narration") or scene.get("caption") or scene.get("prompt") or "").strip()
-        if not title or not narration:
+        if not title or (caption_mode == "narration" and not narration):
             raise ValueError("각 scene에 title/caption 및 narration/caption/prompt가 필요합니다.")
-        clean_scenes.append({"title": title, "narration": narration})
+        clean_scenes.append({"title": title, "narration": narration if caption_mode == "narration" else ""})
     payload = {
         "title": str(spec.get("title") or clean_scenes[0]["title"]),
         "seconds": seconds,
         "width": width,
         "height": height,
         "scenes": clean_scenes,
+        "scene_seconds": scene_seconds,
     }
     encoded = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
     html_path = project_dir / "index.html"
@@ -377,6 +393,7 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
         '    const tl = gsap.timeline({ paused: true });',
         f'''    const hfSpec = {encoded};
     document.querySelector("#root").style.transform = "scale(" + (hfSpec.width / 1920) + ")";
+    document.querySelector("#root").style.transformOrigin = "top left";
     document.querySelectorAll(".clip, #bgm").forEach((el) => {{ el.dataset.duration = String(hfSpec.seconds); }});
     document.querySelector(".main-title").textContent = hfSpec.title;
     document.querySelectorAll(".caption-banner").forEach((el, index) => {{
@@ -386,7 +403,22 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     const tl = gsap.timeline({{ paused: true }});''',
         1,
     )
-    html = html.replace('    window.__timelines["main"] = tl;', '    tl.timeScale(hfSpec.seconds / 16);\n    window.__timelines["main"] = tl;', 1)
+    html = html.replace(
+        '    window.__timelines["main"] = tl;',
+        '''    tl.set("#root", {}, 16);
+    const nativeCuts = [0, 4.5, 10.5, 16];
+    const renderTimeline = gsap.timeline({ paused: true });
+    let elapsed = 0;
+    hfSpec.scene_seconds.forEach((duration, index) => {
+      renderTimeline.fromTo(tl,
+        { time: nativeCuts[index] },
+        { time: nativeCuts[index + 1], duration, ease: "none", immediateRender: false },
+        elapsed);
+      elapsed += duration;
+    });
+    window.__timelines["main"] = renderTimeline;''',
+        1,
+    )
     html_path.write_text(html, encoding="utf-8")
 
     music_path = spec.get("music_path")

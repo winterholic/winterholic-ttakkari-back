@@ -517,7 +517,7 @@ def test_core_hyperframes_projection_accepts_current_owned_template(
         "plan_id": plan["id"],
         "revision": 1,
         "segment_id": "seg-01",
-        "seconds": 16,
+        "seconds": plan["scenes"][-1]["end_time"],
         "aspect": "16:9",
         "width": 1280,
         "height": 720,

@@ -29,6 +29,7 @@ from ttakkari.creative.v2.engines import Limits, Preflight
 
 log = logging.getLogger("ttakkari.creative.v2.hyperframes")
 
+TEMPLATE_WIDTH, TEMPLATE_HEIGHT = 1920, 1080
 DEFAULT_CHROME_MAC = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 
@@ -210,8 +211,10 @@ class HyperFramesAdapter:
             "output_path": str(output),
             "duration": duration,
             "fps": fps,
-            "width": width,
-            "height": height,
+            "width": TEMPLATE_WIDTH,
+            "height": TEMPLATE_HEIGHT,
+            "requested_width": width,
+            "requested_height": height,
             "engine": "hyperframes",
             "version": pre.version,
             "real_execution": True,
@@ -375,27 +378,24 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
             raise ValueError("각 scene에 title/caption 및 narration/caption/prompt가 필요합니다.")
         clean_scenes.append({"title": title, "narration": narration if caption_mode == "narration" else ""})
     payload = {
-        "title": str(spec.get("title") or clean_scenes[0]["title"]),
+        "title": str(spec.get("title") or "").strip(),
         "seconds": seconds,
-        "width": width,
-        "height": height,
         "scenes": clean_scenes,
         "scene_seconds": scene_seconds,
     }
     encoded = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
     html_path = project_dir / "index.html"
     html = html_path.read_text(encoding="utf-8")
-    html = html.replace('data-width="1920"', f'data-width="{width}"', 1)
-    html = html.replace('data-height="1080"', f'data-height="{height}"', 1)
+    # NOTE: 템플릿은 1920x1080 픽셀 좌표로 배치돼 있다. HyperFrames는 data-width/height를 그대로 뷰포트로
+    # 쓰기 때문에 값을 바꾸면 우측이 잘리거나(스케일 없음) 이중 축소된다(transform 스케일). 제작 해상도는
+    # 템플릿 기준으로 고정하고, 계획 해상도로의 변환은 코어 compositor가 한 번만 맡는다.
     html = html.replace('data-duration="16"', f'data-duration="{seconds:g}"', 1)
     html = html.replace('data-fps="30"', f'data-fps="{fps}"', 1)
     html = html.replace(
         '    const tl = gsap.timeline({ paused: true });',
         f'''    const hfSpec = {encoded};
-    document.querySelector("#root").style.transform = "scale(" + (hfSpec.width / 1920) + ")";
-    document.querySelector("#root").style.transformOrigin = "top left";
     document.querySelectorAll(".clip, #bgm").forEach((el) => {{ el.dataset.duration = String(hfSpec.seconds); }});
-    document.querySelector(".main-title").textContent = hfSpec.title;
+    if (hfSpec.title) document.querySelector(".main-title").textContent = hfSpec.title;
     document.querySelectorAll(".caption-banner").forEach((el, index) => {{
       el.querySelector(".caption-title").textContent = hfSpec.scenes[index].title;
       el.querySelector(".caption-body").textContent = hfSpec.scenes[index].narration;

@@ -121,7 +121,9 @@ def test_render_segment_applies_spec_content_and_reports_real_render(monkeypatch
         rendered_html = (project_dir / "index.html").read_text(encoding="utf-8")
         assert "Kafka delivery, end to end" in rendered_html
         assert "Key 해시로 파티션을 선택합니다." in rendered_html
-        assert "data-width=\"1280\"" in rendered_html
+        # Template layout is fixed at 1920x1080; HyperFrames would crop or double-shrink any other size.
+        assert 'data-width="1920"' in rendered_html and 'data-height="1080"' in rendered_html
+        assert "style.transform" not in rendered_html
         assert "data-duration=\"18\"" in rendered_html
         return {
             "success": True,
@@ -141,6 +143,8 @@ def test_render_segment_applies_spec_content_and_reports_real_render(monkeypatch
     )
 
     assert result["success"] is True
+    assert (result["width"], result["height"]) == (1920, 1080)
+    assert (result["requested_width"], result["requested_height"]) == (1280, 720)
     assert result["real_execution"] is True
     assert result["receipt"]["commands"][-1][0:3] == ["npx", "-y", "hyperframes"]
 
@@ -237,6 +241,16 @@ def test_kafka_project_uses_reviewed_scene_durations_on_its_render_timeline(tmp_
     assert '"scene_seconds": [3.0, 8.0, 7.0]' in output
     assert 'window.__timelines["main"] = renderTimeline;' in output
     assert "tl.timeScale" not in output
+
+
+def test_kafka_project_keeps_template_title_without_explicit_title(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({
+        "seconds": 16,
+        "scenes": [{"title": t, "narration": "흐름"} for t in ("Producer", "Broker", "Consumer")],
+    }, tmp_path)
+    assert '"title": ""' in (project / "index.html").read_text()
 
 
 def test_render_segment_rejects_unsupported_core_style_dna_before_preflight(monkeypatch, tmp_path):

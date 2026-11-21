@@ -466,7 +466,10 @@ def _run_key(
             "assets": [(data["assets"]["scenes"].get(s["scene_id"]) or {}).get("sha256")
                        if s.get("strategy", "slideshow") in {"slideshow", "generative_video"} else None
                        for s in _segment_scenes(plan, segment)],
-            "music": {"sha256": music["sha256"], "start": round(start, 3), "seconds": segment["seconds"]},
+            "music": (
+                {"sha256": music["sha256"], "start": round(start, 3), "seconds": segment["seconds"]}
+                if music else None
+            ),
             "engine": {"id": segment.get("engine", engine)["adapter"], "version": segment.get("engine", engine)["version"]},
             "style": style["applied"],
             "caption_mode": caption_mode,
@@ -776,7 +779,7 @@ def _assemble(
             "asset_sha256": sorted(
                 {data["assets"]["scenes"][i]["sha256"] for s in record["segments"] for i in s["scene_ids"] if i in data["assets"]["scenes"]}
                 | {s["producer_output"]["sha256"] for s in record["segments"] if s.get("producer_output")}
-                | {data["assets"]["music"]["sha256"]}
+                | ({data["assets"]["music"]["sha256"]} if data["assets"]["music"] else set())
             ),
         },
         "planned_seconds": planned,

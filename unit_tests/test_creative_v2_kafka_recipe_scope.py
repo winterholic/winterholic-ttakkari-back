@@ -101,3 +101,32 @@ def test_reviewed_kafka_direction_opens_distinct_route(tmp_path):
     assert plans.approve(revised["id"], revised["revision"])["render_gate"]
     unrelated = build_plan("Redis Pub/Sub 흐름을 설명한다.", intent, director=direction)
     assert unrelated["match"]["primary_recipe"] != "R22"
+
+
+def test_musicless_kafka_dispatch_computes_run_key_and_reports_outdated_segments(tmp_path, monkeypatch):
+    """Kafka R22 has no music asset; dispatch must not assume one (seen in the real render run)."""
+    from ttakkari.creative.service import Studio
+    from ttakkari.creative.v2 import engines
+
+    info = [InfoItem(id=slug, title=slug.title()) for slug in ("producer", "broker", "consumer")]
+    intent = IntentSpec(
+        selections=[Selection(entry_id="C01.tech_explainer")],
+        duration=DurationRequest(mode="exact", seconds=16), info_items=info, aspect="16:9",
+    )
+    direction = ProductionDirection.model_validate({
+        "source": "user_structured", "reviewed": True, "intent": "Kafka 메시지 흐름",
+        "scenes": [
+            {"scene_id": item.id, "strategy": "code_motion", "preset": "kafka_flow",
+             "rationale": "흐름 도식", "shots": [{"shot_id": item.id, "action": item.title}]}
+            for item in info
+        ],
+    })
+    ready = engines.Preflight(True, "test", [])
+    monkeypatch.setattr(engines.ModuleAdapter, "preflight", lambda *_: ready)
+    plans = PlanStore(tmp_path / "plans")
+    plan = plans.create(build_plan(BRIEF, intent))
+    plan = plans.edit(plan["id"], 1, director=direction)
+    plan = plans.approve(plan["id"], plan["revision"])
+    view = dispatch.dispatch(plans, Studio(tmp_path / "studio"), plan["id"], plan["revision"])
+    assert view["state"] == "ready_to_render"
+    assert view["outdated_segments"] == ["seg-01"]

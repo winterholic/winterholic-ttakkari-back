@@ -1,6 +1,6 @@
 {
-  "command": "~/development/projects/ttakkari-studio-v2-back/src/ttakkari/creative/v2/probe.py --out src/ttakkari/creative/v2/data/capability_snapshot.json",
-  "generated_at": "2026-10-22T14:45:31.192278+00:00",
+  "command": "~/development/projects/winterholic-ttakkari/back-cs-registry-20261121/src/ttakkari/creative/v2/probe.py --lab-root ../../ttakkari-studio-lab --repo-root . --app-root . --artcraft-root ../../artcraft --out src/ttakkari/creative/v2/data/capability_snapshot.json",
+  "generated_at": "2026-11-21T12:44:33.444384+00:00",
   "host": {
     "machine": "arm64",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
@@ -8,7 +8,7 @@
   },
   "probes": {
     "acestep": {
-      "detail": "~/development/projects/ttakkari-studio-lab/audio/refs/ACE-Step-1.5",
+      "detail": "../../ttakkari-studio-lab/audio/refs/ACE-Step-1.5",
       "installed": true,
       "version": null
     },
@@ -23,9 +23,9 @@
       "version": null
     },
     "bpy": {
-      "detail": "~/development/projects/ttakkari-studio-lab/3d/.venv-bpy/bin/python",
-      "installed": true,
-      "version": "5.0.1"
+      "detail": "../../ttakkari-studio-lab/3d/.venv-bpy/bin/python: import bpy exited 139 in the Codex command environment (USD Arch_ValidateAssumptions)",
+      "installed": false,
+      "version": null
     },
     "chrome": {
       "detail": "/Applications/Google Chrome.app",
@@ -73,24 +73,54 @@
       "version": null
     },
     "comfyui": {
-      "detail": "~/development/projects/ttakkari-studio-lab/comfyui/ComfyUI",
+      "detail": "../../ttakkari-studio-lab/comfyui/ComfyUI",
       "installed": true,
       "version": "0.42.0"
     },
+    "engine_comfy_video": {
+      "detail": "코드·템플릿 존재",
+      "installed": true,
+      "version": null
+    },
+    "engine_frame_animation": {
+      "detail": "코드·템플릿 존재",
+      "installed": true,
+      "version": null
+    },
+    "engine_hyperframes": {
+      "detail": "코드·템플릿 존재",
+      "installed": true,
+      "version": null
+    },
+    "engine_scene_3d": {
+      "detail": "코드·템플릿 존재",
+      "installed": true,
+      "version": null
+    },
     "ffmpeg_imageio": {
-      "detail": "~/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+      "detail": "~/development/projects/winterholic-ttakkari/back-context-gateway-20261116/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
       "installed": true,
       "version": null
     },
     "ffmpeg_system": {
-      "detail": "PATH에 ffmpeg 없음",
-      "installed": false,
+      "detail": "~/bin/ffmpeg -> ~/development/projects/winterholic-ttakkari/back-creative-production-20261107/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+      "installed": true,
+      "version": null
+    },
+    "ffprobe_real": {
+      "detail": "~/development/projects/ttakkari-studio-lab/remotion/bin/ffprobe (다른 후보 제외: ~/bin/ffprobe)",
+      "installed": true,
       "version": null
     },
     "godot": {
       "detail": "Godot 없음",
       "installed": false,
       "version": null
+    },
+    "hyperframes_cli": {
+      "detail": "npx 캐시(~/.npm/_npx)",
+      "installed": true,
+      "version": "0.9.77"
     },
     "local_stt_code": {
       "detail": "src/ttakkari/meetings/local_stt",
@@ -123,7 +153,7 @@
       "version": "19.2.3"
     },
     "remotion": {
-      "detail": "~/development/projects/ttakkari-studio-lab/remotion/project/node_modules",
+      "detail": "../../ttakkari-studio-lab/remotion/project/node_modules",
       "installed": true,
       "version": "4.0.537"
     },
@@ -133,17 +163,17 @@
       "version": null
     },
     "rhubarb": {
-      "detail": "~/development/projects/ttakkari-studio-lab/3d/tools/Rhubarb-Lip-Sync-1.14.0-macOS/rhubarb",
-      "installed": true,
-      "version": "1.14.0"
+      "detail": "../../ttakkari-studio-lab/3d/tools/Rhubarb-Lip-Sync-1.14.0-macOS/rhubarb: OSError: [Errno 86] Bad CPU type in executable: '../../ttakkari-studio-lab/3d/tools/Rhubarb-Lip-Sync-1.14.0-macOS/rhubarb'",
+      "installed": false,
+      "version": null
     },
     "supertonic_runtime": {
-      "detail": "~/development/projects/winterholic-ttakkari/back/.tts-runtime/supertonic",
+      "detail": "../back/.tts-runtime/supertonic",
       "installed": true,
       "version": null
     },
     "three": {
-      "detail": "~/development/projects/ttakkari-studio-lab/3d/node_modules",
+      "detail": "../../ttakkari-studio-lab/3d/node_modules",
       "installed": true,
       "version": "0.185.0"
     }
@@ -185,6 +215,29 @@
       "title": "AI 감독형 제작 구조 설계(통합안 ADR 초안·WBS·실행 순서)",
       "verdict": "unreviewed"
     },
+    "blender-eevee-anim-20261121": {
+      "command": ".venv-bpy/bin/python anim_probe.py (EEVEE, 640x360, 96 frames)",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 4.0,
+          "elapsed_seconds": 35.7,
+          "fps": "24/1",
+          "frames": 96,
+          "name": "blender-eevee-4s.mp4",
+          "sha256": "307b3ec19f5c7f424398ed24378341a61d6c4da670dc81b2e81cfd39f91a2997",
+          "size": "640x360"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#blender-eevee-anim-20261121",
+      "scope": "큐브 1개 키프레임 애니메이션. 모델링·리깅·캐릭터 증거 아님.",
+      "status": "completed",
+      "title": "Blender bpy 5.0.1 EEVEE 96프레임 큐브 이동·회전 애니메이션(engine-probe Run e2368ed2)",
+      "verdict": "unreviewed"
+    },
     "blender-eevee-cycles-probe": {
       "independent": false,
       "kind": "benchmark",
@@ -219,6 +272,145 @@
       "path": "comfyui/records/comfy-wan22-5b-t2v-bench/record.json",
       "status": "completed",
       "title": "Wan2.2 TI2V 5B 텍스트→영상 Apple Silicon 벤치 (32회 실행)",
+      "verdict": "unreviewed"
+    },
+    "engine-adapter-frame-animation-20261121": {
+      "command": "adapter_by_id('skill.frame_animation_2d').render_segment(spec: preset=walk_cycle, 1 scene, 8s, 1280x720, 30fps)",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 8.0,
+          "elapsed_seconds": 2.7,
+          "fps": "24/1",
+          "frames": 192,
+          "name": "frame_animation.mp4",
+          "sha256": "47df38d2217362b461bb250afdfb3f9db6e2e57bd33d0391d4f7de6f314447ea",
+          "size": "1280x720"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#engine-adapter-frame-animation-20261121",
+      "scope": "고정 걷기 사이클 1종만. 커스텀 리그·동작은 지원하지 않는다.",
+      "status": "completed",
+      "title": "frame_animation walk_cycle 코어 ModuleAdapter 직접 렌더(8초)",
+      "verdict": "unreviewed"
+    },
+    "engine-adapter-hyperframes-20261121": {
+      "command": "hyperframes.ADAPTER.render_segment(spec: kafka_flow, 3 scenes, 6s, 1920x1080, 30fps) with real ffprobe (TTAKKARI lab remotion/bin/ffprobe)",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 6.0,
+          "elapsed_seconds": 13.2,
+          "fps": "30/1",
+          "frames": 180,
+          "name": "hf-direct2.mp4",
+          "sha256": "fe7bd84007978f738b3dc01da0ddb41bb4478c9d40b93faa8b23cf40ad87ee59",
+          "size": "1920x1080"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#engine-adapter-hyperframes-20261121",
+      "scope": "Kafka 메시지 흐름 3장면 템플릿 1종만. 같은 호출을 호스트 ~/bin/ffprobe shim으로 하면 'ffprobe returned no frame count'로 렌더 마지막 단계에서 실패했다.",
+      "status": "completed",
+      "title": "HyperFrames kafka_flow 코어 ModuleAdapter 직접 렌더(6초, 3장면)",
+      "verdict": "unreviewed"
+    },
+    "engine-adapter-scene-3d-20261121": {
+      "command": "adapter_by_id('skill.studio-3d-cinematic').render_segment(spec: preset=crystal_orbit, 1 scene, 3s, 640x360, 24fps)",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 3.0,
+          "elapsed_seconds": 6.5,
+          "fps": "24/1",
+          "frames": 72,
+          "name": "scene_3d.mp4",
+          "sha256": "0fa64f2cfa7ac8c9161a769dedefd1d72b3c366f51cc5bc97447af91fb66af1b",
+          "size": "640x360"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#engine-adapter-scene-3d-20261121",
+      "scope": "고정 crystal/orbit 프리셋만. 커스텀 월드·연기는 지원하지 않는다. preflight 버전 'Blender 5.0.1, Node v26.9.0'.",
+      "status": "completed",
+      "title": "scene_3d crystal_orbit 코어 ModuleAdapter 직접 렌더(3초)",
+      "verdict": "unreviewed"
+    },
+    "ffprobe-real-frame-count-20261121": {
+      "command": "ffprobe -v error -select_streams v:0 -show_entries format=duration:stream=nb_frames,width,height,r_frame_rate",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 3,
+      "outputs": [
+        {
+          "duration": 16.0,
+          "fps": "30/1",
+          "frames": 480,
+          "name": "hyperframes-kafka-16s.mp4",
+          "sha256": "e4dd0394df0276515e1e5be474dabdf4a50ffb3188af1f6947f532be136959d5",
+          "size": "1920x1080"
+        },
+        {
+          "duration": 8.0,
+          "fps": "24/1",
+          "frames": 192,
+          "name": "frame_animation.mp4",
+          "sha256": "47df38d2217362b461bb250afdfb3f9db6e2e57bd33d0391d4f7de6f314447ea",
+          "size": "1280x720"
+        },
+        {
+          "duration": 3.0,
+          "fps": "24/1",
+          "frames": 72,
+          "name": "scene_3d.mp4",
+          "sha256": "0fa64f2cfa7ac8c9161a769dedefd1d72b3c366f51cc5bc97447af91fb66af1b",
+          "size": "640x360"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#ffprobe-real-frame-count-20261121",
+      "scope": "호스트 ~/bin/ffprobe(shim)는 nb_frames를 내지 못한다. 진짜 ffprobe만 프레임 수 검사에 쓴다.",
+      "status": "completed",
+      "title": "진짜 ffprobe(remotion/bin/ffprobe) 프레임 수 검사",
+      "verdict": "unreviewed"
+    },
+    "hyperframes-kafka-cli-20261121": {
+      "command": "npx -y hyperframes@0.9.77 init kafka --example blank; check; render -f 30 -q draft",
+      "executed_at": "2026-11-21",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 2,
+      "outputs": [
+        {
+          "duration": 5.0,
+          "elapsed_seconds": 30.5,
+          "fps": "30/1",
+          "frames": 150,
+          "name": "hyperframes-kafka-5s.mp4",
+          "sha256": "4817b19d66f662a27e863e862e96e47dda0357a240e5b525be007231964bd18e",
+          "size": "1920x1080"
+        },
+        {
+          "duration": 16.0,
+          "elapsed_seconds": 25.3,
+          "fps": "30/1",
+          "frames": 480,
+          "name": "hyperframes-kafka-16s.mp4",
+          "sha256": "e4dd0394df0276515e1e5be474dabdf4a50ffb3188af1f6947f532be136959d5",
+          "size": "1920x1080"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#hyperframes-kafka-cli-20261121",
+      "scope": "Kafka Producer→Broker→Consumer 다이어그램 1건. 16초 파일은 길이만 맞고 애니메이션은 5초에 끝나 11초 정지(구성 오류). 다른 콘텐츠로 일반화 금지.",
+      "status": "completed",
+      "title": "HyperFrames 0.9.77 CLI Kafka 다이어그램 5초·16초 렌더(engine-probe Run e2368ed2)",
       "verdict": "unreviewed"
     },
     "legacy-catalog-longform-narration-story": {

@@ -23,6 +23,7 @@ from typing import Any, ClassVar, Literal
 
 from ttakkari.agents.browser_preflight import inspect_permissions
 from ttakkari.creative.render import ffmpeg
+from ttakkari.creative.v2 import media_tools
 from ttakkari.creative.v2.engines import Limits, Preflight
 
 log = logging.getLogger("ttakkari.creative.v2.hyperframes")
@@ -42,14 +43,8 @@ def find_browser() -> str | None:
 
 
 def find_ffprobe() -> str | None:
-    """ffprobe 실행 파일 경로."""
-    env_path = os.environ.get("HYPERFRAMES_FFPROBE_PATH")
-    if env_path and Path(env_path).is_file():
-        return env_path
-    user_bin = Path("/Users/winterholic/bin/ffprobe")
-    if user_bin.is_file() and os.access(user_bin, os.X_OK):
-        return str(user_bin)
-    return shutil.which("ffprobe")
+    """진짜 ffprobe 경로. 호스트 ~/bin/ffprobe는 shim이라 건너뛴다(media_tools 참고)."""
+    return media_tools.find_ffprobe()
 
 
 class HyperFramesAdapter:
@@ -115,6 +110,9 @@ class HyperFramesAdapter:
         ffprobe_exe = find_ffprobe()
         if ffprobe_exe:
             env["HYPERFRAMES_FFPROBE_PATH"] = ffprobe_exe
+        else:
+            # PATH의 shim ffprobe로 렌더하면 마지막 조립 단계에서 프레임 수를 못 읽고 실패한다.
+            missing.append("진짜 ffprobe를 찾을 수 없습니다(PATH의 ffprobe는 shim이거나 없음). TTAKKARI_FFPROBE_PATH로 지정하세요.")
 
         try:
             ipc = inspect_permissions()

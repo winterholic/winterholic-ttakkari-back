@@ -18,6 +18,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ttakkari.creative.v2 import media_tools
+
+EXECUTION_RECORDS_PATH = Path(__file__).parent / "data" / "execution_records.json"
+
 COMFY_MODEL_FILES: dict[str, list[str]] = {
     "flux2_klein_4b": [
         "diffusion_models/flux-2-klein-4b.safetensors",
@@ -70,6 +74,12 @@ PROBE_IDS: tuple[str, ...] = (
     "chrome",
     "comfyui",
     "rhubarb",
+    "hyperframes_cli",
+    "ffprobe_real",
+    "engine_hyperframes",
+    "engine_frame_animation",
+    "engine_scene_3d",
+    "engine_comfy_video",
     "artcraft_apps",
     "acestep",
     "supertonic_runtime",
@@ -111,6 +121,22 @@ def _probe(
     }
 
 
+def _hyperframes_cli_probe() -> dict[str, Any]:
+    """npx 캐시(전역 설치 없음)나 PATH에 hyperframes 패키지가 있는지. 네트워크는 쓰지 않는다."""
+    candidates = sorted(
+        (Path.home() / ".npm/_npx").glob("*/node_modules/hyperframes/package.json")
+    )
+    for pkg in candidates:
+        version = _pkg_version(pkg)
+        if version:
+            return _probe(True, version, "npx 캐시(~/.npm/_npx)")
+    which = shutil.which("hyperframes")
+    if which:
+        ok, text = _run([which, "--version"], 30)
+        return _probe(ok, text if ok else None, which)
+    return _probe(False, None, "hyperframes 패키지 없음(첫 실행은 npx가 네트워크로 받는다)")
+
+
 def probe_host(
     lab: Path, repo: Path, app_root: Path, artcraft_root: Path
 ) -> dict[str, dict[str, Any]]:
@@ -122,7 +148,12 @@ def probe_host(
     ok, text = _run([pnpm, "-v"]) if pnpm else (False, "pnpm 없음")
     out["pnpm"] = _probe(ok, text if ok else None, pnpm or text)
     ff = shutil.which("ffmpeg")
-    out["ffmpeg_system"] = _probe(bool(ff), None, ff or "PATH에 ffmpeg 없음")
+    detail = ff or "PATH에 ffmpeg 없음"
+    if ff and Path(ff).is_symlink():
+        # 심볼릭 링크 대상이 worktree 안이면 그 worktree 정리(ttk-worktree-gc) 때 끊긴다.
+        target = Path(ff).resolve()
+        detail = f"{ff} -> {target}" + ("" if target.is_file() else " (끊어진 링크)")
+    out["ffmpeg_system"] = _probe(bool(ff) and Path(ff).resolve().is_file(), None, detail)
     try:
         import imageio_ffmpeg
 
@@ -142,7 +173,7 @@ def probe_host(
         ok, text = _run(
             [str(bpy_python), "-c", "import bpy;print(bpy.app.version_string)"], 120
         )
-        out["bpy"] = _probe(ok, text if ok else None, str(bpy_python))
+        out["bpy"] = _probe(ok, text if ok else None, f"{bpy_python}" + (f": {text}" if not ok else ""))
     else:
         out["bpy"] = _probe(False, None, "bpy venv 없음")
     godot = shutil.which("godot") or next(
@@ -196,13 +227,39 @@ def probe_host(
         version = found.group(1) if found else None
     out["comfyui"] = _probe(version_py.is_file(), version, str(version_py.parent))
     rhubarb = next((lab / "3d/tools").glob("Rhubarb-Lip-Sync-*/rhubarb"), None)
+    rhubarb_ok, rhubarb_detail = False, str(rhubarb or "")
+    if rhubarb and rhubarb.is_file():
+        # 파일이 있다고 실행되는 것은 아니다. x86_64 바이너리는 Rosetta 없는 arm64에서 실행되지 않는다.
+        rhubarb_ok, text = _run([str(rhubarb), "--version"], 20)
+        rhubarb_detail = f"{rhubarb}: {text}"
     out["rhubarb"] = _probe(
-        bool(rhubarb and rhubarb.is_file()),
+        rhubarb_ok,
         (re.search(r"Sync-(\S+?)-macOS", str(rhubarb)) or [None, None])[1]
-        if rhubarb
+        if rhubarb and rhubarb_ok
         else None,
-        str(rhubarb or ""),
+        rhubarb_detail,
     )
+    out["hyperframes_cli"] = _hyperframes_cli_probe()
+    ffprobe_path, skipped = media_tools.ffprobe_status()
+    out["ffprobe_real"] = _probe(
+        bool(ffprobe_path),
+        None,
+        (ffprobe_path or "FFprobe 실행 파일 없음")
+        + (f" (다른 후보 제외: {', '.join(skipped)})" if skipped else ""),
+    )
+    engine_files = {
+        "engine_hyperframes": ("hyperframes.py", "templates/hyperframes/kafka_message_flow/index.html"),
+        "engine_frame_animation": ("frame_animation.py", "templates/frame_animation/presets.py"),
+        "engine_scene_3d": ("scene_3d.py", "templates/scene_3d/blender_render.py"),
+        "engine_comfy_video": ("asset_generation_managed.py", "src/ttakkari/creative/v2/engines.py"),
+    }
+    module_dir = repo / "src/ttakkari/creative/v2"
+    for key, (module, extra) in engine_files.items():
+        parts = [module_dir / module, repo / extra]
+        missing = [str(x.relative_to(repo)) for x in parts if not x.is_file()]
+        out[key] = _probe(
+            not missing, None, "코드·템플릿 존재" if not missing else "없음: " + ", ".join(missing)
+        )
     apps = (
         sorted(p.name for p in (artcraft_root / "dist/cli").glob("*"))
         if (artcraft_root / "dist/cli").is_dir()
@@ -239,6 +296,18 @@ def probe_host(
     return out
 
 
+def probe_execution_records() -> dict[str, dict[str, Any]]:
+    """저장소에 커밋된 호스트 실측 기록(lab 기록과 같은 모양). 없는 파일은 기록 없음으로 본다."""
+    try:
+        data = json.loads(EXECUTION_RECORDS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    return {
+        slug: {**rec, "path": f"src/ttakkari/creative/v2/data/execution_records.json#{slug}"}
+        for slug, rec in data.get("records", {}).items()
+    }
+
+
 def probe_records(lab: Path) -> dict[str, dict[str, Any]]:
     records: dict[str, dict[str, Any]] = {}
     for path in sorted(lab.glob("*/records/*/record.json")):
@@ -256,6 +325,9 @@ def probe_records(lab: Path) -> dict[str, dict[str, Any]]:
             "media_count": len(data.get("media") or []),
             "path": str(path.relative_to(lab)),
         }
+    # 같은 slug면 lab 기록이 우선한다. 저장소 기록은 lab 밖 실측을 담는다.
+    for slug, rec in probe_execution_records().items():
+        records.setdefault(slug, rec)
     return records
 
 

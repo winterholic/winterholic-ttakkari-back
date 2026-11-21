@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ttakkari.creative.render import ffmpeg
-from ttakkari.creative.v2 import engines
+from ttakkari.creative.v2 import engines, media_tools
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +104,9 @@ def _normalize_render_input(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _probe_duration(path: Path) -> float:
-    probe = shutil.which("ffprobe")
+    probe = media_tools.find_ffprobe()
     if not probe:
-        raise RuntimeError("ffprobe is required to verify rendered duration")
+        raise RuntimeError("a real ffprobe (not the ~/bin shim) is required to verify rendered duration")
     result = subprocess.run([probe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
                             capture_output=True, text=True, timeout=15, check=True)
     return float(json.loads(result.stdout)["format"]["duration"])

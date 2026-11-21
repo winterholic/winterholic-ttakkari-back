@@ -106,14 +106,17 @@ def matrix_markdown(registry: Registry | None = None) -> str:
             "",
             f"## {title} 레지스트리",
             "",
-            "| ID | 이름 | 설치 | 버전 | 연동 | 능력 수준 | 차단 사유 |",
+            "| ID | 이름 | 설치 | 버전 | 연동 | 능력 수준 | 차단 사유·제약 |",
             "|---|---|---|---|---|---|---|",
         ]
         for s in registry.states(kind):
             installed = {True: "예", False: "아니오", None: "미확인"}[s.installed]
             levels = ", ".join(f"{c}={lv}" for c, lv in s.levels.items()) or "-"
+            constraints = list(dict.fromkeys(
+                [*s.blockers, *(limit for limits in s.constraints.values() for limit in limits)]
+            ))
             out.append(
-                f"| {s.id} | {_esc(s.name)} | {installed} | {s.version or '-'} | {s.integration} | {_esc(levels)} | {_esc('; '.join(s.blockers)) or '-'} |"
+                f"| {s.id} | {_esc(s.name)} | {installed} | {s.version or '-'} | {s.integration} | {_esc(levels)} | {_esc(' / '.join(constraints)) or '-'} |"
             )
     out.append("")
     return "\n".join(out)

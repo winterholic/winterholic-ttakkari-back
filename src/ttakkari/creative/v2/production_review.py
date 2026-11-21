@@ -26,10 +26,6 @@ class EvaluatorBinding:
     execute: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
-# No discovered registry entry or client assertion installs an evaluator.
-EVALUATOR_BINDING: EvaluatorBinding | None = None
-
-
 def _evidence(receipt):
     return [
         item
@@ -111,7 +107,6 @@ def run_review(
     """
     from ttakkari.creative.v2 import dispatch
 
-    binding = binding or EVALUATOR_BINDING
     store = dispatch.ProductionStore(plans)
     with store.tx(plan_id, blocking=False) as data:
         plan = plans.assert_renderable(plan_id, revision)
@@ -124,7 +119,7 @@ def run_review(
             state = {
                 "status": "not_connected",
                 "verdict": "unknown",
-                "reason": "production_review.EVALUATOR_BINDING has no trusted independent evaluator; director cpu-check and registry discovery do not qualify",
+                "reason": "독립 평가 실행기가 연결되지 않았습니다.",
             }
             record["review_execution"] = state
             dispatch._log(record, "review_not_connected", reason=state["reason"])

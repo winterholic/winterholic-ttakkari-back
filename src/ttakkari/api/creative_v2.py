@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
 import jwt
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import Field
@@ -22,7 +22,13 @@ from ttakkari import queued_work
 from ttakkari.api.creative import _normalize, perform
 from ttakkari.api.deps import Db
 from ttakkari.creative.service import default_studio
-from ttakkari.creative.v2 import asset_generation, asset_worker
+from ttakkari.creative.v2 import (
+    asset_generation,
+    asset_worker,
+    production_review,
+    render_worker,
+    storyboard_runs,
+)
 from ttakkari.creative.v2 import dispatch as production
 from ttakkari.creative.v2.asset_generation_managed import ManagedAssetGenerator
 from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
@@ -42,6 +48,7 @@ from ttakkari.creative.v2.intent import (
     validate_intent,
 )
 from ttakkari.creative.v2.matching import match_intent
+from ttakkari.creative.v2.planner import ProductionDirection
 from ttakkari.creative.v2.plans import build_plan, default_plan_store
 from ttakkari.creative.v2.registry import Registry
 from ttakkari.creative.v2.run_extraction import (
@@ -49,6 +56,7 @@ from ttakkari.creative.v2.run_extraction import (
     resume_intent_run,
     start_intent_run,
 )
+from ttakkari.creative.v2.storyboard import Storyboard, StoryboardRequest
 from ttakkari.creative.v2.style_dna import (
     Resolution,
     StyleDNADoc,
@@ -95,16 +103,22 @@ class PlanCreate(Strict):
     aspect: Literal["16:9", "9:16", "1:1"] | None = None
     style: list[StyleRef] = Field(default_factory=list, max_length=8)
     resolutions: list[Resolution] = Field(default_factory=list, max_length=60)
+    director: ProductionDirection | None = None
 
 
 class PlanEdit(Strict):
     revision: int = Field(ge=1)
     scenes: list[SceneEdit] | None = Field(default=None, min_length=1, max_length=400)
     duration: DurationRequest | None = None
+    director: ProductionDirection | None = None
 
 
 class PlanApprove(Strict):
     revision: int = Field(ge=1)
+
+
+class RenderEnqueueInput(PlanApprove):
+    retry: bool = False
 
 
 class ComposeInput(Strict):
@@ -324,6 +338,7 @@ async def plan_create(body: PlanCreate, _: User):
             styles=default_style_store(),
             style_refs=body.style,
             resolutions=body.resolutions,
+            director=body.director,
         )
         return default_plan_store().create(plan)
 
@@ -350,6 +365,7 @@ async def plan_edit(pid: PlanId, body: PlanEdit, _: User):
         scenes=body.scenes,
         duration=body.duration,
         registry=_registry(),
+        director=body.director,
     )
 
 
@@ -384,7 +400,13 @@ async def production_dispatch(
 
 
 @router.post("/plans/{pid}/production/render", status_code=202)
-async def production_render(pid: PlanId, body: PlanApprove, _: User):
+async def production_render(pid: PlanId, body: RenderEnqueueInput, _: User):
+    plans = default_plan_store()
+    if queued_work.delegated() and perform(plans.get, str(pid)).get("director"):
+        request = await asyncio.to_thread(perform, render_worker.enqueue, plans, str(pid), body.revision, retry=body.retry)
+        if request["status"] == "blocked":
+            return JSONResponse({"code": "executor_surface_blocked", **request}, status_code=422)
+        return await asyncio.to_thread(perform, production.view, plans, default_studio(), str(pid))
     return await asyncio.to_thread(
         perform,
         production.request_render,
@@ -393,6 +415,140 @@ async def production_render(pid: PlanId, body: PlanApprove, _: User):
         str(pid),
         body.revision,
     )
+
+
+class RepairDefect(Strict):
+    scene_id: str = Field(min_length=1, max_length=50)
+    shot_id: str | None = Field(default=None, max_length=60)
+    code: str = Field(min_length=1, max_length=80)
+    layer: str = Field(min_length=1, max_length=60)
+
+
+class RepairProposal(PlanApprove):
+    defects: list[RepairDefect] = Field(min_length=1, max_length=100)
+
+
+@router.post("/plans/{pid}/production/repair-plan")
+async def production_repair_plan(pid: PlanId, body: RepairProposal, _: User):
+    return await asyncio.to_thread(
+        perform, production.plan_repair, default_plan_store(), str(pid), body.revision,
+        [defect.model_dump(mode="json", exclude_none=True) for defect in body.defects],
+    )
+
+
+class CaptionRepairUpdate(Strict):
+    scene_id: str = Field(min_length=1, max_length=50)
+    shot_id: str | None = Field(default=None, max_length=60)
+    layer: Literal["captions"]
+    field: Literal["title", "narration"]
+    text: str = Field(min_length=1, max_length=6000)
+
+
+class RepairApply(PlanApprove):
+    proposal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    updates: list[CaptionRepairUpdate] = Field(min_length=1, max_length=100)
+
+
+@router.post("/plans/{pid}/production/repair")
+async def production_repair(pid: PlanId, body: RepairApply, _: User):
+    return await asyncio.to_thread(perform, production.apply_repair, default_plan_store(), str(pid),
+                                   body.revision, body.proposal_sha256,
+                                   [u.model_dump(mode="json") for u in body.updates])
+
+
+@router.post("/plans/{pid}/production/review")
+async def production_review_request(pid: PlanId, body: PlanApprove, _: User):
+    return await asyncio.to_thread(perform, production_review.run_review, default_plan_store(),
+                                   default_studio(), str(pid), body.revision)
+
+
+@router.get("/plans/{pid}/production/revisions/{revision}")
+async def production_revision(pid: PlanId, revision: int, _: User):
+    return await asyncio.to_thread(perform, production.revision_result, default_plan_store(), str(pid), revision)
+
+
+class ResultLinkInput(PlanApprove):
+    result_id: str = Field(default="final", pattern=r"^(?:final|seg-[0-9]{2,4})$")
+
+
+@router.post("/plans/{pid}/production/result-link")
+async def production_result_link(pid: PlanId, body: ResultLinkInput, _: User):
+    _, _, sha = await asyncio.to_thread(perform, production.result_media, default_plan_store(), str(pid), body.revision, body.result_id)
+    ident = uuid.UUID(sha[:32])
+    token, exp = issue_download_token(ident, f"creative-v2:{pid}:result:{body.revision}:{body.result_id}")
+    return {"url": f"/api/creative/v2/plans/{pid}/production/results/{body.revision}/{body.result_id}?" + urlencode({"token": token}),
+            "expires_at": exp.isoformat(), "sha256": sha, "revision": body.revision, "result_id": body.result_id}
+
+
+@router.get("/plans/{pid}/production/results/{revision}/{result_id}")
+async def production_result(pid: PlanId, revision: int, result_id: str, token: str, download: bool = False):
+    try:
+        claims = decode(token, "download")
+        if claims.get("var") != f"creative-v2:{pid}:result:{revision}:{result_id}":
+            raise jwt.InvalidTokenError()
+    except jwt.PyJWTError as exc:
+        raise HTTPException(403, "재생 주소가 만료됐거나 다른 결과의 주소입니다.") from exc
+    path, name, sha = await asyncio.to_thread(perform, production.result_media, default_plan_store(), str(pid), revision, result_id)
+    if claims.get("sub") != str(uuid.UUID(sha[:32])):
+        raise HTTPException(403, "결과가 변경됐습니다. 재생 주소를 다시 발급해 주세요.")
+    return FileResponse(path, filename=name, content_disposition_type="attachment" if download else "inline",
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
+
+
+@router.post("/plans/{pid}/production/render/cancel")
+async def production_render_cancel(pid: PlanId, body: PlanApprove, _: User):
+    return await asyncio.to_thread(perform, render_worker.cancel, default_plan_store(), str(pid), body.revision)
+
+
+@router.get("/storyboard/contract")
+async def storyboard_contract(_: User):
+    return {"request_schema": StoryboardRequest.model_json_schema(), "output_schema": Storyboard.model_json_schema(),
+            "review_required": True, "approval_required_after_accept": True}
+
+
+@router.post("/storyboard/runs", status_code=202)
+async def storyboard_start(body: StoryboardRequest, _: User, db: Db,
+    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None):
+    return await storyboard_runs.start(db, body, request_key=request_key)
+
+
+@router.get("/storyboard/runs/{run_id}")
+async def storyboard_read(run_id: uuid.UUID, _: User, db: Db):
+    return await storyboard_runs.read(db, run_id)
+
+
+@router.post("/storyboard/runs/{run_id}/resume", status_code=202)
+async def storyboard_resume(run_id: uuid.UUID, _: User, db: Db,
+    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None):
+    return await storyboard_runs.resume(db, run_id, request_key=request_key)
+
+
+@router.post("/storyboard/runs/{run_id}/cancel")
+async def storyboard_cancel(run_id: uuid.UUID, user: User, db: Db, request: Request):
+    from ttakkari.api.sessions import cancel_run
+    await storyboard_runs.assert_owned_run(db, run_id)
+    return await cancel_run(run_id, user, db, request)
+
+
+@router.post("/storyboard/runs/{run_id}/adopt")
+async def storyboard_adopt(run_id: uuid.UUID, body: StoryboardRequest, _: User, db: Db):
+    return await storyboard_runs.adopt(db, run_id, body)
+
+
+class StoryboardAccept(Strict):
+    reviewed_output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    plan_id: uuid.UUID | None = None
+    revision: int | None = Field(default=None, ge=1)
+
+
+@router.post("/storyboard/runs/{run_id}/accept")
+async def storyboard_accept(run_id: uuid.UUID, body: StoryboardAccept, _: User, db: Db):
+    try:
+        return await storyboard_runs.accept(db, default_plan_store(), run_id,
+            reviewed_output_sha256=body.reviewed_output_sha256,
+            plan_id=str(body.plan_id) if body.plan_id else None, revision=body.revision)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 async def _run_asset_generation(plan_id: str, revision: int) -> None:
@@ -429,6 +585,7 @@ async def production_generate_assets(pid: PlanId, body: PlanApprove, _: User):
 
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".webm"}
 
 
 @router.post("/plans/{pid}/production/assets", status_code=201)
@@ -440,9 +597,9 @@ async def production_asset(
     scene_id: Annotated[str | None, Form(max_length=50)] = None,
 ):
     ext = Path(file.filename or "").suffix.lower()
-    allowed = IMAGE_SUFFIXES if kind == "scene" else AUDIO_SUFFIXES
+    allowed = IMAGE_SUFFIXES | VIDEO_SUFFIXES if kind == "scene" else AUDIO_SUFFIXES
     if ext not in allowed:
-        raise HTTPException(422, "장면은 PNG/JPG/WebP, 음악은 MP3/WAV/M4A/FLAC/OGG를 올려 주세요.")
+        raise HTTPException(422, "장면은 PNG/JPG/WebP/MP4/MOV/WebM, 음악은 MP3/WAV/M4A/FLAC/OGG를 올려 주세요.")
     if kind == "scene" and not scene_id:
         raise HTTPException(422, "장면 ID가 필요합니다.")
     perform(default_plan_store().get, str(pid))
@@ -455,8 +612,14 @@ async def production_asset(
                 if size > 100 * 1024 * 1024:
                     raise HTTPException(413, "파일은 100MB 이하로 올려 주세요.")
                 f.write(chunk)
+        if ext in VIDEO_SUFFIXES:
+            from ttakkari.creative.render import inspect_media
+
+            checked = await asyncio.to_thread(perform, inspect_media, path)
+            if not checked.get("has_video") or not checked.get("duration"):
+                raise HTTPException(422, "영상 트랙과 유효한 재생 길이가 필요합니다.")
         normalized, media_kind, info = await asyncio.to_thread(perform, _normalize, path, ext)
-        if (kind == "scene") != (media_kind == "image"):
+        if (kind == "scene") != (media_kind in {"image", "video"}):
             raise HTTPException(422, "올린 파일 종류가 자산 종류와 맞지 않습니다.")
         asset = await asyncio.to_thread(
             perform,

@@ -853,7 +853,9 @@ RECIPES: list[Recipe] = [
             ["edit.captions"],
         ],
         [["audio.mix"]],
-        ["C01.documentary", "C08.documentary_form", "C09.narration"],
+        # Narration is shared by technical explainers and other genres; it does
+        # not select documentary research/map requirements on its own.
+        ["C01.documentary", "C08.documentary_form"],
         cases=["legacy-catalog-longform-narration-story"],
     ),
     _r(

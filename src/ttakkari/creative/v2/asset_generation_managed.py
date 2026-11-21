@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from PIL import Image
 
@@ -48,7 +48,7 @@ class ManagedAssetGenerator:
     """R21 scene assets via the existing managed Comfy, local TTS and ACE-Step paths."""
 
     engine_id = "creative-v2.managed-comfy+supertonic+acestep"
-    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v3"
+    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v3+native-video-v1+scene-cache-v1"
 
     def __init__(self, *, controller=None, store=None, clock=time.monotonic, loop=None):
         self._controller = controller
@@ -180,8 +180,30 @@ class ManagedAssetGenerator:
         for index, scene in enumerate(plan["scenes"]):
             scene_id = scene["scene_id"]
             prompt = self._prompt(plan, scene)
+            # Revision is deliberately absent: editing a different scene must not
+            # regenerate successful Comfy media. Prompt/style/profile/source code
+            # changes invalidate this scene's checkpoint. The generator's lock
+            # serializes work; cache receipts are published atomically last.
+            cache_key = hashlib.sha256(json.dumps({
+                "plan_id": plan["id"], "scene_id": scene_id, "prompt": prompt,
+                "negative_prompt": SCENE_NEGATIVE_PROMPT, "aspect": plan["aspect"],
+                "version": self.version, "code": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            cache = workdir.parent / "scene-cache" / cache_key
+            checkpoint = cache / "checkpoint.json"
+            if checkpoint.is_file():
+                entry = json.loads(checkpoint.read_text())
+                cached_video, cached_preview = cache / "source.mp4", cache / "preview.png"
+                if (cached_video.is_file() and cached_preview.is_file()
+                    and hashlib.sha256(cached_video.read_bytes()).hexdigest() == entry["sha256"]
+                    and hashlib.sha256(cached_preview.read_bytes()).hexdigest() == entry["preview_sha256"]):
+                    scenes[scene_id] = {**entry["asset"], "path": cached_video, "preview_path": cached_preview}
+                    engine_runs.append({**entry["engine_run"], "cache_hit": True, "cache_key": cache_key})
+                    progress({"stage": "scene_reused", "scene_id": scene_id, "output_sha256": entry["sha256"], "cache_key": cache_key})
+                    continue
+                progress({"stage": "scene_cache_invalid", "scene_id": scene_id, "cache_key": cache_key})
             seed = int.from_bytes(
-                hashlib.sha256(f"{plan['id']}:{plan['revision']}:{scene_id}".encode()).digest()[:4],
+                hashlib.sha256(cache_key.encode()).digest()[:4],
                 "big",
             )
             job = self._run_comfy(prompt, seed, plan, scene_id, workdir, progress)
@@ -201,12 +223,21 @@ class ManagedAssetGenerator:
             source_video.write_bytes(video_bytes)
             image_path = workdir / f"{index:03d}-{scene_id}.png"
             self._extract_frame(source_video, image_path)
+            video_media = inspect_media(source_video)
             scenes[scene_id] = {
-                "path": image_path,
-                "name": f"{scene_id}.png",
+                "path": source_video,
+                "preview_path": image_path,
+                "name": f"{scene_id}.mp4",
+                "kind": "video",
                 "meta": {
-                    "width": 1280,
-                    "height": 720,
+                    "width": int(video_media.get("width") or 1280),
+                    "height": int(video_media.get("height") or 720),
+                    "duration": float(video_media.get("duration") or 0.0),
+                    "fps": video_media.get("fps"),
+                    "has_video": bool(video_media.get("has_video", True)),
+                    "media_kind": "video",
+                    "has_motion": True,
+                    "preview_image": image_path.name,
                     "source_engine": "managed-comfy",
                     "source_profile": job["profile"],
                     "source_version": engine_receipt.get("workflow_revision_hash"),
@@ -231,6 +262,17 @@ class ManagedAssetGenerator:
                     "receipt": engine_receipt,
                 }
             )
+            cache.mkdir(parents=True, exist_ok=True)
+            (cache / "source.mp4").write_bytes(source_video.read_bytes())
+            (cache / "preview.png").write_bytes(image_path.read_bytes())
+            entry = {
+                "sha256": output_sha, "preview_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+                "asset": {k: v for k, v in scenes[scene_id].items() if k not in {"path", "preview_path"}},
+                "engine_run": engine_runs[-1],
+            }
+            temp = cache / f"{uuid.uuid4()}.tmp"
+            temp.write_text(json.dumps(entry, ensure_ascii=False, indent=2))
+            temp.replace(checkpoint)
 
         voices: dict[str, dict[str, Any]] = {}
         voice_receipts: list[dict[str, Any]] = []
@@ -316,18 +358,168 @@ class ManagedAssetGenerator:
             },
         }
 
-    @staticmethod
-    def _prompt(plan: dict[str, Any], scene: dict[str, Any]) -> str:
+    _STYLE_ENTRY_DIRECTIVES: ClassVar[dict[str, tuple[str, str]]] = {
+        "C03.pixel_art": (
+            "Create one crisp 2D pixel-art animation shot, not a collage.",
+            "Crisp pixel-art sprites and retro palette detail.",
+        ),
+        "C03.lowpoly_3d": (
+            "Create one stylized low-poly 3D animated shot, not a collage.",
+            "Clean low-poly 3D geometry and soft shading detail.",
+        ),
+        "C03.cel_shaded_3d": (
+            "Create one cel-shaded 3D animated shot, not a collage.",
+            "Stylized 3D cel-shading and crisp contour detail.",
+        ),
+        "C03.game_engine_3d": (
+            "Create one real-time 3D game-engine cinematic shot, not a collage.",
+            "Dynamic 3D spatial depth and atmospheric lighting detail.",
+        ),
+        "C03.miniature_diorama": (
+            "Create one tactile miniature diorama shot, not a collage.",
+            "Handcrafted miniature texture and shallow depth of field.",
+        ),
+        "C03.clay_animation": (
+            "Create one tactile claymation stop-motion shot, not a collage.",
+            "Sculpted clay surface texture and studio stop-motion lighting.",
+        ),
+        "C03.stop_motion": (
+            "Create one handcrafted stop-motion animation shot, not a collage.",
+            "Tactile physical material detail and studio lighting.",
+        ),
+        "C03.flat_2d_illustration": (
+            "Create one expressive 2D animated illustration shot, not a collage.",
+            "Clean 2D illustration linework and cohesive flat color palette.",
+        ),
+        "C03.2d_rig_cutout": (
+            "Create one layered 2D cutout animation shot, not a collage.",
+            "Consistent 2D character silhouettes and crisp layer separation.",
+        ),
+        "C03.western_cartoon": (
+            "Create one expressive 2D cartoon animation shot, not a collage.",
+            "Bold cartoon linework, lively posing and vibrant cel colors.",
+        ),
+        "C03.comic_2d": (
+            "Create one dynamic 2D motion-comic shot, not a collage.",
+            "Graphic ink linework and dramatic comic shading.",
+        ),
+        "C03.korean_webtoon": (
+            "Create one expressive Korean webtoon animation shot, not a collage.",
+            "Polished digital manhwa linework and atmospheric webtoon coloring.",
+        ),
+        "C03.japanese_anime": (
+            "Create one expressive 2D anime cinematic shot, not a collage.",
+            "Clean anime cel shading, expressive lighting and painted background.",
+        ),
+        "C03.vector_motion_graphics": (
+            "Create one clean motion-graphics visual shot, not a collage.",
+            "Sharp vector graphic clarity and structured visual hierarchy.",
+        ),
+        "C03.ui_animation": (
+            "Create one clean interface motion visual shot, not a collage.",
+            "Modern graphic layout and smooth visual hierarchy.",
+        ),
+        "C03.infographic": (
+            "Create one structured data-visualization motion shot, not a collage.",
+            "Clear visual diagram composition and high-contrast graphic detail.",
+        ),
+        "C03.ink_wash": (
+            "Create one traditional East Asian ink-wash painting shot, not a collage.",
+            "Expressive sumi-e brush strokes, ink gradients and rice-paper texture.",
+        ),
+        "C03.watercolor": (
+            "Create one painterly watercolor animation shot, not a collage.",
+            "Soft watercolor pigment bleed and textured paper grain.",
+        ),
+        "C03.oil_painting": (
+            "Create one painterly oil-on-canvas animation shot, not a collage.",
+            "Rich impasto brushwork and classical tonal depth.",
+        ),
+    }
+
+    _WORLD_ENTRY_LABELS: ClassVar[dict[str, str]] = {
+        "C02.cyberpunk": "a cyberpunk neon world",
+        "C02.space_sf": "a deep-space sci-fi world",
+        "C02.near_future": "a near-future sci-fi setting",
+        "C02.fantasy": "a high-fantasy world",
+        "C02.joseon": "a historical Joseon dynasty setting",
+        "C02.three_kingdoms": "a Three Kingdoms historical setting",
+        "C02.modern_history": "a modern historical setting",
+        "C02.post_apocalypse": "a post-apocalyptic world",
+        "C02.daily_life": "an everyday life setting",
+    }
+
+    @classmethod
+    def _resolve_style_directives(cls, plan: dict[str, Any], scene: dict[str, Any]) -> tuple[str, str, str, str]:
+        raw_selections = (
+            (plan.get("match") or {}).get("selections")
+            or (plan.get("intent") or {}).get("selections")
+            or []
+        )
+        entry_ids: list[str] = []
+        for item in raw_selections:
+            eid = item.get("entry_id") if isinstance(item, dict) else getattr(item, "entry_id", None)
+            if isinstance(eid, str) and eid:
+                entry_ids.append(eid)
+
+        opening = "Create one cinematic documentary shot, not a collage."
+        closing = "Natural photographic detail."
+        for eid in entry_ids:
+            if eid in cls._STYLE_ENTRY_DIRECTIVES:
+                opening, closing = cls._STYLE_ENTRY_DIRECTIVES[eid]
+                break
+
+        default_context = "a Korean documentary short"
+        for eid in entry_ids:
+            if eid in cls._WORLD_ENTRY_LABELS:
+                default_context = cls._WORLD_ENTRY_LABELS[eid]
+                break
+        else:
+            if "C01.animation" in entry_ids or any(e.startswith("C03.") and e not in {"C03.photoreal", "C03.cinematic_realism"} for e in entry_ids):
+                default_context = "a short animated visual story"
+            elif "C01.tech_explainer" in entry_ids or "C01.science_edu" in entry_ids:
+                default_context = "a clear visual explainer short"
+
+        style_obj = plan.get("style")
+        dna = (style_obj.get("dna") or style_obj) if isinstance(style_obj, dict) else {}
+        style_parts: list[str] = []
+        if isinstance(dna, dict):
+            for facet_name in ("visual_identity", "lighting", "materials", "camera_language", "environment_rules"):
+                facet = dna.get(facet_name)
+                text = facet.get("text") if isinstance(facet, dict) else None
+                if isinstance(text, str) and text.strip():
+                    cleaned = re.sub(
+                        r"(?i)\b(?:no\s+text|caption|captions|subtitle|subtitles|narration)\b|자막|내레이션",
+                        "",
+                        text,
+                    ).strip(" ,.;")
+                    if cleaned:
+                        style_parts.append(cleaned)
+            palette = dna.get("palette")
+            if isinstance(palette, list) and palette:
+                swatches = [
+                    f"{p.get('role', 'tone')} {p.get('hex')}"
+                    for p in palette[:3]
+                    if isinstance(p, dict) and p.get("hex")
+                ]
+                if swatches:
+                    style_parts.append("palette " + ", ".join(swatches))
+        style_clause = "; ".join(style_parts)[:140].strip(" ;.")
+        return opening, closing, default_context, style_clause
+
+    @classmethod
+    def _prompt(cls, plan: dict[str, Any], scene: dict[str, Any]) -> str:
         brief = str(plan.get("brief") or "").strip()
         match = re.fullmatch(r"s(\d+)", str(scene.get("scene_id") or ""))
         scene_number = int(match.group(1)) if match else None
         headings = list(re.finditer(r"(?:^|\s)(장면|scene)\s+(\d+)\s*:\s*", brief, re.IGNORECASE))
         shot_direction = ""
         plan_name = str(plan.get("name") or "").strip()
+        opening, closing, default_context, style_clause = cls._resolve_style_directives(plan, scene)
         context = (
             plan_name
             if plan_name and not brief.startswith(plan_name)
-            else "a short Korean documentary"
+            else default_context
         )
         if headings and scene_number is not None:
             for index, heading in enumerate(headings):
@@ -350,15 +542,16 @@ class ManagedAssetGenerator:
             if sentence.strip()
             and not re.search(r"내레이션|자막|narration|caption|subtitle|줌|패닝|생성형 영상 모션", sentence, re.IGNORECASE)
         )
+        style_sentence = f" Visual style DNA: {style_clause}." if style_clause else ""
         # The full brief may include mutually exclusive visuals for every shot. Keep only shared
         # context plus this scene's own instruction so each Comfy request has one visual target.
         value = (
-            "Create one cinematic documentary shot, not a collage. "
-            f"Shared project context: {context or 'a Korean documentary short'}. "
-            f"Required scene {scene.get('scene_id', '')} ({scene['title']}): {shot_direction}. "
+            f"{opening} "
+            f"Shared project context: {context or default_context}. "
+            f"Required scene {scene.get('scene_id', '')} ({scene['title']}): {shot_direction}.{style_sentence} "
             "Preserve the named place, subjects, action, time and lighting. "
             "Make the named subjects large and clear in the foreground; keep key action above the bottom 25%, "
-            "leaving that band visually simple and unobstructed. Natural photographic detail."
+            f"leaving that band visually simple and unobstructed. {closing}"
         )
         if len(value) > 1000:
             raise ValueError(

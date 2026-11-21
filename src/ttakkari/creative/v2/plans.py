@@ -27,6 +27,7 @@ from ttakkari.creative.v2.duration import (
 )
 from ttakkari.creative.v2.intent import IntentSpec, hint_intent, validate_intent
 from ttakkari.creative.v2.matching import MatchResult, match_intent
+from ttakkari.creative.v2.planner import ProductionDirection, apply_direction
 from ttakkari.creative.v2.registry import Registry
 from ttakkari.creative.v2.style_dna import Resolution, StyleError, StyleRef, StyleStore
 
@@ -113,6 +114,12 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
     for scene in plan["scenes"]:
         length = (scene["end_frame"] - scene["start_frame"]) / fps
         if groups and (
+            (plan.get("director") and not (
+                scene.get("strategy") == "code_motion"
+                and groups[-1][-1].get("strategy") == "code_motion"
+                and len(groups[-1]) < 3
+            ))
+            or
             acc + length > SEGMENT_TARGET_SECONDS
             or len(groups[-1]) >= RENDERER_SEGMENT_MAX_SCENES
         ):
@@ -124,6 +131,8 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
         acc += length
     # 렌더러는 구간마다 최소 장면 수가 있다. 모자란 꼬리 구간은 앞 구간에 합친다.
     while (
+        not plan.get("director")
+        and
         len(groups) > 1
         and len(groups[-1]) < RENDERER_SEGMENT_MIN_SCENES
         and len(groups[-2]) + len(groups[-1]) <= RENDERER_SEGMENT_MAX_SCENES
@@ -406,6 +415,7 @@ def build_plan(
     styles: StyleStore | None = None,
     style_refs: list[StyleRef] | None = None,
     resolutions: list[Resolution] | None = None,
+    director: ProductionDirection | None = None,
 ) -> dict[str, Any]:
     registry = registry or Registry()
     notes: list[str] = []
@@ -457,6 +467,8 @@ def build_plan(
     scenes = _scene_records(
         _layout(profile, duration), profile, match, registry, style_hash
     )
+    if director is not None:
+        apply_direction(scenes, director)
     return {
         "id": plan_id,
         "revision": 1,
@@ -478,6 +490,7 @@ def build_plan(
         "duration": duration.model_dump(mode="json"),
         "duration_check": None,
         "scenes": scenes,
+        **({"director": director.model_dump(mode="json")} if director is not None else {}),
         "notes": [*notes, *beat_warnings],
         "approval": None,
         "history": [
@@ -623,9 +636,11 @@ class PlanStore:
         scenes: list[SceneEdit] | None = None,
         duration: DurationRequest | None = None,
         registry: Registry | None = None,
+        director: ProductionDirection | None = None,
+        caption_updates: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """장면 편집은 사용자가 정한 길이를 보존한 채 재계산(recheck), 길이 요청 변경은 장면 구성부터 다시 계획한다."""
-        if scenes is None and duration is None:
+        if scenes is None and duration is None and director is None and not caption_updates:
             raise ValueError("바꿀 내용이 없습니다.")
         registry = registry or Registry()
         with self._tx(plan_id) as plan:
@@ -639,7 +654,21 @@ class PlanStore:
             profile = ContentProfile.model_validate(plan["profile"])
             match = MatchResult.model_validate(plan["match"])
             style_hash = (plan.get("style") or {}).get("sha256")
-            if scenes is not None:
+            if caption_updates:
+                if scenes is not None or duration is not None or director is not None:
+                    raise ValueError("caption repair cannot change timeline or direction")
+                by_id = {s["scene_id"]: s for s in plan["scenes"]}
+                for sid, fields in caption_updates.items():
+                    if sid not in by_id or not fields or set(fields) - {"title", "narration"}:
+                        raise ValueError("invalid caption target or field")
+                    if any(not isinstance(v, str) or not v.strip() for v in fields.values()):
+                        raise ValueError("caption text must be non-empty")
+                    by_id[sid].update(fields)
+                profile = profile.model_copy(update={"beats": [
+                    beat.model_copy(update=caption_updates.get(beat.id, {})) for beat in profile.beats
+                ]})
+                kind, total, status = "caption_repaired", plan["scenes"][-1]["end_time"], plan["duration"]["status"]
+            elif scenes is not None:
                 if len({s.id for s in scenes}) != len(scenes):
                     raise ValueError("장면 ID가 중복됐습니다.")
                 check = recheck_duration(
@@ -697,7 +726,7 @@ class PlanStore:
                 kind = "scenes_edited"
                 total = check.total_seconds
                 status = check.status
-            else:
+            elif duration is not None:
                 planned = plan_duration(profile, request)
                 plan["duration"] = planned.model_dump(mode="json")
                 plan["duration_check"] = None
@@ -709,6 +738,12 @@ class PlanStore:
                     planned.planned_seconds,
                     planned.status,
                 )
+            else:
+                kind, total, status = "director_edited", plan["scenes"][-1]["end_time"], plan["duration"]["status"]
+            if director is not None:
+                plan["director"] = director.model_dump(mode="json")
+            if plan.get("director"):
+                apply_direction(plan["scenes"], ProductionDirection.model_validate(plan["director"]))
             plan["profile"] = profile.model_dump(mode="json")
             plan["intent"]["duration"] = request.model_dump(mode="json")
             plan["revision"] += 1

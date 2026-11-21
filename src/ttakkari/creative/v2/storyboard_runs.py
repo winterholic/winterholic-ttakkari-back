@@ -52,7 +52,7 @@ async def _load(db, run_id):
     if (
         run.engine != request.engine
         or meta.get("prompt_sha256") != output_hash(run.prompt)
-        or meta.get("request_sha256") != output_hash(request.model_dump_json())
+        or meta.get("request_sha256") != request.input_sha256()
         or (session.worker_task_type != MARKER and not meta.get("adopted_from_generic"))
     ):
         raise HTTPException(409, "storyboard provenance mismatch")
@@ -84,7 +84,7 @@ async def _queue(db, session, request, request_key=None, resumed_from=None):
                 "schema_version": 1,
                 "request": request.model_dump(mode="json"),
                 "prompt_sha256": output_hash(build_prompt(request)),
-                "request_sha256": output_hash(request.model_dump_json()),
+                "request_sha256": request.input_sha256(),
                 "resumed_from": resumed_from,
             },
         }
@@ -185,7 +185,7 @@ async def adopt(db, run_id, request):
                 "schema_version": 1,
                 "request": request.model_dump(mode="json"),
                 "prompt_sha256": output_hash(run.prompt),
-                "request_sha256": output_hash(request.model_dump_json()),
+                "request_sha256": request.input_sha256(),
                 "adopted_from_generic": True,
             },
         }

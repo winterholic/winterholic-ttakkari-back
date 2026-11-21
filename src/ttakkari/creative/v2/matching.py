@@ -24,6 +24,7 @@ from ttakkari.creative.v2.catalog_data import ENTRIES
 from ttakkari.creative.v2.duration import PLATFORM_CAPS
 from ttakkari.creative.v2.intent import IntentSpec, Selection, validate_intent
 from ttakkari.creative.v2.registry import Provider, Registry
+from ttakkari.creative.v2.registry_data import KAFKA_RECIPE_ID
 
 MATCHING_VERSION = "2026-10-22.1"
 ENTRY_ID = re.compile(r"^C\d{2}\.")
@@ -257,7 +258,7 @@ def _find_conflicts(
 
 
 def _derive_needs(
-    registry: Registry, selections: list[Selection]
+    registry: Registry, selections: list[Selection], *, kafka_flow: bool = False,
 ) -> tuple[list[CapabilityNeed], list[str]]:
     groups: dict[tuple[str, ...], dict[str, Any]] = {}
     notes: list[str] = []
@@ -272,7 +273,12 @@ def _derive_needs(
                         f"{sel.entry_id}는 {rel.target}를 요구하지만 선택되지 않았다."
                     )
                 continue
-            key = tuple(sorted(rel.target.split("|")))
+            target = rel.target
+            if kafka_flow and target == "render.react_motion" and sel.entry_id in {
+                "C01.tech_explainer", "C03.vector_motion_graphics",
+            }:
+                target = "render.html_motion"
+            key = tuple(sorted(target.split("|")))
             slot = groups.setdefault(key, {"priority": "prefer", "sources": []})
             priority = _priority(sel, rel.type)
             if WEIGHT[priority] > WEIGHT[slot["priority"]]:
@@ -306,13 +312,16 @@ def _recipe_universe(recipe) -> set[str]:
 
 
 def _score_recipes(
-    registry: Registry, selections: list[Selection], needs: list[CapabilityNeed]
+    registry: Registry, selections: list[Selection], needs: list[CapabilityNeed],
+    *, kafka_flow: bool = False,
 ) -> list[RecipeCandidate]:
     total_weight = sum(_selection_weight(s) for s in selections) or 1.0
     need_weight = sum(WEIGHT[n.priority] for n in needs) or 1.0
     by_id = {s.entry_id: s for s in selections}
     out: list[RecipeCandidate] = []
     for recipe in registry.recipes.values():
+        if recipe.id == KAFKA_RECIPE_ID and not kafka_flow:
+            continue
         evaluation = registry.evaluate_recipe(recipe.id)
         reasons: list[str] = []
         matched = [e for e in recipe.fits if e in by_id]
@@ -378,7 +387,8 @@ def _substitutes(
 
 
 def match_intent(
-    brief: str, intent: IntentSpec, registry: Registry | None = None
+    brief: str, intent: IntentSpec, registry: Registry | None = None,
+    *, kafka_flow: bool = False,
 ) -> MatchResult:
     registry = registry or Registry()
     validation = validate_intent(brief, intent)
@@ -405,7 +415,7 @@ def match_intent(
         )
     )
 
-    needs, notes = _derive_needs(registry, selections)
+    needs, notes = _derive_needs(registry, selections, kafka_flow=kafka_flow)
     trace.append(
         TraceStep(
             step="needs",
@@ -414,12 +424,15 @@ def match_intent(
         )
     )
 
-    candidates = _score_recipes(registry, selections, needs)
+    candidates = _score_recipes(registry, selections, needs, kafka_flow=kafka_flow)
     viable = [c for c in candidates if c.disqualified is None and c.fit > 0]
     # 기준선 레시피(정지 이미지 슬라이드쇼)는 풍부한 레시피가 하나도 맞지 않을 때만 주 레시피가 된다.
     rich = [c for c in viable if not registry.recipes[c.recipe_id].baseline]
     viable = rich or viable
-    primary = viable[0] if viable else None
+    primary = (
+        next((c for c in viable if c.recipe_id == KAFKA_RECIPE_ID), None)
+        if kafka_flow else (viable[0] if viable else None)
+    )
     auxiliary: list[str] = []
     if primary:
         primary_recipe = registry.recipes[primary.recipe_id]

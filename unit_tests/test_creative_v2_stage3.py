@@ -75,6 +75,33 @@ def output():
     }
 
 
+def test_reviewed_storyboard_carries_confirmed_intent_to_new_plan(stores):
+    from ttakkari.creative.v2 import storyboard as sb
+    from ttakkari.creative.v2.intent_resolve import ResolveRequest, resolve_intent
+
+    plans, _ = stores
+    base = request()
+    intent = resolve_intent(ResolveRequest(
+        brief=base.brief,
+        structured={"selections": [{"id": "C01.tech_explainer"}],
+                    "aspect": "1:1", "duration": {"mode": "strict", "seconds": 9}},
+    )).intent
+    body = sb.StoryboardRequest.model_validate({
+        **base.model_dump(), "intent_v2": intent.model_dump(),
+    })
+    raw = json.dumps(output(), ensure_ascii=False)
+    plan = sb.materialize(
+        plans, body, raw, run_id=str(uuid.uuid4()), model="fixture",
+        reviewed_output_sha256=sb.output_hash(raw),
+    )
+    assert plan["intent_v2"] == intent.model_dump(mode="json")
+    assert plan["aspect"] == "1:1"
+    assert plan["duration"]["request"]["mode"] == "exact"
+    assert plan["duration"]["request"]["seconds"] == 9
+    assert any(s["entry_id"] == "C01.tech_explainer" for s in plan["intent"]["selections"])
+    assert [s["scene_id"] for s in plan["scenes"]] == ["i0", "i1", "i2"]
+
+
 def test_storyboard_requires_grounded_sources_alternatives_and_explicit_review(stores):
     from ttakkari.creative.v2 import storyboard as sb
 

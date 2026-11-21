@@ -126,7 +126,7 @@ class ModuleAdapter:
         self.module = module
         self.delegate = adapter
         self.id = adapter.id
-        aliases = {"skill.hyperframes_motion"} if module == "hyperframes" else set()
+        aliases = {"skill.hyperframes_motion", "tool.ffmpeg"} if module == "hyperframes" else set()
         self.providers = adapter.providers | aliases
         self.limits = adapter.limits
         if module == "frame_animation":

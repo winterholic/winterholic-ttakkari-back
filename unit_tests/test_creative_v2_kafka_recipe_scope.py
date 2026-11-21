@@ -2,8 +2,10 @@
 
 import pytest
 
+from ttakkari.creative.v2.dispatch import dispatch_blockers
 from ttakkari.creative.v2.duration import DurationRequest
-from ttakkari.creative.v2.intent import IntentSpec, Selection
+from ttakkari.creative.v2.intent import InfoItem, IntentSpec, Selection
+from ttakkari.creative.v2.planner import ProductionDirection
 from ttakkari.creative.v2.plans import PlanStore, build_plan
 from ttakkari.creative.v2.registry import Registry
 
@@ -54,3 +56,44 @@ def test_explicit_documentary_keeps_required_research_and_closed_gate(tmp_path, 
     assert ["research.map_data"] in Registry().recipes["R16"].requires
     assert not plan["render_gate"]
     assert plan["approval"] is None
+
+
+def test_reviewed_kafka_direction_opens_distinct_route(tmp_path):
+    info = [
+        InfoItem(id=slug, title=title)
+        for slug, title in (
+            ("send", "Producer가 메시지 전송"),
+            ("store", "Broker가 토픽에 메시지 저장"),
+            ("read", "Consumer가 오프셋부터 읽기"),
+        )
+    ]
+    intent = IntentSpec(
+        selections=[Selection(entry_id="C01.tech_explainer")],
+        duration=DurationRequest(mode="exact", seconds=16),
+        info_items=info,
+        aspect="16:9",
+    )
+    direction = ProductionDirection.model_validate({
+        "source": "user_structured", "reviewed": True, "intent": "Kafka 메시지 흐름",
+        "scenes": [
+            {"scene_id": item.id, "strategy": "code_motion", "preset": "kafka_flow",
+             "rationale": "데이터 흐름을 움직이는 도형으로 전달",
+             "shots": [{"shot_id": item.id, "action": item.title}]}
+            for item in info
+        ],
+    })
+    plans = PlanStore(tmp_path / "plans")
+    preview = plans.create(build_plan(BRIEF, intent))
+    assert preview["match"]["primary_recipe"] != "R22"
+    directed = plans.edit(preview["id"], 1, director=direction)
+    assert directed["match"]["primary_recipe"] == "R22"
+    assert not directed["render_gate"]
+    approved = plans.approve(directed["id"], directed["revision"])
+    assert approved["render_gate"]
+    assert approved["render_plan"]["segments"][0]["seconds"] == 16
+    assert not dispatch_blockers(approved, runtime_preflight=False)
+    revised = plans.edit(approved["id"], approved["revision"], duration=DurationRequest(mode="exact", seconds=17))
+    assert not revised["render_gate"]
+    assert plans.approve(revised["id"], revised["revision"])["render_gate"]
+    unrelated = build_plan("Redis Pub/Sub 흐름을 설명한다.", intent, director=direction)
+    assert unrelated["match"]["primary_recipe"] != "R22"

@@ -25,7 +25,12 @@ from ttakkari.creative.v2.duration import (
     plan_duration,
     recheck_duration,
 )
-from ttakkari.creative.v2.intent import IntentSpec, hint_intent, validate_intent
+from ttakkari.creative.v2.intent import (
+    InfoItem,
+    IntentSpec,
+    hint_intent,
+    validate_intent,
+)
 from ttakkari.creative.v2.intent_plan import (
     PlanIntentError,
     derive_style_refs,
@@ -425,6 +430,22 @@ def _layout(profile: ContentProfile, planned: DurationPlan) -> DurationPlan:
     return planned if planned.scenes else plan_duration(profile, DurationRequest())
 
 
+def _match_plan(
+    brief: str, intent: IntentSpec, registry: Registry,
+    direction: ProductionDirection | None,
+) -> MatchResult:
+    kafka_flow = bool(
+        direction
+        and "kafka" in brief.casefold()
+        and any(s.entry_id == "C01.tech_explainer" for s in intent.selections)
+        and len(direction.scenes) == 3
+        and all(s.strategy == "code_motion" and s.preset == "kafka_flow" for s in direction.scenes)
+    )
+    if kafka_flow:
+        return match_intent(brief, intent, registry, kafka_flow=True)
+    return match_intent(brief, intent, registry)
+
+
 def build_plan(
     brief: str,
     intent: IntentSpec | None,
@@ -438,6 +459,7 @@ def build_plan(
     resolutions: list[Resolution] | None = None,
     director: ProductionDirection | None = None,
     intent_v2: IntentSpecV2 | None = None,
+    storyboard_items: list[InfoItem] | None = None,
 ) -> dict[str, Any]:
     registry = registry or Registry()
     notes: list[str] = []
@@ -455,6 +477,8 @@ def build_plan(
             )
         prepared = prepare(brief, intent_v2)
         intent = prepared.v1
+        if storyboard_items is not None:
+            intent = intent.model_copy(update={"info_items": storyboard_items})
     if intent is None:
         intent, hint = hint_intent(brief)
         notes.append(
@@ -482,7 +506,7 @@ def build_plan(
             "의도 검증 실패: "
             + "; ".join(f"{e.path} {e.message}" for e in validation.errors)
         )
-    match = match_intent(brief, intent, registry)
+    match = _match_plan(brief, intent, registry, director)
     beats, basis, beat_warnings = _beats(intent)
     profile = ContentProfile(beats=beats, music_seconds=intent.music_seconds)
     duration = plan_duration(profile, intent.duration)
@@ -667,8 +691,9 @@ class PlanStore:
         plan = json.loads(path.read_text())
         plan["render_blockers"] = _blockers(plan)
         try:
-            current_match = match_intent(
-                plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry
+            current_match = _match_plan(
+                plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry,
+                ProductionDirection.model_validate(plan["director"]) if plan.get("director") else None,
             )
             current_capabilities = _capability_snapshot(
                 current_match.model_dump(mode="json")
@@ -772,6 +797,15 @@ class PlanStore:
             )
             profile = ContentProfile.model_validate(plan["profile"])
             match = MatchResult.model_validate(plan["match"])
+            if director is not None or duration is not None:
+                direction = director
+                if direction is None and plan.get("director"):
+                    direction = ProductionDirection.model_validate(plan["director"])
+                intent = IntentSpec.model_validate(plan["intent"]).model_copy(
+                    update={"duration": request}
+                )
+                match = _match_plan(plan["brief"], intent, registry, direction)
+                plan["match"] = match.model_dump(mode="json")
             style_hash = (plan.get("style") or {}).get("sha256")
             if caption_updates:
                 if scenes is not None or duration is not None or director is not None:

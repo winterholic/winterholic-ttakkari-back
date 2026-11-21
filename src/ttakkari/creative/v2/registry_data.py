@@ -38,6 +38,7 @@ KAFKA_SCOPE = (
     "현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다.",
     "임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.",
 )
+KAFKA_RECIPE_ID = "R22"
 
 TOOLS: list[RegistryEntry] = [
     RegistryEntry(
@@ -1035,5 +1036,15 @@ RECIPES: list[Recipe] = [
             "스튜디오 렌더러 한도: 장면 1~60초, 3~40장면, 영상 최대 240초, 화면비 16:9 또는 1:1.",
         ],
         baseline=True,
+    ),
+    _r(
+        KAFKA_RECIPE_ID,
+        "Kafka 메시지 흐름",
+        "Producer, Broker, Consumer의 메시지 이동을 3장면의 다이어그램으로 설명",
+        ["HyperFrames", "FFmpeg"],
+        [["render.html_motion"], ["edit.captions"]],
+        fits=["C01.tech_explainer", "C03.vector_motion_graphics", "C08.explainer"],
+        cases=["engine-adapter-hyperframes-20261121"],
+        constraints=KAFKA_SCOPE,
     ),
 ]

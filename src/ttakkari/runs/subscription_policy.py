@@ -4,12 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ttakkari.runs.usage import Usage
+from ttakkari.runs.usage import Usage, Window
 
 NORMAL_SECONDS = 12 * 3600
 RESET_DELAY_SECONDS = 10
 VERIFY_DELAYS = (30, 60, 120, 240, 450)
 VERIFY_MAX_SECONDS = 15 * 60
+WEEK_SECONDS = 7 * 24 * 3600
+UNUSED_WINDOW_TOLERANCE_SECONDS = 120
 
 
 @dataclass
@@ -17,6 +19,12 @@ class Decision:
     state: dict[str, Any]
     activate: bool = False
     cycle: int | None = None
+
+
+def _unused_new_window(weekly: Window, observation: Usage) -> bool:
+    # 2026-11-21 production: an unused window reports resetsAt as observation time + length; earlier means it started.
+    return (weekly.percent == 0 and observation.ordinary_usage_allowed is True
+            and abs(weekly.resets_at - (observation.updated_at + WEEK_SECONDS)) < UNUSED_WINDOW_TOLERANCE_SECONDS)
 
 
 def plan(prior: dict, observation: Usage, *, now: float, user_used: bool = False) -> Decision:
@@ -41,16 +49,22 @@ def plan(prior: dict, observation: Usage, *, now: float, user_used: bool = False
         else:
             current = fresh and observation.updated_at >= old_reset
             result = None
+            confirmed = False
             if state.get("dispatched_cycle") == old_reset:
                 result = "already_dispatched"
             elif user_used:
                 result = "already_used"
             elif current and new_reset and new_reset > old_reset:
-                # Zero is rounded by the service. A future new window might have
-                # been opened by a tiny external request; never guess it unused.
-                result = "already_used" if weekly.percent > 0 else "already_active_or_unverifiable"
+                if _unused_new_window(weekly, observation):
+                    confirmed = True
+                else:
+                    # Zero is rounded by the service. A window that already started might
+                    # have been opened by a tiny external request; never guess it unused.
+                    result = "already_used" if weekly.percent > 0 else "already_active_or_unverifiable"
             elif (current and new_reset == old_reset and weekly.percent == 0
                   and observation.ordinary_usage_allowed is True):
+                confirmed = True
+            if confirmed:
                 if state["auto_enabled"]:
                     decision.activate, decision.cycle = True, old_reset
                     result = "reset_confirmed"

@@ -1,10 +1,13 @@
 """Semantic reviewer bound to the existing `claude -p` CLI, a path separate from storyboard generation.
 
 Storyboard generation runs on codex or qwen-local (StoryboardRequest.engine). This reviewer runs the
-Claude Code CLI, so its model family, vendor and process differ from the generator. The CLI reads the
-delivered frame PNGs through its Read tool; the stream log is checked so a frame counts as evidence only
-when the tool actually read that file. It cannot watch video or hear audio, so it answers semantic_qa
-only. viewing_qa stays unknown by construction.
+Claude Code CLI, so its model family, vendor and process differ from the generator. The CLI runs with
+--restricted: only the Read tool exists, file access is confined to the review directory (the working
+directory), user/project settings and hooks are ignored, and MCP servers are not loaded. A read outside
+that directory is refused by the CLI. The stream log is checked so a frame counts as evidence only when
+its Read tool call returned a successful tool_result. Scene titles and narration are part of the prompt
+and the model's rationale is stored in the receipt, so review text is as sensitive as the plan.
+The reviewer cannot watch video or hear audio, so it answers semantic_qa only. viewing_qa stays unknown.
 """
 
 from __future__ import annotations
@@ -28,15 +31,17 @@ Runner = Callable[[str, Path], list[dict[str, Any]]]
 
 
 def run_claude(model: str, timeout: int = 900) -> Runner:
-    """Run `claude -p` with Read access limited to the review directory; return stream-json events."""
+    """Run `claude -p --restricted` (Read only, confined to review_dir); return stream-json events."""
 
     def run(prompt: str, review_dir: Path) -> list[dict[str, Any]]:
         result = subprocess.run(
             [
                 "claude", "-p", "--model", model, "--output-format", "stream-json", "--verbose",
-                "--allowedTools", "Read", "--disallowedTools", "Bash,Edit,Write,WebFetch,WebSearch",
-                "--add-dir", str(review_dir), "--permission-mode", "dontAsk",
-                "--no-session-persistence",
+                # --restricted drops code/network tools, ignores user/project/local settings (hooks included)
+                # and confines file tools to the working directory, which is the review directory.
+                "--restricted", "--tools", "Read", "--allowedTools", "Read",
+                "--strict-mcp-config", "--disable-slash-commands",
+                "--permission-mode", "dontAsk", "--no-session-persistence",
             ],
             input=prompt, capture_output=True, text=True, timeout=timeout, check=False, cwd=review_dir,
         )
@@ -105,16 +110,26 @@ def _json_object(text: str) -> dict[str, Any]:
 
 
 def _read_paths(events: list[dict[str, Any]]) -> set[str]:
-    paths = set()
+    """Paths whose Read call got a successful tool_result. A denied, failed or unanswered Read is not evidence."""
+    requested: dict[str, str] = {}
+    failed: set[str] = set()
+    answered: set[str] = set()
     for event in events:
-        if event.get("type") != "assistant":
+        content = (event.get("message") or {}).get("content", [])
+        if not isinstance(content, list):
             continue
-        for block in (event.get("message") or {}).get("content", []):
-            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Read":
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if event.get("type") == "assistant" and block.get("type") == "tool_use" and block.get("name") == "Read":
                 path = (block.get("input") or {}).get("file_path")
-                if isinstance(path, str):
-                    paths.add(str(Path(path).resolve()))
-    return paths
+                if isinstance(path, str) and isinstance(block.get("id"), str):
+                    requested[block["id"]] = str(Path(path).resolve())
+            elif event.get("type") == "user" and block.get("type") == "tool_result":
+                answered.add(block.get("tool_use_id"))
+                if block.get("is_error"):
+                    failed.add(block.get("tool_use_id"))
+    return {path for tid, path in requested.items() if tid in answered and tid not in failed}
 
 
 def make_evaluator(runner: Runner, plan_scenes: list[dict[str, Any]] | None = None):
@@ -163,7 +178,7 @@ def make_evaluator(runner: Runner, plan_scenes: list[dict[str, Any]] | None = No
                 continue
             defects.append({
                 "code": str(raw.get("code", ""))[:60], "scene_id": frame["scene_id"],
-                "layer": raw.get("layer", "visual"), "description": str(raw.get("description", ""))[:600],
+                "layer": raw["layer"] if raw.get("layer") in ("visual", "captions", "audio") else "visual", "description": str(raw.get("description", ""))[:600],
                 "evidence": [{k: frame[k] for k in _EVIDENCE_KEYS}],
             })
         usage = final.get("modelUsage") or {}

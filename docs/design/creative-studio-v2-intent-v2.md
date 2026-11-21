@@ -1,0 +1,242 @@
+# Creative Studio v2 제작 의도 계약 v2와 동적 노출 규칙
+
+- 상태: 계약 초안 + 백엔드 최소 구현 (2026-11-21, 브랜치 `feat/creative-intent-v2-20261121`)
+- 코드: `src/ttakkari/creative/v2/intent_v2.py`(모델·v1 승격·자유 입력 해석), `facets.py`(노출 규칙 데이터와 순수 함수 엔진), `intent_resolve.py`(조립), `src/ttakkari/api/creative_v2_intent.py`(API)
+- 시험: `unit_tests/test_creative_v2_intent_v2.py`
+- 따르는 사람: 프론트 적응형 워크스페이스 구현자, AI 감독 구현자. 이 문서와 코드가 다르면 코드가 정본이고 문서를 고친다.
+
+## 1. 범위와 출발점
+
+사용자 요구 A(자유형과 구조화 입력의 단일 의도)와 B(조건 조합에 따라 달라지는 질문·설정)를 서버 계약으로 만든다. 출발점은 백엔드 갭 문서 §4의 IntentSpec 제안(schema_version 2, `user_confirmed`, 구조화된 `open_questions`)이다. 아래 네 가지는 제안과 다르게 정했다.
+
+| 제안 | 이 계약 | 근거 |
+|---|---|---|
+| `Selection.source`에 `user_confirmed` 추가 | 별도 축 `origin`(누가 정했나) 4값으로 교체 | v1 `source`는 "누가"와 "어떻게"가 섞여 있다. `lexical_hint`는 방법이고 `user_explicit`는 사람이다. 한 열거형에 섞으면 "AI가 사용자 문장을 해석한 값"을 어디에 둘지 모호해진다. |
+| `open_questions`를 구조화 목록으로 확장해 의도에 저장 | 질문은 저장하지 않고 매 요청마다 조건에서 계산한다(`layout.questions`). 의도에는 답변(`answers`)만 저장한다 | 질문은 조건의 함수다. 저장하면 조건이 바뀐 뒤에도 낡은 질문이 남는다. 답변은 사용자의 결정이라 저장해야 한다. |
+| `confirmed_at`·`confirmed_by` 평면 필드 | `confirmation {at, by, revision}` 객체. `origin=user_confirmed`일 때만 존재 | 확정 여부와 기록이 어긋나는 상태를 모델 검증으로 막는다. |
+| C01~C12만 사용 | `tone` 확장 차원 추가(공포·액션·감성·코미디·웅장·차분) | 시나리오 A의 "공포", C의 "감성"은 C01~C12 어디에도 없다. 카탈로그에 넣으면 매칭·레시피 판정과 기존 시험 개수가 바뀌므로 노출 규칙에서만 쓰는 확장으로 둔다. |
+
+LLM 호출은 이번 범위에 없다. 자유 입력 해석은 기존 `hint_intent`·`duration_hint`(단어 힌트)를 재사용하고, LLM 추출 결과(`/intent/runs`의 v1 IntentSpec)는 `intent` 필드로 넘기면 v1 승격 규칙으로 받는다.
+
+## 2. IntentSpec v2 필드
+
+```
+IntentSpecV2 {
+  schema_version: 2
+  revision: int ≥1                       // resolve 1회마다 +1
+  brief: str                             // 자유 입력 원문
+  conditions: Condition[]                // 구조화 조건(카탈로그 항목 또는 tone)
+  duration: DurationPolicy | null        // null = 길이 충돌 미해결
+  aspect: AspectChoice | null
+  info_items: InfoItem[]                 // v1과 같은 전달 항목
+  music_seconds: float | null
+  references: ReferenceAsset[]
+  answers: Answer[]                      // 질문에 대한 사용자 답
+  conflicts: IntentConflict[]
+  unsupported: UnsupportedItem[]
+  rejected: str[]                        // 사용자가 지운 조건. 같은 브리프를 다시 읽어도 되살리지 않는다
+  history: HistoryEntry[]
+  migrated_from: 1 | null
+}
+Condition {
+  id: "C03.japanese_anime" | "tone.horror"
+  dimension: "C01".."C12" | "tone"       // id와 맞지 않으면 거부
+  role: primary | secondary
+  strength: required | preferred
+  origin: user_confirmed | user_free_text | ai_inferred | default
+  confidence: 0..1
+  evidence: [{quote}]                    // 브리프 인용
+  confirmation: {at, by, revision} | null
+  note: str
+}
+```
+
+## 3. 출처(origin)와 강도(strength)
+
+| origin | 뜻 | 만드는 경로 | 확정인가 |
+|---|---|---|---|
+| `user_confirmed` | 사용자가 구조화 입력·확인 버튼·질문 답·충돌 해결로 직접 정함 | `structured.selections`, `confirm`, `answers`, `resolutions` | 예 |
+| `user_free_text` | 사용자가 쓴 문장에 그 낱말이 그대로 있고 서버의 결정적 사전(카탈로그 hints, tone 사전, 길이 정규식)이 매핑함 | `read_free_text` | 아니오 |
+| `ai_inferred` | 해석·추정. 인용이 있어도 문장이 그 조건을 직접 말하지 않은 경우(예: "Kafka" → 기술 설명), LLM 추출 결과 | `DOMAIN_CUES`, v1 `llm_inferred` | 아니오 |
+| `default` | 시스템 기본값 | 기본 `DurationPolicy()` | 아니오 |
+
+불변 조건(모델 검증으로 강제):
+1. `user_confirmed` ⇔ `confirmation`이 있다.
+2. `ai_inferred`·`default`는 `required`가 될 수 없다. AI가 필수 조건을 잠그지 못한다.
+3. `user_free_text`는 브리프 인용이 있어야 한다.
+4. AI 경로는 어떤 경우에도 `user_confirmed`를 만들지 않는다. 출처가 올라가는 유일한 길은 사용자 동작이며, 그때 `history`에 `condition_confirmed (이전 출처 → user_confirmed)`가 남는다.
+5. 같은 조건을 더 낮은 출처가 덮어쓰지 못한다(순위 user_confirmed > user_free_text > ai_inferred > default).
+
+강도: `required`는 계획·엔진이 지키지 못하면 차단 사유가 되는 조건, `preferred`는 근접 목표다. v1 `hard/soft`와 1:1 대응한다.
+
+계획 가능 판정(`ready_for_plan`): 열린 차단 충돌이 없고, 콘텐츠 유형(C01) 조건이 하나 이상 `user_confirmed`여야 한다. 자유 입력·AI가 읽은 유형만 있으면 `blocking: ["unconfirmed.content_type"]`이다. v1의 "확인 전에는 결정으로 쓰지 않는다"를 그대로 잇는다.
+
+## 4. 버전과 이력
+
+- `schema_version`은 문서 형식의 버전, `revision`은 이 의도의 변경 번호다.
+- resolve는 상태를 저장하지 않는다. 클라이언트가 직전 응답의 `intent`를 그대로 보내면 `revision`이 1 오르고 `history`가 이어진다. `intent` 없이 보내면 revision 1에서 새로 시작한다.
+- `HistoryEntry {revision, at, actor(user|ai|system|migration), action, detail}`. action 값: `created`, `condition_read`, `condition_confirmed`, `condition_rejected`, `answered`, `duration_conflict`, `aspect_conflict`, `conflict_resolved`, `reference_added`, `unsupported_condition`, `migrated_from_v1`, `strength_downgraded`, `legacy_open_question`. 최근 400건만 유지한다.
+- 계획(PlanStore)은 아직 v1을 받는다. 계획 생성 시 v2 스냅샷과 revision을 계획에 묶는 일은 §10 후속이다.
+
+## 5. 충돌 표현과 해결
+
+```
+IntentConflict {
+  id                       // 결정적: conflict.duration | conflict.aspect | conflict.catalog.<a>~<b> | conflict.primary.<C0x> | conflict.rule.<rule>~<cond>
+  kind: duration | aspect | catalog_conflict | single_primary | rule
+  dimension
+  message                  // 사용자에게 보이는 설명
+  candidates: [{value, label, origin, strength, evidence}]   // 모든 후보를 남긴다
+  status: open | resolved
+  blocking: bool           // open이면서 blocking이면 ready_for_plan=false
+  resolution: {choice, by, revision, note} | null
+}
+```
+
+- 조용히 버리지 않는다. 길이·비율 충돌이 열려 있으면 유효값(`duration`/`aspect`)을 `null`로 두고 후보를 전부 `candidates`에 둔다. 출처 순위로 자동 선택하지 않는다. 사용자가 구조화로 30초를 넣고 브리프에 "3분"이 있으면 `conflict.duration`(후보 `target:30` user_confirmed, `target:180` user_free_text)이 열린다.
+- 길이 충돌 판정: 둘 중 하나라도 strict면 값이 다르면 충돌, 둘 다 target이면 큰 값 기준 15%를 넘게 다를 때 충돌, auto는 충돌하지 않는다(`TARGET_TOLERANCE`).
+- 카탈로그 충돌: 활성 조건 쌍에 `conflicts_with` 관계가 있으면 연다. hard 관계이거나 한쪽이 user_confirmed면 차단이다.
+- 규칙 충돌: 노출 규칙이 선언한 조합 경고(예: 설명 콘텐츠 + 공포 톤). 기본은 비차단이다.
+- 해결: 요청의 `resolutions: [{conflict_id, choice, note}]`. `choice`는 후보 value 하나, 또는 `keep_both`(카탈로그·규칙 충돌에만, 혼합 의도). 카탈로그 충돌에서 하나를 고르면 나머지는 `rejected`로 가고 고른 값은 user_confirmed가 된다. 해결 기록은 다음 요청에도 유지되며, 같은 후보 집합이 다시 나오면 해결 상태로 이어진다.
+
+## 6. 미지원 조건
+
+`UnsupportedItem {id, subject, reason, message, alternatives}`. reason:
+- `not_in_catalog`: 카탈로그에 없는 항목 id를 구조화로 고름
+- `unknown_tone`: tone 사전에 없는 톤
+- `reference_not_ingested`: 받았지만 아직 제작 입력으로 못 쓰는 참조 자산(영상·문서)
+- `rule_blocked`: 예약. 능력 레지스트리상 실행 불가는 여기서 판정하지 않고 기존 `/match`의 `gaps`·`render_blockers`가 맡는다
+
+미지원 조건은 오류(422)가 아니라 기록이다. 사용자의 의도를 잃지 않고 "왜 못 쓰는지, 대신 무엇을 할 수 있는지"를 보여 주기 위해서다.
+
+## 7. 길이 정책
+
+```
+DurationPolicy { mode: auto | target | strict, seconds: 1..900 | null, platform, origin, evidence }
+```
+- `auto`: 정보량에서 길이를 정한다. 초를 받지 않는다.
+- `target`: 희망 길이에 근접. 기존 v1 `preferred`.
+- `strict`: 위반 시 명시 처리. 기존 v1 `exact`(플랫폼 상한은 `platform`과 함께 strict로 승격).
+- 30/60/120/240 같은 고정 템플릿은 없다. 계산은 기존 `duration.plan_duration`을 그대로 쓴다(`DurationPolicy.to_request()`).
+- 정보량 불균형 조정안: resolve 응답의 `length`가 `info_items`로 `ContentProfile`을 만들어 `plan_duration`을 돌린 결과다. `status`는 `target_met | deviated | strict_met | conflict | auto`이고 `alternatives`(relax_to_feasible, drop_nonessential, speed_up_speech, split_parts, extend_content, raise_cap)는 모두 사용자 승인 필요다. 전달 항목이 아직 없으면 `needs_content`, 길이 충돌이 열려 있으면 `blocked_by_conflict`다. 예: 전달 항목 6개를 16초 strict에 넣으면 `conflict`와 대안 목록이 나온다(시험 `test_length_assessment_uses_existing_duration_calculator`).
+
+## 8. 참조 자산
+
+```
+ReferenceAsset { id, kind: image|video|audio|document, role: style|character|music|content|layout|motion, sha256, name, note, origin, usable }
+```
+- 파일 경로·URL은 받지 않는다. 실제 바이트는 기존 업로드 경로로 올리고 여기에는 식별자와 sha256만 둔다.
+- `usable`은 서버가 정한다. 지금 업로드 경로가 있는 image·audio만 true다. video·document는 기록하고 `unsupported`에 `reference_not_ingested`와 대안을 남긴다. `usable=true`도 "제작에 반영됨"이 아니라 "받을 수 있음"이다. 반영 여부는 계획·엔진 단계가 기록한다.
+
+## 9. v1 읽기 호환
+
+`load_intent(doc)`: `schema_version`이 2면 그대로, 없거나 1이면 v1으로 검증 후 `promote_v1`. 3 이상은 거부한다. v1 문서는 바꾸지 않는다(읽기 승격만). v2→v1 쓰기는 하지 않는다.
+
+| v1 | v2 |
+|---|---|
+| `source=user_explicit` + `extraction.method=user_structured` | `user_confirmed` (confirmation.by=migration) |
+| `source=user_explicit`(그 외 방식) | `user_free_text` (인용 없으면 `ai_inferred`) |
+| `source=lexical_hint` | `user_free_text` |
+| `source=llm_inferred` | `ai_inferred` |
+| `source=default` | `default` |
+| `strength=hard` / `soft` | `required` / `preferred`. 단 AI 추론 hard는 `preferred`로 낮추고 `strength_downgraded` 이력 |
+| `duration.mode` auto / preferred / exact / platform_cap | auto / target / strict / strict(+platform) |
+| `open_questions: str[]` | `history`의 `legacy_open_question`. 새 질문은 `layout.questions`가 계산 |
+| `aspect`, `info_items`, `music_seconds` | 그대로 |
+
+## 10. 동적 노출 규칙의 데이터 계약
+
+정적 데이터는 `GET /api/creative/v2/intent/facets`로 받는다(`rules_version`, `groups`, `fields`, `rules`, `tones`). 계산은 `facets.resolve_layout(conditions, answers, known)` 순수 함수다.
+
+### 10.1 정적 데이터
+
+```
+FacetGroup { id, title, description, tier: essential|advanced }
+FacetField { id, group, dimension, label, question, kind: single|multi|number|text, options: [{id, label}], tier }
+FacetRule {
+  id, priority (0..100, 작을수록 강함: 조합 10, 단일 조건 50, 기본 90)
+  when: { all_of: [cond], any_of: [cond], none_of: [cond] }   // cond = 조건 id 또는 "C01.*" 같은 차원 와일드카드
+  activate: [group]           // 켤 설정 묶음
+  ask: [field]                // 물을 설정
+  recommend: [{field, value, reason}]
+  hide: [field]               // 이 조합에서 불필요한 설정
+  conflicts: [{with: cond, message, blocking}]
+  reason
+}
+```
+- 선택지 id가 카탈로그·톤 항목이면(예 `C07.battle`) 그 답은 해당 조건을 user_confirmed로 추가한다. 답이 다시 규칙을 켤 수 있어 progressive disclosure가 된다.
+- 규칙 데이터는 import 시 참조 무결성을 검사한다(없는 묶음·설정·조건·선택지를 가리키면 실패).
+
+### 10.2 계산 결과(`layout`)
+
+```
+Layout {
+  rules_version
+  groups: [{id, title, tier, triggered_by: [cond], rules: [rule], reasons: [str], fields: [field]}]
+  available_groups: [group]   // 이번 조합에서 꺼진 묶음. 전문 설정에서 열 수 있다
+  questions: [{id: "q.<field>", field_id, group, dimension, question, kind, options, recommended, reason,
+               triggered_by, rules, mode: choose|confirm, alternatives: [{value, rule, reason}], tier}]
+  answered: [{field_id, values, origin}]
+  hidden: [{field_id, rules, reason}]
+  conflicts: IntentConflict[]
+  applied_rules: [rule]
+}
+```
+
+### 10.3 병합과 중복 제거 규칙
+
+1. 묶음 병합: 여러 규칙이 같은 묶음을 켜면 묶음은 하나다. `triggered_by`·`rules`·`reasons`는 합집합, 정렬 우선순위는 가장 강한 규칙을 따른다.
+2. 질문 단일화: 질문 키는 설정 id다. 여러 규칙이 같은 설정을 물어도 질문은 하나이고 `rules`·`triggered_by`에 모두 남는다. `Layout` 모델이 중복 질문을 거부한다.
+3. 추천 우선순위: 같은 설정에 추천이 여럿이면 `(priority, rule id)` 순으로 첫 값이 `recommended`, 나머지는 `alternatives`다. 조합 규칙(10)이 단일 규칙(50)을 이긴다. 예: 공포는 템포 slow, 액션은 fast를 권하지만 공포+액션 조합 규칙이 `slow_build_burst`를 정하고 slow·fast는 대안으로 남는다.
+4. 질문이 숨김을 이긴다: 어떤 규칙이 묻는 설정은 다른 규칙이 숨기지 못한다(설명+뮤직비디오 조합의 `sync.cut_on`).
+5. 묻는 설정의 묶음은 자동으로 켠다. 질문만 있고 묶음이 없는 상태를 막는다.
+6. 이미 답한 설정은 묻지 않는다: `answers`에 있거나, 선택지 중 user_confirmed 조건이 있거나, `known`(길이·비율)이 user_confirmed면 `answered`로 간다.
+7. 확정 안 된 값이 있으면 확인 질문: 선택지 중 user_free_text·ai_inferred 조건이 있거나 `known`이 확정 전이면 `mode=confirm`, `recommended`=그 값, 규칙 추천은 대안이다.
+8. 추천 근거가 없으면 `recommended=null`이고 "고르지 않으면 AI가 장면에 맞게 제안"이라고 적는다(요구 A의 미선택 시 AI 제안).
+9. 숨김은 삭제가 아니다. `hidden`에 이유와 함께 남고, 꺼진 묶음은 `available_groups`로 남아 전문 설정 접근을 유지한다.
+
+## 11. API
+
+`POST /api/creative/v2/intent/resolve` (소유자 인증, 상태 저장 없음)
+
+요청:
+```json
+{
+  "brief": "감성적인 음악에 어울리는 3분짜리 뮤직비디오를 만들어 줘. ...",
+  "intent": null,
+  "structured": {"selections": [{"id": "C01.music_video", "role": "primary", "strength": "required"}],
+                 "duration": {"mode": "target", "seconds": 30}, "aspect": "16:9"},
+  "answers": [{"field_id": "sync.cut_on", "values": ["section"]}],
+  "confirm": ["tone.emotional"],
+  "reject": [],
+  "resolutions": [{"conflict_id": "conflict.duration", "choice": "target:30"}],
+  "references": [{"id": "song", "kind": "audio", "role": "music", "sha256": "..."}],
+  "read_free_text": true
+}
+```
+- `intent`는 직전 응답의 v2 문서 또는 저장된 v1 문서.
+- 처리 순서: reject → 자유 입력 읽기 → 구조화 선택 확정 → confirm → answers → 길이·비율 병합 → 참조 → 충돌 계산 → resolutions → 화면 재계산.
+
+응답: `{intent: IntentSpecV2, layout: Layout, length: LengthAssessment, ready_for_plan: bool, blocking: [str]}`. 잘못된 설정 id·선택지, 없는 충돌 id, 의도에 없는 조건 확정은 422다. 라우터는 `api/creative_v2.py`가 아닌 `api/creative_v2_intent.py`에 둔다(integ 이식 작업과의 충돌 회피).
+
+## 12. 시나리오 결과 (resolve 1회, 브리프만, 2026-11-21 실행)
+
+| | A 일본 애니+SF+공포+액션 약 2분 | B Kafka 16초 | C 감성 뮤직비디오 3분 |
+|---|---|---|---|
+| 조건(출처) | C01.animation, C02.space_sf, C03.japanese_anime, tone.action, tone.horror (모두 user_free_text) | C01.tech_explainer (ai_inferred, 근거 Kafka·Producer·Broker·Consumer) | C01.music_video, tone.emotional (user_free_text) |
+| 활성 묶음 | action, character, consistency, cut_direction, drawing, horror, lighting_vfx, space_camera, world, output | code, diagram, explain, motion_graphics, narration, output | av_sync, cut_direction, lighting_vfx, lyrics, music, output |
+| 질문(추천) | action.kind=C07.battle, character.design, character.expression=exaggerated, cut.impact_frames=yes, cut.tempo=slow_build_burst, drawing.shading=cel, horror.gore=mild, horror.style, light.key=C05.neon, camera.moves, world.locations=C05.space, world.tech_design=mecha, output.aspect, output.duration=target(확인) | diagram.motion=continuous_flow, diagram.type=flow, explain.audience=beginner, mg.style=C03.vector_motion_graphics, voice.narration=ko, output.aspect, output.duration=target(확인) | sync.cut_on=section, sync.motion_source=generated_video, sync.transition=C10.dissolve, cut.tempo=slow, light.key=C05.dusk, lyrics.has, music.source, output.aspect, output.duration=target(확인) |
+| 숨김 | 없음 | character.expression, character.lipsync, drawing.frame_rate, sync.cut_on | diagram.type, explain.audience, vfx.types, voice.narration |
+| 계획 가능 | 아니오(unconfirmed.content_type) | 아니오 | 아니오 |
+
+C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `target:30` user_confirmed, `target:180` user_free_text, blocking)이 열리고 `duration=null`, `length.status=blocked_by_conflict`다.
+
+알려진 한계(이 표에서 보이는 것): A의 "단편"은 카탈로그 힌트에 없어 C01.story_film으로 읽히지 않고, "애니메이션 스타일"이 C01.animation으로도 읽힌다. 단어 힌트의 한계이며 사용자 확인 단계나 LLM 추출(`/intent/runs`)이 보완한다.
+
+## 13. 후속과 범위 밖
+
+- 계획 연결: `POST /plans`가 v2를 받거나, v2 → v1 변환(user_confirmed 중 인용 없는 값의 v1 `explicit_without_evidence` 검증 처리 포함)을 정해야 한다. 이번 범위에서는 plans.py를 바꾸지 않았다.
+- 저장: 의도 v2 스냅샷을 PlanStore 계획 문서에 revision과 함께 묶는 일.
+- 질문·추천 문구의 품질은 규칙 데이터 수준이다. AI 감독이 장면 단위 질문을 더할 때도 같은 `Question` 모양과 병합 규칙(설정 id 단일화)을 따른다.
+- 능력 기반 실행 가능성(립싱크 정밀도, HyperFrames 등)은 이 계약이 판정하지 않는다. 기존 `/match`·`/capabilities` 결과를 화면에서 질문 옆에 붙인다.
+- tone 사전 확장, 카탈로그 정식 편입 여부는 매칭 영향 검토 뒤 결정한다.

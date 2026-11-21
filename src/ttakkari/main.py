@@ -25,6 +25,7 @@ from ttakkari.api import (
     creative,
     creative_mcp,
     creative_v2,
+    creative_v2_intent,
     deployments,
     design_system,
     desk_feedback,
@@ -407,6 +408,7 @@ def create_app() -> FastAPI:
     app.include_router(games.router)
     app.include_router(creative.router)
     app.include_router(creative_v2.router)
+    app.include_router(creative_v2_intent.router)
     app.include_router(comfy_managed.router)
     app.include_router(comfy_managed.agent_router)
     app.include_router(creative_mcp.router)

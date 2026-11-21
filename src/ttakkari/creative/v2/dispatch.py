@@ -17,6 +17,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -317,6 +318,36 @@ def _log(record: dict[str, Any], event: str, **detail: Any) -> None:
     record["log"].append({"at": _now(), "event": event, **detail})
 
 
+def _clip_loop(asset: dict[str, Any], seconds: float) -> dict[str, Any] | None:
+    """Whether the compositor must repeat a video clip to fill its scene (ffmpeg -stream_loop).
+
+    A repeated clip replays the same motion, so the repetition is recorded instead of hidden.
+    applied=None means the clip duration is unknown and repetition cannot be ruled out.
+    """
+    if asset.get("kind") != "video":
+        return None
+    clip = (asset.get("meta") or {}).get("duration")
+    if not clip or clip <= 0:
+        return {"applied": None, "clip_seconds": None, "scene_seconds": round(seconds, 3), "repeats": None}
+    applied = clip + 0.05 < seconds
+    return {
+        "applied": applied, "clip_seconds": round(clip, 3), "scene_seconds": round(seconds, 3),
+        "repeats": math.ceil(seconds / clip) if applied else 1,
+    }
+
+
+def _annotate_clip_loops(plan: dict[str, Any], data: dict[str, Any]) -> None:
+    """Persist meta.loop on each video scene asset against this revision's scene length."""
+    for scene in plan["scenes"]:
+        asset = data["assets"]["scenes"].get(scene["scene_id"])
+        if not asset:
+            continue
+        loop = _clip_loop(asset, scene["seconds"])
+        if loop is None:
+            continue
+        asset.setdefault("meta", {})["loop"] = loop
+
+
 # --- 자산 -------------------------------------------------------------------
 
 
@@ -397,7 +428,8 @@ def _assets_state(plan: dict[str, Any], data: dict[str, Any], store: ProductionS
         "scenes_total": len(ids),
         "scenes_with_asset": sum(i in scenes for i in ids),
         "scenes_requiring_upload": len(required),
-        "scenes": {sid: {k: value[k] for k in ("id", "sha256", "name", "kind", "source_video_file", "preview_image_file") if k in value}
+        "scenes": {sid: {**{k: value[k] for k in ("id", "sha256", "name", "kind", "source_video_file", "preview_image_file") if k in value},
+                         **({"loop": value["meta"]["loop"]} if (value.get("meta") or {}).get("loop") else {})}
                    for sid, value in scenes.items() if sid in ids},
         "missing_scene_ids": missing,
         "music": None
@@ -618,6 +650,9 @@ def _render_directed_segment(adapter, store, plan, segment, data, style, key, ca
     receipt = engines.compose_segment(store.asset_path(plan["id"], asset), audio, output,
                                      aspect=plan["aspect"], seconds=segment["seconds"], captions=cues,
                                      caption_style=caption_style, transition=style["applied"].get("transition", "cut"))
+    loop = _clip_loop(asset, segment["seconds"])
+    if loop is not None:
+        receipt = {**receipt, "loop": loop}
     segment["compositor_receipt"] = receipt
     segment.update(status="succeeded", error=None, output={"file": str(output), "sha256": _sha256_file(output),
                     "size": output.stat().st_size, "media": inspect_media(output)})
@@ -885,6 +920,7 @@ def dispatch(
         existing = _record(data, revision)
         if existing is None:
             data["dispatches"].append(_new_record(plan, adapter, engines.Preflight(True, "deferred_executor", []) if deferred else adapter.preflight(), caption_mode))
+        _annotate_clip_loops(plan, data)
         view_ = _compose(plans, studio, plan, data, store)
     if existing is not None and existing.get("caption_mode", "narration") != caption_mode:
         # revision당 한 번만 디스패치되므로 뒤늦은 모드 요청은 적용되지 않는다. 조용히 무시하지 않고 알린다.
@@ -908,6 +944,7 @@ def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int
         record = _record(data, revision)
         if record is None:
             raise ProductionError("먼저 이 계획 revision을 디스패치해 주세요.")
+        _annotate_clip_loops(plan, data)
         state = _assets_state(plan, data, store)
         if not state["complete"]:
             problems = [f"장면 {i}에 이미지가 없습니다." for i in state["missing_scene_ids"]]

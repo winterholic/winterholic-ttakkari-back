@@ -294,6 +294,75 @@ async def test_running_legacy_user_request_across_reset_suppresses_activation(ne
     assert (await m.check(aid, now=1010))["status"] == "already_used"
 
 
+async def test_unused_new_window_after_reset_dispatches_once_and_the_next_week_dispatches_again(monkeypatch):
+    m, aid = monitor(), await account()
+    week, clock, started, cycles = 7 * 24 * 3600, {"now": 500}, [], []
+
+    async def read(*args, **kwargs):
+        at = clock["now"]
+        if at < 1010:
+            return sample(at, reset=1000, percent=20)
+        # An unused window floats at observation + 7 days; a window an activation started is pinned to its start.
+        if started and at < started[-1] + week:
+            return sample(at, reset=started[-1] + week, percent=0)
+        return sample(at, reset=at + week, percent=0)
+
+    async def activate(*args, **kwargs):
+        committed = await m.get_state(aid)
+        assert committed["last_result"]["status"] == "dispatching", "marker must be durable before the request"
+        cycles.append(committed["dispatched_cycle"])
+        started.append(clock["now"] + 1)
+        clock["now"] += 2
+        return {"status": "succeeded", "tokens": {"input_tokens": 1, "output_tokens": 1}}
+
+    monkeypatch.setattr(m, "read_usage", read)
+    monkeypatch.setattr(m, "activate", activate)
+    await m.ensure(aid, now=500)
+    await m.check(aid, now=500)
+    clock["now"] = 1010
+    assert (await m.check(aid, now=1010))["status"] == "succeeded"
+    first = await m.get_state(aid)
+    assert cycles == [1000] and first["reset_at"] == started[0] + week
+    # The window the request just started also reports 0% and about observation + 7 days; it is not a new cycle.
+    for now in (1020, 1012 + 12 * 3600):
+        clock["now"] = now
+        await m.check(aid, now=now)
+    assert cycles == [1000]
+    boundary = started[0] + week
+    clock["now"] = boundary + 10
+    assert (await m.check(aid, now=boundary + 10))["status"] == "succeeded"
+    assert cycles == [1000, boundary] and (await m.get_state(aid))["dispatched_cycle"] == boundary
+
+
+async def test_running_user_request_across_reset_suppresses_activation_of_a_new_idle_window(new_session, monkeypatch):
+    import uuid
+    from datetime import UTC, datetime
+
+    from ttakkari.models import Run, RunStatus
+    m, aid = monitor(), await account()
+    current = {"now": 500}
+
+    async def read(*args, **kwargs):
+        at = current["now"]
+        return sample(at, reset=1000, percent=20) if at < 1010 else sample(at, reset=at + 7 * 24 * 3600, percent=0)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("a user request already running on the account must suppress activation")
+
+    monkeypatch.setattr(m, "read_usage", read)
+    monkeypatch.setattr(m, "activate", forbidden)
+    await m.ensure(aid, now=500)
+    await m.check(aid, now=500)
+    ws, sess = await new_session()
+    async with sessionmaker()() as db:
+        db.add(Run(workspace_id=uuid.UUID(ws["id"]), session_id=uuid.UUID(sess["id"]), prompt="user request",
+                   engine="codex", profile="subscription test", status=RunStatus.running,
+                   started_at=datetime.fromtimestamp(900, UTC)))
+        await db.commit()
+    current["now"] = 1010
+    assert (await m.check(aid, now=1010))["status"] == "already_used"
+
+
 async def test_completed_run_after_rename_is_still_counted_as_user_usage(client, auth, new_session):
     import uuid
     from datetime import UTC, datetime

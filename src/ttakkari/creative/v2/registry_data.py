@@ -6,15 +6,39 @@
 
 from __future__ import annotations
 
-from ttakkari.creative.v2.capabilities import Claim, Recipe, RegistryEntry
+from ttakkari.creative.v2.capabilities import (
+    Claim,
+    ManagedLimits,
+    Recipe,
+    RegistryEntry,
+)
 
 
-def _c(cap: str, *records: str, note: str = "") -> Claim:
-    return Claim(capability=cap, records=list(records), note=note)
+def _c(
+    cap: str,
+    *records: str,
+    note: str = "",
+    limits: tuple[str, ...] = (),
+    managed: ManagedLimits | None = None,
+    demoted: str = "",
+) -> Claim:
+    return Claim(
+        capability=cap, records=list(records), note=note, limits=list(limits),
+        managed=managed, demoted=demoted,
+    )
 
 
 REMOTION_RECORDS = ("remotion-intro-v1-v2", "remotion-beat-v1-v2")
 THREE_RECORDS = ("three-cinematic-v1-v2", "three-previz-roundtable")
+WAN_DRAFT = ManagedLimits(
+    profile="wan22-5b-draft", workflow="t2v-wan22-5b",
+    max_seconds=1.375, width=640, height=352, fps=24, measured_on="2026-11-21",
+)
+KAFKA_SCOPE = (
+    "현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다.",
+    "임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.",
+)
+KAFKA_RECIPE_ID = "R22"
 
 TOOLS: list[RegistryEntry] = [
     RegistryEntry(
@@ -123,8 +147,8 @@ TOOLS: list[RegistryEntry] = [
         probes=["artcraft_apps"],
         integration="none",
         claims=[
-            _c("render.vector_2d", note="VectorCraft"),
-            _c("edit.timeline", note="FilmCraft"),
+            _c("render.vector_2d", limits=("VectorCraft SVG→PNG만 관측. 애니메이션 미실행.",)),
+            _c("edit.timeline", demoted="FilmCraft 영상 내보내기 2회 실패: no sequence is open"),
             _c("audio.mix", note="SoundCraft"),
             _c("vfx.composite", note="EffectCraft"),
             _c("asset.model_3d", note="CADCraft"),
@@ -149,7 +173,15 @@ TOOLS: list[RegistryEntry] = [
             _c("audio.mix"),
             _c("edit.color_grade"),
         ],
-        notes="시스템 ffmpeg는 없다. 번들 빌드는 필터 일부가 빠져 있을 수 있다(lab 스킬 ttakkari-remotion-setup).",
+        notes="제작은 imageio-ffmpeg 사용. 시스템 설치 여부와 실제 ffprobe는 별도 탐침으로 확인한다.",
+    ),
+    RegistryEntry(
+        id="tool.ffprobe",
+        kind="tool",
+        name="FFprobe (FFmpeg 배포판)",
+        probes=["ffprobe_real"],
+        integration="creative_runtime",
+        notes="HyperFrames와 3D에서 길이와 프레임을 확인한다. 같은 이름의 간이 스크립트는 제외한다.",
     ),
     RegistryEntry(
         id="tool.rhubarb",
@@ -211,6 +243,7 @@ MODELS: list[RegistryEntry] = [
                 "gen.video_t2v",
                 "comfy-wan22-5b-t2v-bench",
                 note="결과 파일 생성 기준 29/32, 시청 품질 판정 아님",
+                managed=WAN_DRAFT,
             ),
             _c(
                 "gen.video_i2v",
@@ -327,9 +360,11 @@ def _skill(
     depends: list[str],
     validation: list[str],
     notes: str = "",
+    *,
+    entry_id: str | None = None,
 ) -> RegistryEntry:
     return RegistryEntry(
-        id=f"skill.{sid}",
+        id=entry_id or f"skill.{sid}",
         kind="skill",
         name=name,
         claims=claims,
@@ -343,6 +378,48 @@ def _skill(
 
 
 SKILLS: list[RegistryEntry] = [
+    RegistryEntry(
+        id="skill.hyperframes",
+        kind="skill",
+        name="HyperFrames 기술 다이어그램",
+        probes=["engine_hyperframes", "node", "chrome", "hyperframes_cli"],
+        depends_on=["tool.ffmpeg", "tool.ffprobe"],
+        integration="creative_runtime",
+        entry_point="src/ttakkari/creative/v2/hyperframes.py",
+        claims=[_c("render.html_motion", "engine-adapter-hyperframes-20261121", limits=KAFKA_SCOPE)],
+        validation=["코어 어댑터 3장면, 6초, 180프레임 실측"],
+        notes="실제 렌더 시 브라우저 권한과 도구 상태를 다시 확인한다.",
+    ),
+    RegistryEntry(
+        id="skill.frame_animation_2d",
+        kind="skill",
+        name="2D 프레임 애니메이션",
+        probes=["engine_frame_animation"],
+        depends_on=["tool.ffmpeg"],
+        integration="creative_runtime",
+        entry_point="src/ttakkari/creative/v2/frame_animation.py",
+        claims=[
+            _c(
+                "render.frame_animation", "engine-adapter-frame-animation-20261121",
+                limits=("walk_cycle 1장면, 8~15초. 커스텀 캐릭터 리그·동작은 미지원.",),
+            )
+        ],
+    ),
+    RegistryEntry(
+        id="skill.studio-3d-cinematic",
+        kind="skill",
+        name="3D 장면 프리셋",
+        probes=["engine_scene_3d", "bpy", "node"],
+        depends_on=["tool.ffmpeg", "tool.ffprobe"],
+        integration="creative_runtime",
+        entry_point="src/ttakkari/creative/v2/scene_3d.py",
+        claims=[
+            _c(
+                "render.3d_preset", "engine-adapter-scene-3d-20261121",
+                limits=("crystal_orbit 1장면. 커스텀 세계·캐릭터 연기·립싱크는 미지원.",),
+            )
+        ],
+    ),
     RegistryEntry(
         id="skill.v1_ffmpeg_slideshow",
         kind="skill",
@@ -434,6 +511,7 @@ SKILLS: list[RegistryEntry] = [
         ],
         ["tool.three"],
         ["프레이밍·가림·충돌·연속성 감사", "프레임 통계"],
+        entry_id="skill.studio-3d-cinematic-lab",
     ),
     _skill(
         "studio-character-lipsync",
@@ -853,7 +931,9 @@ RECIPES: list[Recipe] = [
             ["edit.captions"],
         ],
         [["audio.mix"]],
-        ["C01.documentary", "C08.documentary_form", "C09.narration"],
+        # Narration is shared by technical explainers and other genres; it does
+        # not select documentary research/map requirements on its own.
+        ["C01.documentary", "C08.documentary_form"],
         cases=["legacy-catalog-longform-narration-story"],
     ),
     _r(
@@ -933,8 +1013,7 @@ RECIPES: list[Recipe] = [
         [["audio.sfx"]],
         ["C05.volumetric_light", "C05.night", "C01.story_film"],
     ),
-    # R01~R20은 원 요구의 컨셉 레시피다. R21은 컨셉이 아니라 스튜디오 렌더러가 실제로 실행하는 기준선이며,
-    # 이 레시피만이 필수 능력을 모두 creative_runtime으로 채워 렌더 게이트를 열 수 있다.
+    # R21은 정지 이미지 편집용 기준선이다. 연출 프리셋은 장면별 제작 경로에서 검증한다.
     _r(
         "R21",
         "정지 이미지 슬라이드쇼(기준선)",
@@ -957,5 +1036,15 @@ RECIPES: list[Recipe] = [
             "스튜디오 렌더러 한도: 장면 1~60초, 3~40장면, 영상 최대 240초, 화면비 16:9 또는 1:1.",
         ],
         baseline=True,
+    ),
+    _r(
+        KAFKA_RECIPE_ID,
+        "Kafka 메시지 흐름",
+        "Producer, Broker, Consumer의 메시지 이동을 3장면의 다이어그램으로 설명",
+        ["HyperFrames", "FFmpeg"],
+        [["render.html_motion"], ["edit.captions"]],
+        fits=["C01.tech_explainer", "C03.vector_motion_graphics", "C08.explainer"],
+        cases=["engine-adapter-hyperframes-20261121"],
+        constraints=KAFKA_SCOPE,
     ),
 ]

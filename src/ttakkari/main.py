@@ -25,6 +25,7 @@ from ttakkari.api import (
     creative,
     creative_mcp,
     creative_v2,
+    creative_v2_intent,
     deployments,
     design_system,
     desk_feedback,
@@ -64,6 +65,7 @@ from ttakkari.api import (
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
+from ttakkari.creative.v2.production_review import EvaluatorBinding
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.meetings import vectors as meeting_vectors
 from ttakkari.meetings.local_stt import jobs as local_stt_jobs
@@ -340,10 +342,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await dispose_engine()
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *, creative_review_evaluator: EvaluatorBinding | None = None,
+) -> FastAPI:
     s = get_settings()
     app = FastAPI(title="Winterholic Ttakkari", version="0.1.0", lifespan=lifespan,
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
+    app.state.creative_review_evaluator = creative_review_evaluator
     from ttakkari.generation_service import InflightMiddleware
     app.add_middleware(InflightMiddleware)
     app.add_middleware(
@@ -407,6 +412,7 @@ def create_app() -> FastAPI:
     app.include_router(games.router)
     app.include_router(creative.router)
     app.include_router(creative_v2.router)
+    app.include_router(creative_v2_intent.router)
     app.include_router(comfy_managed.router)
     app.include_router(comfy_managed.agent_router)
     app.include_router(creative_mcp.router)

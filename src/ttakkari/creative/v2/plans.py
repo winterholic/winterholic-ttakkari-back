@@ -25,8 +25,26 @@ from ttakkari.creative.v2.duration import (
     plan_duration,
     recheck_duration,
 )
-from ttakkari.creative.v2.intent import IntentSpec, hint_intent, validate_intent
+from ttakkari.creative.v2.intent import (
+    InfoItem,
+    IntentSpec,
+    hint_intent,
+    validate_intent,
+)
+from ttakkari.creative.v2.intent_plan import (
+    PlanIntentError,
+    derive_style_refs,
+    prepare,
+    projection,
+)
+from ttakkari.creative.v2.intent_v2 import (
+    DurationPolicy,
+    HistoryEntry,
+    IntentSpecV2,
+    duration_value,
+)
 from ttakkari.creative.v2.matching import MatchResult, match_intent
+from ttakkari.creative.v2.planner import ProductionDirection, apply_direction
 from ttakkari.creative.v2.registry import Registry
 from ttakkari.creative.v2.style_dna import Resolution, StyleError, StyleRef, StyleStore
 
@@ -113,6 +131,12 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
     for scene in plan["scenes"]:
         length = (scene["end_frame"] - scene["start_frame"]) / fps
         if groups and (
+            (plan.get("director") and not (
+                scene.get("strategy") == "code_motion"
+                and groups[-1][-1].get("strategy") == "code_motion"
+                and len(groups[-1]) < 3
+            ))
+            or
             acc + length > SEGMENT_TARGET_SECONDS
             or len(groups[-1]) >= RENDERER_SEGMENT_MAX_SCENES
         ):
@@ -124,6 +148,8 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
         acc += length
     # 렌더러는 구간마다 최소 장면 수가 있다. 모자란 꼬리 구간은 앞 구간에 합친다.
     while (
+        not plan.get("director")
+        and
         len(groups) > 1
         and len(groups[-1]) < RENDERER_SEGMENT_MIN_SCENES
         and len(groups[-2]) + len(groups[-1]) <= RENDERER_SEGMENT_MAX_SCENES
@@ -336,6 +362,7 @@ def _scene_records(
     match: MatchResult,
     registry: Registry,
     style_hash: str | None,
+    tone: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     by_catalog: dict[str, list[str]] = {}
     for sel in match.selections:
@@ -355,6 +382,8 @@ def _scene_records(
     checks = ["qa.machine_video"] + [ENTRIES[e].id for e in by_catalog.get("C12", [])]
     fps = duration.fps
     beats = {b.id: b for b in profile.beats}
+    # tone은 의도 v2에서만 온다. v1 계획의 장면 모양은 그대로 둔다.
+    extra = {"tone": list(tone)} if tone else {}
     return [
         {
             "scene_id": s.beat_id,
@@ -385,14 +414,36 @@ def _scene_records(
             "dependencies": [] if i == 0 else [duration.scenes[i - 1].beat_id],
             "output_assets": [],
             "quality_checks": checks,
+            **extra,
         }
         for i, s in enumerate(duration.scenes)
     ]
 
 
+def _plan_tone(plan: dict[str, Any]) -> list[str]:
+    spec = plan.get("intent_v2") or {}
+    return [c["id"] for c in spec.get("conditions", []) if c.get("dimension") == "tone"]
+
+
 def _layout(profile: ContentProfile, planned: DurationPlan) -> DurationPlan:
     """strict 충돌로 계획안이 없어도 사용자가 고칠 수 있게 콘텐츠 기준(자동) 배치를 보여 준다."""
     return planned if planned.scenes else plan_duration(profile, DurationRequest())
+
+
+def _match_plan(
+    brief: str, intent: IntentSpec, registry: Registry,
+    direction: ProductionDirection | None,
+) -> MatchResult:
+    kafka_flow = bool(
+        direction
+        and "kafka" in brief.casefold()
+        and any(s.entry_id == "C01.tech_explainer" for s in intent.selections)
+        and len(direction.scenes) == 3
+        and all(s.strategy == "code_motion" and s.preset == "kafka_flow" for s in direction.scenes)
+    )
+    if kafka_flow:
+        return match_intent(brief, intent, registry, kafka_flow=True)
+    return match_intent(brief, intent, registry)
 
 
 def build_plan(
@@ -406,9 +457,28 @@ def build_plan(
     styles: StyleStore | None = None,
     style_refs: list[StyleRef] | None = None,
     resolutions: list[Resolution] | None = None,
+    director: ProductionDirection | None = None,
+    intent_v2: IntentSpecV2 | None = None,
+    storyboard_items: list[InfoItem] | None = None,
 ) -> dict[str, Any]:
     registry = registry or Registry()
     notes: list[str] = []
+    prepared = None
+    if intent_v2 is not None:
+        if intent is not None or duration is not None or aspect is not None:
+            raise PlanIntentError(
+                "intent_invalid",
+                [
+                    {
+                        "id": "intent_v2_exclusive",
+                        "message": "intent_v2는 intent·duration·aspect와 함께 보낼 수 없습니다. 길이와 비율은 intent_v2에서 정하세요.",
+                    }
+                ],
+            )
+        prepared = prepare(brief, intent_v2)
+        intent = prepared.v1
+        if storyboard_items is not None:
+            intent = intent.model_copy(update={"info_items": storyboard_items})
     if intent is None:
         intent, hint = hint_intent(brief)
         notes.append(
@@ -436,12 +506,30 @@ def build_plan(
             "의도 검증 실패: "
             + "; ".join(f"{e.path} {e.message}" for e in validation.errors)
         )
-    match = match_intent(brief, intent, registry)
+    match = _match_plan(brief, intent, registry, director)
     beats, basis, beat_warnings = _beats(intent)
     profile = ContentProfile(beats=beats, music_seconds=intent.music_seconds)
     duration = plan_duration(profile, intent.duration)
     style = None
     style_hash = None
+    derived_by_condition: dict = {}
+    derived_skipped: list[dict[str, str]] = []
+    explicit_style = bool(style_refs)
+    if prepared is not None:
+        if styles is None:
+            derived_skipped = [
+                {"id": "style", "reason": "스타일 저장소가 없어 조건에서 Style DNA를 고르지 못했습니다."}
+            ]
+        else:
+            derived, derived_by_condition, derived_skipped = derive_style_refs(
+                prepared.spec, styles
+            )
+            if derived and not style_refs:
+                style_refs = derived
+                notes.append(
+                    "의도의 화풍·톤에서 Style DNA를 골랐습니다: "
+                    + ", ".join(str(r) for r in derived)
+                )
     if style_refs:
         if styles is None:
             raise StyleError("스타일 저장소가 없습니다.")
@@ -455,8 +543,32 @@ def build_plan(
         )
     plan_id = str(uuid.uuid4())
     scenes = _scene_records(
-        _layout(profile, duration), profile, match, registry, style_hash
+        _layout(profile, duration),
+        profile,
+        match,
+        registry,
+        style_hash,
+        prepared.tone if prepared else None,
     )
+    if director is not None:
+        apply_direction(scenes, director)
+    v2_fields: dict[str, Any] = {}
+    if prepared is not None:
+        v2_fields = {
+            "intent_v2": prepared.spec.model_dump(mode="json"),
+            "intent_projection": projection(
+                prepared,
+                match=match.model_dump(mode="json"),
+                style_by_condition=derived_by_condition,
+                style_skipped=derived_skipped,
+                style_applied=style is not None and not explicit_style,
+                explicit_style=explicit_style,
+            ),
+        }
+        if prepared.spec.unsupported:
+            notes.append(
+                f"미지원 조건 {len(prepared.spec.unsupported)}개는 계획에 반영되지 않았습니다(intent_projection.not_applied 참고)."
+            )
     return {
         "id": plan_id,
         "revision": 1,
@@ -467,6 +579,7 @@ def build_plan(
         "brief_sha256": hashlib.sha256(brief.encode()).hexdigest(),
         "aspect": intent.aspect or "16:9",
         "intent": intent.model_dump(mode="json"),
+        **v2_fields,
         "intent_status": "unconfirmed_hint"
         if validation.needs_confirmation
         else "confirmed",
@@ -478,6 +591,7 @@ def build_plan(
         "duration": duration.model_dump(mode="json"),
         "duration_check": None,
         "scenes": scenes,
+        **({"director": director.model_dump(mode="json")} if director is not None else {}),
         "notes": [*notes, *beat_warnings],
         "approval": None,
         "history": [
@@ -490,6 +604,48 @@ def build_plan(
             }
         ],
     }
+
+
+def _sync_duration(plan: dict[str, Any], request: DurationRequest) -> None:
+    """사용자가 계획에서 길이를 바꾸면 저장된 의도 v2의 길이도 사용자 확정으로 맞춘다. 두 문서가 어긋나면 출처가 거짓이 된다."""
+    spec = IntentSpecV2.model_validate(plan["intent_v2"])
+    if request.mode == "platform_cap":
+        raise ValueError("이 제작 의도는 자동, 희망, 엄격 길이 정책을 지원합니다.")
+    policy = (
+        DurationPolicy(origin="user_confirmed")
+        if request.mode == "auto"
+        else DurationPolicy(
+            mode="target" if request.mode == "preferred" else "strict",
+            seconds=request.seconds,
+            platform=request.platform,
+            origin="user_confirmed",
+        )
+    )
+    revision = spec.revision + 1
+    entry = HistoryEntry(
+        revision=revision,
+        at=now(),
+        actor="user",
+        action="plan_duration_changed",
+        detail=f"계획 편집으로 길이를 {duration_value(policy)}로 바꿈",
+    )
+    spec = spec.model_copy(update={
+        "revision": revision,
+        "duration": policy,
+        "history": [*spec.history, entry][-400:],
+    })
+    plan["intent_v2"] = spec.model_dump(mode="json")
+    plan["intent_projection"]["source"].update(
+        revision=revision, sha256=_digest(plan["intent_v2"])
+    )
+    for item in plan["intent_projection"]["items"]:
+        if item["kind"] == "duration":
+            item.update(origin="user_confirmed", value=duration_value(policy))
+            return
+    plan["intent_projection"]["items"].append(
+        {"kind": "duration", "id": "duration", "origin": "user_confirmed",
+         "value": duration_value(policy), "applied_to": ["duration.request"]}
+    )
 
 
 def _blockers(plan: dict[str, Any]) -> list[str]:
@@ -535,8 +691,9 @@ class PlanStore:
         plan = json.loads(path.read_text())
         plan["render_blockers"] = _blockers(plan)
         try:
-            current_match = match_intent(
-                plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry
+            current_match = _match_plan(
+                plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry,
+                ProductionDirection.model_validate(plan["director"]) if plan.get("director") else None,
             )
             current_capabilities = _capability_snapshot(
                 current_match.model_dump(mode="json")
@@ -623,9 +780,11 @@ class PlanStore:
         scenes: list[SceneEdit] | None = None,
         duration: DurationRequest | None = None,
         registry: Registry | None = None,
+        director: ProductionDirection | None = None,
+        caption_updates: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """장면 편집은 사용자가 정한 길이를 보존한 채 재계산(recheck), 길이 요청 변경은 장면 구성부터 다시 계획한다."""
-        if scenes is None and duration is None:
+        if scenes is None and duration is None and director is None and not caption_updates:
             raise ValueError("바꿀 내용이 없습니다.")
         registry = registry or Registry()
         with self._tx(plan_id) as plan:
@@ -638,8 +797,31 @@ class PlanStore:
             )
             profile = ContentProfile.model_validate(plan["profile"])
             match = MatchResult.model_validate(plan["match"])
+            if director is not None or duration is not None:
+                direction = director
+                if direction is None and plan.get("director"):
+                    direction = ProductionDirection.model_validate(plan["director"])
+                intent = IntentSpec.model_validate(plan["intent"]).model_copy(
+                    update={"duration": request}
+                )
+                match = _match_plan(plan["brief"], intent, registry, direction)
+                plan["match"] = match.model_dump(mode="json")
             style_hash = (plan.get("style") or {}).get("sha256")
-            if scenes is not None:
+            if caption_updates:
+                if scenes is not None or duration is not None or director is not None:
+                    raise ValueError("caption repair cannot change timeline or direction")
+                by_id = {s["scene_id"]: s for s in plan["scenes"]}
+                for sid, fields in caption_updates.items():
+                    if sid not in by_id or not fields or set(fields) - {"title", "narration"}:
+                        raise ValueError("invalid caption target or field")
+                    if any(not isinstance(v, str) or not v.strip() for v in fields.values()):
+                        raise ValueError("caption text must be non-empty")
+                    by_id[sid].update(fields)
+                profile = profile.model_copy(update={"beats": [
+                    beat.model_copy(update=caption_updates.get(beat.id, {})) for beat in profile.beats
+                ]})
+                kind, total, status = "caption_repaired", plan["scenes"][-1]["end_time"], plan["duration"]["status"]
+            elif scenes is not None:
                 if len({s.id for s in scenes}) != len(scenes):
                     raise ValueError("장면 ID가 중복됐습니다.")
                 check = recheck_duration(
@@ -674,7 +856,12 @@ class PlanStore:
                 by_id = {s.id: s for s in scenes}
                 cursor = 0
                 records = _scene_records(
-                    _layout(profile, planned), profile, match, registry, style_hash
+                    _layout(profile, planned),
+                    profile,
+                    match,
+                    registry,
+                    style_hash,
+                    _plan_tone(plan),
                 )
                 for rec, check_scene in zip(records, check.scenes, strict=True):
                     edit_scene = by_id[rec["scene_id"]]
@@ -697,20 +884,33 @@ class PlanStore:
                 kind = "scenes_edited"
                 total = check.total_seconds
                 status = check.status
-            else:
+            elif duration is not None:
                 planned = plan_duration(profile, request)
                 plan["duration"] = planned.model_dump(mode="json")
                 plan["duration_check"] = None
                 plan["scenes"] = _scene_records(
-                    _layout(profile, planned), profile, match, registry, style_hash
+                    _layout(profile, planned),
+                    profile,
+                    match,
+                    registry,
+                    style_hash,
+                    _plan_tone(plan),
                 )
                 kind, total, status = (
                     "duration_replanned",
                     planned.planned_seconds,
                     planned.status,
                 )
+            else:
+                kind, total, status = "director_edited", plan["scenes"][-1]["end_time"], plan["duration"]["status"]
+            if director is not None:
+                plan["director"] = director.model_dump(mode="json")
+            if plan.get("director"):
+                apply_direction(plan["scenes"], ProductionDirection.model_validate(plan["director"]))
             plan["profile"] = profile.model_dump(mode="json")
             plan["intent"]["duration"] = request.model_dump(mode="json")
+            if duration is not None and plan.get("intent_v2"):
+                _sync_duration(plan, request)
             plan["revision"] += 1
             plan["approval"] = None
             plan["history"].append(

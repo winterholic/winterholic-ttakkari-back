@@ -33,7 +33,9 @@ AVAILABLE_OPERATIONS = frozenset({
     "catalog", "capabilities", "recipe_matrix", "registries", "plans", "plan",
     "plan_create", "plan_edit", "plan_approve", "production_status", "auto_assets_status",
     "auto_assets_start", "auto_assets_retry",
-    "production_dispatch", "production_render", "production_asset", "production_media_link",
+    "production_dispatch", "production_render", "production_render_cancel", "production_asset",
+    "production_media_link", "production_review", "production_repair_plan", "production_repair",
+    "production_revision", "production_result_link",
     "styles", "style", "style_put",
 })
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -129,6 +131,16 @@ def _style_put(data: dict[str, Any]) -> dict[str, Any]:
     return {"dry_run": False, "saved": True, "ref": ref, "render_effects": preview}
 
 
+# operation -> (request model, creative_v2 handler); all take (plan_id, body, user).
+_PLAN_REVISION_OPERATIONS: dict[str, tuple[type[BaseModel], str]] = {
+    "production_render_cancel": (c2.PlanApprove, "production_render_cancel"),
+    "production_review": (c2.PlanApprove, "production_review_request"),
+    "production_repair_plan": (c2.RepairProposal, "production_repair_plan"),
+    "production_repair": (c2.RepairApply, "production_repair"),
+    "production_result_link": (c2.ResultLinkInput, "production_result_link"),
+}
+
+
 @router.post("/{operation}")
 async def command(operation: str, body: Command, _: str = Depends(agent_access)) -> Any:
     if operation not in AVAILABLE_OPERATIONS:
@@ -136,13 +148,19 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
     data = body.data
     allowed_fields = {
         "catalog": set(), "capabilities": set(), "recipe_matrix": set(), "registries": set(), "plans": set(),
-        "plan": {"plan_id"}, "plan_create": {"brief", "name", "intent", "duration", "aspect", "style", "resolutions"},
+        "plan": {"plan_id"}, "plan_create": {"brief", "name", "intent", "intent_v2", "duration", "aspect", "style", "resolutions"},
         "plan_edit": {"plan_id", "revision", "scenes", "duration"},
         "plan_approve": {"plan_id", "revision"}, "production_status": {"plan_id"},
         "auto_assets_status": set(), "auto_assets_start": {"plan_id", "revision"},
         "auto_assets_retry": {"plan_id", "revision"},
         "production_dispatch": {"plan_id", "revision", "caption_mode"},
-        "production_render": {"plan_id", "revision"},
+        "production_render": {"plan_id", "revision", "retry"},
+        "production_render_cancel": {"plan_id", "revision"},
+        "production_review": {"plan_id", "revision"},
+        "production_repair_plan": {"plan_id", "revision", "defects"},
+        "production_repair": {"plan_id", "revision", "proposal_sha256", "updates"},
+        "production_revision": {"plan_id", "revision"},
+        "production_result_link": {"plan_id", "revision", "result_id"},
         "production_asset": {"plan_id", "kind", "filename", "content_base64", "scene_id"},
         "production_media_link": {"plan_id", "id"},
         "styles": set(), "style": {"style_id", "version"}, "style_put": {"doc", "dry_run"},
@@ -249,8 +267,18 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         return await c2.production_dispatch(plan_id, approve, "owner", caption_mode)
     if operation == "production_render":
         plan_id = _uuid(data)
-        approve = c2.PlanApprove.model_validate({k: v for k, v in data.items() if k != "plan_id"})
-        return await c2.production_render(plan_id, approve, "owner")
+        # The API reads body.retry for director plans on a delegated executor; PlanApprove has no such field.
+        request = c2.RenderEnqueueInput.model_validate({k: v for k, v in data.items() if k != "plan_id"})
+        return await c2.production_render(plan_id, request, "owner")
+    if operation in _PLAN_REVISION_OPERATIONS:
+        plan_id = _uuid(data)
+        model, handler = _PLAN_REVISION_OPERATIONS[operation]
+        body_model = model.model_validate({k: v for k, v in data.items() if k != "plan_id"})
+        return await getattr(c2, handler)(plan_id, body_model, "owner")
+    if operation == "production_revision":
+        plan_id = _uuid(data)
+        revision = c2.PlanApprove.model_validate({"revision": data.get("revision")}).revision
+        return await c2.production_revision(plan_id, revision, "owner")
     if operation == "production_asset":
         return await asyncio.to_thread(_asset, data, _uuid(data))
     if operation == "production_media_link":

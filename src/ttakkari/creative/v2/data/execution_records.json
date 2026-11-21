@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "note": "2026-11-21 호스트 실측 실행 기록. lab 저장소 record.json과 같은 모양(status/kind/verdict/independent/media_count)에 실행 명령·산출물 해시를 더했다. 파일이 만들어지고 길이·프레임이 맞는지만 증명하며 시청 품질 판정이 아니다(verdict=unreviewed). probe.py가 스냅샷 records에 합친다.",
+  "records": {
+    "engine-adapter-frame-animation-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "frame_animation walk_cycle 코어 ModuleAdapter 직접 렌더(8초)",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 1,
+      "executed_at": "2026-11-21",
+      "command": "adapter_by_id('skill.frame_animation_2d').render_segment(spec: preset=walk_cycle, 1 scene, 8s, 1280x720, 30fps)",
+      "outputs": [{"name": "frame_animation.mp4", "sha256": "47df38d2217362b461bb250afdfb3f9db6e2e57bd33d0391d4f7de6f314447ea", "duration": 8.0, "frames": 192, "size": "1280x720", "fps": "24/1", "elapsed_seconds": 2.7}],
+      "scope": "고정 걷기 사이클 1종만. 커스텀 리그·동작은 지원하지 않는다."
+    },
+    "engine-adapter-scene-3d-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "scene_3d crystal_orbit 코어 ModuleAdapter 직접 렌더(3초)",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 1,
+      "executed_at": "2026-11-21",
+      "command": "adapter_by_id('skill.studio-3d-cinematic').render_segment(spec: preset=crystal_orbit, 1 scene, 3s, 640x360, 24fps)",
+      "outputs": [{"name": "scene_3d.mp4", "sha256": "0fa64f2cfa7ac8c9161a769dedefd1d72b3c366f51cc5bc97447af91fb66af1b", "duration": 3.0, "frames": 72, "size": "640x360", "fps": "24/1", "elapsed_seconds": 6.5}],
+      "scope": "고정 crystal/orbit 프리셋만. 커스텀 월드·연기는 지원하지 않는다. preflight 버전 'Blender 5.0.1, Node v26.9.0'."
+    },
+    "engine-adapter-hyperframes-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "HyperFrames kafka_flow 코어 ModuleAdapter 직접 렌더(6초, 3장면)",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 1,
+      "executed_at": "2026-11-21",
+      "command": "hyperframes.ADAPTER.render_segment(spec: kafka_flow, 3 scenes, 6s, 1920x1080, 30fps) with real ffprobe (TTAKKARI lab remotion/bin/ffprobe)",
+      "outputs": [{"name": "hf-direct2.mp4", "sha256": "fe7bd84007978f738b3dc01da0ddb41bb4478c9d40b93faa8b23cf40ad87ee59", "duration": 6.0, "frames": 180, "size": "1920x1080", "fps": "30/1", "elapsed_seconds": 13.2}],
+      "scope": "Kafka 메시지 흐름 3장면 템플릿 1종만. 같은 호출을 호스트 ~/bin/ffprobe shim으로 하면 'ffprobe returned no frame count'로 렌더 마지막 단계에서 실패했다."
+    },
+    "hyperframes-kafka-cli-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "HyperFrames 0.9.77 CLI Kafka 다이어그램 5초·16초 렌더(engine-probe Run e2368ed2)",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 2,
+      "executed_at": "2026-11-21",
+      "command": "npx -y hyperframes@0.9.77 init kafka --example blank; check; render -f 30 -q draft",
+      "outputs": [
+        {"name": "hyperframes-kafka-5s.mp4", "sha256": "4817b19d66f662a27e863e862e96e47dda0357a240e5b525be007231964bd18e", "duration": 5.0, "frames": 150, "size": "1920x1080", "fps": "30/1", "elapsed_seconds": 30.5},
+        {"name": "hyperframes-kafka-16s.mp4", "sha256": "e4dd0394df0276515e1e5be474dabdf4a50ffb3188af1f6947f532be136959d5", "duration": 16.0, "frames": 480, "size": "1920x1080", "fps": "30/1", "elapsed_seconds": 25.3}
+      ],
+      "scope": "Kafka Producer→Broker→Consumer 다이어그램 1건. 16초 파일은 길이만 맞고 애니메이션은 5초에 끝나 11초 정지(구성 오류). 다른 콘텐츠로 일반화 금지."
+    },
+    "blender-eevee-anim-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "Blender bpy 5.0.1 EEVEE 96프레임 큐브 이동·회전 애니메이션(engine-probe Run e2368ed2)",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 1,
+      "executed_at": "2026-11-21",
+      "command": ".venv-bpy/bin/python anim_probe.py (EEVEE, 640x360, 96 frames)",
+      "outputs": [{"name": "blender-eevee-4s.mp4", "sha256": "307b3ec19f5c7f424398ed24378341a61d6c4da670dc81b2e81cfd39f91a2997", "duration": 4.0, "frames": 96, "size": "640x360", "fps": "24/1", "elapsed_seconds": 35.7}],
+      "scope": "큐브 1개 키프레임 애니메이션. 모델링·리깅·캐릭터 증거 아님."
+    },
+    "ffprobe-real-frame-count-20261121": {
+      "status": "completed",
+      "kind": "engine_run",
+      "title": "진짜 ffprobe(remotion/bin/ffprobe) 프레임 수 검사",
+      "verdict": "unreviewed",
+      "independent": false,
+      "media_count": 3,
+      "executed_at": "2026-11-21",
+      "command": "ffprobe -v error -select_streams v:0 -show_entries format=duration:stream=nb_frames,width,height,r_frame_rate",
+      "outputs": [
+        {"name": "hyperframes-kafka-16s.mp4", "sha256": "e4dd0394df0276515e1e5be474dabdf4a50ffb3188af1f6947f532be136959d5", "duration": 16.0, "frames": 480, "size": "1920x1080", "fps": "30/1"},
+        {"name": "frame_animation.mp4", "sha256": "47df38d2217362b461bb250afdfb3f9db6e2e57bd33d0391d4f7de6f314447ea", "duration": 8.0, "frames": 192, "size": "1280x720", "fps": "24/1"},
+        {"name": "scene_3d.mp4", "sha256": "0fa64f2cfa7ac8c9161a769dedefd1d72b3c366f51cc5bc97447af91fb66af1b", "duration": 3.0, "frames": 72, "size": "640x360", "fps": "24/1"}
+      ],
+      "scope": "호스트 ~/bin/ffprobe(shim)는 nb_frames를 내지 못한다. 진짜 ffprobe만 프레임 수 검사에 쓴다."
+    }
+  }
+}

@@ -38,6 +38,12 @@ CAPABILITIES: dict[str, tuple[str, str]] = {
         "React/Remotion 모션 렌더",
         "컴포넌트 기반 모션 컴포지션을 프레임 결정적으로 mp4로 렌더",
     ),
+    "render.html_motion": (
+        "HTML/GSAP 모션 렌더",
+        "HTML·CSS·GSAP 다이어그램을 HyperFrames로 렌더",
+    ),
+    "render.frame_animation": ("2D 프레임 프리셋", "지원 프리셋의 2D 레이어를 프레임 단위로 렌더"),
+    "render.3d_preset": ("3D 장면 프리셋", "지원 프리셋의 3D 장면을 렌더"),
     "render.kinetic_typo": (
         "키네틱 타이포그래피",
         "글자 단위 모션과 가독성 규칙을 갖춘 타이포 애니메이션",
@@ -135,12 +141,30 @@ GLOBAL_REQUIRES: tuple[str, ...] = ("qa.machine_video", "edit.timeline")
 GLOBAL_PREFERS: tuple[str, ...] = ("qa.visual_semantic", "orch.checkpoint_resume")
 
 
+class ManagedLimits(Strict):
+    """관리형 경로(프로필·lease·영수증)로 실제 실행할 수 있는 범위. 파일 존재와 구분한다."""
+
+    profile: str
+    workflow: str
+    max_seconds: float | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
+    measured_on: str = ""
+
+
 class Claim(Strict):
     """항목이 제공한다고 주장하는 능력 하나와 그 근거 기록."""
 
     capability: str
     records: list[str] = Field(default_factory=list)
     note: str = ""
+    # 지원 범위의 한계. 계획·행렬에 제약으로 그대로 노출한다(능력 이름만 보고 일반화하지 못하게).
+    limits: list[str] = Field(default_factory=list)
+    # 관리형 경로의 실제 실행 범위. 없으면 ComfyUI 의존 항목은 "관리형 프로필 없음"으로 표시한다.
+    managed: ManagedLimits | None = None
+    # 실행을 시도했으나 불가·실패가 확인된 근거. 비어 있지 않으면 수준을 declared로 내린다.
+    demoted: str = ""
 
 
 class RegistryEntry(Strict):
@@ -187,6 +211,7 @@ class EntryState(Strict):
     integration: Integration
     levels: dict[str, Level]
     evidence: dict[str, list[str]]
+    constraints: dict[str, list[str]] = Field(default_factory=dict)
     blockers: list[str]
     cost_note: str
     license: str | None

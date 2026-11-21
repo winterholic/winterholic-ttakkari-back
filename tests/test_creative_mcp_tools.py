@@ -20,8 +20,13 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
         "creative_v2_production_dispatch",
         "creative_v2_production_render", "creative_v2_production_status",
         "creative_v2_production_media_link",
+        "creative_v2_production_render_cancel", "creative_v2_production_review",
+        "creative_v2_production_repair_plan", "creative_v2_production_repair",
+        "creative_v2_production_revision", "creative_v2_production_result_link",
     }
     assert expected <= tools.keys()
+    assert tools["creative_v2_production_render"].input_schema["properties"]["retry"]["default"] is False
+    assert tools["creative_v2_production_revision"].annotations.read_only_hint is True
     assert "prompt" in tools["comfy_submit"].input_schema["properties"]
     assert "revision" in tools["creative_v2_plan_approve"].input_schema["properties"]
     dispatch_schema = tools["creative_v2_production_dispatch"].input_schema
@@ -67,6 +72,22 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
     call.assert_awaited_once_with("POST", "/production_dispatch", {"data": {
         "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
         "caption_mode": "title_only",
+    }}, prefix="/api/agent/creative-v2")
+
+    call.reset_mock()
+    await ms.server.call_tool("creative_v2_production_render", {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3, "retry": True,
+    })
+    call.assert_awaited_once_with("POST", "/production_render", {"data": {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3, "retry": True,
+    }}, prefix="/api/agent/creative-v2")
+
+    call.reset_mock()
+    await ms.server.call_tool("creative_v2_production_result_link", {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 2,
+    })
+    call.assert_awaited_once_with("POST", "/production_result_link", {"data": {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 2, "result_id": "final",
     }}, prefix="/api/agent/creative-v2")
 
     call.reset_mock()

@@ -330,12 +330,19 @@ async def creative_v2_plan_create(brief: Annotated[str, Field(min_length=1, max_
                                   duration: dict[str, Any] | None = None,
                                   aspect: Literal["16:9", "9:16", "1:1"] | None = None,
                                   style: list[CreativeStyleRef] | None = None,
-                                  resolutions: list[dict[str, Any]] | None = None) -> str:
+                                  resolutions: list[dict[str, Any]] | None = None,
+                                  intent_v2: dict[str, Any] | None = None) -> str:
     """Create a plan from the existing catalog/recipe matcher. Approval is a separate revision-bound step.
     Brief is 1–6000 characters; style is capped at 8 Style DNA refs with style_id and version
-    (for example neutral_base@1.0.0), not catalog entry IDs; resolutions are capped at 60."""
-    return await _creative("plan_create", {"brief": brief, "name": name, "intent": intent,
-        "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []})
+    (for example neutral_base@1.0.0), not catalog entry IDs; resolutions are capped at 60.
+    intent_v2 is the intent document returned by the intent resolve step; it cannot be combined with
+    intent, duration or aspect. A plan is refused with 422 {code, reasons} when the intent still has an
+    open blocking conflict or an unconfirmed content type."""
+    data = {"brief": brief, "name": name, "intent": intent,
+        "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []}
+    if intent_v2 is not None:
+        data["intent_v2"] = intent_v2
+    return await _creative("plan_create", data)
 
 
 @server.tool()
@@ -397,9 +404,52 @@ async def creative_v2_production_dispatch(
 
 
 @server.tool()
-async def creative_v2_production_render(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
-    """Queue eligible render segments for an approved dispatch; backend limits, retries and QA are reused."""
-    return await _creative("production_render", {"plan_id": plan_id, "revision": revision})
+async def creative_v2_production_render(plan_id: str, revision: Annotated[int, Field(ge=1)],
+                                        retry: bool = False) -> str:
+    """Queue eligible render segments for an approved dispatch; backend limits, retries and QA are reused.
+    retry=true re-queues a failed or cancelled director-plan render; it never hides a failure behind a slideshow."""
+    return await _creative("production_render", {"plan_id": plan_id, "revision": revision, "retry": retry})
+
+
+@server.tool()
+async def creative_v2_production_render_cancel(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Cancel the queued render request of a director plan at its revision. A running segment is not interrupted."""
+    return await _creative("production_render_cancel", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_production_review(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Evaluate the rendered result: machine QA is measured, semantic and viewing QA stay unknown without an independent evaluator."""
+    return await _creative("production_review", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_production_repair_plan(plan_id: str, revision: Annotated[int, Field(ge=1)],
+                                             defects: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=100)]) -> str:
+    """Plan a partial repair for defects (scene_id, optional shot_id, code, layer). Returns what is preserved and a proposal_sha256."""
+    return await _creative("production_repair_plan", {"plan_id": plan_id, "revision": revision, "defects": defects})
+
+
+@server.tool()
+async def creative_v2_production_repair(plan_id: str, revision: Annotated[int, Field(ge=1)],
+                                        proposal_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+                                        updates: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=100)]) -> str:
+    """Apply caption title/narration updates from a reviewed repair proposal as a new revision that still needs approval."""
+    return await _creative("production_repair", {"plan_id": plan_id, "revision": revision,
+                                                 "proposal_sha256": proposal_sha256, "updates": updates})
+
+
+@query_tool
+async def creative_v2_production_revision(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Read one revision's recorded result: per-segment output hashes for before/after comparison."""
+    return await _creative("production_revision", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_production_result_link(plan_id: str, revision: Annotated[int, Field(ge=1)],
+                                             result_id: str = "final") -> str:
+    """Create a short-lived download link for a revision result (final or seg-NN) bound to its sha256."""
+    return await _creative("production_result_link", {"plan_id": plan_id, "revision": revision, "result_id": result_id})
 
 
 @server.tool()

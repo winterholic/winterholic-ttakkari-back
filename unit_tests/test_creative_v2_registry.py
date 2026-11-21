@@ -9,7 +9,7 @@ from ttakkari.creative.v2.capabilities import (
     LEVELS,
 )
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
-from ttakkari.creative.v2.probe import PROBE_IDS
+from ttakkari.creative.v2.probe import PROBE_IDS, probe_execution_records
 from ttakkari.creative.v2.registry import SNAPSHOT_PATH, Registry
 
 
@@ -82,7 +82,7 @@ def test_unevidenced_entries_do_not_fake_evidence():
 
 def test_twenty_concept_recipes_plus_baseline_reference_existing_entries_and_capabilities():
     recipes = registry_data.RECIPES
-    assert [r.id for r in recipes] == [f"R{i:02d}" for i in range(1, 22)]
+    assert [r.id for r in recipes] == [f"R{i:02d}" for i in range(1, 23)]
     # R01~R20은 원 요구의 컨셉 레시피이고 기준선은 R21 하나뿐이다.
     assert [r.id for r in recipes if r.baseline] == ["R21"]
     for r in recipes:
@@ -220,14 +220,14 @@ def test_skill_without_code_is_capped_at_declared_and_missing_dependency_propaga
         == "declared"
     )
     assert "실행 코드 없음" in reg.state("skill.ttakkari-motion-rules").blockers[0]
-    assert reg.state("skill.studio-3d-cinematic").installed is False
-    assert set(reg.state("skill.studio-3d-cinematic").levels.values()) == {"missing"}
+    assert reg.state("skill.studio-3d-cinematic-lab").installed is False
+    assert set(reg.state("skill.studio-3d-cinematic-lab").levels.values()) == {"missing"}
 
 
 def test_recipe_verdict_separates_capability_evidence_from_recipe_evidence():
     reg = Registry()
     verdicts = {m.recipe_id: m for m in reg.recipe_matrix()}
-    assert len(verdicts) == 21
+    assert len(verdicts) == 22
     for m in verdicts.values():
         if m.verdict == "blocked":
             assert m.blockers
@@ -235,8 +235,7 @@ def test_recipe_verdict_separates_capability_evidence_from_recipe_evidence():
             assert any("completed" in c for c in m.case_evidence)
         if m.verdict == "capabilities_executed":
             assert not any("completed" in c for c in m.case_evidence)
-    # 컨셉 레시피(R01~R20) 중 스튜디오 제작 런타임에 연결된 것은 아직 없다. 실행되는 것은 R21 슬라이드쇼 기준선뿐이다.
-    assert {m.recipe_id for m in verdicts.values() if m.verdict == "studio_executable"} == {"R21"}
+    assert {m.recipe_id for m in verdicts.values() if m.verdict == "studio_executable"} == {"R21", "R22"}
 
 
 def test_no_blocked_group_hides_behind_executed_level():
@@ -266,3 +265,28 @@ def test_committed_capability_matrix_doc_is_generated_from_current_code():
     assert doc.read_text() == matrix_markdown(), (
         "python -m ttakkari.creative.v2.report 로 문서를 다시 생성하세요."
     )
+
+
+def test_studio_presets_have_scoped_execution_evidence():
+    reg = Registry(snap(
+        probes={pid: p(True) for pid in PROBE_IDS}, records=probe_execution_records()
+    ))
+    for entry_id, capability, preset in (
+        ("skill.hyperframes", "render.html_motion", "kafka_flow"),
+        ("skill.frame_animation_2d", "render.frame_animation", "walk_cycle"),
+        ("skill.studio-3d-cinematic", "render.3d_preset", "crystal_orbit"),
+    ):
+        state = reg.state(entry_id)
+        assert state.integration == "creative_runtime"
+        assert state.levels[capability] == "executed"
+        assert any(preset in value for value in state.constraints[capability])
+
+
+def test_managed_comfy_limits_and_unavailable_lipsync_are_visible():
+    reg = Registry()
+    wan = reg.state("model.wan22_ti2v_5b")
+    assert any("640x352" in value for value in wan.constraints["gen.video_t2v"])
+    assert any("프로필이 없다" in value for value in wan.constraints["gen.video_i2v"])
+    assert reg.state("tool.rhubarb").levels["anim.lipsync"] in {"missing", "declared"}
+    assert reg.state("tool.artcraft").levels["edit.timeline"] in {"missing", "declared"}
+    assert reg.state("model.multimodal_judge").levels["qa.visual_semantic"] == "missing"

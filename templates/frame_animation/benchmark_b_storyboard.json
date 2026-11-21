@@ -1,0 +1,58 @@
+{
+  "project_id": "benchmark_b_mascot_2d",
+  "title": "따까리 마스코트 2D 프레임 애니메이션 벤치마크 B",
+  "target_duration": 10.0,
+  "aspect_ratio": "16:9",
+  "production_fps": 12,
+  "playback_fps": 24,
+  "interpolation_mode": "linear",
+  "interpolation_reason": "12fps 키포즈 사이의 구조화된 수치 관절 변환을 24fps 재생 시각에 선형 보간합니다. 표정·레이어 변형은 키포즈 경계에서 유지/전환하며 Optical Flow는 사용하지 않습니다.",
+  "storyboard": [
+    {
+      "scene_id": "scene_01_walk",
+      "title": "등장과 걷기 (Walk Cycle)",
+      "duration_seconds": 4.0,
+      "time_range": "0.0s - 4.0s",
+      "action_description": "캐릭터가 왼쪽(-160px)에서 무대 중앙(+60px)으로 양다리와 양팔을 교차하며 전진. 수직 바운스(14px) 모션 적용.",
+      "camera": {
+        "start": {"center_x": 0.46, "zoom": 1.0},
+        "end": {"center_x": 0.50, "zoom": 1.05}
+      },
+      "caption": "따까리 2D 캐릭터가 리듬감 있게 걸어옵니다.",
+      "character_expression": "normal"
+    },
+    {
+      "scene_id": "scene_02_wave",
+      "title": "인사와 윙크 (Greeting & Wave)",
+      "duration_seconds": 3.0,
+      "time_range": "4.0s - 7.0s",
+      "action_description": "무대에 정지하여 한 손을 머리 위(-140도)로 번쩍 들어 좌우로 2회 흔들며 인사. 표정이 Smile -> Wink -> Smile로 전환.",
+      "camera": {
+        "start": {"center_x": 0.50, "zoom": 1.05},
+        "end": {"center_x": 0.52, "zoom": 1.18}
+      },
+      "caption": "분리 레이어로 일관된 표정과 인사 제스처를 전달합니다.",
+      "character_expression": "smile_and_wink"
+    },
+    {
+      "scene_id": "scene_03_jump",
+      "title": "점프와 환호 (Jump & Cheer)",
+      "duration_seconds": 3.0,
+      "time_range": "7.0s - 10.0s",
+      "action_description": "웅크리기(Squash, root_y +25px) -> 최고점 도약(Stretch, root_y -90px, 양팔 번쩍) -> 체공 -> 착지(Squash) -> 기립 안착.",
+      "camera": {
+        "start": {"center_x": 0.52, "zoom": 1.18},
+        "peak": {"center_x": 0.50, "zoom": 1.12},
+        "end": {"center_x": 0.50, "zoom": 1.0}
+      },
+      "caption": "도약과 착지, 표정 변화를 갖춘 2D 리깅 애니메이션 완성!",
+      "character_expression": "smile_cheer"
+    }
+  ],
+  "audio_spec": {
+    "tempo_bpm": 120,
+    "key": "C Major",
+    "structure": "Pluck Synth Melody + Bass (Root/5th) + Warm Pad Chord",
+    "sample_rate": 44100
+  }
+}

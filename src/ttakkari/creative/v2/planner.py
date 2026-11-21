@@ -120,6 +120,26 @@ class SceneDirection(Strict):
         return self
 
 
+class SequenceDirection(Strict):
+    """장면 묶음. 장편 계층 Sequence→Scene→Shot→Layer의 두 번째 단계이며, 장면 순서는 scenes가 정한다."""
+
+    sequence_id: str = Field(min_length=1, max_length=50)
+    title: str = Field(min_length=1, max_length=160)
+    purpose: str = Field(default="", max_length=500)
+    scene_ids: list[str] = Field(min_length=1, max_length=400)
+
+
+def check_sequences(sequences: list[SequenceDirection], scene_ids: list[str]) -> None:
+    """시퀀스가 있으면 모든 장면이 정확히 한 시퀀스에 속해야 한다. 조용한 누락·중복을 허용하지 않는다."""
+    if not sequences:
+        return
+    if len({q.sequence_id for q in sequences}) != len(sequences):
+        raise ValueError("duplicate sequence id")
+    members = [sid for q in sequences for sid in q.scene_ids]
+    if len(set(members)) != len(members) or set(members) != set(scene_ids):
+        raise ValueError("sequences must contain every scene exactly once")
+
+
 class ProductionDirection(Strict):
     source: Literal["llm", "user_structured"]
     model: str | None = Field(default=None, max_length=120)
@@ -128,6 +148,7 @@ class ProductionDirection(Strict):
     output_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     intent: str = Field(min_length=1, max_length=3000)
     domain_knowledge: list[str] = Field(default_factory=list, max_length=30)
+    sequences: list[SequenceDirection] = Field(default_factory=list, max_length=100)
     scenes: list[SceneDirection] = Field(min_length=1, max_length=400)
 
     @model_validator(mode="after")
@@ -140,6 +161,7 @@ class ProductionDirection(Strict):
         shots = [shot.shot_id for s in self.scenes for shot in s.shots]
         if len(set(ids)) != len(ids) or len(set(shots)) != len(shots):
             raise ValueError("duplicate scene/shot id")
+        check_sequences(self.sequences, ids)
         deps = {
             shot.shot_id: shot.depends_on for s in self.scenes for shot in s.shots
         }

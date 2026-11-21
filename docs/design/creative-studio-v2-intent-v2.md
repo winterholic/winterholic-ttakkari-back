@@ -248,3 +248,14 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 - 2026-11-21 검증에서 Kafka 16초 계획은 승인 후 디스패치 사양 검사를 통과했다. Codex 명령 환경에서는 Chromium 권한 검사에서 `mach-register`와 `mach-lookup`이 거부되어 HyperFrames 렌더를 시작하지 않았다. 별도 2D 경로는 실제 8.021초 MP4를 만들었다. 1280×720, 192프레임, 오디오 트랙으로 기계 검사 통과를 확인했고 독립 내용·시청·청취 품질은 미확인으로 남겼다.
 - 같은 날 승인된 브라우저에서 Kafka HTML 컴포지션을 2초, 7초, 13초로 이동해 준비한 각 자막과 메시지 위치를 확인했다. 세 장면의 길이는 4초, 5초, 7초이며 자막은 720px 출력에서 y=627–693px에 표시됐다. 이 확인 범위는 HTML 컴포지션이다.
 - 정지 이미지 편집의 장편 검증에서 75장면을 15구간으로 분할해 큐의 구간 작업을 실행하고 결과를 합쳤다. FFprobe는 900.032초, 1280×720, 영상 21,600프레임과 오디오 트랙을 확인했다. 기계 검사 통과, 내용·시청·청취 미확인으로 기록했다. 합성된 테스트 파일 해시는 `e2fa0f1f047fd6b5be1328c32206ed9a6ea8bbc8519ab22a7abb4bf35abe96c4`다.
+
+## 15. AI 감독 실제 실행과 독립 의미 평가 (2026-11-21)
+
+재현 스크립트는 `scripts/creative_director_eval.py`다. 격리 PostgreSQL 클러스터와 임시 계획 저장소만 쓰며 운영 DB와 백엔드는 건드리지 않는다.
+
+- 계층: 스토리보드 출력에 `sequences`(시퀀스 ID, 제목, 목적, 장면 ID 목록)를 추가했다. 시퀀스가 있으면 모든 장면이 정확히 한 시퀀스에 속해야 하고, 계획의 `director.sequences`에 저장된다. 장면·샷·레이어·대안·샷 계약(`output_contract`, `quality_criteria`)은 기존 필드이며 프롬프트가 작성을 요구한다.
+- 생성 경로: codex 엔진, 모델 gpt-6-luna. 앱의 워커 Run(`spawn_worker`)이 프롬프트를 수행했고, 그 JSON을 격리 DB의 스토리보드 Run 결과로 저장해 `storyboard_runs.read`와 `accept`를 통과시켰다. 격리 DB의 Run 상태는 하네스가 기록했고 앱의 Run 관리자가 실행한 것이 아니다.
+- 시나리오 A(애니 SF, 확정 조건 7개)는 3 시퀀스·6 장면, B(Kafka 16초)는 1 시퀀스·3 장면(code_motion kafka_flow)으로 저장됐다. A의 모든 장면이 `generative_video`를 골랐다. 이 표면은 이미 만들어진 생성 영상의 재생만 지원하므로 제작 승인 전에 사람이 확인해야 한다.
+- 평가자: `review_cli_evaluator.py`가 `claude -p`(Read 도구)로 전달된 PNG 프레임을 읽는다. 스트림 로그에서 실제로 열린 프레임만 근거로 인정한다. 생성 엔진은 codex 또는 qwen-local이고 평가 엔진은 claude CLI이므로 모델 계열과 프로세스가 다르다. `independent` 값은 평가자 응답이 아니라 서버 바인딩이 정한다. 영상 재생과 소리는 평가하지 못하므로 `viewing_qa`는 unknown으로 남는다.
+- 운영 연결: `TTAKKARI_CREATIVE_REVIEW_CLI_MODEL`을 지정하면 `create_app`이 평가자를 묶는다. 비우면 기존처럼 `not_connected`와 unknown이다. 이 설정은 기본값이 꺼져 있고 운영에서 켜지 않았다.
+- 2D MP4(SHA `0341dd63…a2`)를 이 평가자로 돌려 `semantic_qa`가 fail(자막 바와 캐릭터 발 겹침 결함 1건), `style_continuity`는 pass로 저장됐다. 불확실도가 기준(0.25)을 넘은 `intent_alignment`와 `text_legibility`는 정책대로 unknown이다. 이 파일은 평가 계획에 묶은 기존 결과물이며 이번에 다시 렌더하지 않았다.

@@ -348,6 +348,9 @@ def create_app(
     s = get_settings()
     app = FastAPI(title="Winterholic Ttakkari", version="0.1.0", lifespan=lifespan,
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
+    if creative_review_evaluator is None and s.creative_review_cli_model:
+        from ttakkari.creative.v2.review_cli_evaluator import claude_cli_binding
+        creative_review_evaluator = claude_cli_binding(s.creative_review_cli_model)
     app.state.creative_review_evaluator = creative_review_evaluator
     from ttakkari.generation_service import InflightMiddleware
     app.add_middleware(InflightMiddleware)

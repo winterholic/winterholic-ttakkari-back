@@ -233,10 +233,15 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 
 알려진 한계(이 표에서 보이는 것): A의 "단편"은 카탈로그 힌트에 없어 C01.story_film으로 읽히지 않고, "애니메이션 스타일"이 C01.animation으로도 읽힌다. 단어 힌트의 한계이며 사용자 확인 단계나 LLM 추출(`/intent/runs`)이 보완한다.
 
-## 13. 후속과 범위 밖
+## 13. 이어서 검증할 범위
 
-- 계획 연결: `POST /plans`가 v2를 받거나, v2 → v1 변환(user_confirmed 중 인용 없는 값의 v1 `explicit_without_evidence` 검증 처리 포함)을 정해야 한다. 이번 범위에서는 plans.py를 바꾸지 않았다.
-- 저장: 의도 v2 스냅샷을 PlanStore 계획 문서에 revision과 함께 묶는 일.
 - 질문·추천 문구의 품질은 규칙 데이터 수준이다. AI 감독이 장면 단위 질문을 더할 때도 같은 `Question` 모양과 병합 규칙(설정 id 단일화)을 따른다.
-- 능력 기반 실행 가능성(립싱크 정밀도, HyperFrames 등)은 이 계약이 판정하지 않는다. 기존 `/match`·`/capabilities` 결과를 화면에서 질문 옆에 붙인다.
+- 립싱크·생성 영상 등 능력별 상태와 제약은 [레시피·능력 행렬](creative-studio-v2-capability-matrix.md)에서 확인한다. 렌더 요청은 실제 실행기 의존성과 사양을 다시 검사한다.
 - tone 사전 확장, 카탈로그 정식 편입 여부는 매칭 영향 검토 뒤 결정한다.
+
+## 14. 계획과 스토리보드 연결
+
+- `POST /plans`와 `POST /storyboard/runs`는 확정한 `intent_v2`를 받는다. 계획용 투영은 기존 매칭·길이 계산·Style DNA를 사용한다. PlanStore는 원래 의도와 투영 결과를 함께 저장하고, 계획에서 길이를 변경하면 의도 revision과 이력을 갱신한다.
+- 스토리보드 결과를 검토하고 생산 계획으로 옮길 때 사용자 의도와 화면 비율을 보존한다. 모델이 제안한 장면은 계획에 기록하고, 참조·답변 중 소비할 수 없는 값은 투영의 미반영 목록에 기록한다. 제작 승인은 별도다.
+- Kafka 기술 설명은 검토한 세 장면이 모두 `kafka_flow`를 지정했을 때 R22를 사용한다. 근거와 제약은 [능력 행렬](creative-studio-v2-capability-matrix.md), 과거 실측은 [실행 기록](../../src/ttakkari/creative/v2/data/execution_records.json)에 남긴다.
+- 2026-11-21 검증에서 Kafka 16초 계획은 승인 후 디스패치 사양 검사를 통과했다. Codex 명령 환경에서는 Chromium 권한 검사에서 `mach-register`와 `mach-lookup`이 거부되어 HyperFrames 렌더를 시작하지 않았다. 별도 2D 경로는 실제 8.021초 MP4를 만들었다. 1280×720, 192프레임, 오디오 트랙으로 기계 검사 통과를 확인했고 독립 내용·시청·청취 품질은 미확인으로 남겼다.

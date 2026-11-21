@@ -647,9 +647,16 @@ def _render_directed_segment(adapter, store, plan, segment, data, style, key, ca
         cues += [{**cue, "start": cue["start"] + cursor, "end": cue["end"] + cursor} for cue in local]
         cursor += scene["seconds"]
     output = work / "composite.mp4"
-    receipt = engines.compose_segment(store.asset_path(plan["id"], asset), audio, output,
+    source_path = store.asset_path(plan["id"], asset)
+    source_audio = False
+    if asset.get("kind") == "video":
+        source_audio = (asset.get("meta") or {}).get("has_audio")
+        if source_audio is None:
+            source_audio = inspect_media(source_path)["has_audio"]
+    receipt = engines.compose_segment(source_path, audio, output,
                                      aspect=plan["aspect"], seconds=segment["seconds"], captions=cues,
-                                     caption_style=caption_style, transition=style["applied"].get("transition", "cut"))
+                                     caption_style=caption_style, transition=style["applied"].get("transition", "cut"),
+                                     preserve_source_audio=bool(source_audio))
     loop = _clip_loop(asset, segment["seconds"])
     if loop is not None:
         receipt = {**receipt, "loop": loop}

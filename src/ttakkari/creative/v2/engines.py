@@ -251,11 +251,12 @@ def adapter_for(providers: set[str]) -> EngineAdapter | None:
 def compose_segment(
     source: Path, music: Path, output: Path, *, aspect: str, seconds: float,
     captions: list[dict[str, Any]], caption_style: str = "bottom_card", transition: str = "cut",
+    preserve_source_audio: bool = False,
 ) -> dict[str, Any]:
     """Core single-scene compositor, independent of V1's three-scene format gate.
 
     Preserve decoded source video motion, normalize all producers to 24fps H.264
-    for concat, and use only the approved master audio slice. No model invocation.
+    for concat, and mix source audio into the approved master when present.
     """
     width, height = dimensions(aspect)
     inputs = (["-loop", "1", "-framerate", "24"] if source.suffix.lower() in {".png", ".jpg", ".webp"}
@@ -276,13 +277,18 @@ def compose_segment(
         filters += f";[{current}]fade=t=in:d=0.25,fade=t=out:st={max(0, seconds-0.25):.6f}:d=0.25[out]"
     else:
         filters += f";[{current}]null[out]"
-    args.extend(["-filter_complex_threads", "1", "-filter_complex", filters, "-map", "[out]", "-map", "1:a:0",
+    audio_map = "1:a:0"
+    if preserve_source_audio:
+        filters += ";[1:a:0][0:a:0]amix=inputs=2:duration=first:dropout_transition=0[mixed]"
+        audio_map = "[mixed]"
+    args.extend(["-filter_complex_threads", "1", "-filter_complex", filters, "-map", "[out]", "-map", audio_map,
                  "-t", f"{seconds:.6f}", "-c:v", "libx264", "-preset", "fast", "-crf", "20",
                  "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-movflags", "+faststart", str(output)])
     result = subprocess.run(args, capture_output=True, text=True, timeout=600, check=False)
     if result.returncode:
         raise RuntimeError(f"core compositor exit {result.returncode}: {result.stderr[-1000:]}")
-    return {"commands": [args], "real_execution": True, "video_motion": "source video decoded; no still extraction"}
+    return {"commands": [args], "real_execution": True, "video_motion": "source video decoded; no still extraction",
+            "source_audio_mixed": preserve_source_audio}
 
 
 # --- 실제 미디어 QA ---------------------------------------------------------

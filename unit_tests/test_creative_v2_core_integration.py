@@ -19,6 +19,24 @@ from ttakkari.creative.v2 import dispatch, engines
 from ttakkari.creative.v2.plans import build_plan
 
 
+def test_directed_composite_keeps_audio_from_the_original_video(tmp_path):
+    video, master, output = (tmp_path / name for name in ("source.mp4", "master.wav", "result.mp4"))
+    subprocess.run(
+        [ffmpeg(), "-v", "error", "-f", "lavfi", "-i", "color=size=320x180:rate=24",
+         "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=48000", "-t", "1",
+         "-c:v", "libx264", "-c:a", "aac", str(video)], check=True,
+    )
+    subprocess.run(
+        [ffmpeg(), "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+         "-t", "1", str(master)], check=True,
+    )
+    receipt = engines.compose_segment(
+        video, master, output, aspect="16:9", seconds=1, captions=[], preserve_source_audio=True,
+    )
+    assert receipt["source_audio_mixed"]
+    assert engines.volume(output)["max_db"] > -40
+
+
 @pytest.fixture
 def stores(tmp_path):
     return _stores_fixture.__wrapped__(tmp_path)

@@ -9,7 +9,7 @@ from ttakkari.creative.v2.capabilities import (
     LEVELS,
 )
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
-from ttakkari.creative.v2.probe import PROBE_IDS
+from ttakkari.creative.v2.probe import PROBE_IDS, probe_execution_records
 from ttakkari.creative.v2.registry import SNAPSHOT_PATH, Registry
 
 
@@ -220,8 +220,8 @@ def test_skill_without_code_is_capped_at_declared_and_missing_dependency_propaga
         == "declared"
     )
     assert "실행 코드 없음" in reg.state("skill.ttakkari-motion-rules").blockers[0]
-    assert reg.state("skill.studio-3d-cinematic").installed is False
-    assert set(reg.state("skill.studio-3d-cinematic").levels.values()) == {"missing"}
+    assert reg.state("skill.studio-3d-cinematic-lab").installed is False
+    assert set(reg.state("skill.studio-3d-cinematic-lab").levels.values()) == {"missing"}
 
 
 def test_recipe_verdict_separates_capability_evidence_from_recipe_evidence():
@@ -266,3 +266,28 @@ def test_committed_capability_matrix_doc_is_generated_from_current_code():
     assert doc.read_text() == matrix_markdown(), (
         "python -m ttakkari.creative.v2.report 로 문서를 다시 생성하세요."
     )
+
+
+def test_studio_presets_have_scoped_execution_evidence():
+    reg = Registry(snap(
+        probes={pid: p(True) for pid in PROBE_IDS}, records=probe_execution_records()
+    ))
+    for entry_id, capability, preset in (
+        ("skill.hyperframes", "render.html_motion", "kafka_flow"),
+        ("skill.frame_animation_2d", "render.frame_animation", "walk_cycle"),
+        ("skill.studio-3d-cinematic", "render.3d_preset", "crystal_orbit"),
+    ):
+        state = reg.state(entry_id)
+        assert state.integration == "creative_runtime"
+        assert state.levels[capability] == "executed"
+        assert any(preset in value for value in state.constraints[capability])
+
+
+def test_managed_comfy_limits_and_unavailable_lipsync_are_visible():
+    reg = Registry()
+    wan = reg.state("model.wan22_ti2v_5b")
+    assert any("640x352" in value for value in wan.constraints["gen.video_t2v"])
+    assert any("프로필이 없다" in value for value in wan.constraints["gen.video_i2v"])
+    assert reg.state("tool.rhubarb").levels["anim.lipsync"] in {"missing", "declared"}
+    assert reg.state("tool.artcraft").levels["edit.timeline"] in {"missing", "declared"}
+    assert reg.state("model.multimodal_judge").levels["qa.visual_semantic"] == "missing"

@@ -467,9 +467,12 @@ async def production_repair(pid: PlanId, body: RepairApply, _: User):
 
 
 @router.post("/plans/{pid}/production/review")
-async def production_review_request(pid: PlanId, body: PlanApprove, _: User):
-    return await asyncio.to_thread(perform, production_review.run_review, default_plan_store(),
-                                   default_studio(), str(pid), body.revision)
+async def production_review_request(pid: PlanId, body: PlanApprove, request: Request, _: User):
+    binding = getattr(request.app.state, "creative_review_evaluator", None)
+    return await asyncio.to_thread(
+        perform, production_review.run_review, default_plan_store(),
+        default_studio(), str(pid), body.revision, binding=binding,
+    )
 
 
 @router.get("/plans/{pid}/production/revisions/{revision}")

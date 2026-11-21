@@ -329,7 +329,20 @@ async def test_real_partial_repair_and_trusted_review_preserve_other_runs(
     binding = reviews.EvaluatorBinding(
         "contract-fixture", "1", "in-process test callable", True, fixture_evaluator
     )
-    reviewed = reviews.run_review(plans, studio, plan["id"], 2, binding=binding)
+    from ttakkari.main import create_app
+
+    monkeypatch.setattr(api, "default_plan_store", lambda: plans)
+    monkeypatch.setattr(api, "default_studio", lambda: studio)
+    app = create_app(creative_review_evaluator=binding)
+    app.dependency_overrides[require_user] = lambda: "owner"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"/api/creative/v2/plans/{plan['id']}/production/review", json={"revision": 2}
+        )
+    assert response.status_code == 200, response.text
+    reviewed = response.json()
     assert reviewed["status"] == "recorded"
     store = dispatch.ProductionStore(plans)
     original = store.read(plan["id"])

@@ -7,12 +7,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import Field
+
 from ttakkari.creative.v2.capabilities import (
     CAPABILITIES,
     GLOBAL_PREFERS,
     GLOBAL_REQUIRES,
     INTEGRATION_RANK,
     LEVEL_RANK,
+    Claim,
     EntryState,
     Level,
     Recipe,
@@ -22,6 +25,7 @@ from ttakkari.creative.v2.capabilities import (
 )
 from ttakkari.creative.v2.registry_data import MODELS, RECIPES, SKILLS, TOOLS
 
+COMFY_TOOL = "tool.comfyui"
 SNAPSHOT_PATH = Path(__file__).parent / "data" / "capability_snapshot.json"
 
 
@@ -39,6 +43,8 @@ class Provider(Strict):
     level: Level
     integration: str
     evidence: list[str]
+    # 이 공급자로 실행할 때 지켜야 할 한계(지원 범위·관리형 프로필 범위·강등 근거).
+    constraints: list[str] = Field(default_factory=list)
 
 
 class GroupResult(Strict):
@@ -116,6 +122,34 @@ class Registry:
             return "executed", label
         return "executed_partial", label
 
+    def _uses_comfy(self, entry: RegistryEntry, seen: frozenset[str] = frozenset()) -> bool:
+        if entry.id in seen:
+            return False
+        return any(
+            dep == COMFY_TOOL or (dep in self.entries and self._uses_comfy(self.entries[dep], seen | {entry.id}))
+            for dep in entry.depends_on
+        )
+
+    def _claim_constraints(self, entry: RegistryEntry, claim: Claim) -> list[str]:
+        out = list(claim.limits)
+        if claim.managed is not None:
+            m = claim.managed
+            size = f"{m.width}x{m.height}" if m.width and m.height else "해상도 미상"
+            length = f"약 {m.max_seconds:g}초" if m.max_seconds else "길이 미상"
+            out.append(
+                f"관리형 ComfyUI 프로필 {m.profile}(workflow {m.workflow})만 실행 가능: {length}, {size}"
+                + (f", {m.fps}fps" if m.fps else "")
+                + ". 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다"
+                + (f" (실측 {m.measured_on})" if m.measured_on else "")
+            )
+        elif self._uses_comfy(entry) and claim.capability.startswith(("gen.", "asset.")):
+            out.append(
+                "이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다."
+            )
+        if claim.demoted:
+            out.append(f"강등: {claim.demoted}")
+        return out
+
     def state(self, entry_id: str) -> EntryState:
         cached = self._states.get(entry_id)
         if cached:
@@ -139,7 +173,8 @@ class Registry:
                     blockers.append(f"탐침 {probe_id} 미설치")
         has_code = True
         if entry.kind == "skill" and self.snapshot is not None:
-            skill = self.snapshot.get("skills", {}).get(entry.id.removeprefix("skill."))
+            skill_probe = next((p for p in entry.probes if p.startswith("skill:")), "")
+            skill = self.snapshot.get("skills", {}).get(skill_probe.removeprefix("skill:"))
             if skill is not None:
                 has_code = bool(skill["has_code"])
                 if not has_code:
@@ -151,13 +186,14 @@ class Registry:
                 blockers.append(f"의존 {dep} 미설치")
         levels: dict[str, Level] = {}
         evidence: dict[str, list[str]] = {}
+        constraints: dict[str, list[str]] = {}
         for claim in entry.claims:
             refs: list[str] = []
             if installed is None:
                 level: Level = "declared"
             elif installed is False:
                 level = "missing"
-            elif not has_code:
+            elif not has_code or claim.demoted:
                 level = "declared"
             else:
                 level = "installed"
@@ -172,6 +208,10 @@ class Registry:
                 else level
             )
             evidence.setdefault(claim.capability, []).extend(refs)
+            for text in self._claim_constraints(entry, claim):
+                bucket = constraints.setdefault(claim.capability, [])
+                if text not in bucket:
+                    bucket.append(text)
         state = EntryState(
             id=entry.id,
             kind=entry.kind,
@@ -181,6 +221,7 @@ class Registry:
             integration=entry.integration,
             levels=levels,
             evidence=evidence,
+            constraints=constraints,
             blockers=blockers,
             cost_note=entry.cost_note,
             license=entry.license,
@@ -207,6 +248,7 @@ class Registry:
                         level=state.levels[capability],
                         integration=state.integration,
                         evidence=state.evidence.get(capability, []),
+                        constraints=state.constraints.get(capability, []),
                     )
                 )
         return sorted(

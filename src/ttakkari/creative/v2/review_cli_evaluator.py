@@ -105,7 +105,7 @@ def _json_object(text: str) -> dict[str, Any]:
     start, end = text.find("{"), text.rfind("}")
     value = json.loads(text[start : end + 1])
     if not isinstance(value, dict):
-        raise ValueError("evaluator answer is not a JSON object")
+        raise ValueError("evaluator answer is not a JSON object")  # noqa: TRY004 — preserve the evaluator validation contract
     return value
 
 

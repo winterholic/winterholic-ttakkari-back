@@ -174,7 +174,10 @@ def test_runner_error_result_raises(tmp_path):
 
 
 def test_binding_independence_comes_from_engine_sets_not_reviewer_claims():
-    from ttakkari.creative.v2.review_cli_evaluator import GENERATOR_ENGINES, claude_cli_binding
+    from ttakkari.creative.v2.review_cli_evaluator import (
+        GENERATOR_ENGINES,
+        claude_cli_binding,
+    )
 
     binding = claude_cli_binding("sonnet", runner=lambda p, d: [])
     assert GENERATOR_ENGINES == {"qwen-local", "codex"}

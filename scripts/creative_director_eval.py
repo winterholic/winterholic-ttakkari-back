@@ -48,7 +48,7 @@ def cluster(action: str) -> None:
     if action == "start":
         if not (data / "PG_VERSION").exists():
             subprocess.run([PG_BIN / "initdb", "-D", data, "-A", "trust", "-U", "eval", "--locale=C", "-E", "UTF8"], check=True, capture_output=True)
-        if subprocess.run([PG_BIN / "pg_ctl", "-D", data, "status"], capture_output=True).returncode == 0:
+        if subprocess.run([PG_BIN / "pg_ctl", "-D", data, "status"], check=False, capture_output=True).returncode == 0:
             return
         subprocess.run([PG_BIN / "pg_ctl", "-D", data, "-o", f"-p {PORT} -k {ROOT} -c listen_addresses=127.0.0.1",
                         "-l", ROOT / "pg.log", "-w", "start"], check=True, capture_output=True)
@@ -227,8 +227,8 @@ def review_plan(media: Path):
     from ttakkari.creative.v2.catalog_data import ENTRIES
     from ttakkari.creative.v2.duration import DurationRequest
     from ttakkari.creative.v2.intent import Extraction, InfoItem, IntentSpec, Selection
-    from ttakkari.creative.v2.plans import build_plan, default_plan_store
     from ttakkari.creative.v2.planner import ProductionDirection
+    from ttakkari.creative.v2.plans import build_plan, default_plan_store
 
     assert "C08.three_act" in ENTRIES  # the structure entry the core reuse path can approve
     items = [InfoItem(id="walk", title="캐릭터 걷기", narration="2D 캐릭터가 화면을 가로질러 걷는다", essential=False)]

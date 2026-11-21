@@ -8,13 +8,10 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+
 from ttakkari.creative.v2.frame_animation import (
-    AnimationScene,
-    CameraKeyframe,
     LayerTransform,
     RiggedPose,
-    SubtitleCue,
 )
 
 

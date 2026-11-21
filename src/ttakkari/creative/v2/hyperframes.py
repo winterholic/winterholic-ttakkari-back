@@ -374,8 +374,8 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     for scene in scenes:
         title = str(scene.get("title") or scene.get("caption") or "").strip()
         narration = str(scene.get("narration") or scene.get("caption") or scene.get("prompt") or "").strip()
-        if not title or (caption_mode == "narration" and not narration):
-            raise ValueError("각 scene에 title/caption 및 narration/caption/prompt가 필요합니다.")
+        if not title:
+            raise ValueError("각 scene에 title 또는 caption이 필요합니다.")
         clean_scenes.append({"title": title, "narration": narration if caption_mode == "narration" else ""})
     payload = {
         "title": str(spec.get("title") or "").strip(),

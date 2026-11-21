@@ -253,6 +253,18 @@ def test_kafka_project_keeps_template_title_without_explicit_title(tmp_path):
     assert '"title": ""' in (project / "index.html").read_text()
 
 
+def test_kafka_default_caption_mode_keeps_titles_without_spoken_narration(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({
+        "seconds": 16,
+        "scenes": [{"title": title, "narration": ""} for title in ("발행", "로그 기록", "소비")],
+    }, tmp_path)
+    html = (project / "index.html").read_text()
+    for title in ("발행", "로그 기록", "소비"):
+        assert f'{{"title": "{title}", "narration": ""}}' in html
+
+
 def test_render_segment_rejects_unsupported_core_style_dna_before_preflight(monkeypatch, tmp_path):
     from ttakkari.creative.v2 import hyperframes
 

@@ -105,6 +105,7 @@ class V1SlideshowAdapter:
 
 
 ADAPTERS: list[EngineAdapter] = [V1SlideshowAdapter()]
+CORE_SHOT_CAPABILITIES = frozenset({"edit.timeline", "edit.captions", "audio.mix", "qa.machine_video"})
 _FAILED_PREFLIGHTS: dict[str, Preflight] = {}
 
 
@@ -178,8 +179,9 @@ class ModuleAdapter:
         if self.module == "hyperframes" and (len(scenes) != 3 or any(s.get("preset") != "kafka_flow" for s in scenes)):
             reasons.append("HyperFrames: preset=kafka_flow and exactly three scenes required")
         reasons += single_shot_reasons(self.id, scenes)
+        supported = CORE_SHOT_CAPABILITIES if self.module == "hyperframes" else frozenset()
         for scene in scenes:
-            if any(shot.get("required_capabilities") for shot in scene.get("shots", [])):
+            if any(set(shot.get("required_capabilities", [])) - supported for shot in scene.get("shots", [])):
                 reasons.append(f"{self.id}: arbitrary shot capabilities are not supported by fixed presets")
             if any(shot.get("inputs") or shot.get("depends_on") for shot in scene.get("shots", [])):
                 reasons.append(f"{self.id}: shot inputs/depends_on are not consumed by fixed presets")

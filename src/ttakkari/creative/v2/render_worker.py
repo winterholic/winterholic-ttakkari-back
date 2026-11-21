@@ -45,11 +45,12 @@ def enqueue(plans, plan_id, revision, *, retry=False):
             "plan_id": plan_id,
             "revision": revision,
         }
+    supported = SUPPORTED | {"code_motion"} if dispatch._is_kafka_motion_plan(plan) else SUPPORTED
     unsupported = sorted(
         {
             s.get("strategy")
             for s in plan["scenes"]
-            if s.get("strategy") and s["strategy"] not in SUPPORTED
+            if s.get("strategy") and s["strategy"] not in supported
         }
     )
     if unsupported:

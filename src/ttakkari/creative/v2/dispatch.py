@@ -81,12 +81,31 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _is_kafka_motion_plan(plan: dict[str, Any]) -> bool:
+    return (
+        bool(plan.get("director"))
+        and plan["match"].get("primary_recipe") == KAFKA_RECIPE_ID
+        and len(plan["scenes"]) == 3
+        and all(scene.get("strategy") == "code_motion" and scene.get("preset") == "kafka_flow"
+                for scene in plan["scenes"])
+    )
+
+
 def _providers(plan: dict[str, Any]) -> set[str]:
-    return {
-        need["best"]["entry_id"]
+    kafka_motion = _is_kafka_motion_plan(plan)
+    # The approved registry snapshot may name the legacy timeline provider.
+    # Kafka's HyperFrames adapter performs those editorial operations with FFmpeg.
+    providers = {
+        "tool.ffmpeg"
+        if (kafka_motion and need["best"]["entry_id"] == engines.V1SlideshowAdapter.id
+            and need["best"]["capability"] in {"edit.timeline", "edit.captions"})
+        else need["best"]["entry_id"]
         for need in plan["match"]["needs"]
         if need["priority"] == "must" and need.get("best")
     }
+    if kafka_motion:
+        providers.add("skill.hyperframes")
+    return providers
 
 
 # --- 사전 조건 ---------------------------------------------------------------
@@ -152,10 +171,9 @@ def dispatch_blockers(plan: dict[str, Any], *, runtime_preflight: bool = True) -
     if plan.get("director"):
         for segment in plan["render_plan"]["segments"]:
             scenes = _segment_scenes(plan, segment)
-            core_capabilities = {"edit.timeline", "edit.captions", "audio.mix", "qa.machine_video"}
             for scene in scenes:
                 for shot in scene.get("shots", []):
-                    unsupported = set(shot.get("required_capabilities", [])) - core_capabilities
+                    unsupported = set(shot.get("required_capabilities", [])) - engines.CORE_SHOT_CAPABILITIES
                     if unsupported:
                         reasons.append(f"shot {shot['shot_id']}: unsupported required capabilities: {', '.join(sorted(unsupported))}")
             selected = engines.adapter_by_id(scenes[0]["selected_engine"])

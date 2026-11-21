@@ -129,4 +129,47 @@ def test_musicless_kafka_dispatch_computes_run_key_and_reports_outdated_segments
     plan = plans.approve(plan["id"], plan["revision"])
     view = dispatch.dispatch(plans, Studio(tmp_path / "studio"), plan["id"], plan["revision"])
     assert view["state"] == "ready_to_render"
+    assert view["engine"]["adapter"] == "skill.hyperframes"
     assert view["outdated_segments"] == ["seg-01"]
+
+
+def test_reviewed_kafka_dispatches_and_queues_with_core_shot_requirements(
+    tmp_path, monkeypatch,
+):
+    from ttakkari import queued_work
+    from ttakkari.creative.service import Studio
+    from ttakkari.creative.v2 import engines, render_worker
+
+    info = [InfoItem(id=slug, title=slug.title()) for slug in ("producer", "broker", "consumer")]
+    intent = IntentSpec(
+        selections=[Selection(
+            entry_id="C01.tech_explainer", role="primary", strength="hard",
+            source="user_explicit", confirmed=True,
+        )],
+        duration=DurationRequest(mode="exact", seconds=16), info_items=info, aspect="16:9",
+    )
+    direction = ProductionDirection.model_validate({
+        "source": "user_structured", "reviewed": True, "intent": "Kafka 메시지 흐름",
+        "scenes": [
+            {"scene_id": item.id, "strategy": "code_motion", "preset": "kafka_flow",
+             "rationale": "흐름 도식", "shots": [{"shot_id": item.id, "action": item.title,
+                "required_capabilities": ["edit.timeline", "edit.captions", "audio.mix", "qa.machine_video"]}]}
+            for item in info
+        ],
+    })
+    candidate = build_plan(BRIEF, intent, director=direction)
+    timeline = next(need for need in candidate["match"]["needs"] if need["options"] == ["edit.timeline"])
+    assert timeline["best"]["entry_id"] == "skill.v1_ffmpeg_slideshow"
+    plans = PlanStore(tmp_path / "plans")
+    saved = plans.create(candidate)
+    plan = plans.approve(saved["id"], saved["revision"])
+    assert plan["match"]["primary_recipe"] == "R22"
+    monkeypatch.setattr(queued_work, "delegated", lambda: True)
+    monkeypatch.setattr(engines.ModuleAdapter, "preflight", lambda *_: pytest.fail("API ran host preflight"))
+    view = dispatch.dispatch(plans, Studio(tmp_path / "studio"), plan["id"], plan["revision"])
+    assert view["state"] == "ready_to_render"
+    assert view["engine"]["adapter"] == "skill.hyperframes"
+    assert view["engine"]["producers"] == ["skill.hyperframes_motion"]
+    request = render_worker.enqueue(plans, plan["id"], plan["revision"])
+    assert request["status"] == "queued"
+    assert render_worker.enqueue(plans, plan["id"], plan["revision"])["id"] == request["id"]

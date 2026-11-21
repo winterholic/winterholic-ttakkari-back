@@ -135,41 +135,59 @@ def run_review(
             raise dispatch.ProductionError("review rubric changed after dispatch")
         assets_sha = quality.content_hash(data["assets"])
     execution_id = str(uuid.uuid4())
-    package = quality_worker.prepare_review(
-        plan, media, store.folder(plan_id) / "reviews" / execution_id
-    )
-    receipt = quality_worker.deliver_review(package, binding.execute)
-    if receipt.get("stage") not in {"semantic_qa", "viewing_qa"} or not isinstance(
-        receipt.get("criteria"), list
-    ):
-        raise dispatch.ProductionError("evaluator returned an invalid stage/criteria")
-    # An evaluator response cannot declare its own independence or identity.
-    receipt["evaluator"] = {
-        "id": binding.id,
-        "version": binding.version,
-        "source": binding.source,
-        "independent": binding.independent,
-    }
-    artifacts = [
-        package["media"],
-        *package["frames"],
-        *([package["audio"]] if package.get("audio") else []),
-    ]
-    allowed = {(a["path"], a["sha256"]): a for a in artifacts}
-    evidence = _evidence(receipt)
-    identity_fields = ("source_sha256", "kind", "start_time", "end_time")
-    if not evidence or any(
-        not isinstance(e, dict)
-        or (e.get("path"), e.get("sha256")) not in allowed
-        or any(
-            e.get(key) != allowed[(e["path"], e["sha256"])].get(key)
-            for key in identity_fields
+    try:
+        package = quality_worker.prepare_review(
+            plan, media, store.folder(plan_id) / "reviews" / execution_id
         )
-        for e in evidence
-    ):
-        raise dispatch.ProductionError(
-            "evaluator evidence must name hash-verified delivered media"
-        )
+        receipt = quality_worker.deliver_review(package, binding.execute)
+        if receipt.get("stage") not in {"semantic_qa", "viewing_qa"} or not isinstance(
+            receipt.get("criteria"), list
+        ):
+            raise dispatch.ProductionError("evaluator returned an invalid stage/criteria")
+        # An evaluator response cannot declare its own independence or identity.
+        receipt["evaluator"] = {
+            "id": binding.id,
+            "version": binding.version,
+            "source": binding.source,
+            "independent": binding.independent,
+        }
+        artifacts = [
+            package["media"],
+            *package["frames"],
+            *([package["audio"]] if package.get("audio") else []),
+        ]
+        allowed = {(a["path"], a["sha256"]): a for a in artifacts}
+        evidence = _evidence(receipt)
+        identity_fields = ("source_sha256", "kind", "start_time", "end_time")
+        if not evidence or any(
+            not isinstance(e, dict)
+            or (e.get("path"), e.get("sha256")) not in allowed
+            or any(
+                e.get(key) != allowed[(e["path"], e["sha256"])].get(key)
+                for key in identity_fields
+            )
+            for e in evidence
+        ):
+            raise dispatch.ProductionError(
+                "evaluator evidence must name hash-verified delivered media"
+            )
+    except Exception as exc:
+        # The failure is recorded as a fact and the original exception still propagates unchanged.
+        failed = {
+            "status": "evaluator_failed",
+            "execution_id": execution_id,
+            "verdict": "unknown",
+            "error": f"{type(exc).__name__}: {exc}"[:400],
+        }
+        try:
+            with store.tx(plan_id, blocking=False) as data:
+                current = dispatch._record(data, revision)
+                if current is not None:
+                    current["review_execution"] = failed
+                    dispatch._log(current, "review_evaluator_failed", **failed)
+        except (dispatch.ProductionError, OSError):
+            pass  # a busy lease must not hide the evaluator's own error
+        raise
     attestation = attest(
         receipt,
         execution_id=execution_id,

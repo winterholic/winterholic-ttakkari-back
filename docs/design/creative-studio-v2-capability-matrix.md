@@ -447,15 +447,15 @@
 
 | ID | 이름 | 설치 | 버전 | 연동 | 능력 수준 | 차단 사유·제약 |
 |---|---|---|---|---|---|---|
-| model.flux2_klein_4b | FLUX.2 klein 4B | 예 | - | lab_only | gen.image=executed, gen.image_edit=executed, asset.character_sheet=executed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
+| model.flux2_klein_4b | FLUX.2 klein 4B | 예 | - | lab_only | gen.image=executed, gen.image_edit=executed, asset.character_sheet=executed | 관리형 ComfyUI 프로필 flux2-klein-t2i-16x9(workflow t2i-flux2-klein)만 실행 가능: 1280x720 (관리형 실측 기록 없음: 배포 후 검증 대상) / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | model.qwen_image_edit_2511 | Qwen-Image-Edit-2511 | 예 | - | lab_only | gen.image_edit=executed_partial | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
-| model.wan22_ti2v_5b | Wan2.2 TI2V 5B | 예 | - | lab_only | gen.video_t2v=executed, gen.video_i2v=installed | lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). 관리형 프로필은 draft 하나뿐이라 이 길이는 제작 경로에서 쓸 수 없다. / 관리형 ComfyUI 프로필 wan22-5b-draft(workflow t2v-wan22-5b)만 실행 가능: 약 1.375초, 640x352, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (실측 2026-11-22) / lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
+| model.wan22_ti2v_5b | Wan2.2 TI2V 5B | 예 | - | lab_only | gen.video_t2v=executed, gen.video_i2v=installed | lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). 장시간 관리형 프로필 wan22-5b-t2v-long-16x9 는 이 작업 코드에 등록됐지만 현재 운영에는 없고, 배포 후 managed 실측 전이다. / wan22-5b-t2v-long-16x9(832x480, 최대 5.04초)가 managed_comfy.PROFILES 에 등록돼 있으나 관리형 실행 기록이 없다. 실행 기록은 draft 프로필뿐이다. / 관리형 ComfyUI 프로필 wan22-5b-draft(workflow t2v-wan22-5b)만 실행 가능: 약 1.375초, 640x352, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (실측 2026-11-22) / lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 관리형 ComfyUI 프로필 wan22-5b-i2v-16x9(workflow i2v-wan22-5b)만 실행 가능: 약 3.375초, 832x480, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (관리형 실측 기록 없음: 배포 후 검증 대상) |
 | model.wan22_i2v_14b | Wan2.2 I2V 14B + LightX2V | 예 | - | lab_only | gen.video_i2v=installed | lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | model.ltx23 | LTX-2.3 22B | 예 | - | none | gen.video_i2v=installed, gen.video_t2v=installed | lab ComfyUI 워크플로 레지스트리에 이 모델의 워크플로가 없다. 모델 파일만 디스크에 있고 실행 경로가 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | model.hunyuanvideo15 | HunyuanVideo 1.5 720p | 예 | - | none | gen.video_t2v=installed | lab ComfyUI 워크플로 레지스트리에 이 모델의 워크플로가 없다. 모델 파일만 디스크에 있고 실행 경로가 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | model.seedvr2 | SeedVR2 3B | 예 | - | lab_only | gen.upscale=installed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | model.film_net | FILM 프레임 보간 | 예 | - | lab_only | gen.interpolate=installed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
-| model.acestep15 | ACE-Step 1.5 | 예 | - | lab_only | audio.music_generate=executed, audio.music_analysis=executed | - |
+| model.acestep15 | ACE-Step 1.5 | 예 | - | lab_only | audio.music_generate=executed, audio.music_analysis=executed | 관리형 프로필 acestep15-music(10~120초, 기본 30초)이 managed_comfy.PROFILES 에 등록돼 있으나 프로필 경유 실행 기록은 없다. 과거 기록은 ACE-Step 직접 실행이다. |
 | model.supertonic3 | Supertonic 3 (ONNX CPU TTS) | 예 | - | app_service | audio.tts=executed | - |
 | model.faster_whisper | faster-whisper large-v3 | 예 | - | app_service | audio.stt=executed | - |
 | model.multimodal_judge | 멀티모달 평가 모델 | 아니오 | - | none | qa.visual_semantic=missing | 등록·실행된 적이 없다 |
@@ -476,16 +476,16 @@
 | skill.ttakkari-video-qa | 렌더 후 프레임 검수 루프 | 예 | - | lab_only | qa.machine_video=executed | - |
 | skill.studio-3d-cinematic-lab | Three.js 시네마틱 3D 렌더 + 감사 게이트 | 예 | - | lab_only | render.three_realtime=executed, anim.camera_virtual=executed, light.cinematic=executed, vfx.particles=executed, qa.continuity=executed | - |
 | skill.studio-character-lipsync | 한국어 TTS + 음절 립싱크 3D 캐릭터 | 예 | - | lab_only | anim.lipsync=executed, audio.tts=executed | - |
-| skill.t2i-flux2-klein | FLUX.2 klein 텍스트→이미지 | 예 | - | lab_only | gen.image=executed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
+| skill.t2i-flux2-klein | FLUX.2 klein 텍스트→이미지 | 예 | - | lab_only | gen.image=executed | 관리형 ComfyUI 프로필 flux2-klein-t2i-16x9(workflow t2i-flux2-klein)만 실행 가능: 1280x720 (관리형 실측 기록 없음: 배포 후 검증 대상) |
 | skill.edit1-flux2-klein | FLUX.2 klein 참조 편집(1) | 예 | - | lab_only | gen.image_edit=executed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.edit2-flux2-klein | FLUX.2 klein 참조 편집(2) | 예 | - | lab_only | gen.image_edit=executed, asset.character_sheet=executed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.edit1-qwen-image-edit-2511 | Qwen 참조 편집(1) | 예 | - | lab_only | gen.image_edit=executed_partial | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.edit2-qwen-image-edit-2511 | Qwen 참조 편집(2) | 예 | - | lab_only | gen.image_edit=executed_partial | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
-| skill.t2v-wan22-5b | Wan2.2 5B 텍스트→영상 | 예 | - | lab_only | gen.video_t2v=executed | 관리형 ComfyUI 프로필 wan22-5b-draft(workflow t2v-wan22-5b)만 실행 가능: 약 1.375초, 640x352, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (실측 2026-11-22) |
-| skill.i2v-wan22-5b | Wan2.2 5B 이미지→영상 | 예 | - | lab_only | gen.video_i2v=installed | lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
+| skill.t2v-wan22-5b | Wan2.2 5B 텍스트→영상 | 예 | - | lab_only | gen.video_t2v=executed | wan22-5b-t2v-long-16x9(832x480, 최대 5.04초)가 managed_comfy.PROFILES 에 등록돼 있으나 관리형 실행 기록이 없다. 실행 기록은 draft 프로필뿐이다. / 관리형 ComfyUI 프로필 wan22-5b-draft(workflow t2v-wan22-5b)만 실행 가능: 약 1.375초, 640x352, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (실측 2026-11-22) |
+| skill.i2v-wan22-5b | Wan2.2 5B 이미지→영상 | 예 | - | lab_only | gen.video_i2v=installed | lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 관리형 ComfyUI 프로필 wan22-5b-i2v-16x9(workflow i2v-wan22-5b)만 실행 가능: 약 3.375초, 832x480, 24fps. 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다 (관리형 실측 기록 없음: 배포 후 검증 대상) |
 | skill.i2v-wan22-14b-lightx2v | Wan2.2 14B 이미지→영상 | 예 | - | lab_only | gen.video_i2v=installed | lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22). / 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.interpolate-film-video | FILM 프레임 보간 | 예 | - | lab_only | gen.interpolate=installed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.upscale-seedvr2-video | SeedVR2 영상 업스케일 | 예 | - | lab_only | gen.upscale=installed | 이 기능의 관리형 ComfyUI 프로필이 없다. 실험실 실행 기록과 모델 설치 상태만 표시한다. |
 | skill.studio-audio-mix | ffmpeg 오디오 믹싱(덕킹·라우드니스) | 예 | - | lab_only | audio.mix=installed | - |
-| skill.studio-music-generate-sync | ACE-Step 음악 생성 + BPM·LRC 동기 | 예 | - | lab_only | audio.music_generate=executed, audio.music_analysis=executed, qa.audio_sync=executed | - |
+| skill.studio-music-generate-sync | ACE-Step 음악 생성 + BPM·LRC 동기 | 예 | - | lab_only | audio.music_generate=executed, audio.music_analysis=executed, qa.audio_sync=executed | 관리형 프로필 acestep15-music(10~120초, 기본 30초)이 managed_comfy.PROFILES 에 등록돼 있으나 프로필 경유 실행 기록은 없다. 과거 기록은 ACE-Step 직접 실행이다. |
 | skill.studio-pipeline-checkpoints | 파이프라인 체크포인트·부분 재실행 | 예 | - | lab_only | orch.checkpoint_resume=executed | - |

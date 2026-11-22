@@ -94,10 +94,12 @@ def controller(tmp_path):
 
 def test_registered_profile_is_fixed_and_rejects_unknown_workflow(controller):
     service, _servers = controller
-    assert service.profiles() == [{"id": "wan22-5b-draft", "workflow": "t2v-wan22-5b",
-                                  "revision": PROFILES["wan22-5b-draft"].revision,
-                                  "preset": "draft", "capabilities": ["gen.video_t2v"], "required_gb": 16,
-                                  "models": list(PROFILES["wan22-5b-draft"].models)}]
+    draft = next(p for p in service.profiles() if p["id"] == "wan22-5b-draft")
+    assert draft == {"id": "wan22-5b-draft", "workflow": "t2v-wan22-5b",
+                     "revision": PROFILES["wan22-5b-draft"].revision,
+                     "preset": "draft", "capabilities": ["gen.video_t2v"], "required_gb": 16,
+                     "models": list(PROFILES["wan22-5b-draft"].models),
+                     "kind": "video", "engine": "comfy", "limits": {"measured": None}}
     with pytest.raises(ValueError, match="registered profile"):
         service.prepare("arbitrary-shell-or-workflow", prompt="x", seed=1)
 

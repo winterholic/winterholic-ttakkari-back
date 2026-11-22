@@ -47,6 +47,22 @@ class Command(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+AUTO_ASSET_ENGINES = [
+    "managed-comfy FLUX.2 klein keyframe (flux2-klein-t2i-16x9)",
+    "managed-comfy Wan 2.2 5B image-to-video (wan22-5b-i2v-16x9)",
+    "managed-comfy Wan 2.2 5B text-to-video (wan22-5b-t2v-long-16x9, wan22-5b-draft)",
+    "managed-comfy ACE-Step 1.5 music (acestep15-music)",
+    "local Supertonic",
+]
+AUTO_ASSET_SCENE_ROUTING = {
+    "still keyframe": "shot output_contract.kind=image only -> keyframe image",
+    "moving clip": "keyframe -> image-to-video up to 3.375s; longer scenes use text-to-video up to 5.04s first",
+    "fallback": "keyframe image + ffmpeg camera motion only after every generative step is blocked or failed; "
+                "the reasons are recorded in each scene asset's generation_route and fallback_reason",
+    "music": "acestep15-music with the plan duration (profile limit 120s)",
+}
+
+
 async def agent_access(sid: OrchestratorSession, db: Db) -> str:
     row = await db.get(ChatSession, sid)
     if row is None:
@@ -191,7 +207,8 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         result["automatic_asset_generation"] = {
             "available": True,
             "supported_recipes": ["R21"],
-            "engines": ["managed-comfy Wan 2.2 draft", "local Supertonic", "local ACE-Step 1.5"],
+            "engines": AUTO_ASSET_ENGINES,
+            "scene_routing": AUTO_ASSET_SCENE_ROUTING,
             "cancel_available": False,
             "reason": "Readiness is checked by comfy_readiness and again immediately before generation. Whole-job cancellation is not supported.",
         }
@@ -239,7 +256,8 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         return {
             "available": True,
             "supported_recipes": ["R21"],
-            "engines": ["managed-comfy Wan 2.2 draft", "local Supertonic", "local ACE-Step 1.5"],
+            "engines": AUTO_ASSET_ENGINES,
+            "scene_routing": AUTO_ASSET_SCENE_ROUTING,
             "start": "creative_v2_auto_assets_start",
             "retry": "creative_v2_auto_assets_retry",
             "cancel_available": False,

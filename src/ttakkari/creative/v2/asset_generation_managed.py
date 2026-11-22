@@ -20,7 +20,7 @@ from PIL import Image
 from ttakkari.config import get_settings
 from ttakkari.creative.director import default_director_store
 from ttakkari.creative.render import ffmpeg, inspect_media
-from ttakkari.host_resource import ResourceLeaseManager
+from ttakkari.creative.v2 import asset_routing
 
 _logger = logging.getLogger(__name__)
 
@@ -30,11 +30,6 @@ ASSET_LAB_ROOT = Path(
         str(Path.home() / "development/projects/ttakkari-studio-lab"),
     )
 )
-ACESTEP_ROOT = ASSET_LAB_ROOT / "audio/refs/ACE-Step-1.5"
-ACESTEP_JOB_RUNNER = ASSET_LAB_ROOT / "audio/run_acestep_job.py"
-ACESTEP_PYTHON = ACESTEP_ROOT / ".venv/bin/python"
-ACESTEP_TIMEOUT_SECONDS = 1800
-LEASE_TTL_SECONDS = 300
 # 앞 엔진은 성공을 기록한 뒤 런타임을 멈추고 lease 를 해제한다(Comfy 정지는 수 초에서 수십 초). 같은 작업의 다음 엔진은
 # 그 인계 구간을 기다려야 하며, 기다려도 풀리지 않는 외부 점유만 실패로 올린다.
 LEASE_HANDOFF_WAIT_SECONDS = 180
@@ -44,11 +39,18 @@ SCENE_NEGATIVE_PROMPT = (
 )
 
 
+KEYFRAME_SIZE = (1280, 720)
+
+
+class StepFailed(RuntimeError):
+    """관리형 작업이 failed 로 확정됐다. 제출이 확정 실패했을 때만 다음 생성 단계로 내려간다."""
+
+
 class ManagedAssetGenerator:
     """R21 scene assets via the existing managed Comfy, local TTS and ACE-Step paths."""
 
     engine_id = "creative-v2.managed-comfy+supertonic+acestep"
-    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v3+native-video-v1+scene-cache-v1"
+    version = "scene-routing-v1+flux2-klein+wan22-5b+local-supertonic+acestep-v15-turbo+scene-brief-v3+scene-cache-v2"
 
     def __init__(self, *, controller=None, store=None, clock=time.monotonic, loop=None):
         self._controller = controller
@@ -57,6 +59,7 @@ class ManagedAssetGenerator:
         # generate()는 worker thread 에서 돈다. TTS 실행 예산(generation.work, DB 풀)은 서버 이벤트 루프에 묶여 있어
         # 새 루프(asyncio.run)에서 쓰면 "attached to a different loop" 로 실패하므로 그 루프에서 실행한다.
         self._loop = loop
+        self._unavailable: dict[str, str] = {}
 
     @property
     def controller(self):
@@ -80,21 +83,33 @@ class ManagedAssetGenerator:
 
     def blockers(self, plan: dict[str, Any]) -> list[str]:
         reasons: list[str] = []
+        models_root = None
         try:
             from ttakkari import managed_comfy
-            from ttakkari.managed_comfy_receipt import model_entry
 
-            profile = managed_comfy.PROFILES["wan22-5b-draft"]
             models_root = managed_comfy.COMFY_ROOT / "ComfyUI" / "models"
-            models = [model_entry(name, models_root, hash_limit=0) for name in profile.models]
-            missing_models = [model["name"] for model in models if not model.get("found")]
+            profile_ids = {
+                profile_id
+                for scene in plan["scenes"]
+                for step in asset_routing.route_scene(scene).ladder
+                if (profile_id := asset_routing.STEP_PROFILES[step][0])
+            }
+            self._unavailable = {
+                profile_id: why
+                for profile_id in sorted(profile_ids)
+                if (why := asset_routing.profile_blockers(profile_id, models_root=models_root))
+            }
         except Exception as exc:  # noqa: BLE001 - probe errors are blockers, never a fallback
             reasons.append(f"managed Comfy 사전 점검 실패: {type(exc).__name__}: {exc}")
+            self._unavailable = {}
         else:
-            if missing_models:
-                reasons.append(
-                    "managed Comfy 필수 모델 파일이 없습니다: " + ", ".join(missing_models)
-                )
+            for scene in plan["scenes"]:
+                route = asset_routing.route_scene(scene)
+                if not self._usable_steps(route):
+                    reasons.append(
+                        f"장면 {route.scene_id}에 쓸 수 있는 생성 프로필이 없습니다: "
+                        + "; ".join(f"{pid}: {why}" for pid, why in self._unavailable.items())
+                    )
         torch_probe = self._probe_comfy_torch()
         if torch_probe.get("error"):
             reasons.append(f"Comfy PyTorch 장치 사전 점검 실패: {torch_probe['error']}")
@@ -115,14 +130,15 @@ class ManagedAssetGenerator:
                 reasons.append(
                     "Supertonic 음성 모델을 사용할 수 없습니다: " + str(availability.reason)
                 )
-        required = (
-            ACESTEP_JOB_RUNNER,
-            ACESTEP_PYTHON,
-            ACESTEP_ROOT / "checkpoints/acestep-v15-turbo/model.safetensors",
-        )
-        missing = [str(path) for path in required if not path.is_file()]
-        if missing:
-            reasons.append("ACE-Step 로컬 음악 생성 파일이 없습니다: " + ", ".join(missing))
+        music = asset_routing.MUSIC_PROFILE
+        if models_root is not None:
+            why = asset_routing.profile_blockers(music, models_root=models_root)
+            if why:
+                reasons.append("ACE-Step 로컬 음악 생성 파일이 없습니다: " + "; ".join(why))
+        total = float(plan["scenes"][-1]["end_time"]) if plan["scenes"] else 0.0
+        limit = self._music_limit_seconds()
+        if total > limit:
+            reasons.append(f"음악 길이 {total:g}초가 ACE-Step 프로필 한도 {limit:g}초를 넘습니다.")
         if plan.get("aspect") != "16:9":
             reasons.append("현재 자동 생성 경로는 16:9 계획만 지원합니다.")
         missing_narration = [
@@ -138,6 +154,17 @@ class ManagedAssetGenerator:
             except ValueError as exc:
                 reasons.append(str(exc))
         return reasons
+
+    @staticmethod
+    def _music_limit_seconds() -> float:
+        from ttakkari import managed_comfy
+
+        return float(managed_comfy.PROFILES[asset_routing.MUSIC_PROFILE].seconds[2])
+
+    def _usable_steps(self, route: asset_routing.SceneRoute) -> list[str]:
+        """사다리에서 프로필이 막히지 않은 단계. camera_motion 은 키프레임 프로필이 있어야 한다."""
+        unavailable = getattr(self, "_unavailable", {})
+        return [step for step in route.ladder if asset_routing.STEP_PROFILES[step][0] not in unavailable]
 
     @staticmethod
     def _probe_comfy_torch() -> dict[str, Any]:
@@ -180,24 +207,29 @@ class ManagedAssetGenerator:
         for index, scene in enumerate(plan["scenes"]):
             scene_id = scene["scene_id"]
             prompt = self._prompt(plan, scene)
+            route = asset_routing.route_scene(scene)
             # Revision is deliberately absent: editing a different scene must not
-            # regenerate successful Comfy media. Prompt/style/profile/source code
+            # regenerate successful Comfy media. Prompt/style/route/source code
             # changes invalidate this scene's checkpoint. The generator's lock
             # serializes work; cache receipts are published atomically last.
             cache_key = hashlib.sha256(json.dumps({
                 "plan_id": plan["id"], "scene_id": scene_id, "prompt": prompt,
-                "negative_prompt": SCENE_NEGATIVE_PROMPT, "aspect": plan["aspect"],
+                "negative_prompt": SCENE_NEGATIVE_PROMPT, "aspect": plan["aspect"], "route": route.record(),
                 "version": self.version, "code": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
             cache = workdir.parent / "scene-cache" / cache_key
             checkpoint = cache / "checkpoint.json"
             if checkpoint.is_file():
                 entry = json.loads(checkpoint.read_text())
-                cached_video, cached_preview = cache / "source.mp4", cache / "preview.png"
-                if (cached_video.is_file() and cached_preview.is_file()
-                    and hashlib.sha256(cached_video.read_bytes()).hexdigest() == entry["sha256"]
-                    and hashlib.sha256(cached_preview.read_bytes()).hexdigest() == entry["preview_sha256"]):
-                    scenes[scene_id] = {**entry["asset"], "path": cached_video, "preview_path": cached_preview}
+                cached_source = cache / entry.get("source_name", "source.mp4")
+                cached_preview = cache / "preview.png"
+                has_preview = entry.get("preview_sha256") is not None
+                if (cached_source.is_file() and (cached_preview.is_file() or not has_preview)
+                    and hashlib.sha256(cached_source.read_bytes()).hexdigest() == entry["sha256"]
+                    and (not has_preview
+                         or hashlib.sha256(cached_preview.read_bytes()).hexdigest() == entry["preview_sha256"])):
+                    scenes[scene_id] = {**entry["asset"], "path": cached_source,
+                                        "preview_path": cached_preview if has_preview else None}
                     engine_runs.append({**entry["engine_run"], "cache_hit": True, "cache_key": cache_key})
                     progress({"stage": "scene_reused", "scene_id": scene_id, "output_sha256": entry["sha256"], "cache_key": cache_key})
                     continue
@@ -206,69 +238,22 @@ class ManagedAssetGenerator:
                 hashlib.sha256(cache_key.encode()).digest()[:4],
                 "big",
             )
-            job = self._run_comfy(prompt, seed, plan, scene_id, workdir, progress)
-            engine_receipt = job["receipt"]
-            output = next(
-                (item for item in engine_receipt.get("outputs", []) if not item.get("intermediate")),
-                None,
-            )
-            if output is None:
-                raise RuntimeError(f"Comfy 장면 {scene_id} receipt에 최종 영상이 없습니다.")
-            output_sha = output["sha256"]
-            video_path = Path(output["source_path"])
-            video_bytes = video_path.read_bytes()
-            if hashlib.sha256(video_bytes).hexdigest() != output_sha:
-                raise RuntimeError(f"Comfy 장면 {scene_id} 산출물 sha256 검증에 실패했습니다.")
-            source_video = workdir / f"{index:03d}-{scene_id}.mp4"
-            source_video.write_bytes(video_bytes)
-            image_path = workdir / f"{index:03d}-{scene_id}.png"
-            self._extract_frame(source_video, image_path)
-            video_media = inspect_media(source_video)
-            scenes[scene_id] = {
-                "path": source_video,
-                "preview_path": image_path,
-                "name": f"{scene_id}.mp4",
-                "kind": "video",
-                "meta": {
-                    "width": int(video_media.get("width") or 1280),
-                    "height": int(video_media.get("height") or 720),
-                    "duration": float(video_media.get("duration") or 0.0),
-                    "fps": video_media.get("fps"),
-                    "has_video": bool(video_media.get("has_video", True)),
-                    "media_kind": "video",
-                    "has_motion": True,
-                    "preview_image": image_path.name,
-                    "source_engine": "managed-comfy",
-                    "source_profile": job["profile"],
-                    "source_version": engine_receipt.get("workflow_revision_hash"),
-                    "source_output_sha256": output_sha,
-                    "source_production_id": source_id,
-                    "source_task_id": job["task_id"],
-                    "source_runner_job_id": job.get("runner_job_id"),
-                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-                },
-            }
-            engine_runs.append(
-                {
-                    "scene_id": scene_id,
-                    "engine": "managed-comfy",
-                    "profile": job["profile"],
-                    "real_execution": True,
-                    "prompt": prompt,
-                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-                    "task_id": job["task_id"],
-                    "runner_job_id": job.get("runner_job_id"),
-                    "output_sha256": output_sha,
-                    "receipt": engine_receipt,
-                }
-            )
+            asset, engine_run = self._produce_scene(
+                plan, scene, index, route, prompt, seed, workdir, progress, source_id)
+            scenes[scene_id] = asset
+            engine_runs.append(engine_run)
+            source_path, preview_path = Path(asset["path"]), asset.get("preview_path")
+            source_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
             cache.mkdir(parents=True, exist_ok=True)
-            (cache / "source.mp4").write_bytes(source_video.read_bytes())
-            (cache / "preview.png").write_bytes(image_path.read_bytes())
+            source_name = f"source{source_path.suffix}"
+            (cache / source_name).write_bytes(source_path.read_bytes())
+            if preview_path:
+                (cache / "preview.png").write_bytes(Path(preview_path).read_bytes())
             entry = {
-                "sha256": output_sha, "preview_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
-                "asset": {k: v for k, v in scenes[scene_id].items() if k not in {"path", "preview_path"}},
-                "engine_run": engine_runs[-1],
+                "sha256": source_sha, "source_name": source_name,
+                "preview_sha256": hashlib.sha256(Path(preview_path).read_bytes()).hexdigest() if preview_path else None,
+                "asset": {k: v for k, v in asset.items() if k not in {"path", "preview_path"}},
+                "engine_run": engine_run,
             }
             temp = cache / f"{uuid.uuid4()}.tmp"
             temp.write_text(json.dumps(entry, ensure_ascii=False, indent=2))
@@ -324,7 +309,7 @@ class ManagedAssetGenerator:
             })
 
         total_seconds = float(plan["scenes"][-1]["end_time"])
-        generated_music = self._generate_music(plan, workdir, total_seconds)
+        generated_music = self._generate_music(plan, workdir, total_seconds, progress)
         progress({
             "stage": "music_succeeded",
             "engine": generated_music["engine"],
@@ -569,17 +554,43 @@ class ManagedAssetGenerator:
         workdir: Path,
         progress: Callable[[dict[str, Any]], None],
     ) -> dict[str, Any]:
-        checkpoint = workdir / f"{scene_id}-managed-comfy.json"
+        return self._run_profile(
+            "wan22-5b-draft", prompt, seed, plan, scene_id, workdir, progress,
+            negative_prompt=SCENE_NEGATIVE_PROMPT,
+        )
+
+    def _run_profile(
+        self,
+        profile_id: str,
+        prompt: str,
+        seed: int,
+        plan: dict[str, Any],
+        scene_id: str,
+        workdir: Path,
+        progress: Callable[[dict[str, Any]], None],
+        *,
+        step: str | None = None,
+        negative_prompt: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """프로필 하나를 제출하고 끝날 때까지 기다린다. 같은 입력의 이전 task 가 있으면 재제출하지 않고 이어 받는다.
+
+        실패(failed)는 StepFailed 로 올려 호출자가 다음 단계로 내려가게 하고, cancelled/needs_reconcile 은 자동 재제출이나
+        우회 없이 RuntimeError 로 멈춘다.
+        """
+        options = dict(options or {})
+        label = scene_id if step is None else f"{scene_id}-{step}"
+        checkpoint = workdir / f"{label}-managed-comfy.json"
         identity = hashlib.sha256(
             json.dumps(
                 {"plan_id": plan["id"], "revision": plan["revision"], "scene_id": scene_id,
-                 "prompt": prompt, "negative_prompt": SCENE_NEGATIVE_PROMPT, "seed": seed},
+                 "prompt": prompt, "negative_prompt": negative_prompt, "seed": seed,
+                 **({"profile": profile_id, "options": options} if step is not None else {})},
                 ensure_ascii=False,
                 sort_keys=True,
             ).encode()
         ).hexdigest()
         prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-        negative_prompt_sha256 = hashlib.sha256(SCENE_NEGATIVE_PROMPT.encode("utf-8")).hexdigest()
         prior = json.loads(checkpoint.read_text()) if checkpoint.is_file() else None
         attempts = list(prior.get("attempts", [])) if prior and prior.get("identity") == identity else []
         job = None
@@ -590,27 +601,26 @@ class ManagedAssetGenerator:
                 job = None
             if job and job.get("status") == "needs_reconcile":
                 raise RuntimeError(
-                    f"Comfy scene {scene_id} task {job['task_id']} needs reconciliation; 자동 재제출하지 않습니다."
+                    f"Comfy scene {label} task {job['task_id']} needs reconciliation; 자동 재제출하지 않습니다."
                 )
             if job and job.get("status") in {"failed", "cancelled"}:
                 job = None  # only a confirmed terminal failure permits a new managed task
         if job is None:
-            job = self.controller.prepare(
-                "wan22-5b-draft",
-                prompt=prompt,
-                negative_prompt=SCENE_NEGATIVE_PROMPT,
-                seed=seed,
-                owner=f"creative-v2:{plan['id']}:{plan['revision']}:{scene_id}",
-                lease_wait_seconds=LEASE_HANDOFF_WAIT_SECONDS,
-            )
+            kwargs: dict[str, Any] = {"prompt": prompt, "seed": seed,
+                                      "owner": f"creative-v2:{plan['id']}:{plan['revision']}:{scene_id}",
+                                      "lease_wait_seconds": LEASE_HANDOFF_WAIT_SECONDS, **options}
+            if negative_prompt is not None:
+                kwargs["negative_prompt"] = negative_prompt
+            job = self.controller.prepare(profile_id, **kwargs)
             attempts.append({"task_id": job["task_id"], "submitted_at": time.time()})
             self._write_checkpoint(checkpoint, {"identity": identity, "attempts": attempts})
-            progress({"stage": "scene_comfy_submitted", "scene_id": scene_id, "task_id": job["task_id"]})
+            progress({"stage": "scene_comfy_submitted", "scene_id": scene_id, "task_id": job["task_id"],
+                      **({"step": step, "profile": profile_id} if step else {})})
             self.controller.start(job["task_id"])
         deadline = self._clock() + 3600
         while job.get("status") not in {"succeeded", "failed", "cancelled", "needs_reconcile"}:
             if self._clock() >= deadline:
-                raise TimeoutError(f"Comfy scene {scene_id} exceeded the 60-minute wait limit.")
+                raise TimeoutError(f"Comfy scene {label} exceeded the 60-minute wait limit.")
             time.sleep(1)
             job = self.controller.get(job["task_id"])
         if job["status"] != "succeeded":
@@ -619,20 +629,23 @@ class ManagedAssetGenerator:
                 "scene_id": scene_id,
                 "task_id": job["task_id"],
                 "error": job.get("error") or job.get("receipt_error"),
+                **({"step": step, "profile": profile_id} if step else {}),
             })
-            raise RuntimeError(
-                f"Comfy scene {scene_id} ended as {job['status']}: {job.get('error') or job.get('receipt_error')}"
-            )
+            message = f"Comfy scene {label} ended as {job['status']}: {job.get('error') or job.get('receipt_error')}"
+            if job["status"] == "failed":
+                raise StepFailed(message)
+            raise RuntimeError(message)
         if not isinstance(job.get("receipt"), dict) or not job["receipt"].get("outputs"):
-            raise RuntimeError(f"Comfy scene {scene_id} succeeded without a verifiable output receipt.")
+            raise RuntimeError(f"Comfy scene {label} succeeded without a verifiable output receipt.")
         received_prompt_hash = job["receipt"].get("prompt_sha256")
         if received_prompt_hash != prompt_sha256:
-            raise RuntimeError(f"Comfy scene {scene_id} receipt prompt hash does not match the submitted prompt.")
-        received_negative_prompt_hash = job["receipt"].get("negative_prompt_sha256")
-        if received_negative_prompt_hash != negative_prompt_sha256:
-            raise RuntimeError(
-                f"Comfy scene {scene_id} receipt negative prompt hash does not match the submitted negative prompt."
-            )
+            raise RuntimeError(f"Comfy scene {label} receipt prompt hash does not match the submitted prompt.")
+        if negative_prompt is not None:
+            negative_prompt_sha256 = hashlib.sha256(negative_prompt.encode("utf-8")).hexdigest()
+            if job["receipt"].get("negative_prompt_sha256") != negative_prompt_sha256:
+                raise RuntimeError(
+                    f"Comfy scene {label} receipt negative prompt hash does not match the submitted negative prompt."
+                )
         attempts[-1].update(
             status="succeeded",
             prompt_sha256=prompt_sha256,
@@ -648,8 +661,259 @@ class ManagedAssetGenerator:
             "runner_job_id": job.get("runner_job_id"),
             "output_sha256": next((x.get("sha256") for x in job["receipt"]["outputs"] if not x.get("intermediate")), None),
             "workflow_revision": job["receipt"].get("workflow_revision"),
+            **({"step": step, "profile": profile_id} if step else {}),
         })
         return job
+
+    @staticmethod
+    def _final_output(job: dict[str, Any], label: str) -> tuple[dict[str, Any], bytes]:
+        """receipt 의 최종 출력 하나를 읽고 sha256 이 receipt 와 같은지 확인한다."""
+        output = next(
+            (item for item in job["receipt"].get("outputs", []) if not item.get("intermediate")),
+            None,
+        )
+        if output is None:
+            raise RuntimeError(f"Comfy 장면 {label} receipt에 최종 산출물이 없습니다.")
+        data = Path(output["source_path"]).read_bytes()
+        if hashlib.sha256(data).hexdigest() != output["sha256"]:
+            raise RuntimeError(f"Comfy 장면 {label} 산출물 sha256 검증에 실패했습니다.")
+        return output, data
+
+    def _keyframe(self, state: dict[str, Any], plan: dict[str, Any], scene_id: str, index: int, prompt: str,
+                  seed: int, workdir: Path, progress) -> dict[str, Any]:
+        """장면당 한 번만 만든다. 이미지→영상과 카메라 움직임 폴백이 같은 키프레임을 쓴다."""
+        if "keyframe" in state:
+            return state["keyframe"]
+        suffix = " No visible text, letters, logos or signage."
+        job = self._run_profile(
+            asset_routing.KEYFRAME_PROFILE, prompt if len(prompt) + len(suffix) > 1000 else prompt + suffix, seed,
+            plan, scene_id, workdir, progress, step="keyframe",
+            options={"width": KEYFRAME_SIZE[0], "height": KEYFRAME_SIZE[1]},
+        )
+        output, data = self._final_output(job, f"{scene_id}-keyframe")
+        path = workdir / f"{index:03d}-{scene_id}-keyframe.png"
+        path.write_bytes(data)
+        with Image.open(path) as image:
+            image.verify()
+        state["keyframe"] = {"job": job, "path": path, "sha256": output["sha256"]}
+        return state["keyframe"]
+
+    def _produce_scene(self, plan: dict[str, Any], scene: dict[str, Any], index: int,
+                       route: asset_routing.SceneRoute, prompt: str, seed: int, workdir: Path, progress,
+                       source_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """사다리를 위에서부터 시도해 첫 성공을 쓴다. 막힌 단계와 실패한 단계의 사유를 모두 route 에 남긴다."""
+        scene_id = scene["scene_id"]
+        usable = self._usable_steps(route)
+        attempts: list[dict[str, Any]] = [
+            {"step": step, "profile": asset_routing.STEP_PROFILES[step][0], "status": "blocked",
+             "reason": getattr(self, "_unavailable", {}).get(asset_routing.STEP_PROFILES[step][0])}
+            for step in route.ladder if step not in usable
+        ]
+        state: dict[str, Any] = {}
+        for step in usable:
+            profile_id, generative = asset_routing.STEP_PROFILES[step]
+            attempt: dict[str, Any] = {"step": step, "profile": profile_id}
+            attempts.append(attempt)
+            try:
+                produced = self._run_step(step, state, plan, scene, index, route, prompt, seed, workdir, progress,
+                                          source_id)
+            except StepFailed as exc:
+                attempt.update(status="failed", reason=str(exc)[:500])
+                progress({"stage": "scene_step_failed", "scene_id": scene_id, "step": step, "error": str(exc)[:500]})
+                continue
+            except ValueError as exc:
+                # 이미 배포된 컨트롤러에 프로필이 없거나 입력이 거부된 경우. 제출되지 않았으므로 다음 단계로 내려간다.
+                attempt.update(status="rejected", reason=str(exc)[:500])
+                progress({"stage": "scene_step_rejected", "scene_id": scene_id, "step": step, "error": str(exc)[:500]})
+                continue
+            attempt["status"] = "succeeded"
+            fallback = None
+            if route.need == "video" and not generative:
+                failed = [a for a in attempts if a["status"] in {"blocked", "failed", "rejected"}]
+                fallback = ("생성형 영상을 만들 수 없어 키프레임 이미지에 카메라 움직임을 입혔다: "
+                            + "; ".join(f"{a['step']} {a['status']}: {a.get('reason')}" for a in failed))
+            asset, engine_run = produced
+            route_record = {**route.record(), "attempts": attempts, "selected": step,
+                            "generative_motion": bool(generative and route.need == "video"),
+                            "fallback_reason": fallback}
+            asset["meta"]["generation_route"] = route_record
+            if fallback:
+                asset["meta"]["fallback_reason"] = fallback
+            engine_run["route"] = route_record
+            return asset, engine_run
+        raise RuntimeError(
+            f"장면 {scene_id}의 모든 생성 단계가 실패했습니다: "
+            + "; ".join(f"{a['step']} {a['status']}: {a.get('reason')}" for a in attempts)
+        )
+
+    def _run_step(self, step: str, state: dict[str, Any], plan: dict[str, Any], scene: dict[str, Any], index: int,
+                  route: asset_routing.SceneRoute, prompt: str, seed: int, workdir: Path, progress,
+                  source_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        scene_id = scene["scene_id"]
+        if step == "keyframe":
+            keyframe = self._keyframe(state, plan, scene_id, index, prompt, seed, workdir, progress)
+            return self._still_asset(keyframe, plan, scene_id, index, prompt, source_id)
+        if step == "camera_motion":
+            keyframe = self._keyframe(state, plan, scene_id, index, prompt, seed, workdir, progress)
+            return self._camera_motion_asset(keyframe, plan, scene, scene_id, index, prompt, source_id)
+        if step == "keyframe_i2v":
+            keyframe = self._keyframe(state, plan, scene_id, index, prompt, seed, workdir, progress)
+            suffix = " The camera moves slowly and smoothly; subtle natural motion."
+            motion_prompt = prompt if len(prompt) + len(suffix) > 1000 else prompt + suffix
+            job = self._run_profile(
+                asset_routing.I2V_PROFILE, motion_prompt, seed, plan, scene_id, workdir, progress, step="i2v",
+                negative_prompt=SCENE_NEGATIVE_PROMPT,
+                options={"image_task_id": keyframe["job"]["task_id"],
+                         **asset_routing.clip_options(asset_routing.I2V_PROFILE, route.clip_seconds)},
+            )
+            return self._video_asset(job, workdir, scene_id, index, motion_prompt, source_id, label="i2v",
+                                     keyframe=keyframe)
+        if step == "t2v":
+            job = self._run_profile(
+                asset_routing.T2V_LONG_PROFILE, prompt, seed, plan, scene_id, workdir, progress, step="t2v",
+                negative_prompt=SCENE_NEGATIVE_PROMPT,
+                options=asset_routing.clip_options(asset_routing.T2V_LONG_PROFILE, route.clip_seconds),
+            )
+            return self._video_asset(job, workdir, scene_id, index, prompt, source_id, label="t2v")
+        if step == "t2v_draft":
+            job = self._run_profile(
+                asset_routing.T2V_DRAFT_PROFILE, prompt, seed, plan, scene_id, workdir, progress, step="t2v-draft",
+                negative_prompt=SCENE_NEGATIVE_PROMPT,
+            )
+            return self._video_asset(job, workdir, scene_id, index, prompt, source_id, label="t2v-draft")
+        raise ValueError(f"알 수 없는 생성 단계: {step}")
+
+    def _video_asset(self, job: dict[str, Any], workdir: Path, scene_id: str, index: int, prompt: str,
+                     source_id: str, *, label: str, keyframe: dict[str, Any] | None = None):
+        engine_receipt = job["receipt"]
+        output, video_bytes = self._final_output(job, f"{scene_id}-{label}")
+        output_sha = output["sha256"]
+        source_video = workdir / f"{index:03d}-{scene_id}.mp4"
+        source_video.write_bytes(video_bytes)
+        image_path = source_video.with_suffix(".png")
+        self._extract_frame(source_video, image_path)
+        video_media = inspect_media(source_video)
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        asset = {
+            "path": source_video,
+            "preview_path": image_path,
+            "name": f"{scene_id}.mp4",
+            "kind": "video",
+            "meta": {
+                # inspect_media 는 길이만 준다. 해상도·fps 는 receipt 가 컨테이너에서 읽은 실측값을 우선한다.
+                "width": int(output.get("width") or video_media.get("width") or 1280),
+                "height": int(output.get("height") or video_media.get("height") or 720),
+                "duration": float(video_media.get("duration") or output.get("duration") or 0.0),
+                "fps": output.get("fps") or video_media.get("fps"),
+                "has_video": bool(video_media.get("has_video", True)),
+                "media_kind": "video",
+                "has_motion": True,
+                "motion_source": "generative_video",
+                "preview_image": image_path.name,
+                "source_engine": "managed-comfy",
+                "source_profile": job["profile"],
+                "source_version": engine_receipt.get("workflow_revision_hash"),
+                "source_output_sha256": output_sha,
+                "source_production_id": source_id,
+                "source_task_id": job["task_id"],
+                "source_runner_job_id": job.get("runner_job_id"),
+                "prompt_sha256": prompt_sha,
+                **({"keyframe_task_id": keyframe["job"]["task_id"], "keyframe_sha256": keyframe["sha256"]}
+                   if keyframe else {}),
+            },
+        }
+        engine_run = {
+            "scene_id": scene_id,
+            "engine": "managed-comfy",
+            "profile": job["profile"],
+            "real_execution": True,
+            "prompt": prompt,
+            "prompt_sha256": prompt_sha,
+            "task_id": job["task_id"],
+            "runner_job_id": job.get("runner_job_id"),
+            "output_sha256": output_sha,
+            "receipt": engine_receipt,
+            **({"keyframe": {"task_id": keyframe["job"]["task_id"], "sha256": keyframe["sha256"],
+                             "profile": keyframe["job"]["profile"]}} if keyframe else {}),
+        }
+        return asset, engine_run
+
+    def _still_asset(self, keyframe: dict[str, Any], plan: dict[str, Any], scene_id: str, index: int, prompt: str,
+                     source_id: str):
+        job, path = keyframe["job"], keyframe["path"]
+        with Image.open(path) as image:
+            width, height = image.size
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        asset = {
+            "path": path, "preview_path": None, "name": f"{scene_id}.png", "kind": "image",
+            "meta": {
+                "width": width, "height": height, "media_kind": "image", "has_motion": False,
+                "motion_source": "none",
+                "source_engine": "managed-comfy", "source_profile": job["profile"],
+                "source_version": job["receipt"].get("workflow_revision_hash"),
+                "source_output_sha256": keyframe["sha256"], "source_production_id": source_id,
+                "source_task_id": job["task_id"], "source_runner_job_id": job.get("runner_job_id"),
+                "prompt_sha256": prompt_sha,
+            },
+        }
+        engine_run = {
+            "scene_id": scene_id, "engine": "managed-comfy", "profile": job["profile"], "real_execution": True,
+            "prompt": prompt, "prompt_sha256": prompt_sha, "task_id": job["task_id"],
+            "runner_job_id": job.get("runner_job_id"), "output_sha256": keyframe["sha256"],
+            "receipt": job["receipt"],
+        }
+        return asset, engine_run
+
+    def _camera_motion_asset(self, keyframe: dict[str, Any], plan: dict[str, Any], scene: dict[str, Any],
+                             scene_id: str, index: int, prompt: str, source_id: str):
+        job, still = keyframe["job"], keyframe["path"]
+        seconds = min(max(float(scene.get("seconds") or 4.0), 1.0), 60.0)
+        target = still.with_name(f"{index:03d}-{scene_id}.mp4")
+        motion = "push_in" if index % 2 == 0 else "pull_out"
+        self._render_camera_motion(still, target, seconds, motion)
+        media = inspect_media(target)
+        preview = target.with_suffix(".png")
+        self._extract_frame(target, preview)
+        sha = hashlib.sha256(target.read_bytes()).hexdigest()
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        asset = {
+            "path": target, "preview_path": preview, "name": f"{scene_id}.mp4", "kind": "video",
+            "meta": {
+                "width": 1280, "height": 720,  # _render_camera_motion 이 zoompan s=1280x720 으로 고정
+                "duration": float(media.get("duration") or 0.0), "fps": 24,
+                "has_video": True, "media_kind": "video", "has_motion": True,
+                "motion_source": "image_camera_motion", "camera_motion": motion,
+                "preview_image": preview.name,
+                "source_engine": "managed-comfy+ffmpeg.camera_motion", "source_profile": job["profile"],
+                "source_version": job["receipt"].get("workflow_revision_hash"),
+                "source_output_sha256": sha, "keyframe_sha256": keyframe["sha256"],
+                "source_production_id": source_id, "source_task_id": job["task_id"],
+                "source_runner_job_id": job.get("runner_job_id"), "prompt_sha256": prompt_sha,
+            },
+        }
+        engine_run = {
+            "scene_id": scene_id, "engine": "managed-comfy+ffmpeg.camera_motion", "profile": job["profile"],
+            "real_execution": True, "prompt": prompt, "prompt_sha256": prompt_sha, "task_id": job["task_id"],
+            "runner_job_id": job.get("runner_job_id"), "output_sha256": sha, "receipt": job["receipt"],
+            "camera_motion": {"motion": motion, "seconds": seconds, "keyframe_sha256": keyframe["sha256"]},
+        }
+        return asset, engine_run
+
+    @staticmethod
+    def _render_camera_motion(still: Path, target: Path, seconds: float, motion: str) -> None:
+        frames = max(1, round(seconds * 24))
+        zoom = (f"1+0.12*on/{frames}" if motion == "push_in" else f"1.12-0.12*on/{frames}")
+        result = subprocess.run(
+            [
+                ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", str(still),
+                "-vf", (f"scale=2560:1440,zoompan=z='{zoom}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':"
+                        f"d={frames}:s=1280x720:fps=24,format=yuv420p"),
+                "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(target),
+            ],
+            capture_output=True, text=True, timeout=600, check=False,
+        )
+        if result.returncode or not target.is_file():
+            raise RuntimeError("키프레임 카메라 움직임 클립을 만들지 못했습니다: " + result.stderr[-300:])
 
     @staticmethod
     def _write_checkpoint(path: Path, value: dict[str, Any]) -> None:
@@ -744,120 +1008,40 @@ class ManagedAssetGenerator:
             if image.size != (1280, 720):
                 raise RuntimeError(f"추출 이미지 해상도가 잘못됐습니다: {image.size}")
 
-    def _generate_music(self, plan: dict[str, Any], workdir: Path, duration: float) -> dict[str, Any]:
-        job_id = uuid.uuid4().hex
-        output = workdir / "acestep"
-        job = {
-            "out": str(output),
-            "task_type": "text2music",
-            "caption": (
-                "Instrumental cinematic background music for a Korean short-form video, "
-                f"supportive and unobtrusive, matching this subject: {plan['brief'][:300]}"
-            ),
-            "lyrics": "",
-            "language": "ko",
-            "duration": duration,
-            "seed": int.from_bytes(hashlib.sha256(f"{plan['id']}:{plan['revision']}:music".encode()).digest()[:4], "big"),
-            "bpm": None,
-            "thinking": False,
-            "use_lm": False,
-            "dit": "acestep-v15-turbo",
-            "steps": 8,
-            "format": "wav",
-        }
-        job_path = workdir / "acestep-job.json"
-        job_path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
-        settings = get_settings()
-        lease_manager = ResourceLeaseManager(data_dir=settings.data_dir)
-        lease = lease_manager.acquire(
-            owner_task=f"creative-v2-assets:{plan['id']}",
-            owner_attempt=job_id,
-            runtime_instance=f"acestep:{job_id}",
-            resource_family="gpu",
-            claim={"engine": "ACE-Step 1.5", "mode": "text2music", "duration_seconds": duration},
-            ttl_seconds=LEASE_TTL_SECONDS,
-            wait_seconds=LEASE_HANDOFF_WAIT_SECONDS,
+    def _generate_music(self, plan: dict[str, Any], workdir: Path, duration: float, progress=None) -> dict[str, Any]:
+        """ACE-Step 를 관리형 프로필 acestep15-music 으로 돌린다(같은 GPU lease, receipt 포함)."""
+        caption = (
+            "Instrumental cinematic background music for a Korean short-form video, "
+            f"supportive and unobtrusive, matching this subject: {plan['brief'][:300]}"
         )
-        process = None
-        last_heartbeat = self._clock()
-        log_path = workdir / "acestep.log"
-        try:
-            lease.mark_running()
-            with log_path.open("wb") as log:
-                process = subprocess.Popen(
-                    [str(ACESTEP_PYTHON), str(ACESTEP_JOB_RUNNER), str(job_path)],
-                    cwd=ACESTEP_ROOT,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    stdin=subprocess.DEVNULL,
-                )
-                deadline = self._clock() + ACESTEP_TIMEOUT_SECONDS
-                while process.poll() is None:
-                    if self._clock() >= deadline:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=20)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait(timeout=10)
-                        raise TimeoutError("ACE-Step 음악 생성 시간이 30분을 넘었습니다.")
-                    if self._clock() - last_heartbeat >= 60:
-                        lease.heartbeat(ttl_seconds=LEASE_TTL_SECONDS)
-                        last_heartbeat = self._clock()
-                    time.sleep(1)
-                return_code = process.returncode
-            if return_code != 0:
-                tail = log_path.read_text(errors="replace")[-1200:]
-                raise RuntimeError(f"ACE-Step exit={return_code}: {tail}")
-            metrics = json.loads((output / "metrics.json").read_text())
-            audio_path = Path(metrics.get("audio_path") or "")
-            if not audio_path.is_file() or audio_path.stat().st_size == 0:
-                raise RuntimeError("ACE-Step이 성공 exit 후에도 음악 파일을 반환하지 않았습니다.")
-            media = inspect_media(audio_path)
-            if not media.get("has_audio") or float(media.get("duration") or 0) + 0.1 < duration:
-                raise RuntimeError(
-                    f"ACE-Step 음악 길이가 계획보다 짧습니다: {media.get('duration')}초 < {duration:g}초"
-                )
-            lease.release(
-                proof={
-                    "runtime_status": "stopped",
-                    "evidence": {"runtime_instance": lease.runtime_instance, "exit_code": return_code},
-                }
+        seed = int.from_bytes(hashlib.sha256(f"{plan['id']}:{plan['revision']}:music".encode()).digest()[:4], "big")
+        job = self._run_profile(
+            asset_routing.MUSIC_PROFILE, caption, seed, plan, "music", workdir, progress or (lambda _event: None),
+            step="music", options={"duration_seconds": float(duration)},
+        )
+        output, data = self._final_output(job, "music")
+        audio_path = workdir / "music.wav"
+        audio_path.write_bytes(data)
+        media = inspect_media(audio_path)
+        if not media.get("has_audio") or float(media.get("duration") or 0) + 0.1 < duration:
+            raise RuntimeError(
+                f"ACE-Step 음악 길이가 계획보다 짧습니다: {media.get('duration')}초 < {duration:g}초"
             )
-            return {
-                "path": audio_path,
-                "engine": "ACE-Step 1.5",
-                "receipt": {
-                    "version": "acestep-v15-turbo",
-                    "job_id": job_id,
-                    "seed": job["seed"],
-                    "duration_seconds": media["duration"],
-                    "sha256": hashlib.sha256(audio_path.read_bytes()).hexdigest(),
-                    "resource_lease_id": lease.lease_id,
-                    "execution_mode": "real",
-                },
-            }
-        except BaseException:
-            if process is not None and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=20)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=10)
-            try:
-                lease.release(
-                    proof={
-                        "runtime_status": "stopped",
-                        "evidence": {
-                            "runtime_instance": lease.runtime_instance,
-                            "exit_code": None if process is None else process.poll(),
-                        },
-                    }
-                )
-            except Exception:
-                _logger.exception("ACE-Step 종료 뒤 GPU lease 반납에 실패했습니다: %s", lease.lease_id)
-            raise
+        return {
+            "path": audio_path,
+            "engine": "ACE-Step 1.5",
+            "receipt": {
+                "version": "acestep-v15-turbo",
+                "profile": job["profile"],
+                "task_id": job["task_id"],
+                "seed": seed,
+                "duration_seconds": media["duration"],
+                "requested_seconds": float(duration),
+                "sha256": output["sha256"],
+                "resource_lease_id": (job["receipt"].get("lease") or {}).get("lease_id"),
+                "execution_mode": "real",
+            },
+        }
 
     @staticmethod
     def _mix(music: Path, voice: Path, target: Path, duration: float) -> None:

@@ -9,9 +9,12 @@ from __future__ import annotations
 import errno
 import importlib
 import json
+import math
 import os
 import re
+import signal
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -33,7 +36,12 @@ from ttakkari.host_resource import (
     ResourceLeaseHandle,
     ResourceLeaseManager,
 )
-from ttakkari.managed_comfy_receipt import ReceiptError, build_receipt, safe_rss_gb
+from ttakkari.managed_comfy_receipt import (
+    ReceiptError,
+    build_audio_receipt,
+    build_receipt,
+    safe_rss_gb,
+)
 
 LAB_ROOT = Path("/Users/winterholic/development/projects/ttakkari-studio-lab")
 COMFY_ROOT = LAB_ROOT / "comfyui"
@@ -43,24 +51,152 @@ T2V_5B_REVISION = "a603a63d6f3a"
 COMFY_PORT = 8199
 
 
+ACESTEP_ROOT = LAB_ROOT / "audio" / "refs" / "ACE-Step-1.5"
+ACESTEP_RUNNER = LAB_ROOT / "audio" / "run_acestep_job.py"
+ACESTEP_PYTHON = ACESTEP_ROOT / ".venv" / "bin" / "python"
+ACESTEP_TURBO_CHECKPOINT = ACESTEP_ROOT / "checkpoints" / "acestep-v15-turbo" / "model.safetensors"
+ACESTEP_TIMEOUT_SECONDS = 1800
+KLEIN_T2I_REVISION = "4a0d0ecfab25"
+WAN_I2V_5B_REVISION = "6c9413e014d5"
+_WAN_5B_MODELS = ("wan2.2_ti2v_5B_fp16.safetensors", "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+                  "wan2.2_vae.safetensors")
+_IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
+_MAX_INPUT_IMAGE_BYTES = 25 * 1024 * 1024
+
+
 @dataclass(frozen=True)
 class ComfyProfile:
+    """고정 workflow 하나와 호출자가 바꿀 수 있는 범위(해상도 목록, 길이 범위, 시작 이미지 여부).
+
+    기본값은 길이·해상도를 받지 않는 고정 preset 프로필(wan22-5b-draft)이다. sizes/frames 를 채운 프로필만
+    width·height·duration_seconds 입력을 받고, 목록 밖의 값은 prepare 에서 거부한다.
+    """
     profile_id: str
     workflow: str
     revision: str
     preset: str
     required_gb: float
     models: tuple[str, ...]
+    engine: str = "comfy"  # "comfy" | "acestep"(Comfy 가 아닌 로컬 ACE-Step 프로세스, 같은 자원 lease)
+    kind: str = "video"  # image | video | audio
+    capabilities: tuple[str, ...] = ("gen.video_t2v",)
+    sizes: tuple[tuple[int, int], ...] = ()  # 허용 (width, height). 비어 있으면 preset 고정.
+    default_size: tuple[int, int] | None = None
+    fps: int | None = None
+    frames: tuple[int, int, int] | None = None  # (최소, 기본, 최대) 프레임. Wan 은 4n+1.
+    seconds: tuple[float, float, float] | None = None  # 프레임 대신 초로 받는 프로필(음악): (최소, 기본, 최대)
+    needs_image: bool = False
+    measured: str = ""  # 호스트에서 실제로 잰 범위의 근거. 비어 있으면 아직 측정 전이다.
+
+    @property
+    def parametric(self) -> bool:
+        return bool(self.sizes or self.frames or self.seconds or self.needs_image)
+
+    def limits(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"measured": self.measured or None}
+        if self.sizes:
+            out["sizes"] = [list(size) for size in self.sizes]
+            out["default_size"] = list(self.default_size or self.sizes[0])
+        if self.frames and self.fps:
+            out.update(fps=self.fps, min_seconds=round(self.frames[0] / self.fps, 3),
+                       default_seconds=round(self.frames[1] / self.fps, 3),
+                       max_seconds=round(self.frames[2] / self.fps, 3))
+        if self.seconds:
+            out.update(min_seconds=self.seconds[0], default_seconds=self.seconds[1], max_seconds=self.seconds[2])
+        if self.needs_image:
+            out["needs_image"] = True
+        return out
+
+    def resolve(self, width: int | None, height: int | None,
+                duration_seconds: float | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        """(Runner params, 기록용 spec). 목록·범위 밖 입력은 ValueError."""
+        if not self.parametric:
+            if width is not None or height is not None or duration_seconds is not None:
+                raise ValueError(f"profile {self.profile_id} has fixed size and length")
+            return {}, {}
+        params: dict[str, Any] = {}
+        spec: dict[str, Any] = {}
+        if (width is None) != (height is None):
+            raise ValueError("width and height must be provided together")
+        if self.sizes:
+            size = (width, height) if width is not None else (self.default_size or self.sizes[0])
+            if size not in self.sizes:
+                allowed = ", ".join(f"{w}x{h}" for w, h in self.sizes)
+                raise ValueError(f"size {size[0]}x{size[1]} is not allowed for {self.profile_id}; use one of {allowed}")
+            params.update(width=size[0], height=size[1])
+            spec.update(width=size[0], height=size[1])
+        elif width is not None:
+            raise ValueError(f"profile {self.profile_id} does not take width/height")
+        if self.frames and self.fps:
+            low, default, high = self.frames
+            if duration_seconds is None:
+                length = default
+            else:
+                if not low / self.fps - 1e-9 <= duration_seconds <= high / self.fps + 1e-9:
+                    raise ValueError(
+                        f"duration_seconds must be {low / self.fps:.3g} to {high / self.fps:.3g} for {self.profile_id}")
+                length = max(low, min(high, 4 * round((duration_seconds * self.fps - 1) / 4) + 1))
+            params["length"] = length
+            spec.update(fps=self.fps, length=length, duration_seconds=round(length / self.fps, 3))
+        elif self.seconds:
+            low, default, high = self.seconds
+            value = default if duration_seconds is None else duration_seconds
+            if not low <= value <= high:
+                raise ValueError(f"duration_seconds must be {low:g} to {high:g} for {self.profile_id}")
+            spec.update(duration_seconds=float(value))
+        elif duration_seconds is not None:
+            raise ValueError(f"profile {self.profile_id} does not take duration_seconds")
+        return params, spec
 
 
 PROFILES = {
     "wan22-5b-draft": ComfyProfile(
         profile_id="wan22-5b-draft", workflow="t2v-wan22-5b", revision=T2V_5B_REVISION,
-        preset="draft", required_gb=16, models=("wan2.2_ti2v_5B_fp16.safetensors",
-                                                  "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-                                                  "wan2.2_vae.safetensors"),
+        preset="draft", required_gb=16, models=_WAN_5B_MODELS,
+    ),
+    "flux2-klein-t2i-16x9": ComfyProfile(
+        profile_id="flux2-klein-t2i-16x9", workflow="t2i-flux2-klein", revision=KLEIN_T2I_REVISION,
+        preset="standard", required_gb=16,
+        models=("flux-2-klein-4b.safetensors", "qwen_3_4b.safetensors", "flux2-vae.safetensors"),
+        kind="image", capabilities=("gen.image",),
+        sizes=((1280, 720), (1024, 576), (768, 432)), default_size=(1280, 720),
+        measured="lab 2026-10-21: 1344x768 4.3~5.2초, 1024x1024 4.7~16.4초(워크플로 t2i-flux2-klein)",
+    ),
+    "wan22-5b-i2v-16x9": ComfyProfile(
+        profile_id="wan22-5b-i2v-16x9", workflow="i2v-wan22-5b", revision=WAN_I2V_5B_REVISION,
+        preset="standard", required_gb=20, models=_WAN_5B_MODELS,
+        kind="video", capabilities=("gen.video_i2v",),
+        sizes=((832, 480), (1024, 576), (640, 352)), default_size=(832, 480),
+        fps=24, frames=(25, 73, 81), needs_image=True,
+        measured="lab 2026-10-21: 같은 5B 모델 832x480 81프레임 t2v 309초(i2v 워크플로는 실행 기록 없음)",
+    ),
+    "wan22-5b-t2v-long-16x9": ComfyProfile(
+        profile_id="wan22-5b-t2v-long-16x9", workflow="t2v-wan22-5b", revision=T2V_5B_REVISION,
+        preset="standard", required_gb=20, models=_WAN_5B_MODELS,
+        kind="video", capabilities=("gen.video_t2v",),
+        sizes=((832, 480), (1024, 576), (640, 352)), default_size=(832, 480),
+        fps=24, frames=(49, 121, 121),
+        measured="lab 2026-10-21: 832x480 81프레임 309초. 121프레임(5.04초)은 호스트 미측정",
+    ),
+    "acestep15-music": ComfyProfile(
+        profile_id="acestep15-music", workflow="acestep-v15-turbo", revision="run_acestep_job.py",
+        preset="turbo-8step", required_gb=16,
+        models=("acestep-v15-turbo/model.safetensors",),
+        engine="acestep", kind="audio", capabilities=("audio.music_generate",),
+        seconds=(10.0, 30.0, 120.0),
+        measured="lab 기록: 20.000초 48kHz 스테레오 wav(acestep_ambient). 관리형 경로 실측은 배포 후",
     ),
 }
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while block := stream.read(1 << 20):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
@@ -139,18 +275,35 @@ class ComfyManagedController:
     def profiles(self) -> list[dict[str, Any]]:
         return [{
             "id": p.profile_id, "workflow": p.workflow, "revision": p.revision, "preset": p.preset,
-            "capabilities": ["gen.video_t2v"], "required_gb": p.required_gb, "models": list(p.models),
+            "capabilities": list(p.capabilities), "required_gb": p.required_gb, "models": list(p.models),
+            "kind": p.kind, "engine": p.engine, "limits": p.limits(),
         } for p in PROFILES.values()]
 
     def prepare(self, profile_id: str, *, prompt: str, seed: int, negative_prompt: str | None = None,
                 owner: str = "owner",
                 idempotency_key: str | None = None, lease_wait_seconds: float = 0,
+                width: int | None = None, height: int | None = None,
+                duration_seconds: float | None = None,
+                image_path: str | Path | None = None, image_task_id: str | None = None,
                 **extra: Any) -> dict[str, Any]:
         if extra:
-            raise ValueError("only registered profile parameters prompt, negative_prompt, and seed are accepted")
+            raise ValueError("only registered profile parameters prompt, negative_prompt, seed, width, height, "
+                             "duration_seconds, and a start image are accepted")
         profile = PROFILES.get(profile_id)
         if profile is None:
             raise ValueError("unknown registered profile")
+        for name, value in (("width", width), ("height", height)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+                raise ValueError(f"{name} must be an integer")
+        if duration_seconds is not None and (
+            isinstance(duration_seconds, bool) or not isinstance(duration_seconds, (int, float))
+            or math.isnan(duration_seconds) or math.isinf(duration_seconds)
+        ):
+            raise ValueError("duration_seconds must be a number")
+        graph_params, spec = profile.resolve(width, height, duration_seconds)
+        image = self._resolve_start_image(profile, owner, image_path, image_task_id)
+        if profile.engine == "acestep" and negative_prompt is not None:
+            raise ValueError("negative_prompt is not accepted by the music profile")
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000:
             raise ValueError("prompt must contain 1 to 1000 characters")
         if negative_prompt is not None and (
@@ -174,8 +327,9 @@ class ComfyManagedController:
                 existing = None
             if existing is not None:
                 if (existing.get("profile"), existing.get("prompt"), existing.get("negative_prompt"),
-                        existing.get("seed")) != (
-                    profile_id, prompt, negative_prompt, seed,
+                        existing.get("seed"), existing.get("spec") or {},
+                        (existing.get("image") or {}).get("sha256")) != (
+                    profile_id, prompt, negative_prompt, seed, spec, (image or {}).get("sha256"),
                 ):
                     raise ValueError("idempotency key was already used with different task arguments")
                 return existing
@@ -183,14 +337,16 @@ class ComfyManagedController:
         runtime_instance = uuid.uuid4().hex
         lease = self.manager.acquire(
             owner_task=task_id, owner_attempt=attempt_id, runtime_instance=runtime_instance,
-            resource_family="comfy", claim={"profile": profile.profile_id, "workflow": profile.workflow,
-                                             "revision": profile.revision, "models": list(profile.models)},
+            resource_family="comfy" if profile.engine == "comfy" else "gpu",
+            claim={"profile": profile.profile_id, "workflow": profile.workflow,
+                   "revision": profile.revision, "models": list(profile.models)},
             ttl_seconds=45, wait_seconds=lease_wait_seconds,
         )
         job = {"task_id": task_id, "owner": owner, "owner_attempt": attempt_id,
                "runtime_instance": runtime_instance, "lease_id": lease.lease_id,
                "generation_token": lease.generation_token, "profile": profile.profile_id,
                "prompt": prompt, "negative_prompt": negative_prompt, "seed": seed,
+               "graph_params": graph_params, "spec": spec, "image": image,
                "status": "starting", "runner_job_id": None,
                "result": None, "error": None, "created_at": time.time()}
         try:
@@ -212,6 +368,51 @@ class ComfyManagedController:
                 target=self._heartbeat, args=(active,), daemon=True, name="comfy-lease-heartbeat")
             active["heartbeat_thread"].start()
         return dict(job)
+
+    def _resolve_start_image(self, profile: ComfyProfile, owner: str, image_path: str | Path | None,
+                             image_task_id: str | None) -> dict[str, Any] | None:
+        """시작 이미지는 파일 경로나 같은 소유자의 성공한 이미지 task 하나로만 받는다. 내용 해시를 job 에 고정한다."""
+        if not profile.needs_image:
+            if image_path is not None or image_task_id is not None:
+                raise ValueError(f"profile {profile.profile_id} does not take a start image")
+            return None
+        if (image_path is None) == (image_task_id is None):
+            raise ValueError("exactly one of image_path or image_task_id is required for this profile")
+        source: dict[str, Any] = {}
+        if image_task_id is not None:
+            try:
+                prior = self._load(image_task_id)
+            except FileNotFoundError as exc:
+                raise ValueError("image_task_id does not name a managed Comfy task") from exc
+            if prior.get("owner") != owner or prior.get("status") != "succeeded":
+                raise ValueError("image_task_id must be a succeeded task of the same owner")
+            outputs = [o for o in (prior.get("receipt") or {}).get("outputs", []) if not o.get("intermediate")]
+            if len(outputs) != 1 or not str(outputs[0].get("media_type", "")).startswith("image/"):
+                raise ValueError("image_task_id must have exactly one image output")
+            path = Path(str(outputs[0].get("source_path", "")))
+            source = {"task_id": image_task_id, "expected_sha256": outputs[0].get("sha256")}
+        else:
+            path = Path(str(image_path))
+        jobs_root = self.data_dir / "managed-comfy" / "jobs"
+        if image_task_id is not None:
+            try:
+                path.resolve(strict=True).relative_to(jobs_root.resolve(strict=True))
+            except (OSError, ValueError) as exc:
+                raise ValueError("start image is outside the managed Comfy jobs directory") from exc
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise ValueError("start image must be an absolute regular file path")
+        size = path.stat().st_size
+        if not 0 < size <= _MAX_INPUT_IMAGE_BYTES:
+            raise ValueError("start image must be 1 byte to 25 MiB")
+        with path.open("rb") as stream:
+            head = stream.read(12)
+        if not (head.startswith(_IMAGE_MAGIC) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")):
+            raise ValueError("start image must be a PNG, JPEG or WebP file")
+        digest = _sha256_file(path)
+        if source.get("expected_sha256") not in (None, digest):
+            raise ValueError("start image does not match the receipt hash of image_task_id")
+        return {"path": str(path), "sha256": digest, "bytes": size,
+                **({"task_id": image_task_id} if image_task_id else {})}
 
     @staticmethod
     def _heartbeat(active: dict[str, Any]) -> None:
@@ -282,8 +483,13 @@ class ComfyManagedController:
             job["error"] = active["heartbeat_error"]
             self._save(job)
             return job
+        if profile.engine == "acestep":
+            return self._execute_acestep(task_id, job, active)
         server = None
         try:
+            # 런타임을 띄우기 전에 검사한다. 여기서 실패하면 띄운 프로세스가 없으므로 lease 를 바로 풀 수 있다.
+            if job.get("image") and _sha256_file(Path(job["image"]["path"])) != job["image"]["sha256"]:
+                raise ValueError("start image changed after prepare")
             runtime = self.runtime_factory(profile, lease.runtime_instance, self.data_dir, lease, self)
             runtime_is_real = not isinstance(runtime, tuple)
             if isinstance(runtime, tuple):
@@ -351,9 +557,11 @@ class ComfyManagedController:
                     active["progress"].update(phase="complete", pct=100)
                 self._maybe_cancel(task_id, active)
 
-            params = {"prompt": job["prompt"], "seed": job["seed"]}
+            params = {"prompt": job["prompt"], "seed": job["seed"], **(job.get("graph_params") or {})}
             if job.get("negative_prompt") is not None:
                 params["negative"] = job["negative_prompt"]
+            if job.get("image"):
+                params["image"] = job["image"]["path"]
             result = runner.run(name=profile.workflow, version=profile.revision,
                                 preset=profile.preset, params=params,
                                 retries=0, tag=task_id,
@@ -408,6 +616,139 @@ class ComfyManagedController:
                 job["status"] = "needs_reconcile"
                 job["error"] = active["heartbeat_error"]
                 self._save(job)
+
+    def _execute_acestep(self, task_id: str, job: dict[str, Any], active: dict[str, Any]) -> dict[str, Any]:
+        """ACE-Step 프로세스 하나를 같은 자원 lease 아래에서 돌린다. Comfy 서버와 Runner 는 쓰지 않는다."""
+        lease: ResourceLeaseHandle = active["lease"]
+        profile: ComfyProfile = active["profile"]
+        work = self.data_dir / "managed-comfy" / "jobs" / f"acestep-{task_id}"
+        out_dir = work / "out"
+        proc = None
+        started = time.monotonic()
+        try:
+            missing = [str(path) for path in (ACESTEP_RUNNER, ACESTEP_PYTHON, ACESTEP_TURBO_CHECKPOINT)
+                       if not path.is_file()]
+            if missing:
+                raise FileNotFoundError("ACE-Step files are missing: " + ", ".join(missing))
+            work.mkdir(parents=True, exist_ok=True, mode=0o700)
+            spec_job = {
+                "out": str(out_dir), "task_type": "text2music", "caption": job["prompt"], "lyrics": "",
+                "language": "unknown", "duration": job["spec"]["duration_seconds"], "seed": job["seed"],
+                "bpm": None, "thinking": False, "use_lm": False, "dit": "acestep-v15-turbo", "steps": 8,
+                "format": "wav",
+            }
+            _write_json(work / "acestep-job.json", spec_job)
+            if self.manager.current().get("phase") == "cancel_requested":
+                job["status"] = "cancelled"
+                self._save(job)
+                return self._release_acestep(task_id, job, active, proc=None)
+            with active["lease_guard"]:
+                lease.mark_running()
+            job["status"] = "running"
+            self._save(job)
+            with (work / "acestep.log").open("wb") as log:
+                proc = subprocess.Popen(
+                    [str(ACESTEP_PYTHON), str(ACESTEP_RUNNER), str(work / "acestep-job.json")],
+                    cwd=ACESTEP_ROOT, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                    start_new_session=True, env={**os.environ, "TTAKKARI_COMFY_RUNTIME_INSTANCE": lease.runtime_instance},
+                )
+                active["acestep_proc"] = proc
+                job["runtime_pid"] = proc.pid
+                job["runtime_created_at"] = psutil.Process(proc.pid).create_time()
+                self._save(job)
+                cancelled = False
+                while proc.poll() is None:
+                    elapsed = time.monotonic() - started
+                    if elapsed > ACESTEP_TIMEOUT_SECONDS:
+                        self._terminate(proc)
+                        raise TimeoutError("ACE-Step music generation exceeded the 30-minute limit")
+                    current = self.manager.current()
+                    if (current and current.get("lease_id") == lease.lease_id
+                            and current.get("phase") == "cancel_requested"):
+                        cancelled = True
+                        self._terminate(proc)
+                        break
+                    active["progress"] = {"phase": "running", "t": round(elapsed, 1)}
+                    time.sleep(1)
+            if active.get("heartbeat_error"):
+                raise LeaseBusy("lease heartbeat failed while ACE-Step was running")
+            if cancelled:
+                job["status"] = "cancelled"
+                self._save(job)
+                return self._release_acestep(task_id, job, active, proc=proc)
+            if proc.returncode != 0:
+                tail = (work / "acestep.log").read_text(errors="replace")[-800:]
+                raise RuntimeError(f"ACE-Step exit={proc.returncode}: {tail}")
+            metrics = json.loads((out_dir / "metrics.json").read_text(encoding="utf-8"))
+            audio_path = Path(str(metrics.get("audio_path") or ""))
+            seconds = round(time.monotonic() - started, 2)
+            result = {"id": f"acestep-{task_id}", "status": "succeeded", "seconds": seconds, "failure": None,
+                      "files": [{"filename": audio_path.name, "path": str(audio_path), "node": "acestep"}]}
+            receipt = build_audio_receipt(
+                job=job, profile=profile, result=result, audio_path=audio_path, work_dir=work,
+                model_paths={"acestep-v15-turbo/model.safetensors": ACESTEP_TURBO_CHECKPOINT},
+                runner_path=ACESTEP_RUNNER, metrics=metrics)
+            wanted = job["spec"]["duration_seconds"]
+            if receipt["outputs"][0]["duration"] + 0.1 < wanted:
+                raise ReceiptError(f"music is shorter than requested: {receipt['outputs'][0]['duration']}s < {wanted}s")
+            job["result"] = result
+            job["receipt"] = receipt
+            job["status"] = "succeeded"
+            active["progress"] = {"phase": "complete", "pct": 100}
+            self._save(job)
+            return self._release_acestep(task_id, job, active, proc=proc)
+        except Exception as exc:  # noqa: BLE001 -- 프로세스 종료를 확인하지 못하면 lease 를 풀지 않고 reconcile 로 남긴다
+            if proc is not None and proc.poll() is None:
+                self._terminate(proc)
+            job["error"] = f"{type(exc).__name__}: {exc}"
+            if proc is not None and proc.poll() is None:
+                job["status"] = "needs_reconcile"
+                job["error"] += "; ACE-Step process stop is unverified"
+                self._save(job)
+                return job
+            job["status"] = "needs_reconcile" if active.get("heartbeat_error") else "failed"
+            self._save(job)
+            if job["status"] == "failed":
+                return self._release_acestep(task_id, job, active, proc=proc)
+            return job
+        finally:
+            if active.get("heartbeat_error"):
+                job = self._load(task_id)
+                job["status"] = "needs_reconcile"
+                job["error"] = active["heartbeat_error"]
+                self._save(job)
+
+    @staticmethod
+    def _terminate(proc) -> None:
+        """start_new_session 으로 띄운 ACE-Step 프로세스 그룹을 내린다. 끝내 안 죽으면 호출자가 poll 로 확인한다."""
+        for sig, grace in ((signal.SIGTERM, 20), (signal.SIGKILL, 10)):
+            try:
+                os.killpg(proc.pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                proc.wait(timeout=grace)
+                return
+            except subprocess.TimeoutExpired:
+                continue
+
+    def _release_acestep(self, task_id: str, job: dict[str, Any], active: dict[str, Any], *, proc) -> dict[str, Any]:
+        lease: ResourceLeaseHandle = active["lease"]
+        proof = {"runtime_status": "stopped", "evidence": {
+            "runtime_instance": lease.runtime_instance, "pid": getattr(proc, "pid", None),
+            "process_exit_code": getattr(proc, "returncode", None), "runtime_spawned": proc is not None,
+        }}
+        with active["lease_guard"]:
+            lease.release(proof=proof)
+        active["released"] = True
+        active["heartbeat_stop"].set()
+        active["heartbeat_thread"].join(timeout=1)
+        job["lease_release_proof"] = proof
+        job["released_at"] = time.time()
+        self._save(job)
+        with self._lock:
+            self._active.pop(task_id, None)
+        return job
 
     def _attach_receipt(self, job: dict[str, Any], active: dict[str, Any]) -> None:
         """성공한 실행에만 receipt 를 붙인다. receipt 실패는 job 결과를 바꾸지 않고 사유만 남긴다."""
@@ -507,6 +848,9 @@ class ComfyManagedController:
             if abs(process.create_time() - float(created)) > 0.01:
                 absent = True
             else:
+                if self._is_acestep_job(job):
+                    # 같은 pid 와 시작 시각의 프로세스가 아직 살아 있다. Comfy 포트는 이 소비자와 무관하다.
+                    return process.status() == psutil.STATUS_ZOMBIE
                 if process.status() == psutil.STATUS_ZOMBIE:
                     return self._is_comfy_port_alive() is False
                 env = process.environ()
@@ -522,7 +866,14 @@ class ComfyManagedController:
             absent = True
         except (psutil.AccessDenied, OSError):
             return None
+        if absent and self._is_acestep_job(job):
+            return True
         return True if absent and self._is_comfy_port_alive() is False else (None if absent else False)
+
+    @staticmethod
+    def _is_acestep_job(job: dict[str, Any]) -> bool:
+        profile = PROFILES.get(job.get("profile"))
+        return profile is not None and profile.engine == "acestep"
 
     def list_jobs(self, *, owner: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
         if isinstance(limit, bool) or not 1 <= limit <= 100 or isinstance(offset, bool) or offset < 0:

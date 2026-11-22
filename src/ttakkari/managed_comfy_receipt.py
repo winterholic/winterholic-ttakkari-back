@@ -203,6 +203,77 @@ def probe_mp4(path: Path) -> dict[str, Any] | None:
     return None
 
 
+def probe_wav(path: Path) -> dict[str, Any] | None:
+    """RIFF/WAVE 헤더에서 길이·표본율·채널을 읽는다. PCM 과 float 모두 data 청크 크기로 계산한다."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as stream:
+            head = stream.read(12)
+            if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+                return None
+            channels = rate = bits = None
+            offset = 12
+            while offset + 8 <= size:
+                stream.seek(offset)
+                kind, chunk = struct.unpack("<4sI", stream.read(8))
+                body = offset + 8
+                if kind == b"fmt ":
+                    stream.seek(body)
+                    _fmt, channels, rate, _byte_rate, _align, bits = struct.unpack("<HHIIHH", stream.read(16))
+                elif kind == b"data":
+                    if not (channels and rate and bits):
+                        return None
+                    length = size - body if chunk in (0, 0xFFFFFFFF) or body + chunk > size else chunk
+                    return {"duration": round(length / (rate * channels * bits / 8), 3),
+                            "sample_rate": rate, "channels": channels, "metadata_source": "wav-header"}
+                offset = body + chunk + (chunk & 1)
+    except (OSError, struct.error, ZeroDivisionError):
+        return None
+    return None
+
+
+def build_audio_receipt(*, job: dict[str, Any], profile: Any, result: dict[str, Any], audio_path: Path,
+                        work_dir: Path, model_paths: dict[str, Path], runner_path: Path,
+                        metrics: dict[str, Any]) -> dict[str, Any]:
+    """ACE-Step 한 번 실행의 receipt. 출력 wav 는 work_dir 아래의 일반 파일이어야 하고 길이는 헤더에서 읽는다."""
+    if not audio_path.is_file() or audio_path.is_symlink() or not _under(audio_path, work_dir):
+        raise ReceiptError("music output is not a regular file under the managed job directory")
+    probed = probe_wav(audio_path)
+    if probed is None:
+        raise ReceiptError("music output is not a readable WAV file")
+    sha = sha256_file(audio_path)
+    models = []
+    for name, path in model_paths.items():
+        stat = path.stat() if path.is_file() else None
+        models.append({"name": name, "found": stat is not None, "size": stat.st_size if stat else None,
+                       "mtime_ns": stat.st_mtime_ns if stat else None, "sha256": None,
+                       "hash_method": "size+mtime"})
+    prompt = job["prompt"]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "managed-acestep-receipt",
+        "profile_id": profile.profile_id,
+        "workflow_id": profile.workflow,
+        "workflow_revision_hash": profile.revision,
+        "runner_sha256": sha256_file(runner_path),
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "models": models,
+        "timing": {"observed_seconds": result.get("seconds"),
+                   "stage_seconds": {k: v.get("seconds") for k, v in (metrics.get("stages") or {}).items()
+                                     if isinstance(v, dict)}},
+        "lease": {"owner_task": job["task_id"], "owner_attempt": job["owner_attempt"],
+                  "runtime_instance": job["runtime_instance"], "lease_id": job["lease_id"]},
+        "seed": job["seed"],
+        "requested_spec": job.get("spec") or {},
+        "runtime": {"engine": "acestep-1.5", "dit": "acestep-v15-turbo", "use_lm": False},
+        "outputs": [{
+            "name": audio_path.name, "sha256": sha, "bytes": audio_path.stat().st_size,
+            "media_type": "audio/wav", "path": f"artifacts/{sha}", "source_path": str(audio_path),
+            "node": "acestep", "intermediate": False, **probed,
+        }],
+    }
+
+
 def _graph_declared(graph: dict) -> dict[str, Any]:
     """파일을 해석할 수 없을 때, 실행한 resolved graph 가 선언한 값만 쓴다(실제 파일 측정이 아님)."""
     width = height = length = fps = None
@@ -295,6 +366,7 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
         "external_prompt_id": attempt.get("external_prompt_id") or adapter_job.get("prompt_id"),
         "resolved_graph_sha256": graph_sha,
         "seed": job["seed"],
+        **({"requested_spec": job["spec"]} if job.get("spec") else {}),
         "model_hashes": {m["name"]: m["sha256"] for m in models if m.get("sha256")},
         "runtime": comfy_runtime(comfy_root),
         "outputs": outputs,
@@ -309,5 +381,5 @@ def safe_rss_gb(probe: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-__all__ = ["HASH_LIMIT_BYTES", "ReceiptError", "build_receipt", "canonical_sha256", "comfy_runtime", "model_entry",
-           "probe_mp4", "safe_rss_gb", "sha256_file"]
+__all__ = ["HASH_LIMIT_BYTES", "ReceiptError", "build_audio_receipt", "build_receipt", "canonical_sha256", "comfy_runtime", "model_entry",
+           "probe_mp4", "probe_wav", "safe_rss_gb", "sha256_file"]

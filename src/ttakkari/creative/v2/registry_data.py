@@ -34,11 +34,31 @@ WAN_DRAFT = ManagedLimits(
     profile="wan22-5b-draft", workflow="t2v-wan22-5b",
     max_seconds=1.375, width=640, height=352, fps=24, measured_on="2026-11-22",
 )
+# 아래 세 프로필은 managed_comfy.PROFILES 에 등록돼 있으나 호스트 관리형 실행 기록이 아직 없다(measured_on 비움).
+# 능력 수준은 기록이 올려 주므로 실행 전에는 installed 에 머문다.
+KLEIN_T2I = ManagedLimits(
+    profile="flux2-klein-t2i-16x9", workflow="t2i-flux2-klein", width=1280, height=720,
+)
+WAN_I2V = ManagedLimits(
+    profile="wan22-5b-i2v-16x9", workflow="i2v-wan22-5b", max_seconds=3.375, width=832, height=480, fps=24,
+)
 WAN_RECORDS = ("comfy-wan22-5b-t2v-bench", "managed-comfy-wan22-5b-draft-20261122")
+WAN_LONG_NOTE = (
+    "wan22-5b-t2v-long-16x9(832x480, 최대 5.04초)가 managed_comfy.PROFILES 에 등록돼 있으나 관리형 실행 기록이 없다. "
+    "실행 기록은 draft 프로필뿐이다."
+)
+MUSIC_PROFILE_NOTE = (
+    "관리형 프로필 acestep15-music(10~120초, 기본 30초)이 managed_comfy.PROFILES 에 등록돼 있으나 "
+    "프로필 경유 실행 기록은 없다. 과거 기록은 ACE-Step 직접 실행이다."
+)
 # lab 레지스트리(comfyui/registry)에 이 모델 워크플로가 없다. 모델 파일이 디스크에 있다는 것과 실행 가능은 별개다.
 NO_LAB_WORKFLOW = "lab ComfyUI 워크플로 레지스트리에 이 모델의 워크플로가 없다. 모델 파일만 디스크에 있고 실행 경로가 없다(확인 2026-11-22)."
 I2V_UNRUN = "lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22)."
-WAN_LAB_STANDARD = "lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). 관리형 프로필은 draft 하나뿐이라 이 길이는 제작 경로에서 쓸 수 없다."
+WAN_LAB_STANDARD = (
+    "lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). "
+    "장시간 관리형 프로필 wan22-5b-t2v-long-16x9 는 이 작업 코드에 등록됐지만 "
+    "현재 운영에는 없고, 배포 후 managed 실측 전이다."
+)
 # kafka_flow 템플릿이 갖춘 막(act)의 경계(템플릿 타임라인의 원본 초). 장면 수 N은 앞의 N개 막을 쓰고,
 # 장면별 길이는 계획이 정한다(hyperframes._prepare_spec_project가 막 구간을 그 길이로 다시 맞춘다).
 KAFKA_ACT_CUTS: tuple[float, ...] = (0.0, 4.5, 10.5, 16.0, 23.0, 30.0)
@@ -215,7 +235,7 @@ MODELS: list[RegistryEntry] = [
         depends_on=list(COMFY),
         integration="lab_only",
         claims=[
-            _c("gen.image", "comfy-flux2-klein-character-edit"),
+            _c("gen.image", "comfy-flux2-klein-character-edit", managed=KLEIN_T2I),
             _c("gen.image_edit", "comfy-flux2-klein-character-edit"),
             _c(
                 "asset.character_sheet",
@@ -253,13 +273,14 @@ MODELS: list[RegistryEntry] = [
                 "gen.video_t2v",
                 *WAN_RECORDS,
                 note="결과 파일 생성 기준 29/32, 시청 품질 판정 아님",
-                limits=(WAN_LAB_STANDARD,),
+                limits=(WAN_LAB_STANDARD, WAN_LONG_NOTE),
                 managed=WAN_DRAFT,
             ),
             _c(
                 "gen.video_i2v",
                 note="I2V 워크플로 초안만 있고 새 영상 0편(E1 준비 단계)",
                 limits=(I2V_UNRUN,),
+                managed=WAN_I2V,
             ),
         ],
     ),
@@ -321,6 +342,7 @@ MODELS: list[RegistryEntry] = [
                 "acestep-instrumental-cues",
                 "acestep-ko-edit-variants",
                 note="구간 재생성(repaint) 2회 실패",
+                limits=(MUSIC_PROFILE_NOTE,),
             ),
             _c(
                 "audio.music_analysis",
@@ -544,7 +566,7 @@ SKILLS: list[RegistryEntry] = [
         "t2i-flux2-klein",
         "FLUX.2 klein 텍스트→이미지",
         "comfyui",
-        [_c("gen.image", "comfy-flux2-klein-character-edit")],
+        [_c("gen.image", "comfy-flux2-klein-character-edit", managed=KLEIN_T2I)],
         ["model.flux2_klein_4b"],
         ["워크플로 API JSON + params.json"],
     ),
@@ -587,7 +609,7 @@ SKILLS: list[RegistryEntry] = [
         "t2v-wan22-5b",
         "Wan2.2 5B 텍스트→영상",
         "comfyui",
-        [_c("gen.video_t2v", *WAN_RECORDS, managed=WAN_DRAFT)],
+        [_c("gen.video_t2v", *WAN_RECORDS, managed=WAN_DRAFT, limits=(WAN_LONG_NOTE,))],
         ["model.wan22_ti2v_5b"],
         ["워크플로 API JSON"],
     ),
@@ -595,7 +617,7 @@ SKILLS: list[RegistryEntry] = [
         "i2v-wan22-5b",
         "Wan2.2 5B 이미지→영상",
         "comfyui",
-        [_c("gen.video_i2v", limits=(I2V_UNRUN,))],
+        [_c("gen.video_i2v", limits=(I2V_UNRUN,), managed=WAN_I2V)],
         ["model.wan22_ti2v_5b"],
         ["워크플로 API JSON"],
         "실제 새 영상 기록이 없다(E1 준비 단계).",
@@ -641,6 +663,7 @@ SKILLS: list[RegistryEntry] = [
                 "audio.music_generate",
                 "acestep-ko-ballad-run1",
                 "acestep-instrumental-cues",
+                limits=(MUSIC_PROFILE_NOTE,),
             ),
             _c("audio.music_analysis", "acestep-ko-ballad-run1"),
             _c("qa.audio_sync", "acestep-ko-ballad-run1"),

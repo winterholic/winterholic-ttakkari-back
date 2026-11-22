@@ -37,6 +37,15 @@ class Submit(BaseModel):
     prompt: str = Field(min_length=1, max_length=1000)
     seed: int = Field(ge=0, le=2**32 - 1)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+    # 길이·해상도를 받는 프로필 전용. 목록·범위 검증은 컨트롤러가 한다. 시작 이미지는 같은 소유자의 성공한 이미지 task 로만 지정한다.
+    width: int | None = Field(default=None, ge=64, le=4096)
+    height: int | None = Field(default=None, ge=64, le=4096)
+    duration_seconds: float | None = Field(default=None, gt=0, le=600)
+    image_task_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+
+    def profile_options(self) -> dict:
+        return {k: getattr(self, k) for k in ("width", "height", "duration_seconds", "image_task_id")
+                if getattr(self, k) is not None}
 
 
 # 자동 소재 생성(creative-v2)이 만든 작업은 receipt 의 task_id 로 소유자 세션이 조회할 수 있어야 한다. 읽기 전용이며
@@ -109,7 +118,7 @@ async def submit(body: Submit, _: User) -> dict:
     service = _controller()
     try:
         job = service.prepare(body.profile_id, prompt=body.prompt, seed=body.seed,
-                              idempotency_key=body.idempotency_key)
+                              idempotency_key=body.idempotency_key, **body.profile_options())
         service.start(job["task_id"])
         return _public(job)
     except LeaseBusy as exc:
@@ -225,7 +234,7 @@ async def agent_submit(body: Submit, owner: str = Depends(agent_access)) -> dict
     service = _controller()
     try:
         job = service.prepare(body.profile_id, prompt=body.prompt, seed=body.seed, owner=owner,
-                              idempotency_key=body.idempotency_key)
+                              idempotency_key=body.idempotency_key, **body.profile_options())
         service.start(job["task_id"])
         return _agent_public(job)
     except LeaseBusy as exc:

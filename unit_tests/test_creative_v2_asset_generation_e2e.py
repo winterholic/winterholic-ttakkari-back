@@ -12,8 +12,6 @@ import json
 import math
 import struct
 import subprocess
-import sys
-import textwrap
 import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -95,7 +93,7 @@ class _FakeSupertonic(SupertonicProvider):
 
 
 class _FakeController:
-    """managed Comfy 작업 하나를 즉시 성공 receipt 로 돌려준다. receipt 의 영상은 실제 mp4 다."""
+    """managed Comfy 작업 하나를 즉시 성공 receipt 로 돌려준다. receipt 의 영상·이미지·음악은 실제 파일이다."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -103,26 +101,44 @@ class _FakeController:
         self.waits: list[float] = []
         self.prompts: list[str] = []
         self.negative_prompts: list[str | None] = []
+        self.calls: list[dict] = []
+        self.failing_profiles: set[str] = set()
 
-    def prepare(self, profile, *, prompt, seed, negative_prompt=None, owner, lease_wait_seconds=0):
+    def prepare(self, profile, *, prompt, seed, negative_prompt=None, owner, lease_wait_seconds=0, **options):
         self.waits.append(lease_wait_seconds)
         self.prompts.append(prompt)
         self.negative_prompts.append(negative_prompt)
-        task_id = hashlib.sha256(f"{owner}:{seed}".encode()).hexdigest()[:32]
-        video = self.root / f"{task_id}.mp4"
-        subprocess.run(
-            [ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "lavfi",
-             "-i", "testsrc=size=1280x720:rate=24:duration=3", "-pix_fmt", "yuv420p", str(video)],
-            check=True, capture_output=True, timeout=60,
-        )
-        sha = hashlib.sha256(video.read_bytes()).hexdigest()
-        self.jobs[task_id] = {
-            "task_id": task_id, "profile": profile, "status": "succeeded", "runner_job_id": f"runner-{task_id[:6]}",
-            "receipt": {"workflow_revision_hash": "rev-test", "workflow_revision": "rev-test",
-                        "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-                        "negative_prompt_sha256": hashlib.sha256(negative_prompt.encode()).hexdigest(),
-                        "outputs": [{"sha256": sha, "source_path": str(video), "intermediate": False}]},
-        }
+        self.calls.append({"profile": profile, "options": options, "owner": owner, "prompt": prompt})
+        task_id = hashlib.sha256(f"{owner}:{profile}:{seed}:{len(self.calls)}".encode()).hexdigest()[:32]
+        if profile in self.failing_profiles:
+            self.jobs[task_id] = {"task_id": task_id, "profile": profile, "status": "failed",
+                                  "error": f"{profile} forced failure"}
+            return {"task_id": task_id, "status": "starting"}
+        if profile == "flux2-klein-t2i-16x9":
+            out = self.root / f"{task_id}.png"
+            Image.new("RGB", (options["width"], options["height"]), (30, 40, 90)).save(out)
+            media_type = "image/png"
+        elif profile == "acestep15-music":
+            out = _wav(self.root / f"{task_id}.wav", options["duration_seconds"] + 0.5)
+            media_type = "audio/wav"
+        else:
+            out = self.root / f"{task_id}.mp4"
+            subprocess.run(
+                [ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "lavfi",
+                 "-i", "testsrc=size=1280x720:rate=24:duration=3", "-pix_fmt", "yuv420p", str(out)],
+                check=True, capture_output=True, timeout=60,
+            )
+            media_type = "video/mp4"
+        sha = hashlib.sha256(out.read_bytes()).hexdigest()
+        receipt = {"workflow_revision_hash": "rev-test", "workflow_revision": "rev-test",
+                   "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                   "lease": {"lease_id": f"lease-{task_id[:6]}"},
+                   "outputs": [{"sha256": sha, "source_path": str(out), "intermediate": False,
+                                "media_type": media_type}]}
+        if negative_prompt is not None:
+            receipt["negative_prompt_sha256"] = hashlib.sha256(negative_prompt.encode()).hexdigest()
+        self.jobs[task_id] = {"task_id": task_id, "profile": profile, "status": "succeeded",
+                              "runner_job_id": f"runner-{task_id[:6]}", "receipt": receipt}
         return {"task_id": task_id, "status": "starting"}
 
     def start(self, _task_id):
@@ -132,37 +148,12 @@ class _FakeController:
         return self.jobs[task_id]
 
 
-_ACESTEP_STUB = textwrap.dedent(
-    """
-    import json, math, struct, sys, wave
-    from pathlib import Path
-    job = json.load(open(sys.argv[1]))
-    out = Path(job["out"]); out.mkdir(parents=True, exist_ok=True)
-    rate = 22050
-    audio = out / "music.wav"
-    with wave.open(str(audio), "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
-        w.writeframes(b"".join(struct.pack("<h", int(6000 * math.sin(2 * math.pi * 330 * n / rate)))
-                               for n in range(int(rate * (float(job["duration"]) + 0.5)))))
-    (out / "metrics.json").write_text(json.dumps({"audio_path": str(audio)}))
-    """
-)
-
-
 @pytest.fixture
 def pipeline(tmp_path, monkeypatch):
     settings = Settings(_env_file=None, home=tmp_path / "home")
     for module in (managed, tts_service):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     monkeypatch.setattr(tts_service, "get_provider", lambda s=None: _FakeSupertonic(s or settings))
-    lab = tmp_path / "acestep-root"
-    lab.mkdir()
-    runner = tmp_path / "run_acestep_job.py"
-    runner.write_text(_ACESTEP_STUB)
-    monkeypatch.setattr(managed, "ACESTEP_ROOT", lab)
-    monkeypatch.setattr(managed, "ACESTEP_PYTHON", Path(sys.executable))
-    monkeypatch.setattr(managed, "ACESTEP_JOB_RUNNER", runner)
-
     plans = PlanStore(tmp_path / "plans", registry=Registry())
     plan = plans.create(build_plan("가을 산책로를 소개하는 짧은 영상", _intent(), registry=Registry()))
     plan = plans.approve(plan["id"], plan["revision"])
@@ -191,7 +182,11 @@ def test_generator_runs_every_stage_with_real_settings_and_feeds_dispatch(pipeli
     assert set(result["assets"]["scenes"]) == set(scene_ids) == set(result["assets"]["voices"])
     assert result["receipt"]["execution_mode"] == "real"
     assert [run["scene_id"] for run in result["receipt"]["engine_runs"]] == scene_ids
-    assert controller.waits == [managed.LEASE_HANDOFF_WAIT_SECONDS] * 3
+    # 장면이 이미지→영상 한도(3.375초)보다 길어 텍스트→영상 장시간이 선택된다. 마지막에 음악 한 작업. 모두 같은 인계 대기 시간을 쓴다.
+    assert [c["profile"] for c in controller.calls] == ["wan22-5b-t2v-long-16x9"] * 3 + ["acestep15-music"]
+    assert controller.waits == [managed.LEASE_HANDOFF_WAIT_SECONDS] * 4
+    assert controller.calls[-1]["options"]["duration_seconds"] == pytest.approx(plan["scenes"][-1]["end_time"])
+    assert all(run["route"]["selected"] == "t2v" and run["route"]["generative_motion"] for run in result["receipt"]["engine_runs"])
     assert len(result["receipt"]["voices"]) == 3
     assert result["receipt"]["music"]["execution_mode"] == "real"
     # ACE-Step 자식이 끝난 뒤 lease 가 반납돼 다음 작업이 바로 얻을 수 있어야 한다.
@@ -243,14 +238,16 @@ def test_scene_prompt_is_specific_and_receipt_keeps_the_exact_comfy_input(pipeli
     assert "장면 2의 설명" in prompts[2]
     result = asset_generation.generate_assets(_plans, plan["id"], plan["revision"], generator)
     runs = result["receipt"]["engine_runs"]
-    assert [run["prompt"] for run in runs] == prompts
+    # 영상 단계의 프롬프트는 장면 프롬프트에 움직임 문장만 덧붙인다. 장면 지시 자체는 바뀌지 않는다.
+    assert all(run["prompt"].startswith(prompt) for run, prompt in zip(runs, prompts, strict=True))
     assert all(run["prompt_sha256"] == hashlib.sha256(run["prompt"].encode()).hexdigest() for run in runs)
     assert all(run["receipt"]["prompt_sha256"] == run["prompt_sha256"] for run in runs)
     assert all(run["receipt"]["negative_prompt_sha256"] == hashlib.sha256(
         managed.SCENE_NEGATIVE_PROMPT.encode()
     ).hexdigest() for run in runs)
-    assert controller.prompts == prompts
-    assert controller.negative_prompts == [managed.SCENE_NEGATIVE_PROMPT] * len(prompts)
+    video_calls = [c for c in controller.calls if c["profile"] not in {"flux2-klein-t2i-16x9", "acestep15-music"}]
+    assert [c["prompt"] for c in video_calls] == [run["prompt"] for run in runs]
+    assert {c["profile"] for c in video_calls} == {"wan22-5b-t2v-long-16x9"}
 
 
 def test_scene_prompt_refuses_to_silently_truncate_required_visual_details(pipeline):

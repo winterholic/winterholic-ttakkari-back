@@ -507,3 +507,61 @@ async def test_style_read_rejects_non_slug_ids(style_store):
         with pytest.raises(HTTPException) as exc:
             await command("style", Command(data=data), "personal")
         assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_comfy_submit_forwards_profile_options_only_when_given(monkeypatch):
+    from ttakkari.orchestrator import mcp_server as ms
+
+    tools = {tool.name: tool for tool in await ms.server.list_tools()}
+    props = tools["comfy_submit"].input_schema["properties"]
+    assert {"width", "height", "duration_seconds", "image_task_id"} <= set(props)
+    assert set(tools["comfy_submit"].input_schema["required"]) == {"profile_id", "prompt", "seed", "idempotency_key"}
+
+    call = AsyncMock(return_value='{"status":"starting"}')
+    monkeypatch.setattr(ms, "_call", call)
+    await ms.server.call_tool("comfy_submit", {
+        "profile_id": "wan22-5b-i2v-16x9", "prompt": "slow push in", "seed": 4, "idempotency_key": "stable-key-0002",
+        "width": 832, "height": 480, "duration_seconds": 3.0, "image_task_id": "a" * 32,
+    })
+    call.assert_awaited_once_with("POST", "/submit", {
+        "profile_id": "wan22-5b-i2v-16x9", "prompt": "slow push in", "seed": 4, "idempotency_key": "stable-key-0002",
+        "width": 832, "height": 480, "duration_seconds": 3.0, "image_task_id": "a" * 32,
+    }, prefix="/api/agent/comfy", params={})
+
+
+def test_agent_comfy_api_passes_profile_options_to_the_controller(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ttakkari.api import comfy_managed as api
+
+    class Settings:
+        data_dir = None
+
+    class Service:
+        prepare_args = None
+
+        def prepare(self, profile, **kwargs):
+            self.prepare_args = (profile, kwargs)
+            return {"task_id": "a" * 32, "profile": profile, "status": "starting"}
+
+        def start(self, task_id):
+            pass
+
+    service = Service()
+    monkeypatch.setattr(api, "get_settings", lambda: Settings())
+    monkeypatch.setattr(api, "default_controller", lambda _data_dir: service)
+    app = FastAPI()
+    app.include_router(api.agent_router)
+    app.dependency_overrides[api.agent_access] = lambda: "agent:session-1"
+    client = TestClient(app)
+    body = {"profile_id": "acestep15-music", "prompt": "calm rain", "seed": 6, "idempotency_key": "request-00002",
+            "duration_seconds": 30}
+    assert client.post("/api/agent/comfy/submit", json=body).status_code == 202
+    assert service.prepare_args == ("acestep15-music", {
+        "prompt": "calm rain", "seed": 6, "owner": "agent:session-1", "idempotency_key": "request-00002",
+        "duration_seconds": 30,
+    })
+    assert client.post("/api/agent/comfy/submit", json={**body, "image_task_id": "not-a-task"}).status_code == 422
+    assert client.post("/api/agent/comfy/submit", json={**body, "image_path": "/etc/passwd"}).status_code == 422

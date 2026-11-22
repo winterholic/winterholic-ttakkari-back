@@ -286,7 +286,11 @@ def test_managed_comfy_limits_and_unavailable_lipsync_are_visible():
     reg = Registry()
     wan = reg.state("model.wan22_ti2v_5b")
     assert any("640x352" in value for value in wan.constraints["gen.video_t2v"])
-    assert any("프로필이 없다" in value for value in wan.constraints["gen.video_i2v"])
+    assert any("wan22-5b-i2v-16x9" in value and "실측 기록 없음" in value
+               for value in wan.constraints["gen.video_i2v"])
+    assert not any("프로필이 없다" in value for value in wan.constraints["gen.video_i2v"])
+    # 14B 이미지→영상은 관리형 프로필이 없다. 위 5B 프로필 표시가 이쪽으로 번지면 안 된다.
+    assert any("프로필이 없다" in value for value in reg.state("model.wan22_i2v_14b").constraints["gen.video_i2v"])
     assert reg.state("tool.rhubarb").levels["anim.lipsync"] in {"missing", "declared"}
     assert reg.state("tool.artcraft").levels["edit.timeline"] in {"missing", "declared"}
     assert reg.state("model.multimodal_judge").levels["qa.visual_semantic"] == "missing"

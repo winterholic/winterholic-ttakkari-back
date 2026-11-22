@@ -135,12 +135,14 @@ class Registry:
         if claim.managed is not None:
             m = claim.managed
             size = f"{m.width}x{m.height}" if m.width and m.height else "해상도 미상"
-            length = f"약 {m.max_seconds:g}초" if m.max_seconds else "길이 미상"
+            motion = claim.capability.startswith("gen.video")
+            length = f"약 {m.max_seconds:g}초" if m.max_seconds else ("길이 미상" if motion else "")
             out.append(
-                f"관리형 ComfyUI 프로필 {m.profile}(workflow {m.workflow})만 실행 가능: {length}, {size}"
+                f"관리형 ComfyUI 프로필 {m.profile}(workflow {m.workflow})만 실행 가능: "
+                + ", ".join(part for part in (length, size) if part)
                 + (f", {m.fps}fps" if m.fps else "")
-                + ". 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다"
-                + (f" (실측 {m.measured_on})" if m.measured_on else "")
+                + (". 더 긴 모션이나 고해상도 원본을 생성하려면 별도 실행 프로필이 필요하다" if motion else "")
+                + (f" (실측 {m.measured_on})" if m.measured_on else " (관리형 실측 기록 없음: 배포 후 검증 대상)")
             )
         elif self._uses_comfy(entry) and claim.capability.startswith(("gen.", "asset.")):
             out.append(

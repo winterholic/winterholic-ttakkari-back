@@ -56,3 +56,14 @@
 | I2V 3종 | 프로필 없음만 표시 | 실행 기록 없음 제약 추가 |
 
 주의: 스냅샷을 샌드박스 안에서 다시 만들면 bpy가 다시 `missing`으로 떨어진다. 테스트 `test_ffmpeg_edit_run_is_recorded_and_sandbox_bpy_crash_is_not_in_committed_snapshot`가 막는다.
+
+## 이어받기 정정 (2026-11-22)
+
+위 결과는 앞선 세션의 측정이다. 이번 이어받기에서 관리형 Wan draft로 새 영상을 생성했으므로 해당 세션의 "오늘 새로 생성하지 못함"과 구분한다. 실행 결과는 작업 카드의 현재 대상이며 과거 lab 결과를 대체하지 않는다.
+
+- 작업 브랜치의 변경을 보존한 채 `origin/main` `dd5939320b54b94353d9929502d8d532e8682dd8`에 fast-forward했다. 배포는 하지 않았다. 운영은 revision `874c0d97a95c2f70c33e5aa469417470a737bea5`로 확인했다.
+- `comfy_profiles` 운영 응답은 `wan22-5b-draft` 하나뿐이다. host readiness는 ready/MPS다. 따라서 기존 프로필의 1회 새 생성은 가능했지만, 이번 코드에 추가된 `flux2-klein-t2i-16x9`, `wan22-5b-i2v-16x9`, `wan22-5b-t2v-long-16x9`, `acestep15-music`은 실행하지 않았다.
+- 새 영상: task `7520660589ef5832806d96cf76c722ab`; 결과 640x352, 24fps, 1.375초, 39.44초 생성; lease 획득 ID가 receipt에 있다. 관리형 API 응답에는 lease release 상태가 없으므로 실제 해제는 미관측이다.
+- 새 음악: 미실행. T4 감성 플랜의 기존 승인 revision은 1이지만 현재 render gate는 false이며 다시 승인이 필요하다고 운영 API가 응답했다. 이 gate를 건너뛰지 않았다. 자동 생성 서비스는 R21만 지원하고 ACE-Step을 광고하나 적격한 승인 플랜이 없어 생성 호출로 진행하지 않았다.
+- 콘텐츠 B의 20~40초 영상은 현재 운영에서 확정된 경로가 아니다. 다음 실행 단위에서 변경 코드 배포 승인 및 유효한 플랜 승인을 확보한 후, 4~8개 장면(장면당 약 4~5초, 총 20~40초)을 scene-level video route로 생성한다. 16:9는 1024x576을 선택하고, 각 결과를 확인한 뒤 장면별 이어붙이기·음악·믹스를 한다. 1.375초 draft 반복이나 일괄 슬라이드쇼는 대체 경로로 채택하지 않는다.
+- 최종 회귀 pytest 149개 통과 (`PYTHONPATH=src UV_CACHE_DIR=/private/tmp/comfy-profile-uv-cache uv run --locked --offline python -m pytest -q` + 8개 관련 파일, 124.48초). 첫 실행의 registry 문서 불일치는 리포터 출력 redirect 누락이었고, frame-animation의 `ModuleNotFoundError: No module named 'templates'`는 console-script 실행이 프로젝트 root를 import path에 넣지 않은 결과였다. `python -m pytest`와 올바른 문서 redirect로 다시 실행해 둘 다 통과했다. `git diff --check`도 통과했다.

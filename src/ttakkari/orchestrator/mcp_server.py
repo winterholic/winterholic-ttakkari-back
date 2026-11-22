@@ -226,13 +226,24 @@ async def comfy_jobs(limit: int = 20, cursor: int = 0) -> str:
 async def comfy_submit(profile_id: Annotated[str, Field(min_length=1, max_length=80)],
                        prompt: Annotated[str, Field(min_length=1, max_length=1000)],
                        seed: Annotated[int, Field(ge=0, le=4_294_967_295)],
-                       idempotency_key: Annotated[str, Field(min_length=8, max_length=120)]) -> str:
+                       idempotency_key: Annotated[str, Field(min_length=8, max_length=120)],
+                       width: Annotated[int | None, Field(ge=64, le=4096)] = None,
+                       height: Annotated[int | None, Field(ge=64, le=4096)] = None,
+                       duration_seconds: Annotated[float | None, Field(gt=0, le=600)] = None,
+                       image_task_id: Annotated[str | None, Field(pattern=r"^[a-f0-9]{32}$")] = None) -> str:
     """Prepare and start one task on a registered Comfy profile. Requires a stable 8–120 character
     idempotency_key; same-key retries return the original task, and changed arguments are rejected.
-    Prompt is 1–1000 characters; seed is uint32. No arbitrary workflow or runtime parameters."""
-    return await _comfy("POST", "/submit", {
+    Prompt is 1–1000 characters; seed is uint32. width/height/duration_seconds are optional and only
+    accepted inside the limits that comfy_profiles reports for that profile; image-to-video profiles take
+    image_task_id, the task id of this session's succeeded image task. No arbitrary workflow or runtime parameters."""
+    body: dict[str, Any] = {
         "profile_id": profile_id, "prompt": prompt, "seed": seed, "idempotency_key": idempotency_key,
-    })
+    }
+    for key, value in (("width", width), ("height", height), ("duration_seconds", duration_seconds),
+                       ("image_task_id", image_task_id)):
+        if value is not None:
+            body[key] = value
+    return await _comfy("POST", "/submit", body)
 
 
 @query_tool

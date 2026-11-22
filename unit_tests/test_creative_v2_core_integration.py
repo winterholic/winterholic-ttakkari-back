@@ -304,8 +304,11 @@ def test_managed_regeneration_reuses_successful_scenes_after_one_edit(pipeline):
     from ttakkari.creative.v2.duration import SceneEdit
 
     _, plans, plan, generator, controller, _ = pipeline
+    def scene_calls():  # 음악 작업은 장면 재사용과 무관하게 매번 돈다
+        return [c for c in controller.calls if c["profile"] != "acestep15-music"]
+
     first = asset_generation.generate_assets(plans, plan["id"], 1, generator)
-    assert len(controller.prompts) == 3
+    assert len(scene_calls()) == 3
     edited = plans.edit(
         plan["id"],
         1,
@@ -323,7 +326,7 @@ def test_managed_regeneration_reuses_successful_scenes_after_one_edit(pipeline):
     )
     plans.approve(plan["id"], edited["revision"])
     second = asset_generation.generate_assets(plans, plan["id"], 2, generator)
-    assert len(controller.prompts) == 4, (
+    assert len(scene_calls()) == 4, (
         "only changed scene should invoke managed Comfy"
     )
     for sid in ("scene-0", "scene-1"):

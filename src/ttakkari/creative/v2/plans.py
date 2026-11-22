@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ttakkari.creative.v2 import production_decisions
+from ttakkari.creative.v2 import flow_template, production_decisions
 from ttakkari.creative.v2.catalog_data import ENTRIES
 from ttakkari.creative.v2.duration import (
     Beat,
@@ -439,7 +439,7 @@ def _match_plan(
 ) -> MatchResult:
     kafka_flow = bool(
         direction
-        and "kafka" in brief.casefold()
+        and flow_template.in_scope(flow_template.MESSAGE_FLOW, brief, intent.info_items)
         and any(s.entry_id == "C01.tech_explainer" for s in intent.selections)
         and KAFKA_MIN_SCENES <= len(direction.scenes) <= KAFKA_MAX_SCENES
         and all(s.strategy == "code_motion" and s.preset == "kafka_flow" for s in direction.scenes)
@@ -510,6 +510,21 @@ def build_plan(
             "의도 검증 실패: "
             + "; ".join(f"{e.path} {e.message}" for e in validation.errors)
         )
+    template_scope = None
+    if prepared is not None and director is None:
+        auto, created, template_scope = flow_template.plan_direction(
+            brief,
+            selections=[s.entry_id for s in intent.selections],
+            aspect=intent.aspect,
+            info_items=intent.info_items,
+            request=intent.duration,
+        )
+        if auto is not None:
+            director = auto
+            if created:
+                intent = intent.model_copy(update={"info_items": created})
+    if template_scope:
+        notes.append(f"{template_scope['recipe']} {template_scope['label']}: {template_scope['reason']}")
     match_tone = prepared.tone if prepared else []
     match = _match_plan(brief, intent, registry, director, match_tone)
     beats, basis, beat_warnings = _beats(intent)
@@ -591,6 +606,7 @@ def build_plan(
         "validation": validation.model_dump(mode="json"),
         "match": match.model_dump(mode="json"),
         **({"match_tone": match_tone} if match_tone else {}),
+        **({"template_scope": template_scope} if template_scope else {}),
         "style": style,
         "profile": profile.model_dump(mode="json"),
         "basis": basis,

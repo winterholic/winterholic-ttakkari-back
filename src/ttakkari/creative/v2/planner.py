@@ -141,7 +141,8 @@ def check_sequences(sequences: list[SequenceDirection], scene_ids: list[str]) ->
 
 
 class ProductionDirection(Strict):
-    source: Literal["llm", "user_structured"]
+    # recipe_template: 레시피 템플릿이 선언한 범위에서 서버가 결정적으로 만든 장면 지시(flow_template). 모델 출력도 사용자 검토도 아니다.
+    source: Literal["llm", "user_structured", "recipe_template"]
     model: str | None = Field(default=None, max_length=120)
     reviewed: bool = False
     run_id: str | None = None
@@ -153,7 +154,7 @@ class ProductionDirection(Strict):
 
     @model_validator(mode="after")
     def reviewed_input(self):
-        if not self.reviewed or (self.source == "llm" and not self.model):
+        if (not self.reviewed and self.source != "recipe_template") or (self.source == "llm" and not self.model):
             raise ValueError(
                 "director input must be reviewed; LLM source requires model provenance"
             )

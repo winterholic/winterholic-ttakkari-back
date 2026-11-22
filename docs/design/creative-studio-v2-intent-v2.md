@@ -290,3 +290,16 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 **품질 검수.** 사전 루브릭(`quality.build_rubric`)이 사용자 조건에서 나온 결정(`intent_decisions`)과 장면별 지시를 검수 입력으로 받는다.
 
 **빈 답(선택 해제).** `answers[].values: []`는 그 설정의 선택을 모두 해제한다(422가 아니다). 선택지가 곧 조건인 값(예 `C06.dolly`)은 지운 조건(`rejected`)이 되어 같은 브리프를 다시 읽어도 되살아나지 않고, 다시 고르면 정상으로 돌아온다. 선택 설정은 `values: []`인 명시적 답으로 남아 질문이 추천값을 다시 채우지 않으며 제작 결정도 만들지 않는다. 필수 설정(`content.type`, `output.duration`, `output.aspect`)은 저장된 답을 지우고 미확정으로 돌린다: 콘텐츠 유형 조건은 제거되어 `missing.content_type`로 계획이 막히고, 길이는 기본(auto, origin default), 비율은 null이 되며 질문으로 다시 나온다. 한 설정만 답하는 single 필드에 값을 둘 이상 보내는 오류와 선택지 검증은 그대로다.
+
+## 17. 데이터 흐름 설명 → R22 자동 연결
+
+코드: `flow_template.py`, `plans.build_plan`(장면 지시 자동 구성), `plans._match_plan`(범위 판정). 시험: `unit_tests/test_creative_v2_flow_template.py`.
+
+R22(HyperFrames 다이어그램 흐름)는 이전에 검토된 `kafka_flow` 장면 지시가 있을 때만 선택됐다. 지금은 의도 v2로 계획을 만들 때 장면 지시가 없으면 `flow_template.plan_direction`이 요청이 템플릿 범위 안인지 판정하고, 안이면 `source=recipe_template` 장면 지시를 만들어 같은 경로를 탄다. 판정 기준은 제품 이름이 아니라 템플릿이 선언한 주체 개념이다.
+
+- 대상: 콘텐츠 조건이 템플릿 `fits`(기술 설명, 벡터 모션그래픽, 설명형 구조)에 있을 때만 평가한다.
+- 범위 안: brief가 개념(producer, broker, consumer, partition, offset과 한국어 별칭) 3개 이상을 말하고 발행자·소비자를 포함하거나, 템플릿의 주제어를 직접 말한다. 화면비 16:9, 전달 항목이 있으면 3~5개.
+- 장면: 전달 항목이 있으면 그것을 장면으로, 없으면 템플릿 막(발행·기록·소비, 병렬 파티션, 오프셋 커밋)을 쓴다. 개수는 개념으로 하한을 정하고 기존 `plan_duration`이 요청 길이를 담는 가장 작은 수를 고른다(막 안에서만 늘린다).
+- 범위 밖: 장면 지시를 만들지 않고 기존 매칭을 그대로 쓴다. `plan.template_scope`에 `status=out_of_scope`, 사유, 누락 개념, 지원 범위를 남기고 `notes`에도 적는다. 범위 안이면 `status=applied`와 근거 개념, 장면 출처(`request_items` 또는 `template_acts`)를 남긴다.
+- `ProductionDirection.source=recipe_template`은 서버가 결정적으로 만든 값이라 `reviewed=false`를 허용한다. 모델 출력이나 사용자 검토가 아니며, 렌더 게이트는 계획 승인 이후에만 열린다.
+- 템플릿은 현재 메시지 흐름 한 종이다. 다른 데이터 흐름(캐시, 요청 라우팅 등)은 범위 밖으로 사유와 함께 기존 레시피로 간다. 새 템플릿은 `flow_template.TEMPLATES`에 선언을 추가한다.

@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -26,6 +27,11 @@ from ttakkari.agents.browser_preflight import inspect_permissions
 from ttakkari.creative.render import ffmpeg
 from ttakkari.creative.v2 import media_tools
 from ttakkari.creative.v2.engines import Limits, Preflight
+from ttakkari.creative.v2.registry_data import (
+    KAFKA_ACT_CUTS,
+    KAFKA_MAX_SCENES,
+    KAFKA_MIN_SCENES,
+)
 
 log = logging.getLogger("ttakkari.creative.v2.hyperframes")
 
@@ -57,8 +63,8 @@ class HyperFramesAdapter:
 
     limits = Limits(
         aspects=("16:9",),
-        min_scenes=3,
-        max_scenes=3,
+        min_scenes=KAFKA_MIN_SCENES,
+        max_scenes=KAFKA_MAX_SCENES,
         max_scene_seconds=60.0,
         max_segment_seconds=300.0,
         min_segment_seconds=1.0,
@@ -318,9 +324,12 @@ def _style_dna_contract(
 def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     """소유 템플릿을 복사하고 spec의 콘텐츠/출력 설정을 실제 DOM에 주입한다."""
     scenes = spec.get("scenes")
-    if not isinstance(scenes, list) or len(scenes) != 3:
-        raise ValueError("Kafka flow 템플릿은 producer, broker, consumer의 3개 scenes가 필요합니다.")
-    seconds = float(spec.get("seconds", 16))
+    if not isinstance(scenes, list) or not KAFKA_MIN_SCENES <= len(scenes) <= KAFKA_MAX_SCENES:
+        raise ValueError(f"Kafka flow 템플릿은 {KAFKA_MIN_SCENES}~{KAFKA_MAX_SCENES}개 scenes가 필요합니다.")
+    # N장면은 템플릿 타임라인의 앞쪽 N개 막(act)을 쓴다. 막 경계가 원본 초 단위 구간이다.
+    native_cuts = list(KAFKA_ACT_CUTS[: len(scenes) + 1])
+    native_total = native_cuts[-1]
+    seconds = float(spec.get("seconds", native_total))
     if not 1 <= seconds <= 300:
         raise ValueError("seconds는 1~300 범위여야 합니다.")
     width, height = int(spec.get("width", 1920)), int(spec.get("height", 1080))
@@ -333,15 +342,15 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
         raise ValueError("각 scene은 object여야 합니다.")
     lengths = [scene.get("seconds") for scene in scenes]
     if all(length is None for length in lengths):
-        scene_seconds = [seconds * part / 16 for part in (4.5, 6, 5.5)]
+        scene_seconds = [seconds * (b - a) / native_total for a, b in pairwise(native_cuts)]
     else:
         if any(length is None for length in lengths):
-            raise ValueError("세 장면 길이를 모두 지정해야 합니다.")
+            raise ValueError("모든 장면 길이를 지정해야 합니다.")
         scene_seconds = [float(length) for length in lengths]
         if not all(math.isfinite(length) and length > 0 for length in scene_seconds):
             raise ValueError("장면 길이는 유한한 양수여야 합니다.")
         if not math.isclose(sum(scene_seconds), seconds, abs_tol=0.005):
-            raise ValueError("세 장면 길이의 합이 전체 길이와 다릅니다.")
+            raise ValueError("장면 길이의 합이 전체 길이와 다릅니다.")
     supported_style = {"theme": "dark", "animation": "technical", "transition": "cut", "caption_style": "bottom_card"}
     style = spec.get("style") or {}
     if not isinstance(style, dict):
@@ -391,22 +400,25 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
     # 템플릿 기준으로 고정하고, 계획 해상도로의 변환은 코어 compositor가 한 번만 맡는다.
     html = html.replace('data-duration="16"', f'data-duration="{seconds:g}"', 1)
     html = html.replace('data-fps="30"', f'data-fps="{fps}"', 1)
+    html = html.replace('<audio id="bgm" src="audio.wav" data-start="0" data-duration="16">', f'<audio id="bgm" src="audio.wav" data-start="0" data-duration="{seconds:g}">', 1)
     html = html.replace(
         '    const tl = gsap.timeline({ paused: true });',
         f'''    const hfSpec = {encoded};
     document.querySelectorAll(".clip, #bgm").forEach((el) => {{ el.dataset.duration = String(hfSpec.seconds); }});
     if (hfSpec.title) document.querySelector(".main-title").textContent = hfSpec.title;
     document.querySelectorAll(".caption-banner").forEach((el, index) => {{
-      el.querySelector(".caption-title").textContent = hfSpec.scenes[index].title;
-      el.querySelector(".caption-body").textContent = hfSpec.scenes[index].narration;
+      const scene = hfSpec.scenes[index];
+      if (!scene) return;
+      el.querySelector(".caption-title").textContent = scene.title;
+      el.querySelector(".caption-body").textContent = scene.narration;
     }});
     const tl = gsap.timeline({{ paused: true }});''',
         1,
     )
     html = html.replace(
         '    window.__timelines["main"] = tl;',
-        '''    tl.set("#root", {}, 16);
-    const nativeCuts = [0, 4.5, 10.5, 16];
+        '''    tl.set("#root", {}, Math.max(tl.duration(), NATIVE_CUTS[NATIVE_CUTS.length - 1]));
+    const nativeCuts = NATIVE_CUTS;
     const renderTimeline = gsap.timeline({ paused: true });
     let elapsed = 0;
     hfSpec.scene_seconds.forEach((duration, index) => {
@@ -416,7 +428,7 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
         elapsed);
       elapsed += duration;
     });
-    window.__timelines["main"] = renderTimeline;''',
+    window.__timelines["main"] = renderTimeline;'''.replace("NATIVE_CUTS", json.dumps(native_cuts)),
         1,
     )
     html_path.write_text(html, encoding="utf-8")
@@ -427,7 +439,54 @@ def _prepare_spec_project(spec: dict[str, Any], workdir: Path) -> Path:
         if not music.is_file():
             raise ValueError(f"music_path 파일이 없습니다: {music}")
         shutil.copy2(music, project_dir / "audio.wav")
+    _fit_audio_to_seconds(project_dir / "audio.wav", seconds)
     return project_dir
+
+
+AUDIO_LOOP_CROSSFADE_SECONDS = 1.0
+
+
+def _audio_seconds(path: Path) -> float | None:
+    ffprobe = find_ffprobe()
+    if not ffprobe:
+        return None
+    res = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    try:
+        return float(res.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _fit_audio_to_seconds(audio: Path, seconds: float) -> None:
+    """배경음이 영상보다 짧으면 이음매를 크로스페이드로 이어 붙여 영상 길이까지 채운다.
+
+    템플릿 audio.wav는 16초다. 계획이 더 긴 영상을 요구해도 뒤쪽이 무음이 되지 않게 한다.
+    길이를 알 수 없으면(ffprobe 없음) 손대지 않는다. 긴 음악은 HyperFrames가 영상 길이에서 자른다.
+    """
+    length = _audio_seconds(audio)
+    if length is None or length >= seconds - 0.01 or length <= 2 * AUDIO_LOOP_CROSSFADE_SECONDS:
+        return
+    fade = AUDIO_LOOP_CROSSFADE_SECONDS
+    # 각 이음매는 fade만큼 겹치므로 복사본 k개의 길이는 length*k - fade*(k-1)
+    copies = math.ceil((seconds - length) / (length - fade)) + 1
+    filters, label = [], "[0:a]"
+    for index in range(1, copies):
+        out = f"[x{index}]"
+        filters.append(f"{label}[{index}:a]acrossfade=d={fade}:c1=tri:c2=tri{out}")
+        label = out
+    filters.append(f"{label}atrim=0:{seconds:.3f},afade=t=in:d=0.5,afade=t=out:st={max(seconds - 1.5, 0):.3f}:d=1.5[aout]")
+    fitted = audio.with_name("audio_fitted.wav")
+    cmd = [ffmpeg(), "-y", "-v", "error"]
+    for _ in range(copies):
+        cmd += ["-i", str(audio)]
+    cmd += ["-filter_complex", ";".join(filters), "-map", "[aout]", str(fitted)]
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+    if res.returncode != 0 or not fitted.is_file():
+        raise ValueError(f"배경음 길이 맞춤 실패: {res.stderr[-300:]}")
+    fitted.replace(audio)
 
 
 def _sha256(path: Path) -> str:

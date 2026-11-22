@@ -20,7 +20,7 @@ def test_hyperframes_adapter_protocol_conformance():
     assert "skill.hyperframes" in adapter.providers
     assert "tool.hyperframes" in adapter.providers
     assert isinstance(adapter.limits, Limits)
-    assert adapter.limits.min_scenes == adapter.limits.max_scenes == 3
+    assert (adapter.limits.min_scenes, adapter.limits.max_scenes) == (3, 5)
     assert adapter.limits.aspects == ("16:9",)
     assert adapter.style_params == {
         "theme": ("dark",),
@@ -345,10 +345,10 @@ def test_render_segment_rejects_unmapped_scene_count(monkeypatch, tmp_path):
 
     assert result["success"] is False
     assert result["stage"] == "prepare"
-    assert "3개 scenes" in result["error"]
+    assert "3~5개 scenes" in result["error"]
 
 
-@pytest.mark.parametrize("scene_count", [1, 4])
+@pytest.mark.parametrize("scene_count", [1, 2, 6])
 def test_render_segment_rejects_scene_counts_outside_fixed_template(scene_count, tmp_path):
     from ttakkari.creative.v2 import hyperframes
 
@@ -361,7 +361,7 @@ def test_render_segment_rejects_scene_counts_outside_fixed_template(scene_count,
 
     assert result["success"] is False
     assert result["stage"] == "prepare"
-    assert "3개 scenes" in result["error"]
+    assert "3~5개 scenes" in result["error"]
 
 
 def test_render_segment_rejects_portrait_before_preflight(monkeypatch, tmp_path):
@@ -494,6 +494,9 @@ _PACKET_PROBE = """
       itemC1: rect(".consumer-item:nth-child(1)"),
       nameC1: rect(".consumer-item:nth-child(1) .consumer-name"),
       itemC2: rect("#item-c2"),
+      newRecordP0: rect("#block-p0-new"),
+      rowP0Id: rect("#row-p0"),
+      itemC1Id: rect("#item-c1"),
     };
   }
   document.body.insertAdjacentHTML("beforeend", "<pre id=probe>" + JSON.stringify(out) + "</pre>");
@@ -570,3 +573,49 @@ def test_kafka_packet_targets_are_computed_not_hardcoded_pixels():
     # 점이 향하는 요소는 하이라이트되는 요소와 같다.
     for selector in ('#block-p1-new', '#item-c2', '#row-p1'):
         assert f'"{selector}"' in script
+
+
+FIVE_ACT_SCENES = [
+    {"title": t, "narration": "", "seconds": sec}
+    for t, sec in (("발행", 4.5), ("기록", 6), ("소비", 5.5), ("병렬 파티션", 7), ("오프셋 커밋", 7))
+]
+
+
+def test_kafka_project_takes_scene_count_and_seconds_from_the_plan(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _audio_seconds, _prepare_spec_project
+
+    project = _prepare_spec_project({"seconds": 30, "scenes": FIVE_ACT_SCENES, "caption_mode": "title_only"}, tmp_path)
+    html = (project / "index.html").read_text()
+    assert '"scene_seconds": [4.5, 6.0, 5.5, 7.0, 7.0]' in html
+    assert "const nativeCuts = [0.0, 4.5, 10.5, 16.0, 23.0, 30.0];" in html
+    assert 'data-duration="30"' in html and '<audio id="bgm" src="audio.wav" data-start="0" data-duration="30">' in html
+    # 템플릿 음악은 16초다. 계획 길이만큼 채워 뒤쪽이 무음이 되지 않게 한다.
+    assert _audio_seconds(project / "audio.wav") == pytest.approx(30, abs=0.1)
+
+
+def test_kafka_project_scales_native_acts_when_only_total_seconds_is_given(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({
+        "seconds": 15,
+        "scenes": [{"title": t} for t in ("a", "b", "c", "d", "e")],
+    }, tmp_path)
+    assert '"scene_seconds": [2.25, 3.0, 2.75, 3.5, 3.5]' in (project / "index.html").read_text()
+
+
+def test_kafka_second_record_reaches_partition_0_and_consumer_1(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({"seconds": 30, "scenes": FIVE_ACT_SCENES, "caption_mode": "title_only"}, tmp_path)
+    # 장면 길이가 원본 막 길이와 같아 렌더 시각이 곧 원본 시각이다.
+    entry_times, block_time, consumer_time = [17.2, 17.6, 17.9, 18.2], 19.0, 21.4
+    frames = _probe_kafka_packet(project, [*entry_times, block_time, consumer_time])
+
+    for t in entry_times:
+        assert not _overlaps(frames[t]["packet"], frames[t]["rowP1"]), f"packet crosses Partition 1 at {t}s"
+    assert _inside(_center(frames[block_time]["packet"]), frames[block_time]["newRecordP0"])
+    assert _inside(_center(frames[block_time]["packet"]), frames[block_time]["rowP0Id"])
+    at_consumer = frames[consumer_time]
+    _, cy = _center(at_consumer["packet"])
+    assert at_consumer["itemC1Id"]["top"] <= cy <= at_consumer["itemC1Id"]["bottom"]
+    assert not _overlaps(at_consumer["packet"], at_consumer["itemC2"])

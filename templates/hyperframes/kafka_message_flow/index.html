@@ -142,22 +142,22 @@
     }
 
     .card-tag {
-      font-size: 13px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       margin-bottom: 8px;
     }
     .card-title {
-      font-size: 26px;
+      font-size: 30px;
       font-weight: 800;
       color: #ffffff;
       margin-bottom: 4px;
     }
     .card-desc {
-      font-size: 15px;
-      color: #94a3b8;
-      margin-bottom: 24px;
+      font-size: 18px;
+      color: #a8b5c9;
+      margin-bottom: 22px;
     }
 
     /* Producer Inner */
@@ -167,7 +167,7 @@
       border-radius: 12px;
       padding: 18px;
       font-family: monospace;
-      font-size: 15px;
+      font-size: 18px;
       color: #38bdf8;
       margin-bottom: 16px;
     }
@@ -184,7 +184,7 @@
       border: 1px dashed rgba(79, 172, 254, 0.5);
       border-radius: 8px;
       padding: 10px 14px;
-      font-size: 14px;
+      font-size: 17px;
       color: #7dd3fc;
       display: flex;
       align-items: center;
@@ -200,7 +200,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 15px;
+      font-size: 18px;
       font-weight: 600;
     }
     .partition-list {
@@ -222,8 +222,8 @@
       background: rgba(0, 242, 254, 0.06);
     }
     .partition-label {
-      width: 110px;
-      font-size: 14px;
+      width: 130px;
+      font-size: 18px;
       font-weight: 700;
       color: #38bdf8;
     }
@@ -233,13 +233,13 @@
       flex: 1;
     }
     .offset-block {
-      width: 48px;
-      height: 38px;
+      width: 52px;
+      height: 42px;
       background: rgba(255, 255, 255, 0.07);
       border-radius: 6px;
       display: grid;
       place-items: center;
-      font-size: 14px;
+      font-size: 18px;
       font-family: monospace;
       color: #94a3b8;
     }
@@ -276,21 +276,44 @@
       background: rgba(0, 230, 118, 0.06);
     }
     .consumer-name {
-      font-size: 15px;
+      font-size: 19px;
       font-weight: 700;
       color: #ffffff;
     }
     .consumer-sub {
-      font-size: 13px;
-      color: #64748b;
+      font-size: 16px;
+      color: #8393ab;
     }
     .consumer-badge {
-      font-size: 12px;
-      padding: 4px 8px;
+      font-size: 16px;
+      padding: 5px 10px;
       border-radius: 6px;
       background: rgba(0, 230, 118, 0.15);
       color: #4ade80;
       font-weight: 600;
+    }
+
+    /* Second record (act 4): same-size box stacked on the first so the card never reflows */
+    .rec-stack { position: relative; }
+    .rec-stack .alt { position: absolute; inset: 0; opacity: 0; }
+    .rec-stack .alt .record-box { margin-bottom: 16px; }
+    .badge-stack { display: grid; }
+    .badge-stack > .consumer-badge { grid-area: 1 / 1; text-align: center; }
+    .consumer-badge.after {
+      opacity: 0;
+      background: rgba(0, 230, 118, 0.42);
+      color: #ffffff;
+    }
+    .commit-chip {
+      margin-top: 18px;
+      border: 1px dashed rgba(250, 204, 21, 0.6);
+      background: rgba(250, 204, 21, 0.08);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-family: monospace;
+      font-size: 17px;
+      color: #fde68a;
+      opacity: 0;
     }
 
     /* Animated Flying Packet */
@@ -310,10 +333,10 @@
     /* Bottom Caption Banner */
     .caption-banner-container {
       position: absolute;
-      bottom: 40px;
+      bottom: 36px;
       left: 80px;
       right: 80px;
-      height: 100px;
+      height: 150px;
     }
     .caption-banner {
       position: absolute;
@@ -329,13 +352,13 @@
       opacity: 0;
     }
     .step-indicator {
-      width: 52px;
-      height: 52px;
-      border-radius: 12px;
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
       background: linear-gradient(135deg, #00f2fe, #4facfe);
       color: #080c14;
       font-weight: 900;
-      font-size: 22px;
+      font-size: 28px;
       display: grid;
       place-items: center;
       flex-shrink: 0;
@@ -346,6 +369,12 @@
     .step-indicator.step3 {
       background: linear-gradient(135deg, #00e676, #a3e635);
     }
+    .step-indicator.step4 {
+      background: linear-gradient(135deg, #a3e635, #facc15);
+    }
+    .step-indicator.step5 {
+      background: linear-gradient(135deg, #facc15, #fb923c);
+    }
     .caption-texts {
       flex: 1;
       display: flex;
@@ -353,13 +382,14 @@
       gap: 4px;
     }
     .caption-title {
-      font-size: 20px;
+      font-size: 29px;
       font-weight: 700;
       color: #ffffff;
     }
     .caption-body {
-      font-size: 16px;
-      color: #94a3b8;
+      font-size: 22px;
+      line-height: 1.35;
+      color: #b6c2d4;
     }
   </style>
 </head>
@@ -402,14 +432,29 @@
           <div class="card-tag" style="color: #38bdf8;">01 · Event Producer</div>
           <h2 class="card-title">프로듀서 (Producer)</h2>
           <p class="card-desc">이벤트 생성 및 키 기반 파티션 라우팅</p>
-          <div class="record-box">
-            <div class="record-row"><span style="color: #94a3b8;">Topic:</span> <span>orders.v1</span></div>
-            <div class="record-row"><span style="color: #94a3b8;">Key:</span> <span style="color: #facc15;">"usr-902"</span></div>
-            <div class="record-row"><span style="color: #94a3b8;">Payload:</span> <span style="color: #4ade80;">{"order": 50000}</span></div>
-          </div>
-          <div class="routing-pill">
-            <span>Partitioner: murmur2(key)</span>
-            <strong style="color: #00f2fe;">→ Partition 1</strong>
+          <div class="rec-stack">
+            <div class="rec-main">
+              <div class="record-box">
+                <div class="record-row"><span style="color: #94a3b8;">Topic:</span> <span>orders.v1</span></div>
+                <div class="record-row"><span style="color: #94a3b8;">Key:</span> <span style="color: #facc15;">"usr-902"</span></div>
+                <div class="record-row"><span style="color: #94a3b8;">Payload:</span> <span style="color: #4ade80;">{"order": 50000}</span></div>
+              </div>
+              <div class="routing-pill">
+                <span>Partitioner: murmur2(key)</span>
+                <strong style="color: #00f2fe;">→ Partition 1</strong>
+              </div>
+            </div>
+            <div class="alt">
+              <div class="record-box">
+                <div class="record-row"><span style="color: #94a3b8;">Topic:</span> <span>orders.v1</span></div>
+                <div class="record-row"><span style="color: #94a3b8;">Key:</span> <span style="color: #facc15;">"usr-417"</span></div>
+                <div class="record-row"><span style="color: #94a3b8;">Payload:</span> <span style="color: #4ade80;">{"order": 12000}</span></div>
+              </div>
+              <div class="routing-pill">
+                <span>Partitioner: murmur2(key)</span>
+                <strong style="color: #00f2fe;">→ Partition 0</strong>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -423,13 +468,14 @@
             <span style="color: #4ade80; font-size: 13px;">● In-Sync Replicas</span>
           </div>
           <div class="partition-list">
-            <div class="partition-row">
+            <div id="row-p0" class="partition-row">
               <span class="partition-label">Partition 0</span>
               <div class="offset-track">
                 <div class="offset-block committed">0</div>
                 <div class="offset-block committed">1</div>
                 <div class="offset-block committed">2</div>
                 <div class="offset-block committed">3</div>
+                <div id="block-p0-new" class="offset-block new-record">4</div>
               </div>
             </div>
             <div id="row-p1" class="partition-row active-p1">
@@ -449,6 +495,7 @@
               </div>
             </div>
           </div>
+          <div id="commit-chip" class="commit-chip">__consumer_offsets · P0 → 5 · P1 → 4 · P2 → 2</div>
         </section>
 
         <!-- 3. Consumer Group Card -->
@@ -457,26 +504,26 @@
           <h2 class="card-title">컨슈머 그룹 (Consumers)</h2>
           <p class="card-desc">오프셋 기반 분산 병렬 구독 및 장애 복구</p>
           <div class="consumer-list">
-            <div class="consumer-item">
+            <div id="item-c1" class="consumer-item">
               <div>
                 <div class="consumer-name">Consumer 1 (결제 서비스)</div>
                 <div class="consumer-sub">Subscribing Partition 0</div>
               </div>
-              <span class="consumer-badge">Offset 3</span>
+              <span class="badge-stack"><span id="badge-c1" class="consumer-badge">Offset 4</span><span id="badge-c1-after" class="consumer-badge after">Offset 5 ✓</span></span>
             </div>
             <div id="item-c2" class="consumer-item active-c2">
               <div>
                 <div class="consumer-name" style="color: #4ade80;">Consumer 2 (재고 서비스)</div>
                 <div class="consumer-sub">Subscribing Partition 1</div>
               </div>
-              <span id="badge-c2" class="consumer-badge">Offset 3</span>
+              <span class="badge-stack"><span id="badge-c2" class="consumer-badge">Offset 3</span><span id="badge-c2-after" class="consumer-badge after">Offset 4 ✓</span></span>
             </div>
             <div class="consumer-item">
               <div>
                 <div class="consumer-name">Consumer 3 (알림 서비스)</div>
                 <div class="consumer-sub">Subscribing Partition 2</div>
               </div>
-              <span class="consumer-badge">Offset 1</span>
+              <span class="consumer-badge">Offset 2</span>
             </div>
           </div>
         </section>
@@ -513,6 +560,24 @@
             <div class="caption-body">컨슈머는 읽을 위치부터 레코드를 가져옵니다. 처리한 뒤 다음 위치를 저장하면 재시작할 때 이어서 읽을 수 있습니다.</div>
           </div>
         </div>
+
+        <!-- Act 4 Caption -->
+        <div id="caption-act4" class="caption-banner">
+          <div class="step-indicator step4">4</div>
+          <div class="caption-texts">
+            <div class="caption-title">04. 다른 키의 레코드는 다른 파티션으로 (Parallel Partitions)</div>
+            <div class="caption-body">키가 다른 레코드는 Partition 0에 쌓이고, 그 파티션을 맡은 Consumer 1이 같은 시간에 따로 읽습니다.</div>
+          </div>
+        </div>
+
+        <!-- Act 5 Caption -->
+        <div id="caption-act5" class="caption-banner">
+          <div class="step-indicator step5">5</div>
+          <div class="caption-texts">
+            <div class="caption-title">05. 읽은 위치를 오프셋으로 커밋 (Offset Commit)</div>
+            <div class="caption-body">컨슈머는 처리한 다음 위치를 __consumer_offsets 토픽에 저장해 재시작해도 이어서 읽습니다.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -543,6 +608,13 @@
     const pktNewRecord = packetAnchor("#block-p1-new", 0.5, 0.5, 0);
     // 소비: 새 레코드 칸 -> Consumer 2 카드 왼쪽 가장자리(글자 시작 전)
     const pktConsumer2 = packetAnchor("#item-c2", 0, 0.5, -6);
+    // 4막: 두 번째 레코드(키 usr-417)는 Partition 0의 새 칸(offset 4)을 거쳐 Consumer 1로 간다
+    const pktFromProducerAlt = packetAnchor(".rec-stack .alt .routing-pill", 1, 0.5, -8);
+    // Producer와 클러스터 카드 사이 빈 공간을 지나 올라간다. 직선으로 가면 Partition 1 행을 가로질러 그쪽으로 가는 것처럼 보인다.
+    const pktGapP0 = packetAnchor("#row-p0", 0, 0.5, -36);
+    const pktRowP0Entry = packetAnchor("#row-p0 .offset-track", 0, 0.5, -8);
+    const pktNewRecordP0 = packetAnchor("#block-p0-new", 0.5, 0.5, 0);
+    const pktConsumer1 = packetAnchor("#item-c1", 0, 0.5, -6);
 
     const tl = gsap.timeline({ paused: true });
 
@@ -641,6 +713,84 @@
       yoyo: true,
       repeat: 1
     }, 12.8);
+
+
+    // === ACT 4: 16.0s - 23.0s (second record, key usr-417 -> Partition 0 -> Consumer 1) ===
+    tl.to("#caption-act3", { opacity: 0, y: -10, duration: 0.3 }, 16.0);
+    tl.fromTo("#caption-act4",
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.6, ease: "power2.out", immediateRender: false },
+      16.3
+    );
+    tl.to(".rec-stack .rec-main", { opacity: 0, duration: 0.5 }, 16.1);
+    tl.to(".rec-stack .alt", { opacity: 1, duration: 0.5 }, 16.1);
+
+    tl.fromTo("#packet",
+      { opacity: 0, x: pktFromProducerAlt.x, y: pktFromProducerAlt.y, scale: 0.6 },
+      { opacity: 1, x: pktGapP0.x, y: pktGapP0.y, scale: 1.2, duration: 0.9, ease: "power1.inOut", immediateRender: false },
+      17.0
+    );
+    tl.to("#packet", { x: pktRowP0Entry.x, y: pktRowP0Entry.y, duration: 0.6, ease: "power1.inOut" }, 17.9);
+    tl.to("#packet", { x: pktNewRecordP0.x, y: pktNewRecordP0.y, scale: 1.3, duration: 0.8, ease: "power2.out" }, 18.5);
+    tl.fromTo("#block-p0-new",
+      { scale: 0.2, opacity: 0 },
+      { scale: 1.1, opacity: 1, duration: 0.6, ease: "back.out(1.7)", immediateRender: false },
+      19.3
+    );
+    tl.to("#block-p0-new", { scale: 1.0, duration: 0.3 }, 19.9);
+    tl.to("#packet", { opacity: 0, duration: 0.3 }, 19.6);
+    tl.to("#row-p0", {
+      boxShadow: "0 0 25px rgba(0, 242, 254, 0.4)",
+      borderColor: "rgba(0, 242, 254, 0.6)",
+      duration: 0.6,
+      yoyo: true,
+      repeat: 1
+    }, 20.0);
+
+    tl.fromTo("#packet",
+      { opacity: 0, x: pktNewRecordP0.x, y: pktNewRecordP0.y, scale: 1.0 },
+      { opacity: 1, x: pktConsumer1.x, y: pktConsumer1.y, scale: 1.3, duration: 1.1, ease: "power2.inOut", immediateRender: false },
+      20.6
+    );
+    tl.to("#packet", { opacity: 0, duration: 0.3 }, 21.8);
+    tl.to("#item-c1", {
+      borderColor: "#00e676",
+      boxShadow: "0 0 30px rgba(0, 230, 118, 0.5)",
+      duration: 0.6,
+      repeat: 1,
+      yoyo: true
+    }, 21.8);
+    tl.to("#caption-act4", { opacity: 0, y: -10, duration: 0.4 }, 22.6);
+
+    // === ACT 5: 23.0s - 30.0s (offset commit) ===
+    tl.fromTo("#caption-act5",
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.6, ease: "power2.out", immediateRender: false },
+      23.0
+    );
+    tl.to("#badge-c1", { opacity: 0, duration: 0.5 }, 24.0);
+    tl.to("#badge-c1-after", { opacity: 1, duration: 0.5 }, 24.0);
+    tl.to("#badge-c2", { opacity: 0, duration: 0.5 }, 24.3);
+    tl.to("#badge-c2-after", { opacity: 1, duration: 0.5 }, 24.3);
+    tl.to(["#badge-c1-after", "#badge-c2-after"], { scale: 1.2, duration: 0.35, yoyo: true, repeat: 1 }, 24.5);
+    tl.to(["#block-p0-new", "#block-p1-new"], {
+      backgroundColor: "rgba(0, 230, 118, 0.18)",
+      color: "#4ade80",
+      borderColor: "rgba(0, 230, 118, 0.4)",
+      boxShadow: "0 0 0 rgba(0, 0, 0, 0)",
+      duration: 0.8
+    }, 24.2);
+    tl.fromTo("#commit-chip",
+      { opacity: 0, y: 14 },
+      { opacity: 1, y: 0, duration: 0.7, ease: "power2.out", immediateRender: false },
+      25.2
+    );
+    tl.to("#commit-chip", {
+      boxShadow: "0 0 24px rgba(250, 204, 21, 0.45)",
+      duration: 0.8,
+      yoyo: true,
+      repeat: 3
+    }, 26.0);
 
     window.__timelines["main"] = tl;
   </script>

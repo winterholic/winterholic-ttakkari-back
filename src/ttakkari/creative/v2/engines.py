@@ -18,6 +18,7 @@ from typing import Any, ClassVar, Protocol
 
 from ttakkari.agents.browser_preflight import inspect_permissions
 from ttakkari.creative.render import caption_image, dimensions, ffmpeg
+from ttakkari.creative.v2.registry_data import KAFKA_MAX_SCENES, KAFKA_MIN_SCENES
 
 CAPTION_FONT = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")
 
@@ -134,7 +135,7 @@ class ModuleAdapter:
             # AnimationProjectSpec.validate() is stricter than the advertised limits.
             self.limits = replace(adapter.limits, min_segment_seconds=8.0, max_segment_seconds=15.0)
         if module == "hyperframes":
-            self.limits = replace(adapter.limits, aspects=("16:9",), min_scenes=3, max_scenes=3)
+            self.limits = replace(adapter.limits, aspects=("16:9",), min_scenes=KAFKA_MIN_SCENES, max_scenes=KAFKA_MAX_SCENES)
         self.style_params = adapter.style_params
 
     def preflight(self) -> Preflight:
@@ -176,8 +177,11 @@ class ModuleAdapter:
         # Single-shot preset is the only verified input surface in current producers.
         if preset and (len(scenes) != 1 or scenes[0].get("preset") != preset):
             reasons.append(f"{self.id}: preset={preset} and one scene required; custom scene/rig not supported")
-        if self.module == "hyperframes" and (len(scenes) != 3 or any(s.get("preset") != "kafka_flow" for s in scenes)):
-            reasons.append("HyperFrames: preset=kafka_flow and exactly three scenes required")
+        if self.module == "hyperframes" and (
+            not KAFKA_MIN_SCENES <= len(scenes) <= KAFKA_MAX_SCENES
+            or any(s.get("preset") != "kafka_flow" for s in scenes)
+        ):
+            reasons.append(f"HyperFrames: preset=kafka_flow and {KAFKA_MIN_SCENES}-{KAFKA_MAX_SCENES} scenes required")
         reasons += single_shot_reasons(self.id, scenes)
         supported = CORE_SHOT_CAPABILITIES if self.module == "hyperframes" else frozenset()
         for scene in scenes:

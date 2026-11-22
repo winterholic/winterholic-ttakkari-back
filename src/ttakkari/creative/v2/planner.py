@@ -28,7 +28,7 @@ SURFACES = {
     "generative_video": "existing managed-generated video playback; no new generation here",
     "frame_animation_2d": "fixed character walk cycle only; custom rig/action unsupported",
     "scene_3d": "fixed Blender crystal/orbit only; custom world/acting unsupported",
-    "code_motion": "three-scene Kafka flow template only; browser IPC preflight required",
+    "code_motion": "Kafka flow template only (3-5 scenes, plan-set scene seconds); browser IPC preflight required",
 }
 
 

@@ -173,3 +173,36 @@ def test_reviewed_kafka_dispatches_and_queues_with_core_shot_requirements(
     request = render_worker.enqueue(plans, plan["id"], plan["revision"])
     assert request["status"] == "queued"
     assert render_worker.enqueue(plans, plan["id"], plan["revision"])["id"] == request["id"]
+
+
+@pytest.mark.parametrize("scene_count", [3, 4, 5])
+def test_reviewed_kafka_direction_takes_30_seconds_with_any_supported_scene_count(scene_count):
+    info = [InfoItem(id=f"S{i}", title=f"단계 {i}") for i in range(1, scene_count + 1)]
+    intent = IntentSpec(
+        selections=[Selection(entry_id="C01.tech_explainer")],
+        duration=DurationRequest(mode="preferred", seconds=30), info_items=info, aspect="16:9",
+    )
+    direction = ProductionDirection.model_validate({
+        "source": "user_structured", "reviewed": True, "intent": "Kafka 메시지 흐름",
+        "scenes": [
+            {"scene_id": i.id, "strategy": "code_motion", "preset": "kafka_flow",
+             "rationale": "흐름 도식", "shots": [{"shot_id": i.id, "action": i.title}]}
+            for i in info
+        ],
+    })
+    plan = build_plan(BRIEF, intent, director=direction)
+    assert plan["match"]["primary_recipe"] == "R22"
+    assert dispatch._is_kafka_motion_plan(plan)
+    # 장면당 늘림 상한(8초)은 duration 정책이 정한다. 3장면은 24초로 깎이고(deviated) 4장면 이상은 30초를 그대로 받는다.
+    assert plan["duration"]["status"] == ("deviated" if scene_count == 3 else "target_met")
+    assert len(plan["scenes"]) == scene_count
+
+
+def test_kafka_engine_accepts_three_to_five_scenes_only():
+    from ttakkari.creative.v2 import engines
+
+    adapter = next(a for a in engines.load_adapters() if a.id == "skill.hyperframes")
+    scene = {"scene_id": "s", "preset": "kafka_flow", "shots": []}
+    assert not adapter.validate_spec([scene] * 5)
+    assert any("3-5 scenes" in r for r in adapter.validate_spec([scene] * 2))
+    assert any("3-5 scenes" in r for r in adapter.validate_spec([scene] * 6))

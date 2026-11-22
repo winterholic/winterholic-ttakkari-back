@@ -39,8 +39,13 @@ WAN_RECORDS = ("comfy-wan22-5b-t2v-bench", "managed-comfy-wan22-5b-draft-2026112
 NO_LAB_WORKFLOW = "lab ComfyUI 워크플로 레지스트리에 이 모델의 워크플로가 없다. 모델 파일만 디스크에 있고 실행 경로가 없다(확인 2026-11-22)."
 I2V_UNRUN = "lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22)."
 WAN_LAB_STANDARD = "lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). 관리형 프로필은 draft 하나뿐이라 이 길이는 제작 경로에서 쓸 수 없다."
+# kafka_flow 템플릿이 갖춘 막(act)의 경계(템플릿 타임라인의 원본 초). 장면 수 N은 앞의 N개 막을 쓰고,
+# 장면별 길이는 계획이 정한다(hyperframes._prepare_spec_project가 막 구간을 그 길이로 다시 맞춘다).
+KAFKA_ACT_CUTS: tuple[float, ...] = (0.0, 4.5, 10.5, 16.0, 23.0, 30.0)
+KAFKA_MIN_SCENES = 3
+KAFKA_MAX_SCENES = len(KAFKA_ACT_CUTS) - 1
 KAFKA_SCOPE = (
-    "현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다.",
+    f"현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) {KAFKA_MIN_SCENES}~{KAFKA_MAX_SCENES}장면을 지원한다. 장면 길이는 계획이 정한다.",
     "임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.",
 )
 KAFKA_RECIPE_ID = "R22"
@@ -1047,7 +1052,7 @@ RECIPES: list[Recipe] = [
     _r(
         KAFKA_RECIPE_ID,
         "Kafka 메시지 흐름",
-        "Producer, Broker, Consumer의 메시지 이동을 3장면의 다이어그램으로 설명",
+        "Producer, Broker, Consumer의 메시지 이동을 3~5장면의 다이어그램으로 설명",
         ["HyperFrames", "FFmpeg"],
         [["render.html_motion"], ["edit.captions"]],
         fits=["C01.tech_explainer", "C03.vector_motion_graphics", "C08.explainer"],

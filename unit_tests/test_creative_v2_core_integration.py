@@ -120,7 +120,7 @@ def test_engines_are_discovered_but_unsupported_contracts_fail_closed():
     # (Node/Chrome). The host-independent fail-closed contract is validate_spec.
     assert hf
     reasons = hf.validate_spec([{"preset": "arbitrary"}])
-    assert any("kafka_flow" in r and "three scenes" in r for r in reasons)
+    assert any("kafka_flow" in r and "3-5 scenes" in r for r in reasons)
     plan = build_plan(
         "사진", intent(), director=ProductionDirection.model_validate(direction())
     )
@@ -557,7 +557,7 @@ assert 'ttakkari.creative.v2.frame_animation' not in sys.modules
 def test_hyperframes_limits_match_current_kafka_template():
     adapter = engines.adapter_by_id("skill.hyperframes_motion")
     assert adapter.limits.aspects == ("16:9",)
-    assert adapter.limits.min_scenes == adapter.limits.max_scenes == 3
+    assert (adapter.limits.min_scenes, adapter.limits.max_scenes) == (3, 5)
 
 
 def test_native_compositor_keeps_v1_local_protocol_boundary(tmp_path, monkeypatch):

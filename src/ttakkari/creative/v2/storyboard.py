@@ -103,7 +103,7 @@ def build_prompt(request: StoryboardRequest) -> str:
         "각 scene의 alternatives에는 선택과 다른 strategy와 rationale을 적는다. reviewed/source/model/run_id/output_sha256은 출력하지 않는다. "
         "선택 가능한 실제 표면은 " + json.dumps(SURFACES, ensure_ascii=False) + ". "
         "slideshow는 기존 업로드 동영상의 실제 프레임 재생도 지원한다. 지원하지 않는 요구를 자동 슬라이드쇼로 대체하지 않는다. "
-        "새 생성이나 렌더를 실행했다고 주장하지 않는다. Kafka 기술 설명은 C01.tech_explainer와 code_motion의 preset=kafka_flow를 사용하며 3장면/16:9만 지원한다. 렌더 호스트 상태는 제작에서 다시 확인한다. "
+        "새 생성이나 렌더를 실행했다고 주장하지 않는다. Kafka 기술 설명은 C01.tech_explainer와 code_motion의 preset=kafka_flow를 사용하며 3~5장면/16:9만 지원한다. 장면 수는 3(발행·기록·소비), 4(+두 번째 레코드의 병렬 파티션), 5(+오프셋 커밋) 중 고르고 장면별 seconds는 장면당 8초 이하로 합이 요청 길이가 되게 정한다. 렌더 호스트 상태는 제작에서 다시 확인한다. "
         "현재 core의 업로드 재사용 실행 경로는 R21이다. 구조 카탈로그 C08.three_act는 이 경로에서 실행 가능하다. "
         "C01.product_intro/C03.comic_2d 등을 선택하면 현재 registry가 lab_manual 3D recipe와 미연결 필수 능력을 고를 수 있어 렌더가 차단된다. "
         "기존 2D 파일 재생 요청을 새 3D/2D 생성 요청으로 분류하지 않는다. 불필요한 카탈로그는 추가하지 말고, 사용자의 실제 필수 요구가 지원되지 않으면 그 사실을 근거에 남긴다. "

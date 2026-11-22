@@ -39,7 +39,11 @@ from ttakkari.creative.render import (
 from ttakkari.creative.service import ProjectInput, Scene, Studio
 from ttakkari.creative.v2 import engines, quality
 from ttakkari.creative.v2.plans import PlanStore
-from ttakkari.creative.v2.registry_data import KAFKA_RECIPE_ID
+from ttakkari.creative.v2.registry_data import (
+    KAFKA_MAX_SCENES,
+    KAFKA_MIN_SCENES,
+    KAFKA_RECIPE_ID,
+)
 
 V1_FORMAT = "music_video"
 # 렌더러는 구간 길이를 24fps 프레임으로 반올림한다. 구간이 많을수록 합계 오차가 늘어난다.
@@ -85,7 +89,7 @@ def _is_kafka_motion_plan(plan: dict[str, Any]) -> bool:
     return (
         bool(plan.get("director"))
         and plan["match"].get("primary_recipe") == KAFKA_RECIPE_ID
-        and len(plan["scenes"]) == 3
+        and KAFKA_MIN_SCENES <= len(plan["scenes"]) <= KAFKA_MAX_SCENES
         and all(scene.get("strategy") == "code_motion" and scene.get("preset") == "kafka_flow"
                 for scene in plan["scenes"])
     )

@@ -362,7 +362,7 @@
 | render.html_motion | executed | skill.hyperframes | creative_runtime | record:engine-adapter-hyperframes-20261121(completed, 검수 unreviewed) |
 | edit.captions | executed | skill.v1_ffmpeg_slideshow | creative_runtime | record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed) |
 
-제약: 현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다.; 임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.
+제약: 현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3~5장면을 지원한다. 장면 길이는 계획이 정한다.; 임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.
 
 ## 능력별 최고 수준
 
@@ -464,7 +464,7 @@
 
 | ID | 이름 | 설치 | 버전 | 연동 | 능력 수준 | 차단 사유·제약 |
 |---|---|---|---|---|---|---|
-| skill.hyperframes | HyperFrames 기술 다이어그램 | 예 | 26.9.0 | creative_runtime | render.html_motion=executed | 현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다. / 임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다. |
+| skill.hyperframes | HyperFrames 기술 다이어그램 | 예 | 26.9.0 | creative_runtime | render.html_motion=executed | 현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3~5장면을 지원한다. 장면 길이는 계획이 정한다. / 임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다. |
 | skill.frame_animation_2d | 2D 프레임 애니메이션 | 예 | - | creative_runtime | render.frame_animation=executed | walk_cycle 1장면, 8~15초. 커스텀 캐릭터 리그·동작은 미지원. |
 | skill.studio-3d-cinematic | 3D 장면 프리셋 | 예 | 5.0.1 | creative_runtime | render.3d_preset=executed | crystal_orbit 1장면. 커스텀 세계·캐릭터 연기·립싱크는 미지원. |
 | skill.v1_ffmpeg_slideshow | v1 FFmpeg 슬라이드쇼 렌더러(켄번즈·자막) | 예 | - | creative_runtime | edit.timeline=executed, edit.captions=executed | - |

@@ -46,6 +46,7 @@ from ttakkari.creative.v2.intent_v2 import (
 from ttakkari.creative.v2.matching import MatchResult, match_intent
 from ttakkari.creative.v2.planner import ProductionDirection, apply_direction
 from ttakkari.creative.v2.registry import Registry
+from ttakkari.creative.v2.registry_data import KAFKA_MAX_SCENES, KAFKA_MIN_SCENES
 from ttakkari.creative.v2.style_dna import Resolution, StyleError, StyleRef, StyleStore
 
 SCAFFOLDS: dict[str, list[tuple[str, float]]] = {
@@ -438,7 +439,7 @@ def _match_plan(
         direction
         and "kafka" in brief.casefold()
         and any(s.entry_id == "C01.tech_explainer" for s in intent.selections)
-        and len(direction.scenes) == 3
+        and KAFKA_MIN_SCENES <= len(direction.scenes) <= KAFKA_MAX_SCENES
         and all(s.strategy == "code_motion" and s.preset == "kafka_flow" for s in direction.scenes)
     )
     if kafka_flow:

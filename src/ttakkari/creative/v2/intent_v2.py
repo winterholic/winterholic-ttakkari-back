@@ -215,7 +215,8 @@ class UnsupportedItem(Strict):
 
 class Answer(Strict):
     field_id: str = Field(max_length=80)
-    values: list[str] = Field(min_length=1, max_length=12)
+    # 빈 목록은 사용자가 선택을 모두 해제했다는 명시적 답이다(질문이 다시 추천값을 채우지 않는다).
+    values: list[str] = Field(default_factory=list, max_length=12)
     origin: Literal["user_confirmed"] = "user_confirmed"
     revision: int = Field(default=1, ge=1)
 

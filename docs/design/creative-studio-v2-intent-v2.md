@@ -75,7 +75,7 @@ Condition {
 
 - `schema_version`은 문서 형식의 버전, `revision`은 이 의도의 변경 번호다.
 - resolve는 상태를 저장하지 않는다. 클라이언트가 직전 응답의 `intent`를 그대로 보내면 `revision`이 1 오르고 `history`가 이어진다. `intent` 없이 보내면 revision 1에서 새로 시작한다.
-- `HistoryEntry {revision, at, actor(user|ai|system|migration), action, detail}`. action 값: `created`, `condition_read`, `condition_confirmed`, `condition_rejected`, `answered`, `duration_conflict`, `aspect_conflict`, `conflict_resolved`, `reference_added`, `unsupported_condition`, `migrated_from_v1`, `strength_downgraded`, `legacy_open_question`, `stale_text_removed`, `evidence_pruned`, `info_items_set`, `music_seconds_set`. 최근 400건만 유지한다.
+- `HistoryEntry {revision, at, actor(user|ai|system|migration), action, detail}`. action 값: `created`, `condition_read`, `condition_confirmed`, `condition_rejected`, `answered`, `duration_conflict`, `aspect_conflict`, `conflict_resolved`, `reference_added`, `unsupported_condition`, `migrated_from_v1`, `strength_downgraded`, `legacy_open_question`, `stale_text_removed`, `evidence_pruned`, `info_items_set`, `music_seconds_set`, `answer_cleared`. 최근 400건만 유지한다.
 - 계획(PlanStore)은 아직 v1을 받는다. 계획 생성 시 v2 스냅샷과 revision을 계획에 묶는 일은 §10 후속이다.
 
 ## 5. 충돌 표현과 해결
@@ -288,3 +288,5 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 **엔진 한도와 장면별 엔진.** `production_decisions.engine_fit`은 화면비·장면 수·장면 길이·구간 길이와 어댑터의 `validate_spec`(프리셋 엔진이 소비하지 못하는 카메라·모션 조건 포함)을 렌더 전에 구간별로 판정한다. `status`는 ok, blocked, no_engine(필수 능력을 맡는 제작 엔진이 없어 비교 불가)이다. 장면마다 다른 엔진은 검토된 `director`의 `strategy`로 이미 가능하고, 구간마다 어댑터가 정해지며 `mixed_engines`로 표시된다. 매칭은 조건을 버리고 R21로 낮추지 않는다. 어떤 풍부한 레시피도 맞지 않으면 R21이 후보가 되지만, 필수 조건은 `required_conditions`가 연결 여부를 따로 판정한다.
 
 **품질 검수.** 사전 루브릭(`quality.build_rubric`)이 사용자 조건에서 나온 결정(`intent_decisions`)과 장면별 지시를 검수 입력으로 받는다.
+
+**빈 답(선택 해제).** `answers[].values: []`는 그 설정의 선택을 모두 해제한다(422가 아니다). 선택지가 곧 조건인 값(예 `C06.dolly`)은 지운 조건(`rejected`)이 되어 같은 브리프를 다시 읽어도 되살아나지 않고, 다시 고르면 정상으로 돌아온다. 선택 설정은 `values: []`인 명시적 답으로 남아 질문이 추천값을 다시 채우지 않으며 제작 결정도 만들지 않는다. 필수 설정(`content.type`, `output.duration`, `output.aspect`)은 저장된 답을 지우고 미확정으로 돌린다: 콘텐츠 유형 조건은 제거되어 `missing.content_type`로 계획이 막히고, 길이는 기본(auto, origin default), 비율은 null이 되며 질문으로 다시 나온다. 한 설정만 답하는 single 필드에 값을 둘 이상 보내는 오류와 선택지 검증은 그대로다.

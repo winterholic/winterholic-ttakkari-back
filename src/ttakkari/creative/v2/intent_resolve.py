@@ -43,6 +43,9 @@ from ttakkari.creative.v2.intent_v2 import (
     stale_text_items,
 )
 
+# 값이 없으면 계획을 만들 수 없는 설정. 빈 답은 답을 지우고 미확정 상태로 되돌린다(기본값으로 채우지 않는다).
+CLEARED_REQUIRED = ("content.type", "output.duration", "output.aspect")
+
 # 지금 업로드 경로가 있는 참조 자산 종류(creative_v2 API의 이미지·음악 업로드). 영상·문서는 아직 받지 못한다.
 INGESTIBLE = ("image", "audio")
 
@@ -66,7 +69,8 @@ class StructuredInput(Strict):
 
 class AnswerInput(Strict):
     field_id: str = Field(max_length=80)
-    values: list[str] = Field(min_length=1, max_length=12)
+    # 빈 목록은 "선택을 모두 해제"다(복수 선택 해제). 아래 CLEARED_REQUIRED·resolve_intent의 처리 참고.
+    values: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ResolutionInput(Strict):
@@ -346,6 +350,7 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
         ctx.confirm(cid)
 
     answers = {a.field_id: a for a in prior.answers}
+    reset_duration = reset_aspect = False
     for a in req.answers:
         field = FIELDS.get(a.field_id)
         if field is None:
@@ -355,8 +360,30 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
             bad = [v for v in a.values if v not in allowed]
             if bad:
                 raise ValueError(f"{field.label}에 없는 선택지입니다: {', '.join(bad)}")
-            if field.kind == "single" and len(a.values) != 1:
+            if field.kind == "single" and len(a.values) > 1:
                 raise ValueError(f"{field.label}은(는) 하나만 고를 수 있습니다.")
+        if not a.values:
+            # 해제: 선택지가 곧 조건인 값(예 C06.dolly)은 사용자가 지운 조건이 되어 같은 브리프를 다시 읽어도 되살아나지 않는다.
+            for opt in field.options:
+                if opt.id in ctx.conditions:
+                    ctx.reject(opt.id)
+            if a.field_id == "content.type":
+                # 선택지에 없는 유형(예 C01.vlog)도 콘텐츠 유형이므로 함께 지운다. 일부만 남으면 미확정이 되지 않는다.
+                for cid in [c.id for c in ctx.conditions.values() if c.dimension == "C01"]:
+                    ctx.reject(cid)
+            if a.field_id in CLEARED_REQUIRED:
+                # 필수 설정은 저장된 답을 지우고 미확정으로 돌린다. 규칙 추천값을 확정으로 채우지 않는다.
+                answers.pop(a.field_id, None)
+                if a.field_id == "output.duration":
+                    reset_duration = True
+                elif a.field_id == "output.aspect":
+                    reset_aspect = True
+                ctx.log("user", "answer_cleared", f"{a.field_id} (필수 설정: 미확정으로 되돌림)")
+            else:
+                # 선택 설정은 "아무것도 고르지 않음"을 명시적 빈 답으로 남겨 추천값이 답처럼 되살아나지 않게 한다.
+                answers[a.field_id] = Answer(field_id=a.field_id, values=[], revision=revision)
+                ctx.log("user", "answer_cleared", a.field_id)
+            continue
         answers[a.field_id] = Answer(
             field_id=a.field_id, values=a.values, revision=revision
         )
@@ -375,7 +402,7 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
     )
     duration, d_conflict = _merge_choice(
         "duration",
-        prior.duration,
+        DurationPolicy() if reset_duration else prior.duration,
         text.duration if text else None,
         s_duration,
         prior_conflicts.get("conflict.duration"),
@@ -391,7 +418,7 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
     )
     aspect, a_conflict = _merge_choice(
         "aspect",
-        prior.aspect,
+        None if reset_aspect else prior.aspect,
         text.aspect if text else None,
         s_aspect,
         prior_conflicts.get("conflict.aspect"),

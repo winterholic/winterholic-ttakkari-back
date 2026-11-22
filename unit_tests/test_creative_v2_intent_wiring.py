@@ -109,6 +109,102 @@ def test_plan_refuses_an_intent_whose_text_evidence_is_not_in_the_brief():
     assert {r["id"] for r in caught.value.reasons} >= {"stale.tone.horror", "stale.tone.action", "stale.C01.animation"}
 
 
+# --- 빈 답(선택 해제) -----------------------------------------------------------------
+
+
+def again(result, **kw):
+    return resolve_intent(
+        ResolveRequest(brief=result.intent.brief, intent=result.intent.model_dump(mode="json"), **kw)
+    )
+
+
+def test_empty_answer_clears_a_multi_select_and_does_not_revive_the_choices():
+    first = resolve(
+        "내가 가진 사진으로 영상을 만든다",
+        [{"id": "C01.vlog", "role": "primary"}],
+        answers=[{"field_id": "camera.moves", "values": ["C06.dolly", "C06.tracking"]}],
+    )
+    assert {"C06.dolly", "C06.tracking"} <= {c.id for c in first.intent.conditions}
+    cleared = again(first, answers=[{"field_id": "camera.moves", "values": []}])
+    assert not {"C06.dolly", "C06.tracking"} & {c.id for c in cleared.intent.conditions}
+    assert {"C06.dolly", "C06.tracking"} <= set(cleared.intent.rejected)
+    stored = next(a for a in cleared.intent.answers if a.field_id == "camera.moves")
+    assert stored.values == []  # 명시적 빈 답: 질문이 추천값을 다시 채우지 않는다
+    assert "camera.moves" not in {q.field_id for q in cleared.layout.questions}
+    assert any(h.action == "answer_cleared" for h in cleared.intent.history)
+    # 다음 요청에서도 되살아나지 않는다.
+    assert not {"C06.dolly", "C06.tracking"} & {c.id for c in again(cleared).intent.conditions}
+    # 다시 고르면 정상으로 돌아온다.
+    back = again(cleared, answers=[{"field_id": "camera.moves", "values": ["C06.dolly"]}])
+    assert "C06.dolly" in {c.id for c in back.intent.conditions}
+    assert "C06.dolly" not in back.intent.rejected
+
+
+def test_cleared_field_makes_no_decision_and_is_not_filled_with_the_recommendation():
+    first = anime_result()
+    assert any(d["id"] == "d.cut.tempo" for d in plan_of(first)["production_decisions"]["decisions"])
+    cleared = again(first, answers=[{"field_id": "cut.tempo", "values": []}])
+    plan = plan_of(cleared)
+    ids = {d["id"] for d in plan["production_decisions"]["decisions"]}
+    assert "d.cut.tempo" not in ids
+    assert "answer.cut.tempo" not in {n["id"] for n in plan["intent_projection"]["not_applied"]}
+    assert not any(i["id"] == "answer.cut.tempo" for i in plan["intent_projection"]["items"])
+
+
+def test_cleared_required_fields_return_to_unconfirmed_instead_of_a_default():
+    first = resolve(
+        "공포 영화를 만든다",
+        [{"id": "C01.story_film", "role": "primary"}],
+        duration={"mode": "target", "seconds": 30},
+        aspect="9:16",
+        answers=[{"field_id": "output.aspect", "values": ["9:16"]}],
+    )
+    assert first.ready_for_plan and first.intent.aspect.value == "9:16"
+    result = again(
+        first,
+        answers=[
+            {"field_id": "output.aspect", "values": []},
+            {"field_id": "output.duration", "values": []},
+            {"field_id": "content.type", "values": []},
+        ],
+    )
+    spec = result.intent
+    assert spec.aspect is None and spec.duration.origin == "default" and spec.duration.seconds is None
+    assert not {a.field_id for a in spec.answers} & {"output.aspect", "output.duration", "content.type"}
+    assert not [c for c in spec.conditions if c.dimension == "C01"]
+    assert result.ready_for_plan is False and "missing.content_type" in result.blocking
+    # 값이 없는 필수 설정은 질문으로 다시 나온다(확정된 것으로 취급하지 않는다).
+    assert {"output.aspect", "output.duration"} <= {q.field_id for q in result.layout.questions}
+    assert all(a.get("by") for a in [{"by": h.actor} for h in spec.history])
+
+
+def test_clearing_content_type_also_removes_types_that_are_not_listed_as_options():
+    first = resolve("내가 가진 사진으로 영상을 만든다", [{"id": "C01.vlog", "role": "primary"}])
+    assert first.ready_for_plan
+    cleared = again(first, answers=[{"field_id": "content.type", "values": []}])
+    assert not [c for c in cleared.intent.conditions if c.dimension == "C01"]
+    assert cleared.ready_for_plan is False and "missing.content_type" in cleared.blocking
+
+
+def test_free_text_does_not_bring_back_a_cleared_condition():
+    first = resolve(
+        "네온 불빛이 가득한 밤거리 영상",
+        [{"id": "C01.vlog", "role": "primary"}],
+        answers=[{"field_id": "light.key", "values": ["C05.neon"]}],
+    )
+    assert "C05.neon" in {c.id for c in first.intent.conditions}
+    cleared = again(first, answers=[{"field_id": "light.key", "values": []}])
+    assert "C05.neon" not in {c.id for c in cleared.intent.conditions}
+    assert "C05.neon" not in {c.id for c in again(cleared).intent.conditions}
+
+
+def test_non_empty_validation_is_unchanged():
+    with pytest.raises(ValueError, match="하나만"):
+        resolve("x 영상", [{"id": "C01.vlog"}], answers=[{"field_id": "cut.tempo", "values": ["slow", "fast"]}])
+    with pytest.raises(ValueError, match="없는 선택지"):
+        resolve("x 영상", [{"id": "C01.vlog"}], answers=[{"field_id": "cut.tempo", "values": ["nope"]}])
+
+
 # --- 정보 구조 ---------------------------------------------------------------------
 
 
@@ -495,6 +591,13 @@ async def test_http_resolve_then_plan_shows_decisions_and_rejects_stale_text(app
         assert created.status_code == 201, created.text
         body = created.json()
         assert any(d["id"] == "d.drawing.shading" for d in body["production_decisions"]["decisions"])
+        cleared = await client.post("/api/creative/v2/intent/resolve", json={
+            "brief": intent["brief"], "intent": intent,
+            "answers": [{"field_id": "drawing.shading", "values": []}],
+        })
+        assert cleared.status_code == 200, cleared.text
+        stored = [a for a in cleared.json()["intent"]["answers"] if a["field_id"] == "drawing.shading"]
+        assert stored and stored[0]["values"] == []
         edited = dict(intent, brief="감성 단편 애니메이션")
         stale = await client.post("/api/creative/v2/plans", json={"brief": "감성 단편 애니메이션", "intent_v2": edited})
         assert stale.status_code == 422

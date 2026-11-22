@@ -336,8 +336,8 @@ def _collect(spec: IntentSpecV2, layout, plan: dict[str, Any]) -> tuple[list[dic
     for fid, item in answered.items():
         if fid in ("output.duration", "output.aspect", "content.type") or fid not in FIELDS:
             continue
-        if fid not in active:
-            continue
+        if fid not in active or not item.values:
+            continue  # 비어 있는 답은 사용자가 해제한 설정이다. 결정을 만들지 않는다.
         # 조건에서 읽은 확정 값(선택지가 곧 카탈로그 조건)은 출처를 조건에서 가져온다.
         add_field(fid, item.values, item.origin, "answer", confirm=False,
                   reason="사용자가 정한 값", alternatives=[], triggered_by=[])
@@ -357,7 +357,7 @@ def _collect(spec: IntentSpecV2, layout, plan: dict[str, Any]) -> tuple[list[dic
                       reason=q.reason, alternatives=[a.model_dump() for a in q.alternatives],
                       triggered_by=q.triggered_by)
     for answer in spec.answers:
-        if answer.field_id not in active and answer.field_id in FIELDS:
+        if answer.values and answer.field_id not in active and answer.field_id in FIELDS:
             skipped.append(
                 {"id": f"answer.{answer.field_id}",
                  "reason": "현재 조건 조합에서 이 설정이 숨겨져 있어 결정으로 옮기지 않았습니다. 조건이 다시 켜지면 답변이 되살아납니다."}

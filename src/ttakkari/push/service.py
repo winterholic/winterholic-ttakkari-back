@@ -45,6 +45,7 @@ class PushKind(enum.StrEnum):
     checklist_reminder = "push.checklist_reminder"
     meeting = "push.meeting"  # 회의록 분석 완료·실패(meetings/pipeline.py)
     deployment = "push.deployment"  # 사용자가 기다리는 최초 무중단 배포 전환 결과
+    server_hang = "push.server_hang"  # 서버 프로세스가 살아 있지만 응답이 없어 감독이 알리거나 재시작함
     weather = "push.weather"  # 매일 날씨 브리핑
     notebooklm = "push.notebooklm"  # NotebookLM 단독 시절의 로그인 만료 알림(이미 쌓인 알림함 기록용으로 유지)
     google_account = "push.google_account"  # Google 계정 세션 만료(재로그인 필요) 계정당 1회 알림
@@ -58,7 +59,7 @@ INBOX_CATEGORY = {
     PushKind.worker_agent: "tasks", PushKind.worker_failed: "tasks", PushKind.worker_waiting: "tasks",
     PushKind.stall: "tasks",
     PushKind.weather: "weather", PushKind.notebooklm: "system", PushKind.google_account: "system",
-    PushKind.subscription: "system",
+    PushKind.subscription: "system", PushKind.server_hang: "system",
 }
 
 

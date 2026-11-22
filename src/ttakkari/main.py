@@ -189,6 +189,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     s.ensure_dirs()
     from ttakkari.deployment import revision
     app.state.revision = revision()
+    from ttakkari import loop_stall
+    loop_stall.install(s.loop_stall_dump_seconds)
     init_engine()
     try:
         from ttakkari.runs.test_database import reap_stale as reap_stale_test_databases

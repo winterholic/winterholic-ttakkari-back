@@ -101,6 +101,8 @@ class FakeSlots:
         self.fail_switch = False
         self.executor_calls = []
         self.tts_closed = None  # 새 TTS 접수를 막고 있는 슬롯. switch 가 다시 연다.
+        self.hung = {}  # slot -> (launchd 라벨 있음, pid). 응답 없는 살아 있는 프로세스를 흉내 낸다.
+        self.restarted = []
 
     @staticmethod
     def origin(slot):
@@ -117,6 +119,14 @@ class FakeSlots:
 
     async def snapshot(self, slot):
         return self.rows.get(slot)
+
+    async def service_state(self, slot):
+        return self.hung.get(slot, (False, None))
+
+    async def restart_hung(self, slot, revision):
+        self.restarted.append(slot)
+        self.hung.pop(slot, None)
+        return await FakeSlots.start(self, slot, Path("release"), revision)
 
     async def switch(self, slot):
         if self.fail_switch and slot == 1:
@@ -1280,3 +1290,115 @@ async def test_recover_drain_contract_unblocks_foreground_without_stopping_live_
     assert queue_diagnostics(store)["cutover_blocked"] is False
     assert [j["id"] for j in Controller(tmp_path).pending_jobs()] == [stuck["id"], queued["id"]]
     assert slots.stopped == [] and slots.route == 2
+
+
+def _hung_controller(tmp_path, monkeypatch, *, limit=300):
+    from ttakkari import generation_deployment
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    slots.hung[0] = (True, 4242)
+    active_id = uuid.uuid4()
+    control = GenerationController(JobStore(tmp_path), slots=slots)
+    clock = {"now": 1000.0}
+    notices = []
+
+    async def active():
+        return active_id
+
+    async def info(gid):
+        return {"id": gid, "revision": "a" * 40, "api_url": slots.origin(0)}
+
+    original_restart = slots.restart_hung
+
+    async def restart(slot, revision):
+        nonlocal active_id
+        row = await original_restart(slot, revision)
+        active_id = uuid.UUID(row["generation"])
+        return row
+
+    async def notify(port, pid, silent, *, restarting):
+        notices.append((port, pid, int(silent), restarting))
+
+    async def noop(*_):
+        return None
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "generation_info", info, raising=False)
+    monkeypatch.setattr(slots, "restart_hung", restart)
+    monkeypatch.setattr(slots, "ensure_proxy", noop, raising=False)
+    monkeypatch.setattr(slots, "current_slot", lambda: noop(), raising=False)
+    monkeypatch.setattr(generation_deployment.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(generation_deployment, "_notify_hang", notify)
+    monkeypatch.setattr(get_settings(), "generation_hang_restart_seconds", limit)
+    monkeypatch.setattr(generation_deployment, "_UNRESPONSIVE", {})
+
+    async def forbidden(*_):
+        raise AssertionError("a loaded launchd label must not be bootstrapped again")
+
+    monkeypatch.setattr(slots, "start", forbidden)
+    return control, slots, clock, notices
+
+
+async def test_hung_generation_waits_then_notifies_and_restarts_once(tmp_path, monkeypatch):
+    control, slots, clock, notices = _hung_controller(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError, match="alive but unresponsive for 0s"):
+        await control.reconcile_services()
+    clock["now"] += 299
+    with pytest.raises(RuntimeError, match="unresponsive for 299s"):
+        await control.reconcile_services()
+    assert not slots.restarted and not notices
+    clock["now"] += 1
+    await control.reconcile_services()
+    assert slots.restarted == [0]
+    assert notices == [(8791, 4242, 300, True)]
+    import ttakkari.generation_deployment as gd
+    assert gd._UNRESPONSIVE == {}
+
+
+async def test_hung_generation_with_restart_disabled_only_notifies(tmp_path, monkeypatch):
+    control, slots, clock, notices = _hung_controller(tmp_path, monkeypatch, limit=0)
+    with pytest.raises(RuntimeError, match="unresponsive"):
+        await control.reconcile_services()
+    clock["now"] += 300
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="restart is disabled"):
+            await control.reconcile_services()
+    assert notices == [(8791, 4242, 300, False)] and not slots.restarted
+
+
+async def test_hung_timer_restarts_when_launchd_replaced_the_process(tmp_path, monkeypatch):
+    control, slots, clock, notices = _hung_controller(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError):
+        await control.reconcile_services()
+    clock["now"] += 299
+    slots.hung[0] = (True, 5151)
+    clock["now"] += 10
+    with pytest.raises(RuntimeError, match="pid 5151 is alive but unresponsive for 0s"):
+        await control.reconcile_services()
+    assert not slots.restarted and not notices
+
+
+async def test_loaded_label_without_process_is_left_to_launchd(tmp_path, monkeypatch):
+    control, slots, clock, notices = _hung_controller(tmp_path, monkeypatch)
+    slots.hung[0] = (True, None)
+    clock["now"] += 10_000
+    with pytest.raises(RuntimeError, match="KeepAlive"):
+        await control.reconcile_services()
+    assert not slots.restarted and not notices
+
+
+async def test_responsive_generation_clears_hang_timer(tmp_path, monkeypatch):
+    import ttakkari.generation_deployment as gd
+    control, slots, _clock, _notices = _hung_controller(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError):
+        await control.reconcile_services()
+    assert 0 in gd._UNRESPONSIVE
+    slots.hung.pop(0)
+    row = await FakeSlots.start(slots, 0, None, "a" * 40)
+
+    async def active():
+        return uuid.UUID(row["generation"])
+
+    monkeypatch.setattr(control, "active", active)
+    await control.reconcile_services()
+    assert gd._UNRESPONSIVE == {}

@@ -47,6 +47,23 @@ from ttakkari.models import (
 )
 
 log = logging.getLogger(__name__)
+# slot -> 응답 없음이 처음 보인 시각·pid·알림 여부. 감독 패스마다 컨트롤러를 새로 만들므로 모듈에 둔다.
+_UNRESPONSIVE: dict[int, dict] = {}
+HANG_NOTICE_SECONDS = 300  # 재시작을 끈 경우에도 이만큼 지나면 알린다.
+
+
+async def _notify_hang(port: int, pid: int, silent: float, *, restarting: bool) -> None:
+    from ttakkari.push.service import PushKind, notify
+    body = (f"{port} 서버(pid {pid})가 {int(silent // 60)}분째 응답하지 않습니다. "
+            + ("자동으로 재시작합니다. 실행 중이던 작업은 재시작 뒤 복구 절차를 따릅니다."
+               if restarting else "자동 재시작이 꺼져 있어 직접 확인이 필요합니다."))
+    try:
+        await notify(PushKind.server_hang, "따까리 서버 응답 없음", body, url="/settings",
+                     tag=f"server-hang-{port}")
+    except Exception:  # 알림 실패가 재시작을 막으면 안 된다
+        log.exception("server hang notification failed")
+
+
 _LOG_TAIL_LINES = 12
 _LOG_TAIL_CHARS = 4000
 # 준비 단계별 상한(초). 감독 루프를 묶어 두었던 장시간 빌드·검사를 fencing한다.
@@ -408,13 +425,32 @@ class Slots:
             "StandardOutPath": str(logs / f"{PORTS[slot]}.log"),
             "StandardErrorPath": str(logs / f"{PORTS[slot]}.log")}))
         await self._launchctl("bootstrap", f"gui/{os.getuid()}", str(plist))
-        for _ in range(100):
+        return await self._await_ready(slot, revision, attempts=100)
+
+    async def _await_ready(self, slot: int, revision: str, *, attempts: int) -> dict:
+        for _ in range(attempts):
             if ready := await self.snapshot(slot):
                 if ready["revision"] != revision:
                     raise RuntimeError("unexpected slot revision")
                 return ready
             await asyncio.sleep(0.3)
         raise RuntimeError("candidate readiness timed out; existing generation was preserved")
+
+    async def service_state(self, slot: int) -> tuple[bool, int | None]:
+        """(launchd 에 라벨이 올라 있는지, 떠 있는 pid). 라벨이 있으면 bootstrap 은 실패하므로 start 로 되살리지 않는다."""
+        proc = await asyncio.create_subprocess_exec(
+            "launchctl", "print", f"gui/{os.getuid()}/net.winterholic.ttakkari.generation.{PORTS[slot]}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, _err = await proc.communicate()
+        if proc.returncode:
+            return False, None
+        found = re.search(rb"^\s*pid = (\d+)\s*$", out, re.MULTILINE)
+        return True, int(found.group(1)) if found else None
+
+    async def restart_hung(self, slot: int, revision: str) -> dict:
+        """루프가 막힌 프로세스는 SIGTERM 을 처리하지 못해 launchd 가 ExitTimeOut 뒤 SIGKILL 한다. 그만큼 기다린다."""
+        await self._launchctl("kickstart", "-k", f"gui/{os.getuid()}/net.winterholic.ttakkari.generation.{PORTS[slot]}")
+        return await self._await_ready(slot, revision, attempts=600)
 
     async def stop(self, slot: int) -> None:
         ready = await self.snapshot(slot)
@@ -695,10 +731,16 @@ class GenerationController:
         if slot is None:
             raise RuntimeError("active generation has an unmanaged origin")
         ready = await self.slots.snapshot(slot)
-        if ready is None:
-            if Releases.contract(release)["protocol"] != PROTOCOL:
-                raise RuntimeError("cannot restore an incompatible generation")
-            ready = await self.slots.start(slot, release, info["revision"])
+        if ready is not None:
+            _UNRESPONSIVE.pop(slot, None)
+        else:
+            loaded, pid = await self.slots.service_state(slot)
+            if loaded:
+                ready = await self._recover_unresponsive(slot, pid, info["revision"])
+            else:
+                if Releases.contract(release)["protocol"] != PROTOCOL:
+                    raise RuntimeError("cannot restore an incompatible generation")
+                ready = await self.slots.start(slot, release, info["revision"])
         # Registering a new process may replace a dead boot UUID for new work.
         # Existing Run leases stay with the previous process and need explicit recovery.
         current = await self.active()
@@ -709,6 +751,30 @@ class GenerationController:
         if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
             await self.slots.switch(slot)
         await self.slots.ensure_executor(release, info["revision"])
+
+    async def _recover_unresponsive(self, slot: int, pid: int | None, revision: str) -> dict:
+        """살아 있지만 응답 없는 세대. 연속 실패가 상한을 넘으면 한 번 알리고, 재시작이 켜져 있으면 kickstart 한다.
+
+        상한 전에는 예외로 이번 회차만 넘긴다. 짧은 정지는 스스로 풀리고, 재시작은 실행 중인 Run 을 끊기 때문이다.
+        """
+        if pid is None:
+            raise RuntimeError("generation service is loaded without a process; launchd KeepAlive restarts it")
+        now = time.monotonic()
+        hang = _UNRESPONSIVE.setdefault(slot, {"since": now, "pid": pid, "notified": False})
+        if hang["pid"] != pid:  # launchd 가 이미 새 프로세스로 바꿨다. 새 프로세스의 기동 시간부터 다시 잰다.
+            hang.update(since=now, pid=pid, notified=False)
+        silent = now - hang["since"]
+        limit = get_settings().generation_hang_restart_seconds
+        if silent < (limit or HANG_NOTICE_SECONDS):
+            raise RuntimeError(f"generation pid {pid} is alive but unresponsive for {int(silent)}s")
+        if not hang["notified"]:
+            hang["notified"] = True
+            await _notify_hang(PORTS[slot], pid, silent, restarting=bool(limit))
+        if not limit:
+            raise RuntimeError(f"generation pid {pid} unresponsive for {int(silent)}s; restart is disabled")
+        log.error("restarting generation %s pid %s after %ds unresponsive", PORTS[slot], pid, silent)
+        _UNRESPONSIVE.pop(slot, None)
+        return await self.slots.restart_hung(slot, revision)
 
     # error_command·error_exit 미지정 표식. 명시적 null(해당 없음)과 구분한다.
     _UNSET: object = object()

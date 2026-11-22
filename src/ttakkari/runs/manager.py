@@ -112,6 +112,18 @@ def iter_outbox_files(outbox: Path):
         dirnames[:] = sorted(d for d in dirnames if d not in OUTBOX_SKIP_DIRS)
         for name in sorted(filenames):
             yield Path(dirpath) / name
+
+
+def _outbox_candidates(outbox: Path) -> tuple[list[tuple[ResolvedPath, str]], bool]:
+    """등록할 outbox 파일과 상한 초과 여부."""
+    out: list[tuple[ResolvedPath, str]] = []
+    for p in iter_outbox_files(outbox):
+        if len(out) >= MAX_OUTBOX_FILES:
+            return out, True
+        if p.is_symlink() or not p.is_file():
+            continue
+        out.append((ResolvedPath(root=outbox.resolve(), path=p.resolve()), p.relative_to(outbox).as_posix()))
+    return out, False
 MAX_CHECKPOINT_UNTRACKED = 500
 STDERR_TAIL = 4000
 HANDOFF_TURNS = 8
@@ -1778,7 +1790,7 @@ class RunManager:
             tool_arm, _ = tool_output_limit.arm(str(sess.id), get_settings())
             if tool_arm != "off":
                 routing_usage["tool_output_arm"] = tool_arm
-        run.usage = {**(run.usage or {}), **state.usage, **context_usage.measure(state, prof.engine, prof.config_dir), **routing_usage}
+        run.usage = {**(run.usage or {}), **state.usage, **await asyncio.to_thread(context_usage.measure, state, prof.engine, prof.config_dir), **routing_usage}
         run.result_text = state.result_text or state.last_message
 
         diff = None
@@ -2101,15 +2113,12 @@ class RunManager:
         # 대화에서 사용자가 명시적으로 보관을 요청한 파일만 내 보관함(files)에 보관된다.
         found: list[tuple[ResolvedPath, str, str | None]] = []
         to_preview: list[uuid.UUID] = []
-        n = 0
-        for p in iter_outbox_files(outbox):
-            if n >= MAX_OUTBOX_FILES:
-                events.append(db, run, "log", {"stream": "system", "text": f"outbox 파일이 {MAX_OUTBOX_FILES}개를 넘어 나머지는 등록하지 않았습니다."})
-                break
-            if p.is_symlink() or not p.is_file():
-                continue
-            found.append((ResolvedPath(root=outbox.resolve(), path=p.resolve()), "agent_output", p.relative_to(outbox).as_posix()))
-            n += 1
+        # outbox 는 외장 볼륨에 있을 수 있다. 디렉터리 순회가 루프를 묶지 않게 스레드에서 돈다.
+        outbox_files, overflow = await asyncio.to_thread(_outbox_candidates, outbox)
+        if overflow:
+            events.append(db, run, "log", {"stream": "system", "text": f"outbox 파일이 {MAX_OUTBOX_FILES}개를 넘어 나머지는 등록하지 않았습니다."})
+        for resolved, rel in outbox_files:
+            found.append((resolved, "agent_output", rel))
         for raw in sorted(state.touched_files)[:MAX_TOUCHED_ARTIFACTS]:
             p = Path(raw)
             if p.is_symlink() or not p.is_file():

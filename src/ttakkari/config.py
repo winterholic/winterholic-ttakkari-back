@@ -133,6 +133,11 @@ class Settings(BaseSettings):
     # 작업자 완료 계약(상태 줄 확인·완료 확인 Run). 끄면 보고와 Run 흐름이 이전과 같다.
     worker_completion_contract: bool = True
     auto_resume_interrupted: bool = False  # FND-01 / ADR 0066: 무조건 자동 재큐잉 기본 비활성화
+    # 이벤트 루프가 이만큼 응답하지 않으면 모든 스레드 스택을 로그에 남긴다(loop_stall.py). 0 이면 끈다.
+    loop_stall_dump_seconds: float = Field(default=30, ge=0)
+    # 프로세스는 살아 있는데 /api/ready 가 이만큼 연속으로 실패하면 감독이 알리고 재시작한다. 0 이면 알림만 한다.
+    # 2026-11-22 15:10~17:18 에 루프가 동기 파일 호출에 묶여 2시간 넘게 응답이 없었는데, 감독은 bootstrap 만 반복했다.
+    generation_hang_restart_seconds: int = Field(default=300, ge=0)
     runtime_api_url: str = "http://127.0.0.1:8791"
     runtime_poll_seconds: float = Field(default=5, ge=0.05)
     runtime_sse_drain_seconds: int = Field(default=45, ge=1)

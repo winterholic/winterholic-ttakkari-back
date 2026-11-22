@@ -1978,6 +1978,7 @@ def classify_config(field: str) -> str:
         x in f
         for x in (
             "runtime_generation",
+            "generation_hang",
             "deploy",
             "release",
             "drain",
@@ -2001,6 +2002,7 @@ def classify_config(field: str) -> str:
             "internal_api_url",
             "runtime_api_url",
             "runtime_poll_seconds",
+            "loop_stall",
             "trust_proxy_ip_header",
             "backup_passphrase_file",
             "harness_view",
@@ -2141,6 +2143,7 @@ def classify_source_file(rel_path: str) -> str:
                 "/textsafe.py",
                 "/timefmt.py",
                 "/fd_limit.py",
+                "/loop_stall.py",
                 "/harness_view/",
             )
         )

@@ -24,6 +24,7 @@ CATALOG = (
     (PushKind.meeting, "회의록 분석 결과", "회의록 분석 완료와 실패를 알려드려요.", True),
     (PushKind.google_account, "Google 계정 로그인", "연결한 계정에 다시 로그인해야 할 때 알려드려요.", True),
     (PushKind.deployment, "배포 결과", "따까리 서버의 배포 결과를 알려드려요.", False),
+    (PushKind.server_hang, "서버 응답 없음", "따까리 서버가 오래 응답하지 않아 재시작할 때 알려드려요.", True),
 )
 DEFAULTS = {kind: default for kind, _, _, default in CATALOG}
 PREFIX = "notification:"

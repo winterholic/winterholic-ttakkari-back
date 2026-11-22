@@ -1,3 +1,6 @@
+import json
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -471,3 +474,99 @@ def test_preflight_blocks_cli_doctor_when_browser_ipc_is_denied(monkeypatch):
     assert result.ok is False
     assert any("browser IPC blocked" in item for item in result.missing)
     assert not any(command and command[0] == "npx" for command in calls)
+
+
+_PACKET_PROBE = """
+<script>
+(() => {
+  const rect = (selector) => {
+    const r = document.querySelector(selector).getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  };
+  const out = {};
+  for (const t of %s) {
+    window.__timelines.main.seek(t, false);
+    out[t] = {
+      packet: rect("#packet"),
+      newRecord: rect("#block-p1-new"),
+      rowP0: rect(".partition-row:nth-child(1)"),
+      rowP1: rect("#row-p1"),
+      itemC1: rect(".consumer-item:nth-child(1)"),
+      nameC1: rect(".consumer-item:nth-child(1) .consumer-name"),
+      itemC2: rect("#item-c2"),
+    };
+  }
+  document.body.insertAdjacentHTML("beforeend", "<pre id=probe>" + JSON.stringify(out) + "</pre>");
+})();
+</script>
+"""
+
+
+def _probe_kafka_packet(project: Path, times: list[float]) -> dict[str, dict[str, dict[str, float]]]:
+    browser = find_browser()
+    if browser is None:
+        pytest.skip("headless browser not available")
+    html_path = project / "index.html"
+    html = html_path.read_text(encoding="utf-8")
+    html_path.write_text(html.replace("</body>", (_PACKET_PROBE % json.dumps(times)) + "</body>"), encoding="utf-8")
+    dom = subprocess.run(
+        [browser, "--headless=new", "--no-sandbox", "--disable-gpu", "--window-size=1920,1080",
+         "--virtual-time-budget=3000", "--dump-dom", html_path.as_uri()],
+        capture_output=True, text=True, timeout=60, check=False,
+    ).stdout
+    match = re.search(r'<pre id="probe">(.*?)</pre>', dom, re.DOTALL)
+    assert match, "packet probe did not run in the browser"
+    return {float(t): v for t, v in json.loads(match.group(1)).items()}
+
+
+def _center(rect: dict[str, float]) -> tuple[float, float]:
+    return (rect["left"] + rect["right"]) / 2, (rect["top"] + rect["bottom"]) / 2
+
+
+def _inside(point: tuple[float, float], rect: dict[str, float]) -> bool:
+    return rect["left"] <= point[0] <= rect["right"] and rect["top"] <= point[1] <= rect["bottom"]
+
+
+def _overlaps(a: dict[str, float], b: dict[str, float]) -> bool:
+    return a["left"] < b["right"] and a["right"] > b["left"] and a["top"] < b["bottom"] and a["bottom"] > b["top"]
+
+
+def test_kafka_packet_follows_partition_1_and_consumer_2(tmp_path):
+    from ttakkari.creative.v2.hyperframes import _prepare_spec_project
+
+    project = _prepare_spec_project({
+        "seconds": 16,
+        "title": "분산 메시지 흐름 및 커밋 로그 파이프라인",
+        "caption_mode": "title_only",
+        "scenes": [{"title": t, "narration": ""} for t in ("발행 · Publish", "로그 기록 · Append to Log", "소비 · Consume")],
+    }, tmp_path)
+    publish_times = [3.5, 3.9, 4.2, 4.5, 4.8, 5.0]
+    consume_times = [11.5, 11.8, 12.0, 12.3, 12.5]
+    frames = _probe_kafka_packet(project, publish_times + consume_times)
+
+    # 발행 단계: Producer를 떠난 점은 어느 시점에도 Partition 0 행을 가로지르지 않고 새 레코드 칸에 도착한다.
+    for t in publish_times:
+        assert not _overlaps(frames[t]["packet"], frames[t]["rowP0"]), f"packet crosses Partition 0 at {t}s"
+    assert _inside(_center(frames[4.5]["packet"]), frames[4.5]["newRecord"])
+    assert _inside(_center(frames[4.5]["packet"]), frames[4.5]["rowP1"])
+
+    # 소비 단계: 점은 하이라이트되는 Consumer 2 카드 가장자리에 머물고 Consumer 1 카드와 글자를 가리지 않는다.
+    for t in consume_times:
+        assert not _overlaps(frames[t]["packet"], frames[t]["itemC1"]), f"packet touches Consumer 1 at {t}s"
+        assert not _overlaps(frames[t]["packet"], frames[t]["nameC1"])
+    final = frames[12.0]
+    cx, cy = _center(final["packet"])
+    assert final["itemC2"]["top"] <= cy <= final["itemC2"]["bottom"]
+    assert abs(cx - final["itemC2"]["left"]) <= 16
+
+
+def test_kafka_packet_targets_are_computed_not_hardcoded_pixels():
+    html = (Path(__file__).parents[1] / "templates" / "hyperframes" / "kafka_message_flow" / "index.html").read_text(encoding="utf-8")
+    script = html[html.index("<script>\n    window.__timelines"):]
+    packet_tweens = re.findall(r'tl\.(?:fromTo|to)\("#packet"[^;]*;', script)
+    assert len(packet_tweens) >= 3
+    for tween in packet_tweens:
+        assert not re.search(r"\b[xy]:\s*-?\d", tween), f"hardcoded packet pixel in: {tween}"
+    # 점이 향하는 요소는 하이라이트되는 요소와 같다.
+    for selector in ('#block-p1-new', '#item-c2', '#row-p1'):
+        assert f'"{selector}"' in script

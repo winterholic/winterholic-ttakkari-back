@@ -1,4 +1,4 @@
-"""Clock-injected Codex reset policy. No I/O and no periodic provider polling."""
+"""Clock-injected subscription reset policy. No I/O and no periodic provider polling."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,6 +12,29 @@ VERIFY_DELAYS = (30, 60, 120, 240, 450)
 VERIFY_MAX_SECONDS = 15 * 60
 WEEK_SECONDS = 7 * 24 * 3600
 UNUSED_WINDOW_TOLERANCE_SECONDS = 120
+ANTIGRAVITY_WEEKLY = "agy_gemini_models_weekly"
+ANTIGRAVITY_SHORT = "agy_gemini_models_5h"
+SUBSCRIPTION_ENGINES = {"codex", "antigravity"}
+
+
+def default_state(provider: str) -> dict:
+    return {"provider": provider, "auto_enabled": provider == "codex"}
+
+
+def antigravity_has_capacity(observation: Usage) -> bool:
+    windows = {w.key: w for w in observation.windows}
+    return (not observation.error and observation.source == "antigravity_cli"
+            and observation.updated_at is not None
+            and all(key in windows and windows[key].resets_at is not None
+                    and windows[key].resets_at > observation.updated_at
+                    and windows[key].remaining_percent is not None
+                    and windows[key].remaining_percent > 0
+                    for key in (ANTIGRAVITY_WEEKLY, ANTIGRAVITY_SHORT)))
+
+
+def _unstarted_antigravity_window(weekly: Window, observed_at: float) -> bool:
+    return (weekly.remaining_percent == 100 and weekly.resets_at is not None
+            and abs(weekly.resets_at - (observed_at + WEEK_SECONDS)) < UNUSED_WINDOW_TOLERANCE_SECONDS)
 
 
 @dataclass
@@ -28,16 +51,21 @@ def _unused_new_window(weekly: Window, observation: Usage) -> bool:
 
 
 def plan(prior: dict, observation: Usage, *, now: float, user_used: bool = False) -> Decision:
-    state = {"provider": "codex", "auto_enabled": True, **prior}
+    provider = prior.get("provider", "codex")
+    antigravity = provider == "antigravity"
+    state = {**default_state(provider), **prior}
     state["last_checked_at"] = now
     state["last_error"] = observation.error
     state["next_check_at"] = now + NORMAL_SECONDS
     state["next_activation_at"] = None
-    weekly = next((w for w in observation.windows if w.key == "seven_day"), None)
-    fresh = (not observation.error and observation.source == "api" and weekly is not None
+    weekly_key = ANTIGRAVITY_WEEKLY if antigravity else "seven_day"
+    weekly = next((w for w in observation.windows if w.key == weekly_key), None)
+    source = "antigravity_cli" if antigravity else "api"
+    fresh = (not observation.error and observation.source == source and weekly is not None
              and observation.updated_at is not None)
     old_reset = state.get("reset_at")
     new_reset = weekly.resets_at if fresh else None
+    unstarted = antigravity and fresh and _unstarted_antigravity_window(weekly, observation.updated_at)
     due = old_reset is not None and old_reset <= now
     handled = old_reset is not None and state.get("handled_reset_at") == old_reset
     decision = Decision(state)
@@ -54,6 +82,13 @@ def plan(prior: dict, observation: Usage, *, now: float, user_used: bool = False
                 result = "already_dispatched"
             elif user_used:
                 result = "already_used"
+            elif antigravity:
+                if current and new_reset and new_reset > old_reset:
+                    if unstarted:
+                        confirmed = antigravity_has_capacity(observation)
+                    else:
+                        result = ("already_used" if weekly.remaining_percent is not None
+                                  and weekly.remaining_percent < 100 else "already_active_or_unverifiable")
             elif current and new_reset and new_reset > old_reset:
                 if _unused_new_window(weekly, observation):
                     confirmed = True
@@ -95,7 +130,9 @@ def plan(prior: dict, observation: Usage, *, now: float, user_used: bool = False
     else:
         state["last_check_outcome"] = "observed" if fresh else "observation_failed"
 
-    if fresh and new_reset is not None and (not due or new_reset > old_reset):
+    # An unused Antigravity window reports a rolling observation + 7 days.
+    # Retain the previous real boundary for manual activation and retries.
+    if fresh and not unstarted and new_reset is not None and (not due or new_reset > old_reset):
         if old_reset != new_reset:
             state.pop("verify_attempts", None)
             state.pop("verify_started_at", None)

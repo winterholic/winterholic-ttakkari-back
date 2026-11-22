@@ -234,13 +234,13 @@ payload 는 `{title, body, url, tag}`:
 | GET/PUT/DELETE | `/api/accounts/override?pool=` | 임시 순서. 개인·회사 모드마다 따로 하나씩. PUT `{ids, until}`(`pool=work` 는 회사에 들어온 계정만 허용). 끝나면 그 모드만 기본 순서로 돌아간다 |
 | GET | `/api/accounts/usage` | 개인 모드의 지금 적용 순서(임시 순서 반영). `max_used_percent`, 신선할 때만 `remaining_to_limit_percent`, `stale` 포함. `rank`·`enabled` 는 개인 모드, `work_rank`(회사 모드 순서 번호, 회사에 안 들어온 계정은 null)·`work_enabled` 는 회사 모드 값, `pool` 로 회사 표시 |
 | GET | `/api/accounts/qwen-usage` | 로컬 Qwen 접수의 실제 llama.cpp HTTP 호출 토큰. `{model, timezone: Asia/Seoul, collection_started_at, server, today, week}`. 기간별 입력·출력·합계 토큰, 전체/계측/usage 누락/실패 호출 수, 마지막 사용 시각을 반환한다. 오늘은 KST 00:00부터, 주간은 월요일 KST 00:00부터 현재까지. 평가는 제외하며 서버 응답 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`가 모두 있고 합이 맞는 호출만 계측한다. 누락·실패 토큰은 null로 보존하며 프롬프트·응답 본문은 저장하지 않는다. |
-| GET | `/api/accounts/{id}/subscription` | Codex 영속 상태만 반환하며 공급자를 조회하지 않는다. `provider, auto_enabled, reset_at?, next_check_at?, next_activation_at?, last_checked_at?, last_check_outcome?, last_error?, last_result?`. 시각은 Unix 초. 없는 계정 404, Codex 외 계정 400, 소유자 인증 필요. |
+| GET | `/api/accounts/{id}/subscription` | Codex·Antigravity의 영속 상태를 반환하며 공급자를 조회하지 않는다. `provider, auto_enabled, reset_at?, next_check_at?, next_activation_at?, last_checked_at?, last_check_outcome?, last_error?, last_result?`. 시각은 Unix 초. 없는 계정 404, 두 엔진 이외의 계정 400, 소유자 인증 필요. |
 | PATCH | `/api/accounts/{id}/subscription` | `{auto_enabled: boolean}`. 예약을 교체하고 설정을 영속화한다. 다른 요청이 이미 시작한 모델 호출은 재전송하거나 취소하지 않는다. |
 | POST | `/api/accounts/{id}/subscription/{refresh\|activate}` | 신선한 구독 상태를 확인한 뒤 영속 정책을 적용한다. `activate`는 자동 설정이 꺼져 있어도 미사용·미실행 주기를 수동 활성화할 수 있다. 사용자 선사용·중복·결과 불명 요청의 방지는 그대로다. 응답은 상태에 `action_result: {status}` 추가. `refresh`도 자동 활성화가 켜진 도래 주기에는 기존 자동 정책을 적용한다. 최대 150초 후 504, 불명 요청 재전송 금지. |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 | POST | `/api/accounts/{id}/login/check` | 재로그인한 Claude·Codex·기본 Antigravity 계정 즉시 재확인 |
 
-Codex 주간 활성화 정책은 [ADR 0074](adr/0074-codex-weekly-activation.md)를 따른다. `next_activation_at`은 초기화 확인 작업의 예약 시각이며 모델 요청을 보장하는 시각이 아니다. `last_result`에는 실행 상태·주기·시작 시각·실행 전후 사용량 및 토큰 수가 들어간다. `unknown`은 재시작/통신 실패 등으로 결과를 확정하지 못한 상태이고 성공으로 표시하지 않는다. 기존 계정 사용량의 비명시적 조회는 Codex에서 12시간 캐시를 사용하며 수동 새로고침은 이를 우회한다.
+주간 활성화 정책은 [ADR 0074](adr/0074-codex-weekly-activation.md)를 따른다. `next_activation_at`은 초기화 확인 작업의 예약 시각이며 모델 요청을 보장하는 시각이 아니다. `last_result`에는 실행 상태·주기·시작 시각·실행 전후 사용량 및 토큰 수가 들어간다. `unknown`은 재시작/통신 실패 등으로 결과를 확정하지 못한 상태이고 성공으로 표시하지 않는다. 기존 계정 사용량의 비명시적 조회는 Codex에서 12시간 캐시를 사용하며 수동 새로고침은 이를 우회한다.
 
 ## 메모·캘린더(ADR 0008)
 

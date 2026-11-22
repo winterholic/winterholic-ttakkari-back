@@ -24,7 +24,12 @@ from ttakkari.models import (
 )
 from ttakkari.runs import profiles, usage
 from ttakkari.runs.codex_subscription import read_usage
-from ttakkari.runs.subscription_policy import NORMAL_SECONDS, plan
+from ttakkari.runs.subscription_policy import (
+    NORMAL_SECONDS,
+    SUBSCRIPTION_ENGINES,
+    default_state,
+    plan,
+)
 
 ACTION = "subscription_check"
 DISPATCH_UNKNOWN_SECONDS = 120
@@ -37,11 +42,11 @@ def state_key(account_id: uuid.UUID) -> str:
 
 async def _locked(db, account_id):
     account = await db.get(EngineAccount, account_id, with_for_update=True, populate_existing=True)
-    if account is None or account.engine != "codex":
-        raise ValueError("Codex account not found")
+    if account is None or account.engine not in SUBSCRIPTION_ENGINES:
+        raise ValueError("Subscription account not found")
     row = await db.get(AppSetting, state_key(account_id), populate_existing=True)
     if row is None:
-        row = AppSetting(key=state_key(account_id), value={"provider": "codex", "auto_enabled": True})
+        row = AppSetting(key=state_key(account_id), value=default_state(account.engine))
         db.add(row)
         await db.flush()
     return account, row
@@ -50,7 +55,10 @@ async def _locked(db, account_id):
 async def get_state(account_id: uuid.UUID) -> dict:
     async with sessionmaker()() as db:
         row = await db.get(AppSetting, state_key(account_id))
-        return dict(row.value) if row else {"provider": "codex", "auto_enabled": True}
+        if row:
+            return dict(row.value)
+        account = await db.get(EngineAccount, account_id)
+        return default_state(account.engine if account else "codex")
 
 
 async def _reserve(db, account_id, state, due, *, executing_id=None):
@@ -59,9 +67,10 @@ async def _reserve(db, account_id, state, due, *, executing_id=None):
         old = await db.get(ScheduledAction, uuid.UUID(old_id))
         if old and old.status in ("pending", "leased"):
             old.status = "cancelled"
+    provider = "Antigravity" if state["provider"] == "antigravity" else "Codex"
     item = ScheduledAction(action_type=ACTION, payload={"account_id": str(account_id)},
                            due_at=datetime.fromtimestamp(due, UTC), status="pending", max_attempts=3,
-                           description="Codex 구독 상태 확인")
+                           description=f"{provider} 구독 상태 확인")
     db.add(item)
     await db.flush()
     state["schedule_id"] = str(item.id)
@@ -111,7 +120,7 @@ async def _user_used(db, account: EngineAccount, boundary: int | None) -> bool:
     row = await db.get(AppSetting, state_key(account.id))
     profile_names = {account.name, *(row.value.get("user_used_profile_aliases", []) if row else [])}
     return await db.scalar(select(Run.id).where(
-        Run.engine == "codex",
+        Run.engine == account.engine,
         or_((Run.profile.in_(profile_names)) & or_(Run.started_at >= since, Run.status == RunStatus.running),
             (Run.id.in_(running)) & (Run.status == RunStatus.running)),
     ).limit(1)) is not None
@@ -124,13 +133,22 @@ async def activate(config_dir: str | None, *, preflight: usage.Usage) -> dict:
 
 async def notify_result(account_id: uuid.UUID, cycle: int, outcome: dict) -> None:
     from ttakkari.push.service import PushKind, notify
-    title = "Codex 주간 활성화 요청 완료" if outcome.get("status") == "succeeded" else "Codex 주간 활성화 확인 필요"
     try:
+        provider = "Antigravity" if (await get_state(account_id))["provider"] == "antigravity" else "Codex"
+        title = f"{provider} 주간 활성화 요청 완료" if outcome.get("status") == "succeeded" else f"{provider} 주간 활성화 확인 필요"
         await notify(PushKind.subscription, title, "계정 관리에서 실행 결과와 예약을 확인해 주세요.",
                      url="/accounts", dedupe_key=f"subscription:{account_id}:{cycle}")
     except Exception as exc:  # noqa: BLE001 -- delivery must not replay the model call
         # Delivery failure must not replay a completed inference request.
         log.warning("subscription notification failed: %s", type(exc).__name__)
+
+
+async def _observe(account_id, engine, config_dir):
+    if engine == "antigravity":
+        return await usage.usage_for(account_id, engine, config_dir, refresh=True)
+    observed = await read_usage(config_dir)
+    usage.publish_live_observation(account_id, observed)
+    return observed
 
 
 async def check(account_id: uuid.UUID, *, now: float, schedule_id: str | None = None,
@@ -161,9 +179,8 @@ async def check(account_id: uuid.UUID, *, now: float, schedule_id: str | None = 
                 return {"status": "already_dispatching"}
             state["last_result"] = {**result, "status": "unknown", "reason": "dispatch outcome unavailable after restart"}
             recovered_unknown = True
-        observed = await read_usage(account.config_dir)
-        # Cache consumers see the same observation; the normal usage sink owns history.
-        usage.publish_live_observation(account_id, observed)
+        engine = account.engine
+        observed = await _observe(account_id, engine, account.config_dir)
         user_used = await _user_used(db, account, state.get("reset_at"))
         original_enabled = state.get("auto_enabled", True)
         decision = plan({**state, "auto_enabled": original_enabled or manual_activation}, observed,
@@ -171,7 +188,7 @@ async def check(account_id: uuid.UUID, *, now: float, schedule_id: str | None = 
         state = {**decision.state, "auto_enabled": original_enabled}
         if not original_enabled:
             state["next_activation_at"] = None
-        if decision.activate and any(w.percent >= 100 for w in observed.windows):
+        if engine == "codex" and decision.activate and any(w.percent >= 100 for w in observed.windows):
             decision.activate = False
             state["last_check_outcome"] = "rate_limit"
         if not decision.activate:
@@ -194,9 +211,12 @@ async def check(account_id: uuid.UUID, *, now: float, schedule_id: str | None = 
         config_dir = account.config_dir
         await db.commit()
 
-    outcome = await activate(config_dir, preflight=observed)
-    after = await read_usage(config_dir)
-    usage.publish_live_observation(account_id, after)
+    if engine == "antigravity":
+        from ttakkari.runs.antigravity_subscription import activate_subscription
+        outcome = await activate_subscription(config_dir, preflight=observed)
+    else:
+        outcome = await activate(config_dir, preflight=observed)
+    after = await _observe(account_id, engine, config_dir)
     async with sessionmaker()() as db:
         account, row = await _locked(db, account_id)
         state = dict(row.value)

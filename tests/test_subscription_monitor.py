@@ -402,3 +402,48 @@ async def test_planned_low_frequency_observation_is_stale_without_fabricated_fai
     row = next(item for item in response.json() if item["id"] == str(aid))
     assert row["stale"] is True
     assert row["error"] is None, "a scheduled 12-hour observation is not a failed read"
+
+
+async def test_antigravity_dispatch_uses_its_own_quota_and_durable_fence(client, auth, monkeypatch):
+    from ttakkari.runs import antigravity_subscription
+    from ttakkari.runs.subscription_policy import WEEK_SECONDS
+
+    m = monitor()
+    async with sessionmaker()() as db:
+        a = EngineAccount(name="Antigravity subscription", engine="antigravity", enabled=True)
+        db.add(a)
+        await db.commit()
+        aid = a.id
+
+    now = 500
+    sent = []
+
+    async def read(account_id, engine, config_dir, *, refresh):
+        assert account_id == aid and engine == "antigravity" and refresh
+        unused = now >= 1010 and not sent
+        return Usage(source="antigravity_cli", updated_at=now, windows=[
+            Window("agy_gemini_models_weekly", "Gemini weekly", 0 if unused else 1,
+                   now + WEEK_SECONDS if now >= 1010 else 1000, 100 if unused else 99),
+            Window("agy_gemini_models_5h", "Gemini 5h", 0, 18000, 100),
+            Window("agy_claude_and_gpt_models_weekly", "Claude weekly", 100, 1900, 0),
+        ])
+
+    async def activate(config_dir, *, preflight):
+        assert (await m.get_state(aid))["dispatched_cycle"] == 1000
+        sent.append(config_dir)
+        return {"status": "succeeded"}
+
+    monkeypatch.setattr(m.usage, "usage_for", read)
+    monkeypatch.setattr(antigravity_subscription, "activate_subscription", activate)
+    base = f"/api/accounts/{aid}/subscription"
+    response = await client.get(base, headers=auth)
+    assert response.status_code == 200
+    assert response.json() == {"provider": "antigravity", "auto_enabled": False}
+    await m.ensure(aid, now=now)
+    await m.check(aid, now=now)
+    toggled = await client.patch(base, json={"auto_enabled": True}, headers=auth)
+    assert toggled.status_code == 200 and toggled.json()["auto_enabled"] is True
+    now = 1010
+    await asyncio.gather(m.check(aid, now=now), m.check(aid, now=now, manual_activation=True))
+    assert len(sent) == 1
+    assert (await m.get_state(aid))["last_result"]["status"] == "succeeded"

@@ -170,3 +170,26 @@ def test_activation_of_an_idle_window_is_not_repeated_and_the_next_week_activate
     boundary = d.state["reset_at"] + 10
     nxt = policy().plan(d.state, sample(reset=boundary + WEEK, percent=0, at=boundary), now=boundary)
     assert nxt.activate and nxt.cycle == pinned
+
+
+def test_antigravity_only_activates_an_unused_gemini_window_after_a_known_boundary():
+    from ttakkari.runs.subscription_policy import WEEK_SECONDS
+    plan = policy().plan
+
+    reset, now = 1000, 1010
+    weekly = Window("agy_gemini_models_weekly", "Gemini weekly", 0, now + WEEK_SECONDS, 100)
+    short = Window("agy_gemini_models_5h", "Gemini 5h", 0, now + 18000, 100)
+    other = Window("agy_claude_and_gpt_models_weekly", "Claude weekly", 100, reset, 0)
+    observed = Usage(windows=[weekly, short, other], source="antigravity_cli", updated_at=now)
+    prior = {"provider": "antigravity", "auto_enabled": True, "reset_at": reset}
+
+    assert plan(prior, observed, now=now).cycle == reset
+    assert not plan(prior, observed, now=now, user_used=True).activate
+    assert not plan({"provider": "antigravity"}, observed, now=now).activate
+    assert plan({"provider": "antigravity"}, observed, now=now).state.get("next_activation_at") is None
+
+    weekly.remaining_percent = 99.99
+    assert plan(prior, observed, now=now).state["last_check_outcome"] == "already_used"
+    weekly.remaining_percent = 100
+    short.remaining_percent = 0
+    assert not plan(prior, observed, now=now).activate

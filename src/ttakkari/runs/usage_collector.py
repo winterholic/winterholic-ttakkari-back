@@ -89,14 +89,14 @@ class Collector:
         counts = await profiles.running_counts_async()
         done: list[uuid.UUID] = []
         for i, (aid, engine, cdir) in enumerate(rows):
-            if engine == "codex":
-                # External usage reads are date jobs, not this collector's busy/
-                # low-quota/reset polling. Startup refresh happens once; later
-                # ticks only repair missing/failed DB reservations.
+            if engine in ("codex", "antigravity"):
+                # The subscription timer owns weekly activation. Antigravity
+                # still collects short-window and other model groups for routing.
                 from ttakkari.runs.subscription_monitor import ensure
                 await ensure(aid, now=now, recover=aid not in self._subscription_accounts)
                 self._subscription_accounts.add(aid)
-                continue
+                if engine == "codex":
+                    continue
             st = self._state.get(aid)
             if st is None:
                 # 시작 직후에 몰리지 않게 계정마다 몇 초씩 엇갈려 첫 수집을 한다.

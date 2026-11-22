@@ -635,8 +635,10 @@ class SubscriptionPatch(BaseModel):
 
 async def _subscription_account(db: Db, account_id: uuid.UUID) -> EngineAccount:
     account = await _get(db, account_id)
-    if account.engine != "codex":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "현재 자동 활성화는 Codex 계정만 지원해요.")
+    from ttakkari.runs.subscription_policy import SUBSCRIPTION_ENGINES
+
+    if account.engine not in SUBSCRIPTION_ENGINES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "이 계정은 주간 자동 활성화를 지원하지 않아요.")
     return account
 
 
@@ -696,7 +698,9 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
         data.setdefault("work_enabled", True)
     if data.get("work_enabled") is not None and (data.get("pool") or a.pool) != "work":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "회사 모드에 넣은 계정만 회사 모드 켜기를 바꿀 수 있어요.")
-    if a.engine == "codex" and data.get("name") is not None:
+    from ttakkari.runs.subscription_policy import SUBSCRIPTION_ENGINES
+
+    if a.engine in SUBSCRIPTION_ENGINES and data.get("name") is not None:
         # Serialize rename with subscription checks and retain historical Run.profile values.
         from ttakkari.runs.subscription_monitor import _locked
 

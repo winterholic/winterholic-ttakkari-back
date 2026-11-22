@@ -16,7 +16,7 @@ from ttakkari.creative.v2.duration import DurationRequest
 from ttakkari.creative.v2.intent import IntentSpec, Selection, Span
 from ttakkari.creative.v2.intent_plan import PlanIntentError
 from ttakkari.creative.v2.intent_resolve import ResolveRequest, resolve_intent
-from ttakkari.creative.v2.matching import match_intent
+from ttakkari.creative.v2.matching import TONE_FITS, TONE_WEIGHT, match_intent
 from ttakkari.creative.v2.planner import ProductionDirection
 from ttakkari.creative.v2.plans import PlanStore, build_plan
 from ttakkari.creative.v2.registry import Registry
@@ -311,8 +311,14 @@ def test_tone_moves_recipe_choice_without_making_unfit_recipes_eligible():
     )
     plain = match_intent("x", base)
     horror = match_intent("x", base, tone=["tone.horror"])
-    assert plain.primary_recipe != "R20"
-    assert horror.primary_recipe == "R20"
+    registry = Registry()
+    fits = lambda r: set(registry.recipes[r].fits) & set(TONE_FITS["tone.horror"])
+    scores = lambda m: {c.recipe_id: c.score for c in m.candidates}
+    assert not fits(plain.primary_recipe)
+    assert fits(horror.primary_recipe)  # 톤을 드러내는 항목을 fits로 가진 레시피가 주 레시피가 된다
+    assert plain.primary_recipe != horror.primary_recipe
+    assert scores(horror)["R20"] == pytest.approx(scores(plain)["R20"] + TONE_WEIGHT)
+    assert scores(horror)[plain.primary_recipe] == scores(plain)[plain.primary_recipe]
     assert plain.fingerprint != horror.fingerprint
     assert match_intent("x", base, tone=[]).fingerprint == plain.fingerprint
     # 어떤 레시피도 맞지 않는 선택은 톤이 있어도 레시피를 얻지 못한다.
@@ -330,7 +336,9 @@ def test_plan_records_the_tone_used_for_matching_and_recomputes_the_same_match(t
     assert "tone.horror" in {c.id for c in result.intent.conditions}
     plan = plan_of(result)
     assert plan["match_tone"] == ["tone.horror"]
-    assert plan["match"]["primary_recipe"] == "R20"
+    assert "match.recipe_score" in next(
+        i for i in plan["intent_projection"]["items"] if i["id"] == "tone.horror"
+    )["applied_to"]
     store = PlanStore(tmp_path / "plans", registry=Registry())
     created = store.create(plan)
     # get()은 저장된 톤으로 능력 판정을 다시 계산한다. 지문이 어긋나면 승인 게이트가 닫힌다.

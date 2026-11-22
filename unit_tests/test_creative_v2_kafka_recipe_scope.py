@@ -7,7 +7,7 @@ from ttakkari.creative.v2.dispatch import dispatch_blockers
 from ttakkari.creative.v2.duration import DurationRequest
 from ttakkari.creative.v2.intent import InfoItem, IntentSpec, Selection
 from ttakkari.creative.v2.planner import ProductionDirection
-from ttakkari.creative.v2.plans import PlanStore, build_plan
+from ttakkari.creative.v2.plans import PlanStore, build_plan, render_plan
 from ttakkari.creative.v2.registry import Registry
 
 BRIEF = (
@@ -196,6 +196,9 @@ def test_reviewed_kafka_direction_takes_30_seconds_with_any_supported_scene_coun
     # 장면당 늘림 상한(8초)은 duration 정책이 정한다. 3장면은 24초로 깎이고(deviated) 4장면 이상은 30초를 그대로 받는다.
     assert plan["duration"]["status"] == ("deviated" if scene_count == 3 else "target_met")
     assert len(plan["scenes"]) == scene_count
+    # 구간을 3장면씩 쪼개면 엔진의 장면 수 검사(3~5)를 통과하지 못한다. 한 구간에 모두 담긴다.
+    segments = render_plan(plan)["segments"]
+    assert [seg["scene_ids"] for seg in segments] == [[s["scene_id"] for s in plan["scenes"]]]
 
 
 def test_kafka_engine_accepts_three_to_five_scenes_only():

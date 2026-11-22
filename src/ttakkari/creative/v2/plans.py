@@ -136,7 +136,8 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
             (plan.get("director") and not (
                 scene.get("strategy") == "code_motion"
                 and groups[-1][-1].get("strategy") == "code_motion"
-                and len(groups[-1]) < 3
+                # code_motion의 유일한 소비자는 kafka_flow 템플릿이다. 한 구간이 템플릿의 최대 막 수까지 담는다.
+                and len(groups[-1]) < KAFKA_MAX_SCENES
             ))
             or
             acc + length > SEGMENT_TARGET_SECONDS

@@ -79,7 +79,8 @@ def test_scenarios_produce_different_groups_and_questions():
     ("brief", "content_type", "seconds", "recipe"),
     [
         (A, "C01.animation", 120, "R04"),
-        (B, "C01.tech_explainer", 16, "R03"),
+        # 메시지 흐름 개념(Producer·Broker·Consumer)을 다루는 기술 설명은 템플릿 범위 안이라 R22로 자동 연결된다.
+        (B, "C01.tech_explainer", 16, "R22"),
         (C, "C01.music_video", 180, "R19"),
     ],
 )

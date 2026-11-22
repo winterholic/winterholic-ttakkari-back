@@ -484,6 +484,9 @@ _REPAIRS = {
     ),
     "audio_sync": ("voice", ["realign_target_audio", "resynthesize_and_retime"]),
     "audio_quality": ("voice", ["remix_target_audio", "replace_target_audio_source"]),
+    # Mix-level defects live on the final's audio track, so the producer segments stay valid.
+    "audio_level": ("audio", ["normalize_scene_loudness", "replace_target_audio_source"]),
+    "audio_seam": ("audio", ["compensate_loop_seam_dip", "replace_target_audio_source"]),
     "transition": ("transition", ["reedit_boundary", "switch_to_explicit_cut"]),
     "intent_alignment": ("visual", ["revise_shot_direction", "switch_visual_strategy"]),
 }
@@ -499,7 +502,7 @@ def plan_partial_repair(
     """
     scenes = {s["scene_id"]: s for s in plan.get("scenes", [])}
     actions, blocked = [], []
-    affected, bad_shots = set(), set()
+    affected, bad_shots, audio_scenes = set(), set(), set()
     for defect in defects:
         sid, shot, code = (
             defect.get("scene_id"),
@@ -547,8 +550,11 @@ def plan_partial_repair(
                 }
             )
             continue
-        affected.add(sid)
-        bad_shots.update({shot} if shot else shots)
+        if layer == "audio":
+            audio_scenes.add(sid)
+        else:
+            affected.add(sid)
+            bad_shots.update({shot} if shot else shots)
         actions.append(
             {
                 "scene_id": sid,
@@ -556,6 +562,7 @@ def plan_partial_repair(
                 "code": code,
                 "layer": layer,
                 "strategy": strategy,
+                **({"window": deepcopy(defect["window"])} if defect.get("window") else {}),
                 "strategy_switched": switch,
                 "prior_failures": len(history),
                 "evidence": deepcopy(defect.get("evidence", [])),
@@ -605,6 +612,7 @@ def plan_partial_repair(
         "blocked": blocked,
         "invalidate": {
             "scene_ids": sorted(affected),
+            "audio_scene_ids": sorted(audio_scenes),
             "shot_ids": sorted(bad_shots),
             "layers": sorted({a["layer"] for a in actions}),
             "asset_keys": invalid_asset_keys,

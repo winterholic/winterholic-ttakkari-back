@@ -351,6 +351,9 @@ def create_app(
     if creative_review_evaluator is None and s.creative_review_cli_model:
         from ttakkari.creative.v2.review_cli_evaluator import claude_cli_binding
         creative_review_evaluator = claude_cli_binding(s.creative_review_cli_model)
+    elif creative_review_evaluator is None and s.creative_review_local_measure:
+        from ttakkari.creative.v2.review_local_evaluator import local_measure_binding
+        creative_review_evaluator = local_measure_binding()
     app.state.creative_review_evaluator = creative_review_evaluator
     from ttakkari.generation_service import InflightMiddleware
     app.add_middleware(InflightMiddleware)

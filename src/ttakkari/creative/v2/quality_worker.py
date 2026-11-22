@@ -43,8 +43,38 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     )
 
 
+def review_context(plan: dict[str, Any], record: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Plan facts an evaluator needs to compare against (expected caption text, timing, aspect).
+
+    Not part of the rubric hash: it describes what was planned, never what was observed.
+    """
+    sources = (record or {}).get("caption_sources") or {}
+    return {
+        "aspect": plan.get("aspect"),
+        "planned_seconds": sum(float(s.get("seconds", 0)) for s in plan.get("scenes", [])),
+        "caption_mode": (record or {}).get("caption_mode"),
+        "scenes": [
+            {
+                "scene_id": s["scene_id"],
+                "title": s.get("title"),
+                "narration": s.get("narration"),
+                "start_time": s.get("start_time"),
+                "end_time": s.get("end_time"),
+                "strategy": s.get("strategy"),
+                "caption_source": sources.get(s["scene_id"]),
+            }
+            for s in plan.get("scenes", [])
+        ],
+    }
+
+
 def prepare_review(
-    plan: dict[str, Any], media_path: Path, output_dir: Path, *, max_frames: int = 120
+    plan: dict[str, Any],
+    media_path: Path,
+    output_dir: Path,
+    *,
+    max_frames: int = 120,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Sample interiors + both sides of cuts; retain full video/audio for viewing.
 
@@ -163,6 +193,7 @@ def prepare_review(
         "sampling": "scene quartiles, first/last frames and shot midpoints; sparse, not full viewing",
         "evaluator_state": "not_executed",
         "user_approval": None,
+        "context": context or {},
     }
     _write_json(request_path, package)
     (out / "review-instructions.txt").write_text(

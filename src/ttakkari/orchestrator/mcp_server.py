@@ -433,10 +433,10 @@ async def creative_v2_production_repair_plan(plan_id: str, revision: Annotated[i
 @server.tool()
 async def creative_v2_production_repair(plan_id: str, revision: Annotated[int, Field(ge=1)],
                                         proposal_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
-                                        updates: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=100)]) -> str:
-    """Apply caption title/narration updates from a reviewed repair proposal as a new revision that still needs approval."""
+                                        updates: Annotated[list[dict[str, Any]], Field(max_length=100)] | None = None) -> str:
+    """Apply a reviewed repair proposal. Caption title/narration updates make a new revision that still needs approval; an audio-layer proposal (audio_level, audio_seam) takes empty updates and re-mixes the final's audio in place."""
     return await _creative("production_repair", {"plan_id": plan_id, "revision": revision,
-                                                 "proposal_sha256": proposal_sha256, "updates": updates})
+                                                 "proposal_sha256": proposal_sha256, "updates": updates or []})
 
 
 @query_tool

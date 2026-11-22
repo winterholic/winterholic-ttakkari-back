@@ -225,8 +225,10 @@ class Settings(BaseSettings):
         # Separate single-entry paths (emergency fallback, parallel-fit workers) still pass this gate.
         "qwen-local": ["Qwen3.8-Flash-Next-Q2_K"],
     }
-    # 비우면 제작 검수 평가자는 연결되지 않고 판정은 unknown으로 남는다. 모델 이름을 주면 claude CLI 평가자를 서버가 묶는다.
+    # 모델 이름을 주면 claude CLI 평가자를 서버가 묶는다(프레임 의미 평가 전용). 비우면 아래 로컬 측정 평가기를 쓴다.
     creative_review_cli_model: str = ""
+    # 측정 기반 로컬 평가기(OCR+ffmpeg). CLI 평가 모델이 없을 때 run_review 에 연결한다. 끄면 not_connected.
+    creative_review_local_measure: bool = True
     qwen_local_enabled: bool = False
     qwen_local_turns: int = Field(default=20, ge=1, le=60)
     qwen_local_worker_path: Path = HOME / "development/projects/qwen-local-harness/bin/qwen-worker"

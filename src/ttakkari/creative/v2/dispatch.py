@@ -1083,6 +1083,13 @@ def plan_repair(plans: PlanStore, plan_id: str, revision: int, defects: list[dic
         record = _record(data, revision)
         if record is None:
             raise ProductionError("먼저 이 계획 revision을 디스패치해 주세요.")
+        measured = (record.get("quality_report") or {}).get("defects", [])
+        # Measured windows and evidence come from the attested review, never from the caller's request.
+        defects = [
+            {**next((m for m in measured if m.get("code") == d.get("code") and m.get("scene_id") == d.get("scene_id")
+                     and m.get("layer") == d.get("layer") and m.get("shot_id") == d.get("shot_id")), {}), **d}
+            for d in defects
+        ]
         result = quality.plan_partial_repair(plan, {**record, "assets": data["assets"]}, defects)
         result.update(plan_revision=revision, output_sha256=(record.get("final") or {}).get("sha256"),
                       plan_sha256=record["plan_sha256"], caption_mode=record.get("caption_mode", "narration"))
@@ -1095,7 +1102,7 @@ def plan_repair(plans: PlanStore, plan_id: str, revision: int, defects: list[dic
 
 def apply_repair(plans: PlanStore, plan_id: str, revision: int, proposal_sha256: str,
                  updates: list[dict[str, Any]]) -> dict[str, Any]:
-    """Apply bounded caption edits; leave approval and execution to existing gates.
+    """Apply bounded caption edits (new revision, needs approval) or an audio-layer remix (same revision, new final).
 
     The production flock is the CPU composition lease. No model/GPU generation
     is requested here; unsupported layers cannot bypass their managed leases.
@@ -1119,13 +1126,19 @@ def apply_repair(plans: PlanStore, plan_id: str, revision: int, proposal_sha256:
         if (any(s["status"] in SEGMENT_ACTIVE for s in record["segments"])
                 or any(g.get("status") in {"queued", "running"} for g in data.get("asset_generations", []))):
             raise ProductionError("production generation/render lease is active")
+        actions = proposal.get("actions", [])
+        if actions and not proposal.get("blocked") and all(a["layer"] == "audio" for a in actions):
+            if updates:
+                raise ProductionError("audio repair takes no caption updates")
+            from ttakkari.creative.v2 import repair_audio
+            return repair_audio.apply(plans, store, plan, record, data, proposal, final, source)
         blocked = deepcopy(proposal.get("blocked", []))
         by_id = {scene["scene_id"]: scene for scene in plan["scenes"]}
         for action in proposal.get("actions", []):
             if by_id[action["scene_id"]].get("strategy") in {"frame_animation_2d", "scene_3d", "code_motion"}:
                 blocked.append({"action": action, "reason": "fixed producer output reuse is not connected for caption repair; refusing to restart a successful producer"})
             if action["layer"] != "captions" or action["code"] not in {"text_legibility", "fake_text"}:
-                blocked.append({"action": action, "reason": "only explicit captions text repair is executable; other layers require their producer/managed lease"})
+                blocked.append({"action": action, "reason": "only explicit captions text repair and audio-layer remix are executable; other layers require their producer/managed lease"})
         if blocked:
             return {"status": "blocked", "blocked": blocked, "revision": revision}
         actions = proposal.get("actions", [])

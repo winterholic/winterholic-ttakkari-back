@@ -456,7 +456,7 @@ class CaptionRepairUpdate(Strict):
 
 class RepairApply(PlanApprove):
     proposal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    updates: list[CaptionRepairUpdate] = Field(min_length=1, max_length=100)
+    updates: list[CaptionRepairUpdate] = Field(default_factory=list, max_length=100)
 
 
 @router.post("/plans/{pid}/production/repair")

@@ -92,6 +92,21 @@ def attested_receipts(record: dict[str, Any]) -> list[dict[str, Any]]:
     return accepted
 
 
+def _split_stages(receipt: dict[str, Any]) -> list[dict[str, Any]]:
+    """One evaluator pass may judge both stages; each stage is stored as its own receipt."""
+    stages = receipt.get("stages")
+    if stages is None:
+        return [receipt]
+    if not isinstance(stages, dict) or not stages:
+        raise ValueError("evaluator stages must be a non-empty object")
+    shared = {k: v for k, v in receipt.items() if k not in {"stages", "stage", "criteria", "defects"}}
+    return [
+        {**deepcopy(shared), "stage": stage, "criteria": body.get("criteria"), "defects": body.get("defects", [])}
+        for stage, body in stages.items()
+        if isinstance(body, dict)
+    ]
+
+
 def run_review(
     plans,
     studio,
@@ -134,30 +149,34 @@ def run_review(
         if record["rubric"]["sha256"] != rubric_sha:
             raise dispatch.ProductionError("review rubric changed after dispatch")
         assets_sha = quality.content_hash(data["assets"])
+        context = quality_worker.review_context(plan, record)
     execution_id = str(uuid.uuid4())
     try:
         package = quality_worker.prepare_review(
-            plan, media, store.folder(plan_id) / "reviews" / execution_id
+            plan, media, store.folder(plan_id) / "reviews" / execution_id, context=context
         )
         receipt = quality_worker.deliver_review(package, binding.execute)
-        if receipt.get("stage") not in {"semantic_qa", "viewing_qa"} or not isinstance(
-            receipt.get("criteria"), list
+        receipts = _split_stages(receipt)
+        if not receipts or any(
+            r.get("stage") not in {"semantic_qa", "viewing_qa"} or not isinstance(r.get("criteria"), list)
+            for r in receipts
         ):
             raise dispatch.ProductionError("evaluator returned an invalid stage/criteria")
         # An evaluator response cannot declare its own independence or identity.
-        receipt["evaluator"] = {
-            "id": binding.id,
-            "version": binding.version,
-            "source": binding.source,
-            "independent": binding.independent,
-        }
+        for r in receipts:
+            r["evaluator"] = {
+                "id": binding.id,
+                "version": binding.version,
+                "source": binding.source,
+                "independent": binding.independent,
+            }
         artifacts = [
             package["media"],
             *package["frames"],
             *([package["audio"]] if package.get("audio") else []),
         ]
         allowed = {(a["path"], a["sha256"]): a for a in artifacts}
-        evidence = _evidence(receipt)
+        evidence = [e for r in receipts for e in _evidence(r)]
         identity_fields = ("source_sha256", "kind", "start_time", "end_time")
         if not evidence or any(
             not isinstance(e, dict)
@@ -188,11 +207,14 @@ def run_review(
         except (dispatch.ProductionError, OSError):
             pass  # a busy lease must not hide the evaluator's own error
         raise
-    attestation = attest(
-        receipt,
-        execution_id=execution_id,
-        manifest_sha256=receipt["transport"]["input_manifest_sha256"],
-    )
+    attestations = [
+        attest(
+            r,
+            execution_id=execution_id,
+            manifest_sha256=r["transport"]["input_manifest_sha256"],
+        )
+        for r in receipts
+    ]
     with store.tx(plan_id, blocking=False) as data:
         current = plans.assert_renderable(plan_id, revision)
         record = dispatch._record(data, revision)
@@ -207,15 +229,15 @@ def run_review(
             )
         candidate = {
             **record,
-            "quality_evidence": [receipt],
-            "quality_attestations": [attestation],
+            "quality_evidence": receipts,
+            "quality_attestations": attestations,
         }
-        if attested_receipts(candidate) != [receipt]:
+        if attested_receipts(candidate) != receipts:
             raise dispatch.ProductionError(
                 "review evidence changed during evaluator execution"
             )
-        record.setdefault("quality_evidence", []).append(receipt)
-        record.setdefault("quality_attestations", []).append(attestation)
+        record.setdefault("quality_evidence", []).extend(receipts)
+        record.setdefault("quality_attestations", []).extend(attestations)
         record["quality_report"] = quality.evaluate_production(
             current,
             {
@@ -229,10 +251,11 @@ def run_review(
         state = {
             "status": "recorded",
             "execution_id": execution_id,
-            "receipt_sha256": attestation["receipt_sha256"],
+            "receipt_sha256": attestations[0]["receipt_sha256"],
+            **({"receipt_sha256s": [a["receipt_sha256"] for a in attestations]} if len(attestations) > 1 else {}),
             "output_sha256": output_sha,
             "rubric_sha256": rubric_sha,
-            "evidence_sha256": attestation["evidence_sha256"],
+            "evidence_sha256": attestations[0]["evidence_sha256"],
             "verdict": record["quality_report"]["overall_verdict"],
         }
         record["review_execution"] = state

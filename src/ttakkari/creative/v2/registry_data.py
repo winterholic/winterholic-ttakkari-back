@@ -32,8 +32,13 @@ REMOTION_RECORDS = ("remotion-intro-v1-v2", "remotion-beat-v1-v2")
 THREE_RECORDS = ("three-cinematic-v1-v2", "three-previz-roundtable")
 WAN_DRAFT = ManagedLimits(
     profile="wan22-5b-draft", workflow="t2v-wan22-5b",
-    max_seconds=1.375, width=640, height=352, fps=24, measured_on="2026-11-21",
+    max_seconds=1.375, width=640, height=352, fps=24, measured_on="2026-11-22",
 )
+WAN_RECORDS = ("comfy-wan22-5b-t2v-bench", "managed-comfy-wan22-5b-draft-20261122")
+# lab 레지스트리(comfyui/registry)에 이 모델 워크플로가 없다. 모델 파일이 디스크에 있다는 것과 실행 가능은 별개다.
+NO_LAB_WORKFLOW = "lab ComfyUI 워크플로 레지스트리에 이 모델의 워크플로가 없다. 모델 파일만 디스크에 있고 실행 경로가 없다(확인 2026-11-22)."
+I2V_UNRUN = "lab 레지스트리에 I2V 워크플로는 등록돼 있으나 실제 실행 기록이 없다(확인 2026-11-22)."
+WAN_LAB_STANDARD = "lab 벤치에서는 832x480·81프레임(3.375초)까지 성공했다(wan5b_00023, ffprobe 2026-11-22). 관리형 프로필은 draft 하나뿐이라 이 길이는 제작 경로에서 쓸 수 없다."
 KAFKA_SCOPE = (
     "현재 제작 경로는 16:9 Kafka 메시지 흐름(kafka_flow) 3장면을 지원한다.",
     "임의 컴포지션, 3D, 캐릭터 애니메이션은 별도 제작 경로가 필요하다.",
@@ -170,8 +175,8 @@ TOOLS: list[RegistryEntry] = [
             ),
             _c("edit.captions", "legacy-catalog-sample-tech-explainer"),
             _c("qa.machine_video", "remotion-intro-v1-v2"),
-            _c("audio.mix"),
-            _c("edit.color_grade"),
+            _c("audio.mix", "ffmpeg-edit-grade-mix-20261122"),
+            _c("edit.color_grade", "ffmpeg-edit-grade-mix-20261122"),
         ],
         notes="제작은 imageio-ffmpeg 사용. 시스템 설치 여부와 실제 ffprobe는 별도 탐침으로 확인한다.",
     ),
@@ -241,13 +246,15 @@ MODELS: list[RegistryEntry] = [
         claims=[
             _c(
                 "gen.video_t2v",
-                "comfy-wan22-5b-t2v-bench",
+                *WAN_RECORDS,
                 note="결과 파일 생성 기준 29/32, 시청 품질 판정 아님",
+                limits=(WAN_LAB_STANDARD,),
                 managed=WAN_DRAFT,
             ),
             _c(
                 "gen.video_i2v",
                 note="I2V 워크플로 초안만 있고 새 영상 0편(E1 준비 단계)",
+                limits=(I2V_UNRUN,),
             ),
         ],
     ),
@@ -258,7 +265,7 @@ MODELS: list[RegistryEntry] = [
         probes=["comfy:wan22_i2v_14b"],
         depends_on=list(COMFY),
         integration="lab_only",
-        claims=[_c("gen.video_i2v")],
+        claims=[_c("gen.video_i2v", limits=(I2V_UNRUN,))],
     ),
     RegistryEntry(
         id="model.ltx23",
@@ -267,7 +274,7 @@ MODELS: list[RegistryEntry] = [
         probes=["comfy:ltx23"],
         depends_on=list(COMFY),
         integration="none",
-        claims=[_c("gen.video_i2v"), _c("gen.video_t2v")],
+        claims=[_c("gen.video_i2v", limits=(NO_LAB_WORKFLOW,)), _c("gen.video_t2v", limits=(NO_LAB_WORKFLOW,))],
     ),
     RegistryEntry(
         id="model.hunyuanvideo15",
@@ -276,7 +283,7 @@ MODELS: list[RegistryEntry] = [
         probes=["comfy:hunyuanvideo15"],
         depends_on=list(COMFY),
         integration="none",
-        claims=[_c("gen.video_t2v")],
+        claims=[_c("gen.video_t2v", limits=(NO_LAB_WORKFLOW,))],
     ),
     RegistryEntry(
         id="model.seedvr2",
@@ -575,7 +582,7 @@ SKILLS: list[RegistryEntry] = [
         "t2v-wan22-5b",
         "Wan2.2 5B 텍스트→영상",
         "comfyui",
-        [_c("gen.video_t2v", "comfy-wan22-5b-t2v-bench")],
+        [_c("gen.video_t2v", *WAN_RECORDS, managed=WAN_DRAFT)],
         ["model.wan22_ti2v_5b"],
         ["워크플로 API JSON"],
     ),
@@ -583,7 +590,7 @@ SKILLS: list[RegistryEntry] = [
         "i2v-wan22-5b",
         "Wan2.2 5B 이미지→영상",
         "comfyui",
-        [_c("gen.video_i2v")],
+        [_c("gen.video_i2v", limits=(I2V_UNRUN,))],
         ["model.wan22_ti2v_5b"],
         ["워크플로 API JSON"],
         "실제 새 영상 기록이 없다(E1 준비 단계).",
@@ -592,7 +599,7 @@ SKILLS: list[RegistryEntry] = [
         "i2v-wan22-14b-lightx2v",
         "Wan2.2 14B 이미지→영상",
         "comfyui",
-        [_c("gen.video_i2v")],
+        [_c("gen.video_i2v", limits=(I2V_UNRUN,))],
         ["model.wan22_i2v_14b"],
         ["워크플로 API JSON"],
     ),

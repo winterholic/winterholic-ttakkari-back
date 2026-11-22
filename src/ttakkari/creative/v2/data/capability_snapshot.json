@@ -1,6 +1,6 @@
 {
-  "command": "~/development/projects/winterholic-ttakkari/back-cs-registry-20261121/src/ttakkari/creative/v2/probe.py --lab-root ../../ttakkari-studio-lab --repo-root . --app-root . --artcraft-root ../../artcraft --out src/ttakkari/creative/v2/data/capability_snapshot.json",
-  "generated_at": "2026-11-21T12:44:33.444384+00:00",
+  "command": "src/ttakkari/creative/v2/probe.py --lab-root ../../ttakkari-studio-lab --repo-root . --app-root ../back --artcraft-root ../../artcraft --out src/ttakkari/creative/v2/data/capability_snapshot.json",
+  "generated_at": "2026-11-22T03:32:58.519186+00:00",
   "host": {
     "machine": "arm64",
     "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
@@ -23,9 +23,9 @@
       "version": null
     },
     "bpy": {
-      "detail": "../../ttakkari-studio-lab/3d/.venv-bpy/bin/python: import bpy exited 139 in the Codex command environment (USD Arch_ValidateAssumptions)",
-      "installed": false,
-      "version": null
+      "detail": "../../ttakkari-studio-lab/3d/.venv-bpy/bin/python",
+      "installed": true,
+      "version": "5.0.1"
     },
     "chrome": {
       "detail": "/Applications/Google Chrome.app",
@@ -98,7 +98,7 @@
       "version": null
     },
     "ffmpeg_imageio": {
-      "detail": "~/development/projects/winterholic-ttakkari/back-context-gateway-20261116/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+      "detail": "~/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
       "installed": true,
       "version": null
     },
@@ -120,7 +120,7 @@
     "hyperframes_cli": {
       "detail": "npx 캐시(~/.npm/_npx)",
       "installed": true,
-      "version": "0.9.77"
+      "version": "0.9.80"
     },
     "local_stt_code": {
       "detail": "src/ttakkari/meetings/local_stt",
@@ -343,6 +343,28 @@
       "title": "scene_3d crystal_orbit 코어 ModuleAdapter 직접 렌더(3초)",
       "verdict": "unreviewed"
     },
+    "ffmpeg-edit-grade-mix-20261122": {
+      "command": "ffmpeg -i wan5b_00023_.mp4 -i acestep_ambient.wav -filter_complex crop,scale,curves=preset=cross_process,noise,fade;atrim,loudnorm,afade -c:v libx264 -c:a aac; 진짜 ffprobe(remotion/bin/ffprobe)로 측정",
+      "executed_at": "2026-11-22",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 3.375,
+          "fps": "24/1",
+          "frames": 81,
+          "name": "ffmpeg_edit_check.mp4",
+          "sha256": "0474044643ef86f864649bebce3c2a902935e80b15b8486dd54c4c8ee3a6a3b0",
+          "size": "1280x720"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#ffmpeg-edit-grade-mix-20261122",
+      "scope": "색보정·오디오 믹스(loudnorm·페이드)·mux가 실제로 돈다는 증명이며 시청·청취 품질 판정이 아니다.",
+      "status": "completed",
+      "title": "ffmpeg로 Wan 5B 클립 크롭·색보정·그레인·페이드 + ACE-Step 음악 loudnorm 믹스 mux",
+      "verdict": "unreviewed"
+    },
     "ffprobe-real-frame-count-20261121": {
       "command": "ffprobe -v error -select_streams v:0 -show_entries format=duration:stream=nb_frames,width,height,r_frame_rate",
       "executed_at": "2026-11-21",
@@ -456,6 +478,29 @@
       "path": "legacy/records/legacy-little-signal-30s/record.json",
       "status": "completed",
       "title": "Little Signal 30초 (스튜디오 1차 제작)",
+      "verdict": "unreviewed"
+    },
+    "managed-comfy-wan22-5b-draft-20261122": {
+      "command": "comfy_submit(profile_id=wan22-5b-draft, seed=2211) -> comfy_job status=succeeded, 자원 lease 경유",
+      "executed_at": "2026-11-22",
+      "independent": false,
+      "kind": "engine_run",
+      "media_count": 1,
+      "outputs": [
+        {
+          "duration": 1.375,
+          "elapsed_seconds": 40.21,
+          "fps": "24/1",
+          "frames": 33,
+          "name": "wan5b_00047_.mp4",
+          "sha256": "8513b97fb64ea462b9d62477adf161da2bdeecabf3ac62f16bab7d688d6c41b2",
+          "size": "640x352"
+        }
+      ],
+      "path": "src/ttakkari/creative/v2/data/execution_records.json#managed-comfy-wan22-5b-draft-20261122",
+      "scope": "영수증(receipt)의 mp4 컨테이너 메타데이터 기준. 산출 파일은 보호 영역에 있어 ffprobe를 직접 돌리지 못했다. 프로필 한계인 1.375초·640x352를 넘는 길이는 이 경로로 만들 수 없다.",
+      "status": "completed",
+      "title": "관리형 comfy_submit wan22-5b-draft 실제 1회(task 36ff9a9c614a575d9424ec330199d245)",
       "verdict": "unreviewed"
     },
     "pipeline-checkpoints-demo": {

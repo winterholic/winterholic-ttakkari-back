@@ -80,6 +80,8 @@
         {"name": "scene_3d.mp4", "sha256": "0fa64f2cfa7ac8c9161a769dedefd1d72b3c366f51cc5bc97447af91fb66af1b", "duration": 3.0, "frames": 72, "size": "640x360", "fps": "24/1"}
       ],
       "scope": "호스트 ~/bin/ffprobe(shim)는 nb_frames를 내지 못한다. 진짜 ffprobe만 프레임 수 검사에 쓴다."
-    }
+    },
+    "managed-comfy-wan22-5b-draft-20261122": {"status": "completed", "kind": "engine_run", "title": "관리형 comfy_submit wan22-5b-draft 실제 1회(task 36ff9a9c614a575d9424ec330199d245)", "verdict": "unreviewed", "independent": false, "media_count": 1, "executed_at": "2026-11-22", "command": "comfy_submit(profile_id=wan22-5b-draft, seed=2211) -> comfy_job status=succeeded, 자원 lease 경유", "outputs": [{"name": "wan5b_00047_.mp4", "sha256": "8513b97fb64ea462b9d62477adf161da2bdeecabf3ac62f16bab7d688d6c41b2", "duration": 1.375, "frames": 33, "size": "640x352", "fps": "24/1", "elapsed_seconds": 40.21}], "scope": "영수증(receipt)의 mp4 컨테이너 메타데이터 기준. 산출 파일은 보호 영역에 있어 ffprobe를 직접 돌리지 못했다. 프로필 한계인 1.375초·640x352를 넘는 길이는 이 경로로 만들 수 없다."},
+    "ffmpeg-edit-grade-mix-20261122": {"status": "completed", "kind": "engine_run", "title": "ffmpeg로 Wan 5B 클립 크롭·색보정·그레인·페이드 + ACE-Step 음악 loudnorm 믹스 mux", "verdict": "unreviewed", "independent": false, "media_count": 1, "executed_at": "2026-11-22", "command": "ffmpeg -i wan5b_00023_.mp4 -i acestep_ambient.wav -filter_complex crop,scale,curves=preset=cross_process,noise,fade;atrim,loudnorm,afade -c:v libx264 -c:a aac; 진짜 ffprobe(remotion/bin/ffprobe)로 측정", "outputs": [{"name": "ffmpeg_edit_check.mp4", "sha256": "0474044643ef86f864649bebce3c2a902935e80b15b8486dd54c4c8ee3a6a3b0", "duration": 3.375, "frames": 81, "size": "1280x720", "fps": "24/1"}], "scope": "색보정·오디오 믹스(loudnorm·페이드)·mux가 실제로 돈다는 증명이며 시청·청취 품질 판정이 아니다."}
   }
 }

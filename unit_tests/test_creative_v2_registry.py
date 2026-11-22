@@ -290,3 +290,46 @@ def test_managed_comfy_limits_and_unavailable_lipsync_are_visible():
     assert reg.state("tool.rhubarb").levels["anim.lipsync"] in {"missing", "declared"}
     assert reg.state("tool.artcraft").levels["edit.timeline"] in {"missing", "declared"}
     assert reg.state("model.multimodal_judge").levels["qa.visual_semantic"] == "missing"
+
+
+def test_wan_skill_and_model_share_the_managed_draft_limit_and_fresh_managed_run():
+    reg = Registry()
+    for entry_id in ("model.wan22_ti2v_5b", "skill.t2v-wan22-5b"):
+        state = reg.state(entry_id)
+        limits = state.constraints["gen.video_t2v"]
+        assert any("wan22-5b-draft" in value for value in limits), entry_id
+        assert not any("프로필이 없다" in value for value in limits), entry_id
+        assert any(
+            "managed-comfy-wan22-5b-draft-20261122" in ref for ref in state.evidence["gen.video_t2v"]
+        ), entry_id
+    model = reg.state("model.wan22_ti2v_5b")
+    assert any("3.375초" in value for value in model.constraints["gen.video_t2v"])
+
+
+def test_disk_only_video_models_are_installed_but_not_runnable_or_executed():
+    reg = Registry()
+    for entry_id, capability in (
+        ("model.ltx23", "gen.video_t2v"),
+        ("model.ltx23", "gen.video_i2v"),
+        ("model.hunyuanvideo15", "gen.video_t2v"),
+    ):
+        state = reg.state(entry_id)
+        assert state.installed is True
+        assert state.levels[capability] == "installed", (entry_id, capability)
+        assert any("워크플로가 없다" in value for value in state.constraints[capability])
+    for entry_id in ("model.wan22_i2v_14b", "skill.i2v-wan22-14b-lightx2v", "skill.i2v-wan22-5b"):
+        state = reg.state(entry_id)
+        assert state.levels["gen.video_i2v"] == "installed", entry_id
+        assert any("실행 기록이 없다" in value for value in state.constraints["gen.video_i2v"]), entry_id
+
+
+def test_ffmpeg_edit_run_is_recorded_and_sandbox_bpy_crash_is_not_in_committed_snapshot():
+    reg = Registry()
+    ffmpeg = reg.state("tool.ffmpeg")
+    for capability in ("audio.mix", "edit.color_grade"):
+        assert ffmpeg.levels[capability] == "executed"
+        assert "record:ffmpeg-edit-grade-mix-20261122(completed, 검수 unreviewed)" in ffmpeg.evidence[capability]
+    # 샌드박스에서 import bpy 가 exit 139 로 죽어 Blender 를 missing 으로 적은 스냅샷을 되돌리지 못하게 한다.
+    assert reg.snapshot["probes"]["bpy"]["installed"] is True
+    assert reg.state("skill.studio-3d-cinematic").levels["render.3d_preset"] == "executed"
+    assert reg.state("tool.blender").levels["render.blender_offline"] == "executed"

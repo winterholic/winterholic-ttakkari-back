@@ -14,6 +14,7 @@ from ttakkari.creative.v2.capabilities import Strict
 from ttakkari.creative.v2.catalog_data import ENTRIES
 from ttakkari.creative.v2.duration import Beat, ContentProfile, plan_duration
 from ttakkari.creative.v2.facets import FIELDS, Layout, resolve_layout
+from ttakkari.creative.v2.intent import InfoItem
 from ttakkari.creative.v2.intent_v2 import (
     _RANK,
     TONES,
@@ -37,7 +38,9 @@ from ttakkari.creative.v2.intent_v2 import (
     label_of,
     load_intent,
     now_iso,
+    prune_evidence,
     read_free_text,
+    stale_text_items,
 )
 
 # 지금 업로드 경로가 있는 참조 자산 종류(creative_v2 API의 이미지·음악 업로드). 영상·문서는 아직 받지 못한다.
@@ -83,6 +86,9 @@ class ResolveRequest(Strict):
     resolutions: list[ResolutionInput] = Field(default_factory=list, max_length=60)
     references: list[ReferenceAsset] = Field(default_factory=list, max_length=20)
     read_free_text: bool = True
+    # 전달 항목과 음악 길이. 없으면 직전 의도의 값을 이어받는다(빈 목록은 "비우기").
+    info_items: list[InfoItem] | None = Field(default=None, max_length=400)
+    music_seconds: float | None = Field(default=None, gt=0.0, le=900)
 
 
 class LengthAssessment(Strict):
@@ -289,9 +295,28 @@ def content_type_blocking(spec: IntentSpecV2) -> list[str]:
 def resolve_intent(req: ResolveRequest) -> ResolveResult:
     prior = load_intent(req.intent, req.brief)
     revision = prior.revision + 1 if req.intent else 1
+    # 자연어로 브리프를 고친 뒤 다시 읽을 때, 새 브리프에 근거 인용이 없는 이전 자유 입력·AI 해석은 걷어 낸다.
+    stale = stale_text_items(prior, req.brief) if req.intent else []
+    if stale:
+        prior = prior.model_copy(
+            update={
+                "conditions": [c for c in prior.conditions if c.id not in stale],
+                "duration": DurationPolicy()
+                if "duration" in stale
+                else prior.duration,
+                "aspect": None if "aspect" in stale else prior.aspect,
+            }
+        )
+    pruned: list[str] = []
+    if req.intent:
+        prior, pruned = prune_evidence(prior, req.brief)
     ctx = _Ctx(prior, revision)
     if not req.intent:
         ctx.log("user", "created", "새 제작 의도")
+    if stale:
+        ctx.log("system", "stale_text_removed", ", ".join(stale))
+    if pruned:
+        ctx.log("system", "evidence_pruned", ", ".join(pruned))
 
     for cid in req.reject:
         ctx.reject(cid)
@@ -391,6 +416,10 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
                 else ["핵심 내용을 브리프나 전달 항목으로 옮기기"],
             )
         ctx.log("user", "reference_added", f"{ref.kind}:{ref.id}")
+    if req.info_items is not None:
+        ctx.log("user", "info_items_set", f"전달 항목 {len(req.info_items)}개")
+    if req.music_seconds is not None:
+        ctx.log("user", "music_seconds_set", f"{req.music_seconds:g}초")
 
     # 충돌 해결은 마지막에 적용한다. 같은 요청 안에서 생긴 충돌도 바로 풀 수 있다.
     def known() -> dict[str, tuple[str, str]]:
@@ -486,8 +515,10 @@ def resolve_intent(req: ResolveRequest) -> ResolveResult:
         conditions=sorted(ctx.conditions.values(), key=lambda c: (c.dimension, c.id)),
         duration=duration,
         aspect=aspect,
-        info_items=prior.info_items,
-        music_seconds=prior.music_seconds,
+        info_items=prior.info_items if req.info_items is None else req.info_items,
+        music_seconds=prior.music_seconds
+        if req.music_seconds is None
+        else req.music_seconds,
         references=list(references.values()),
         answers=list(answers.values()),
         conflicts=list(conflicts.values()),

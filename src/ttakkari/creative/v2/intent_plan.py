@@ -32,7 +32,9 @@ from ttakkari.creative.v2.intent_v2 import (
     catalog_conflicts,
     duration_value,
     label_of,
+    stale_text_items,
 )
+from ttakkari.creative.v2.matching import TONE_FITS
 from ttakkari.creative.v2.style_dna import StyleRef, StyleStore
 
 # 화풍·톤·세계관 조건 → 내장 Style DNA. 시드에 있는 스타일만 연결한다(없는 화풍에 비슷한 스타일을 붙이지 않는다).
@@ -149,6 +151,18 @@ def prepare(brief: str, spec: IntentSpecV2) -> PreparedIntent:
                 }
             ],
         )
+    stale = stale_text_items(spec, brief, include_confirmed=True)
+    if stale:
+        raise PlanIntentError(
+            "intent_stale",
+            [
+                {
+                    "id": f"stale.{item}",
+                    "message": f"{item}의 근거 인용이 현재 브리프에 없습니다. 브리프를 고친 뒤 의도를 다시 해석(resolve)해 주세요. 이전 문장의 의도로 계획을 만들지 않습니다.",
+                }
+                for item in stale
+            ],
+        )
     blocking = readiness(spec)
     if blocking:
         raise PlanIntentError(
@@ -229,6 +243,8 @@ def projection(
             applied.append("match.selection")
         if c.dimension == "tone":
             applied.append("scene.tone")
+            if c.id in TONE_FITS:
+                applied.append("match.recipe_score")
         ref = style_by_condition.get(c.id)
         if ref is not None and style_applied:
             applied.append(f"style_dna:{ref}")

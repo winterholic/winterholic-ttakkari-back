@@ -37,7 +37,7 @@ from ttakkari.creative.render import (
     inspect_media,
 )
 from ttakkari.creative.service import ProjectInput, Scene, Studio
-from ttakkari.creative.v2 import engines, quality
+from ttakkari.creative.v2 import engines, production_decisions, quality
 from ttakkari.creative.v2.plans import PlanStore
 from ttakkari.creative.v2.registry_data import (
     KAFKA_MAX_SCENES,
@@ -190,13 +190,12 @@ def dispatch_blockers(plan: dict[str, Any], *, runtime_preflight: bool = True) -
             validate = getattr(selected, "validate_spec", None)
             if validate:
                 reasons.extend(validate(scenes))
-            limits = selected.limits
-            minimum_scenes = 1 if selected.id == engines.V1SlideshowAdapter.id else limits.min_scenes
-            if (plan["aspect"] not in limits.aspects
-                or not minimum_scenes <= len(scenes) <= limits.max_scenes
-                or not limits.min_segment_seconds <= segment["seconds"] <= limits.max_segment_seconds
-                or any(s["seconds"] > limits.max_scene_seconds for s in scenes)):
-                reasons.append(f"{selected.id}: aspect/scene/duration limits exceeded")
+            minimum_scenes = 1 if selected.id == engines.V1SlideshowAdapter.id else selected.limits.min_scenes
+            over = engines.limit_violations(
+                selected, plan["aspect"], scenes, segment["seconds"], minimum_scenes=minimum_scenes
+            )
+            if over:
+                reasons.append(f"{selected.id}: aspect/scene/duration limits exceeded ({'; '.join(over)})")
         return reasons
     limits = adapter.limits
     if plan["aspect"] not in limits.aspects:
@@ -221,11 +220,9 @@ def dispatch_blockers(plan: dict[str, Any], *, runtime_preflight: bool = True) -
 
 def _style_defaults(plan: dict[str, Any], adapter: engines.EngineAdapter) -> dict[str, Any]:
     """Style DNA에서 이 엔진이 실제로 반영하는 매개변수만 골라 적용 내역을 남긴다."""
-    style = plan.get("style")
+    style = plan.get("style") or {}
     applied: dict[str, Any] = {}
     ignored: list[str] = []
-    if not style:
-        return {"style_dna": None, "applied": applied, "ignored": ignored}
     # 계획에 저장되는 style 은 합성 결과(ComposeResult)라 facet 이 `dna` 아래에 있다. 이전에는 최상위만 읽어서
     # 실제 계획의 animation/transition/caption_style 이 조용히 적용되지 않았다. 평평한 형태도 계속 받는다.
     dna = style.get("dna") or style
@@ -237,6 +234,15 @@ def _style_defaults(plan: dict[str, Any], adapter: engines.EngineAdapter) -> dic
             applied[name] = value
         else:
             ignored.append(f"{facet}.{key}={value!r}(엔진이 받지 않는 값)")
+    # 사용자가 정한 조건(production_decisions.render_controls)은 Style DNA 기본값보다 앞선다.
+    # 엔진이 받는 값만 적용하고, 받지 않는 값은 무시한 사실을 남긴다.
+    user_controls: dict[str, Any] = {}
+    for name, control in production_decisions.render_controls(plan).items():
+        if control["value"] in adapter.style_params.get(name, ()):
+            applied[name] = control["value"]
+            user_controls[name] = control["decision"]
+        else:
+            ignored.append(f"{name}={control['value']!r}({control['decision']}: 엔진이 받지 않는 값)")
     consumed = {facet for facet, _ in STYLE_SOURCES.values()}
     ignored += [
         f"{field}(이 엔진은 반영하지 않음)"
@@ -252,7 +258,10 @@ def _style_defaults(plan: dict[str, Any], adapter: engines.EngineAdapter) -> dic
         )
         if dna.get(field) and field not in consumed
     ]
-    return {"style_dna": style.get("sha256"), "applied": applied, "ignored": ignored}
+    result = {"style_dna": style.get("sha256"), "applied": applied, "ignored": ignored}
+    if user_controls:
+        result["user_controls"] = user_controls
+    return result
 
 
 def style_render_controls(adapter: engines.EngineAdapter | None = None) -> dict[str, Any]:

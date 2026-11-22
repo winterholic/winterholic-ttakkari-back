@@ -62,6 +62,36 @@ def single_shot_reasons(engine_id: str, scenes: list[dict[str, Any]]) -> list[st
     ]
 
 
+def limit_violations(
+    adapter: EngineAdapter, aspect: str, scenes: list[dict[str, Any]], segment_seconds: float,
+    *, minimum_scenes: int | None = None,
+) -> list[str]:
+    """구간 하나가 엔진 규격(화면비·장면 수·장면 길이·구간 길이)을 넘는 이유. 비어 있으면 규격 안이다.
+
+    dispatch(렌더 직전)와 계획 단계의 engine_fit이 같은 판정을 쓴다. 사용자가 고른 화면비·길이가
+    엔진 한도와 부딪치는지를 렌더를 시도하기 전에 이유와 함께 보여 주기 위해서다.
+    """
+    limits = adapter.limits
+    floor = limits.min_scenes if minimum_scenes is None else minimum_scenes
+    reasons = []
+    if aspect not in limits.aspects:
+        reasons.append(f"화면비 {aspect}: {adapter.id}는 {', '.join(limits.aspects)}만 지원합니다")
+    if not floor <= len(scenes) <= limits.max_scenes:
+        reasons.append(
+            f"장면 {len(scenes)}개: {adapter.id}는 구간당 {floor}~{limits.max_scenes}개만 받습니다"
+        )
+    if not limits.min_segment_seconds <= segment_seconds <= limits.max_segment_seconds:
+        reasons.append(
+            f"구간 {segment_seconds:g}초: {adapter.id}는 {limits.min_segment_seconds:g}~{limits.max_segment_seconds:g}초만 받습니다"
+        )
+    long_scenes = [s["scene_id"] for s in scenes if s["seconds"] > limits.max_scene_seconds]
+    if long_scenes:
+        reasons.append(
+            f"장면 {', '.join(long_scenes)}: {adapter.id}의 장면 한도 {limits.max_scene_seconds:g}초 초과"
+        )
+    return reasons
+
+
 class V1SlideshowAdapter:
     """스튜디오 v1 FFmpeg 슬라이드쇼 렌더러(`creative/render.py`)."""
 

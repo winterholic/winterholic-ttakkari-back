@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ttakkari.creative.v2 import production_decisions
 from ttakkari.creative.v2.catalog_data import ENTRIES
 from ttakkari.creative.v2.duration import (
     Beat,
@@ -433,7 +434,7 @@ def _layout(profile: ContentProfile, planned: DurationPlan) -> DurationPlan:
 
 def _match_plan(
     brief: str, intent: IntentSpec, registry: Registry,
-    direction: ProductionDirection | None,
+    direction: ProductionDirection | None, tone: list[str] | None = None,
 ) -> MatchResult:
     kafka_flow = bool(
         direction
@@ -442,9 +443,10 @@ def _match_plan(
         and KAFKA_MIN_SCENES <= len(direction.scenes) <= KAFKA_MAX_SCENES
         and all(s.strategy == "code_motion" and s.preset == "kafka_flow" for s in direction.scenes)
     )
+    extra = {"tone": tone} if tone else {}
     if kafka_flow:
-        return match_intent(brief, intent, registry, kafka_flow=True)
-    return match_intent(brief, intent, registry)
+        return match_intent(brief, intent, registry, kafka_flow=True, **extra)
+    return match_intent(brief, intent, registry, **extra)
 
 
 def build_plan(
@@ -507,7 +509,8 @@ def build_plan(
             "의도 검증 실패: "
             + "; ".join(f"{e.path} {e.message}" for e in validation.errors)
         )
-    match = _match_plan(brief, intent, registry, director)
+    match_tone = prepared.tone if prepared else []
+    match = _match_plan(brief, intent, registry, director, match_tone)
     beats, basis, beat_warnings = _beats(intent)
     profile = ContentProfile(beats=beats, music_seconds=intent.music_seconds)
     duration = plan_duration(profile, intent.duration)
@@ -570,7 +573,7 @@ def build_plan(
             notes.append(
                 f"미지원 조건 {len(prepared.spec.unsupported)}개는 계획에 반영되지 않았습니다(intent_projection.not_applied 참고)."
             )
-    return {
+    plan = {
         "id": plan_id,
         "revision": 1,
         "created_at": now(),
@@ -586,6 +589,7 @@ def build_plan(
         else "confirmed",
         "validation": validation.model_dump(mode="json"),
         "match": match.model_dump(mode="json"),
+        **({"match_tone": match_tone} if match_tone else {}),
         "style": style,
         "profile": profile.model_dump(mode="json"),
         "basis": basis,
@@ -605,6 +609,11 @@ def build_plan(
             }
         ],
     }
+    if prepared is not None:
+        production_decisions.apply(
+            plan, registry, segments=render_plan(plan)["segments"], scaffolds=frozenset(SCAFFOLDS)
+        )
+    return plan
 
 
 def _sync_duration(plan: dict[str, Any], request: DurationRequest) -> None:
@@ -669,6 +678,7 @@ def _blockers(plan: dict[str, Any]) -> list[str]:
         reasons.append("의도가 확인되지 않았습니다(단어 힌트 초안).")
     if plan.get("style") and plan["style"]["status"] == "unresolved":
         reasons.append("Style DNA 충돌이 해결되지 않았습니다.")
+    reasons += production_decisions.blockers(plan)
     return reasons
 
 
@@ -695,6 +705,7 @@ class PlanStore:
             current_match = _match_plan(
                 plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry,
                 ProductionDirection.model_validate(plan["director"]) if plan.get("director") else None,
+                plan.get("match_tone"),
             )
             current_capabilities = _capability_snapshot(
                 current_match.model_dump(mode="json")
@@ -805,7 +816,7 @@ class PlanStore:
                 intent = IntentSpec.model_validate(plan["intent"]).model_copy(
                     update={"duration": request}
                 )
-                match = _match_plan(plan["brief"], intent, registry, direction)
+                match = _match_plan(plan["brief"], intent, registry, direction, plan.get("match_tone"))
                 plan["match"] = match.model_dump(mode="json")
             style_hash = (plan.get("style") or {}).get("sha256")
             if caption_updates:
@@ -912,6 +923,9 @@ class PlanStore:
             plan["intent"]["duration"] = request.model_dump(mode="json")
             if duration is not None and plan.get("intent_v2"):
                 _sync_duration(plan, request)
+            production_decisions.apply(
+            plan, registry, segments=render_plan(plan)["segments"], scaffolds=frozenset(SCAFFOLDS)
+        )
             plan["revision"] += 1
             plan["approval"] = None
             plan["history"].append(

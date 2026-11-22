@@ -75,7 +75,7 @@ Condition {
 
 - `schema_version`은 문서 형식의 버전, `revision`은 이 의도의 변경 번호다.
 - resolve는 상태를 저장하지 않는다. 클라이언트가 직전 응답의 `intent`를 그대로 보내면 `revision`이 1 오르고 `history`가 이어진다. `intent` 없이 보내면 revision 1에서 새로 시작한다.
-- `HistoryEntry {revision, at, actor(user|ai|system|migration), action, detail}`. action 값: `created`, `condition_read`, `condition_confirmed`, `condition_rejected`, `answered`, `duration_conflict`, `aspect_conflict`, `conflict_resolved`, `reference_added`, `unsupported_condition`, `migrated_from_v1`, `strength_downgraded`, `legacy_open_question`. 최근 400건만 유지한다.
+- `HistoryEntry {revision, at, actor(user|ai|system|migration), action, detail}`. action 값: `created`, `condition_read`, `condition_confirmed`, `condition_rejected`, `answered`, `duration_conflict`, `aspect_conflict`, `conflict_resolved`, `reference_added`, `unsupported_condition`, `migrated_from_v1`, `strength_downgraded`, `legacy_open_question`, `stale_text_removed`, `evidence_pruned`, `info_items_set`, `music_seconds_set`. 최근 400건만 유지한다.
 - 계획(PlanStore)은 아직 v1을 받는다. 계획 생성 시 v2 스냅샷과 revision을 계획에 묶는 일은 §10 후속이다.
 
 ## 5. 충돌 표현과 해결
@@ -260,3 +260,31 @@ C에 구조화 길이 30초를 함께 넣으면 `conflict.duration`(후보 `targ
 - 운영 연결: `TTAKKARI_CREATIVE_REVIEW_CLI_MODEL`을 지정하면 `create_app`이 평가자를 묶는다. 비우면 기존처럼 `not_connected`와 unknown이다. 이 설정은 기본값이 꺼져 있고 운영에서 켜지 않았다.
 - 2D MP4(SHA `0341dd63…a2`)를 이 평가자로 돌려 `semantic_qa`가 fail(자막 바와 캐릭터 발 겹침 결함 1건), `style_continuity`는 pass로 저장됐다. 불확실도가 기준(0.25)을 넘은 `intent_alignment`와 `text_legibility`는 정책대로 unknown이다. 이 파일은 평가 계획에 묶은 기존 결과물이며 이번에 다시 렌더하지 않았다.
 - 평가자 격리(독립 검증 반영): CLI는 `--restricted --tools Read --strict-mcp-config --disable-slash-commands`로 실행한다. 파일 도구는 review 디렉터리로 한정되고 사용자 설정·훅·MCP는 로드되지 않는다. review 밖 파일 읽기는 CLI가 `is_error`로 거부했다(haiku 실제 호출). 근거 프레임은 Read 호출에 성공한 `tool_result`가 있는 것만 인정한다. 평가자 실행이 실패하면 `review_execution`에 `status=evaluator_failed`, `verdict=unknown`, 오류 요약을 남기고 예외는 그대로 올린다. 장면 제목·나레이션이 프롬프트에 들어가고 평가 근거 문장이 영수증에 저장되므로 계획과 같은 민감도로 다룬다.
+
+## 16. 조건 → 제작 결정 연결 (2026-11-22)
+
+코드: `production_decisions.py`(결정 도출), `plans.py`(생성·편집 때 호출), `dispatch.py`(렌더 제어 적용), `matching.py`(톤 점수), `engines.limit_violations`(규격 판정). 시험: `unit_tests/test_creative_v2_intent_wiring.py`.
+
+**자연어 수정 직후 이전 의도.** `/intent/resolve`는 `intent`와 새 `brief`를 받으면 새 브리프에 근거 인용이 없는 자유 입력·AI 해석 조건과 길이·비율을 걷어 낸다(`stale_text_removed`). 확정 조건은 남기고 사라진 인용만 지운다(`evidence_pruned`). `POST /plans`는 현재 브리프에 인용이 없는 조건(확정 포함)을 보면 422 `intent_stale`로 거부한다. 클라이언트가 resolve를 건너뛰어도 이전 문장의 의도로 계획이 만들어지지 않는다.
+
+**입력 추가(하위 호환).** `ResolveRequest.info_items`·`music_seconds`는 선택 필드다. 없으면 직전 의도 값을 이어받고, 빈 목록은 비우기다. 전달 항목이 있으면 계획의 장면(`basis=info_items`)과 길이 산정이 이 항목에서 나온다.
+
+**`plan.production_decisions`.** 답변·톤·추천값·카탈로그 조건·합성 Style DNA를 작화(`visual`)·조명·카메라·음향·전환·편집(`editing`)·액션(`motion`)·정보 구조(`information`)의 결정으로 푼다. 결정마다 `origin`(user_confirmed, user_free_text, ai_inferred, rule_recommended, style_dna)과 실행 상태를 둔다.
+
+| status | 뜻 |
+|---|---|
+| `executable` | 선택된 엔진 어댑터가 소비하는 렌더 제어(`render_controls`)가 있고 사용자의 말에서 나온 값이다. dispatch가 Style DNA 기본값보다 앞서 적용하고 기록(`style.user_controls`)에 남긴다. |
+| `plan_only` | 계획·장면(`scene.production`)·AI 감독 입력에만 반영된다. `status_reason`에 이유가 있다(추천값은 확정 전, 엔진이 값을 받지 않음, 실행기 미연결 등). |
+| `unsupported` | 필요한 능력이 없거나 미검증이다. 사유를 `intent_projection.not_applied`에 남기고 장면 지시에서는 뺀다. |
+
+현재 렌더 제어로 이어지는 값은 정지 이미지 합성기가 받는 `transition`, `animation`, `caption_style`뿐이다(전환 cut/dissolve, 카메라 dolly/tracking/crane, 자막 표시). 나머지는 plan_only다. 소비된 답변은 `not_applied`에서 빠지고 `intent_projection.items`에 `kind=answer`와 `execution`으로 나타난다. 현재 조건 조합에서 숨겨진 설정의 답변은 `production_decisions.not_applied`에 이유와 함께 남는다.
+
+**장면 기록.** `scene.production.by_category`에 장면에 적용되는 지시가, `scene.information`에 장면 길이 대비 정보량(`ratio`, `treatment` full·condensed·minimal·extended, 비필수 `drop_candidate`)이 남는다. 컷 템포 `slow_build_burst`는 장면 위치(앞 60%/뒤 40%)로 빌드업·폭발 지시를 나눈다.
+
+**필수 조건 연결.** `production_decisions.required_conditions`는 필수 조건이 레시피 fits, Style DNA, 렌더 제어, 장면 기록 중 어느 경로로 이어지는지 적는다. 유형·세계관·화풍·구조·전환 계열이 어디에도 이어지지 않으면 `unrealized`이고 승인 차단 사유(`render_blockers`)다. 사용자가 말한 길이를 정보량이 크게 못 채우면(`deviation_level=excessive`) `production_decisions.length.treatment`가 `capacity_short` 또는 `condensation_needed`이고 같은 차단 사유가 된다. 대안(내용 추가, 길이 조정)은 사용자 승인이 필요하다.
+
+**레시피 매칭과 톤.** `match_intent(tone=...)`는 톤을 드러내는 카탈로그 항목(`matching.TONE_FITS`)이 레시피 `fits`에 있으면 점수에 0.10을 가산한다. 레시피를 적격으로 만들지는 않는다. 톤이 없으면 지문이 달라지지 않는다. 계획은 매칭에 쓴 톤을 `match_tone`에 저장해 `get()`이 같은 매칭을 다시 계산한다(이 필드가 없는 기존 계획은 톤 없이 계산해 승인이 유지된다).
+
+**엔진 한도와 장면별 엔진.** `production_decisions.engine_fit`은 화면비·장면 수·장면 길이·구간 길이와 어댑터의 `validate_spec`(프리셋 엔진이 소비하지 못하는 카메라·모션 조건 포함)을 렌더 전에 구간별로 판정한다. `status`는 ok, blocked, no_engine(필수 능력을 맡는 제작 엔진이 없어 비교 불가)이다. 장면마다 다른 엔진은 검토된 `director`의 `strategy`로 이미 가능하고, 구간마다 어댑터가 정해지며 `mixed_engines`로 표시된다. 매칭은 조건을 버리고 R21로 낮추지 않는다. 어떤 풍부한 레시피도 맞지 않으면 R21이 후보가 되지만, 필수 조건은 `required_conditions`가 연결 여부를 따로 판정한다.
+
+**품질 검수.** 사전 루브릭(`quality.build_rubric`)이 사용자 조건에서 나온 결정(`intent_decisions`)과 장면별 지시를 검수 입력으로 받는다.

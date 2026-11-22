@@ -186,10 +186,19 @@ def build_rubric(plan: dict[str, Any]) -> dict[str, Any]:
                 "end_time": sc.get("end_time"),
                 "narrative_goal": sc.get("narrative_goal"),
                 "shots": deepcopy(sc.get("shots", [])),
+                **({"production": deepcopy(sc["production"]["by_category"])} if sc.get("production") else {}),
             }
             for sc in plan.get("scenes", [])
         ],
     }
+    decisions = (plan.get("production_decisions") or {}).get("decisions")
+    if decisions:
+        # 사용자가 말한 조건에서 나온 결정만 검수 기준으로 넘긴다. 추천·미지원 항목은 검수 대상이 아니다.
+        rubric["intent_decisions"] = [
+            {"id": d["id"], "category": d["category"], "directive": d["directive"], "status": d["status"]}
+            for d in decisions
+            if d["origin"] in ("user_confirmed", "user_free_text") and d["status"] != "unsupported"
+        ]
     return {**rubric, "sha256": content_hash(rubric)}
 
 

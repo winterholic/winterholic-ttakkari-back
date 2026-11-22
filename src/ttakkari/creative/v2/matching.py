@@ -37,6 +37,17 @@ VERDICT_RANK = {
     "blocked": 0,
 }
 WEIGHT = {"must": 3.0, "should": 2.0, "prefer": 1.0}
+# 톤(의도 v2의 tone.*)은 카탈로그 항목이 아니다. 톤을 드러내는 카탈로그 항목이 레시피 fits에 있으면 그 레시피에 가산한다.
+# 가산은 점수 보정일 뿐 레시피를 적격으로 만들지 않는다(fit>0 조건은 그대로).
+TONE_FITS: dict[str, tuple[str, ...]] = {
+    "tone.horror": ("C05.night", "C05.fog", "C05.volumetric_light", "C04.monster"),
+    "tone.action": ("C07.battle", "C07.run", "C07.collision", "C07.vehicle_move", "C07.destruction"),
+    "tone.emotional": ("C05.dusk", "C10.dissolve", "C09.emotional_sound", "C09.music_beat"),
+    "tone.epic": ("C07.crowd", "C05.battlefield", "C06.aerial", "C06.crane"),
+    "tone.comedy": ("C03.western_cartoon",),
+    "tone.calm": ("C05.natural_light", "C05.forest"),
+}
+TONE_WEIGHT = 0.10
 
 
 class NeedSource(Strict):
@@ -120,19 +131,19 @@ def _priority(sel: Selection, relation: str) -> Literal["must", "should", "prefe
     return "must" if sel.strength == "hard" else "should"
 
 
-def _fingerprint(registry: Registry, intent: IntentSpec) -> str:
+def _fingerprint(registry: Registry, intent: IntentSpec, tone: tuple[str, ...] = ()) -> str:
     states = [(s.id, s.installed, sorted(s.levels.items())) for s in registry.states()]
     dumped = intent.model_dump(mode="json")
     # confirmed=False는 모양이 추가되기 전 의도와 같은 뜻이다. 키를 빼서 이미 저장·승인된 계획의 지문을 바꾸지 않는다.
     for sel in dumped["selections"]:
         if not sel.get("confirmed"):
             sel.pop("confirmed", None)
+    body: dict[str, Any] = {"v": MATCHING_VERSION, "intent": dumped, "states": states}
+    if tone:
+        # 톤이 없으면 키를 넣지 않아 톤 도입 전에 승인된 계획의 지문을 바꾸지 않는다.
+        body["tone"] = list(tone)
     payload = json.dumps(
-        {
-            "v": MATCHING_VERSION,
-            "intent": dumped,
-            "states": states,
-        },
+        body,
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -313,7 +324,7 @@ def _recipe_universe(recipe) -> set[str]:
 
 def _score_recipes(
     registry: Registry, selections: list[Selection], needs: list[CapabilityNeed],
-    *, kafka_flow: bool = False,
+    *, kafka_flow: bool = False, tone: tuple[str, ...] = (),
 ) -> list[RecipeCandidate]:
     total_weight = sum(_selection_weight(s) for s in selections) or 1.0
     need_weight = sum(WEIGHT[n.priority] for n in needs) or 1.0
@@ -342,7 +353,11 @@ def _score_recipes(
             elif e in by_id:
                 reasons.append(f"{e}는 이 레시피와 충돌(감점)")
                 fit = max(0.0, fit - 0.25 * _selection_weight(by_id[e]) / total_weight)
-        score = round(0.40 * fit + 0.30 * coverage + 0.30 * executability, 4)
+        tone_hits = [t for t in tone if set(TONE_FITS.get(t, ())) & set(recipe.fits)]
+        tone_fit = len(tone_hits) / len(tone) if tone else 0.0
+        if tone:
+            reasons.append("톤 일치: " + (", ".join(tone_hits) if tone_hits else "없음"))
+        score = round(0.40 * fit + 0.30 * coverage + 0.30 * executability + TONE_WEIGHT * tone_fit, 4)
         out.append(
             RecipeCandidate(
                 recipe_id=recipe.id,
@@ -388,7 +403,7 @@ def _substitutes(
 
 def match_intent(
     brief: str, intent: IntentSpec, registry: Registry | None = None,
-    *, kafka_flow: bool = False,
+    *, kafka_flow: bool = False, tone: list[str] | tuple[str, ...] = (),
 ) -> MatchResult:
     registry = registry or Registry()
     validation = validate_intent(brief, intent)
@@ -424,7 +439,8 @@ def match_intent(
         )
     )
 
-    candidates = _score_recipes(registry, selections, needs, kafka_flow=kafka_flow)
+    tone = tuple(sorted(t for t in tone if t in TONE_FITS))
+    candidates = _score_recipes(registry, selections, needs, kafka_flow=kafka_flow, tone=tone)
     viable = [c for c in candidates if c.disqualified is None and c.fit > 0]
     # 기준선 레시피(정지 이미지 슬라이드쇼)는 풍부한 레시피가 하나도 맞지 않을 때만 주 레시피가 된다.
     rich = [c for c in viable if not registry.recipes[c.recipe_id].baseline]
@@ -596,5 +612,5 @@ def match_intent(
         gaps=gaps,
         style_resolution_needed=style_needed,
         trace=trace,
-        fingerprint=_fingerprint(registry, intent),
+        fingerprint=_fingerprint(registry, intent, tone),
     )

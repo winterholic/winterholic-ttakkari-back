@@ -384,6 +384,62 @@ def _find(hint: str, brief: str) -> str | None:
     return found.group(0) if found else None
 
 
+def _quoted(evidence, brief: str) -> bool:
+    folded = brief.casefold()
+    return any(span.quote.casefold() in folded for span in evidence)
+
+
+def stale_text_items(spec: IntentSpecV2, brief: str, *, include_confirmed: bool = False) -> list[str]:
+    """브리프가 바뀐 뒤에도 남은, 현재 브리프에 근거 인용이 없는 항목의 id.
+
+    기본은 자유 입력·AI 해석만 본다. 이 둘은 인용이 근거의 전부라서 인용이 사라지면 이전 문장의 의도가 새 계획에
+    섞인다(자연어 수정 직후 이전 의도로 계획이 만들어지는 경로). 사용자가 확정(user_confirmed)한 항목은 인용이
+    사라져도 남기고 인용만 지운다(`prune_evidence`). include_confirmed=True는 계획 생성 검사용으로, 확정 항목의
+    낡은 인용도 거부 사유로 센다. 인용이 처음부터 없는 AI 해석은 판정할 수 없어 남긴다.
+    """
+    if not brief:
+        return []
+    origins = ("user_free_text", "ai_inferred", *(("user_confirmed",) if include_confirmed else ()))
+    stale = [
+        c.id
+        for c in spec.conditions
+        if c.origin in origins and c.evidence and not _quoted(c.evidence, brief)
+    ]
+    for name, choice in (("duration", spec.duration), ("aspect", spec.aspect)):
+        if (
+            choice is not None
+            and choice.origin in origins
+            and choice.evidence
+            and not _quoted(choice.evidence, brief)
+        ):
+            stale.append(name)
+    return stale
+
+
+def prune_evidence(spec: IntentSpecV2, brief: str) -> tuple[IntentSpecV2, list[str]]:
+    """확정 항목에 남은, 현재 브리프에 없는 인용을 지운다. 확정은 사용자의 결정이라 항목은 유지한다."""
+    if not brief:
+        return spec, []
+    folded = brief.casefold()
+    pruned: list[str] = []
+
+    def keep(evidence):
+        return [e for e in evidence if e.quote.casefold() in folded]
+
+    conditions = []
+    for c in spec.conditions:
+        if c.origin == "user_confirmed" and c.evidence and not _quoted(c.evidence, brief):
+            c = c.model_copy(update={"evidence": keep(c.evidence)})
+            pruned.append(c.id)
+        conditions.append(c)
+    update: dict[str, Any] = {"conditions": conditions}
+    for name, choice in (("duration", spec.duration), ("aspect", spec.aspect)):
+        if choice is not None and choice.origin == "user_confirmed" and choice.evidence and not _quoted(choice.evidence, brief):
+            update[name] = choice.model_copy(update={"evidence": keep(choice.evidence)})
+            pruned.append(name)
+    return (spec.model_copy(update=update) if pruned else spec), pruned
+
+
 _STRICT_WORDS = re.compile(r"(정확히|딱|반드시|이내|넘지\s*않)")
 _ASPECT_WORDS: tuple[tuple[str, Aspect], ...] = (
     ("세로", "9:16"),

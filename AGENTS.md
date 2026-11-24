@@ -10,3 +10,9 @@
 - `~/bin/ttk get|post|patch <경로> [JSON]`를 쓴다. 키체인에서 로그인하고 비밀번호·토큰은 출력하지 않는다. 키체인 값(`security find-generic-password -w`)을 직접 읽지 않는다.
 - 예: `ttk get /api/sessions`, 오케스트레이터에 지시는 `ttk post /api/sessions/<id>/runs '{"prompt":"..."}'`.
 - `/api/orchestrator/*` 워커 API는 오케스트레이터 세션 전용 JWT(`aud=ttakkari-orch`)가 필요해 `ttk`로 부를 수 없다. 워커는 오케스트레이터 세션에 Run을 보내 간접으로 다룬다.
+
+## 회사 프로젝트 작업 규칙
+
+- 소유자 API `POST /api/assistant/memories`에 `kind: instruction`, `scope: work`, `pinned: false`, `source_ref: run-project-guidance:<쉼표로 구분한 프로젝트 별칭>`을 지정합니다. 본문에는 프로젝트 규칙의 정본 위치와 시작·완료 시 확인할 내용을 짧게 적습니다.
+- 회사 Run이 시작되면 작업 공간, 현재 지시, 세션 제목과 최초 작업 지시에서 별칭을 찾습니다. 회사 작업자의 상위 작업도 같은 방식으로 확인합니다. 사용자 소유자 API에서 등록한 활성 규칙만 붙으며, 에이전트가 저장하는 기억과 개인 Run에는 이 경로가 적용되지 않습니다.
+- 규칙 변경은 기존 메모리의 본문을 수정하고, 폐기는 해당 메모리를 보관 처리합니다. 회사 프로젝트 본문과 식별자는 공개 코드에 커밋하지 않습니다.

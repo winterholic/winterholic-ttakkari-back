@@ -2693,9 +2693,12 @@ async def _artcraft_plan(db: AsyncSession, sess: ChatSession, run: Run, outbox: 
 
 async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     from ttakkari.orchestrator import work
+    from ttakkari.runs import project_guidance
+
     sess = await db.get(ChatSession, run.session_id)
     contract = await work.prompt_note(db, sess) if sess is not None else ""
-    prompt = (contract + "\n\n" if contract else "") + run.prompt
+    guidance = await project_guidance.prompt_note(db, sess, run) if sess is not None else ""
+    prompt = (guidance + "\n\n" if guidance else "") + (contract + "\n\n" if contract else "") + run.prompt
     if not run.context_artifact_ids:
         return prompt
     lines = []

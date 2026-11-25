@@ -341,14 +341,14 @@ async def test_private_revoke_intents_retry_after_transport_and_local_commit_fai
 
 
 @pytest.mark.asyncio
-async def test_work_v1_v2_issue_and_publish_block_and_existing_v1_gateway_contract(client, auth, private_gateway):
+async def test_work_v1_v2_issue_and_publish_and_existing_v1_gateway_contract(client, auth, private_gateway):
     gateway = private_gateway
     personal = await make_project("Acceptance Work", {"internal.md": "synthetic internal only"})
     legacy_draft, _ = await publish(client, auth, personal["entity_id"], list(personal["docs"].values()))
     legacy = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": legacy_draft["slug"]})
     assert legacy.status_code == 201
     # A published project's active draft enters the work scope: keep its existing v1 row intact,
-    # then verify every new key type is blocked before any Gateway issuance.
+    # then verify every new key type is still issued.
     async with sessionmaker()() as db:
         row = await db.get(ShareDraft, uuid.UUID(legacy_draft["id"]))
         row.scope = "work"
@@ -357,17 +357,17 @@ async def test_work_v1_v2_issue_and_publish_block_and_existing_v1_gateway_contra
         {"project_slug": legacy_draft["slug"], "credential_type": "single_use_v1"},
         {"project_slug": legacy_draft["slug"], "credential_type": "reusable_api_v2"},
     ):
-        blocked = await client.post(f"{BASE}/keys", headers=auth, json=body)
-        assert blocked.status_code == 403 and blocked.json()["code"] == "work_sharing_policy_required"
+        issued = await client.post(f"{BASE}/keys", headers=auth, json=body)
+        assert issued.status_code == 201, issued.text
 
     work = await make_project("Acceptance New Work", {"internal.md": "new internal synthetic only"}, scope="work")
     work_draft_response = await client.post(f"{BASE}/drafts", headers=auth, json={
         "entity_id": work["entity_id"], "document_ids": list(work["docs"].values()), "confirm_work_scope": True})
     assert work_draft_response.status_code == 201, work_draft_response.text
     work_draft = work_draft_response.json()
-    blocked_new_publish = await client.post(f"{BASE}/drafts/{work_draft['id']}/publish", headers=auth,
-                                            json={"approved_digest": work_draft["preview"]["digest"]})
-    assert blocked_new_publish.status_code == 403 and blocked_new_publish.json()["code"] == "work_sharing_policy_required"
+    work_publish = await client.post(f"{BASE}/drafts/{work_draft['id']}/publish", headers=auth,
+                                     json={"approved_digest": work_draft["preview"]["digest"]})
+    assert work_publish.status_code == 200, work_publish.text
     listed = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
     preserved = next(item for item in listed if item["id"] == legacy.json()["id"])
     assert preserved["status"] == "active" and preserved["credential_type"] == "single_use_v1"

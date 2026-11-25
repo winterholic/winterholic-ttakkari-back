@@ -541,7 +541,7 @@ async def test_key_route_rejects_invalid_v2_ttl_and_mixed_link_type(client, auth
     assert rejected.status_code == 422
 
 
-async def test_work_publication_blocks_new_v1_and_v2_keys_without_reinterpreting_existing_v1(client, auth, gateway):
+async def test_work_publication_issues_new_v1_and_v2_keys_without_reinterpreting_existing_v1(client, auth, gateway):
     _, draft, _ = await published_project(client, auth, gateway)
     existing = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     assert existing.status_code == 201
@@ -549,17 +549,13 @@ async def test_work_publication_blocks_new_v1_and_v2_keys_without_reinterpreting
         row = await db.get(ShareDraft, draft["id"])
         row.scope = "work"
         await db.commit()
-    calls_before = list(gateway.calls)
     v1 = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"]})
     v2 = await client.post(f"{BASE}/keys", headers=auth, json={"project_slug": draft["slug"],
         "credential_type": "reusable_api_v2"})
     link = await client.post(f"{BASE}/links", headers=auth, json={"project_slug": draft["slug"]})
     agent_v1 = await client.post("/api/agent/context-sharing/keys", headers=await agent_headers(), json={
         "project_slug": draft["slug"], "credential_type": "single_use_v1"})
-    assert v1.status_code == v2.status_code == link.status_code == agent_v1.status_code == 403
-    assert {v1.json()["code"], v2.json()["code"], link.json()["code"], agent_v1.json()["code"]} == {
-        "work_sharing_policy_required"}
-    assert gateway.calls == calls_before
+    assert v1.status_code == v2.status_code == link.status_code == agent_v1.status_code == 201
     listing = (await client.get(f"{BASE}/keys", headers=auth)).json()["keys"]
     old = next(item for item in listing if item["id"] == existing.json()["id"])
     assert old["credential_type"] == "single_use_v1" and old["status"] == "active"

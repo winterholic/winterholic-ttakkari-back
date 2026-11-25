@@ -211,11 +211,6 @@ async def _active_publication(db: AsyncSession, project_id: uuid.UUID, *, lock: 
     return await db.scalar(q.with_for_update() if lock else q)
 
 
-async def _publication_scope(db: AsyncSession, publication: SharePublication) -> str:
-    draft = await db.get(ShareDraft, publication.draft_id)
-    return draft.scope if draft else "personal"
-
-
 async def project_states(db: AsyncSession, entity_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
     if not entity_ids:
         return {}
@@ -312,16 +307,13 @@ async def collect_and_publish(db: AsyncSession, adapter: ContextSourceAdapter, g
                               user_agent: str | None = None) -> dict[str, Any]:
     """Publish every currently listed indexed document of one explicitly named project.
 
-    work 범위는 내부 draft 검토만 허용하고 외부 게시를 조직 정책 증명 없이 차단한다."""
+    work 범위는 사용자가 직접 요청했다는 confirm_work_scope=true 가 있어야 게시한다."""
     project_info = await adapter.get_project(entity_id)
     if project_info is None:
         raise ShareError(404, "project_not_found", "라이브러리에 그런 프로젝트가 없습니다.")
     if project_info.scope == "work" and not confirm_work_scope:
         raise ShareError(403, "work_scope_confirmation_required",
                          "회사(work) 범위 프로젝트입니다. 사용자가 직접 요청했다면 confirm_work_scope=true 로 다시 요청하세요.")
-    if project_info.scope == "work":
-        raise ShareError(403, "work_sharing_policy_required",
-                         "조직 공유 정책 증명 없이는 회사 자료를 외부에 게시할 수 없습니다.")
     groups = await adapter.list_documents(entity_id)
     if any(group.truncated for group in groups):
         raise ShareError(422, "source_listing_truncated", "문서 목록이 제한을 넘어 전체 범위를 확인할 수 없습니다.")
@@ -517,8 +509,6 @@ async def publish_draft(db: AsyncSession, gateway: GatewayControl, draft_id: uui
         raise ShareError(422, "sensitive_content_blocked", "인증정보·내부 주소·로컬 경로 같은 고위험 항목이 남아 있어 게시할 수 없습니다. 초안을 고쳐 제거하세요.",
                          extra={"findings": pv["findings"], "counts": pv["counts"]})
     project = await _project_of(db, draft)
-    if draft.scope == "work":
-        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료를 외부에 게시할 수 없습니다.")
     if project.revoke_state == "revoking":
         raise ShareError(409, "project_revocation_pending", "프로젝트 공유 철회가 대기 중입니다.")
     detail = {"digest": digest, "slug": project.slug, "documents": len(docs)}
@@ -581,8 +571,6 @@ async def issue_key(db: AsyncSession, gateway: GatewayControl, slug: str, *, lab
         raise ShareError(503, "gateway_contract_incomplete",
                          "이전 게시 기록에 Gateway 프로젝트 ID가 없어 키를 발급할 수 없습니다. 새 초안을 게시해 주세요.",
                          headers={"Retry-After": "3600"})
-    if await _publication_scope(db, publication) == "work":
-        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료 키를 발급할 수 없습니다.")
     v2 = credential_type == "reusable_api_v2"
     if credential_type not in {"single_use_v1", "reusable_api_v2"} or (v2 and ttl_days not in {1, 3, 7, 30}):
         raise ShareError(422, "invalid_credential_type", "키 종류 또는 만료 기간이 올바르지 않습니다.")
@@ -663,8 +651,6 @@ async def issue_link(db: AsyncSession, gateway: GatewayControl, slug: str, *, la
         raise ShareError(409, "project_not_published", "게시된 스냅샷이 없어 링크를 발급할 수 없습니다.")
     if not gateway.public_url:
         raise ShareError(503, "gateway_not_configured", "공유 링크 public origin이 설정되지 않았습니다.")
-    if await _publication_scope(db, publication) == "work":
-        raise ShareError(403, "work_sharing_policy_required", "조직 공유 정책 증명 없이는 회사 자료 링크를 발급할 수 없습니다.")
     scopes = ["read", *( ["export"] if allow_export else [])]
     snapshot_id = publication.gateway_snapshot_id if snapshot_policy == "pinned" else None
     effective_label = label or f"{project.name} 공유 링크"

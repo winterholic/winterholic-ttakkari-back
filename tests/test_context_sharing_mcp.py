@@ -218,19 +218,16 @@ async def test_publish_tool_rejects_high_risk_and_unconfirmed_work_scope_sources
         app.dependency_overrides.pop(api.get_gateway, None)
 
 
-async def test_work_scope_confirmation_cannot_publish_external_content(monkeypatch):
+async def test_confirmed_work_scope_publishes_external_content(monkeypatch):
     fake = FakeGateway()
     app.dependency_overrides[api.get_gateway] = lambda: GatewayControl(fake, public_url="https://ctx.example.test")
     try:
         work = await make_project("Work", {"a.md": "# work context\ninternal summary\n"}, scope="work")
         _via_asgi(monkeypatch, await agent_headers())
-        denied = await _result("context_share_publish", {"entity_id": work["entity_id"], "confirm_work_scope": True})
-        assert denied["code"] == "work_sharing_policy_required"
-        assert fake.snapshots == {}
-        publishes = await _audit("context_share.publish")
-        # 조직 정책이 없는 현재 조건에서는 외부 게시 작업 자체를 시작하지 않아 임시 snapshot/draft도 만들지 않는다.
-        assert await _audit("context_share.draft_create") == []
-        assert publishes == []
+        published = await _result("context_share_publish", {"entity_id": work["entity_id"], "confirm_work_scope": True})
+        assert published["draft"]["status"] == "published", published
+        assert len(fake.snapshots) == 1
+        assert [d["scope"] for _, _, d in await _audit("context_share.draft_create")] == ["work"]
     finally:
         app.dependency_overrides.pop(api.get_gateway, None)
 
@@ -260,7 +257,7 @@ async def test_confirmed_work_scope_keeps_scanner_and_document_limits(monkeypatc
         confirmed = {"confirm_work_scope": True}
         results = [await _result("context_share_publish", {"entity_id": item["entity_id"], **confirmed})
                    for item in (risky, many, big)]
-        assert all(result["code"] == "work_sharing_policy_required" for result in results)
+        assert [result["code"] for result in results] == ["sensitive_content_blocked", "too_many_documents", "draft_too_large"]
         assert fake.snapshots == {}
         assert all(d["confirm_work_scope"] for _, _, d in await _audit("context_share.draft_create"))
     finally:

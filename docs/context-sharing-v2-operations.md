@@ -245,7 +245,7 @@ Private `GET /api/context-sharing/site`로 현재 Gateway 전역 site 상태를 
 
 ### 회사 범위와 조직 정책
 
-조직 공유 정책 증명이 없는 현재 구현은 회사(`work`) 프로젝트의 신규 외부 게시, 신규 v1/v2 API key 및 신규 share link 발급을 `403 work_sharing_policy_required`로 차단한다. 요청 타입을 v1로 바꾸거나 `confirm_work_scope`를 보내도 우회할 수 없다. 기존에 발급된 v1 행은 재해석/자동 폐기되지 않는다. 회사 자료 외부 공유를 운영에서 허용하려면 조직 승인 정책과 증명·감사·운영 소유권을 별도 설계·승인해야 한다. 현재 임의 allow flag나 정책 우회 설정은 없다.
+회사(`work`) 프로젝트는 초안 생성과 에이전트 게시에서 `confirm_work_scope=true`가 있어야 하고, 없으면 `403 work_scope_confirmation_required`다. 확인을 거친 게시물은 개인 범위와 똑같이 키·링크를 발급한다. 조직 정책 증명 차단(`work_sharing_policy_required`)은 2026-11-25 사용자 결정으로 없앴다. 감사 로그의 `context_share.draft_create` detail에 `scope`와 `confirm_work_scope`가 남는다.
 
 ## HTTP detail 및 Private 오류 분류
 

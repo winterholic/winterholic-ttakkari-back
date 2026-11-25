@@ -83,7 +83,7 @@ REST와 MCP는 같은 인가·snapshot resolver를 쓴다. MCP에 export scope�
 - Gateway snapshot publish에 선택적 `operation_id`를 추가한다. Private는 draft UUID를 재시도 안정 ID로 전송한다. Gateway는 동일 operation/payload에 동일 receipt를 반환하고, 변경된 payload의 ID 재사용은 409한다. 기존 클라이언트의 ID 없는 v1 게시도 지원한다. 새 receipt 기록은 snapshot/latest와 같은 transaction에 둔다.
 - 폐기 요청은 Private에 내구 의도로 먼저 기록하고 Gateway에 전달한다. 성공 미확인 시 `revoking`/pending 상태와 재시도 오류를 반환하며 완료를 주장하지 않는다. 기존 app maintenance 패턴으로 pending 의도를 자동 재시도한다. 프로젝트 단위 요청은 새 발급/게시를 차단한다. 제어 통신 단절 중 Gateway에 아직 전달되지 않은 폐기를 즉시 반영했다고 주장하지 않는다. 이 분산 시스템 경계를 운영 문서와 UI에서 명시한다.
 - Gateway 폐기 성공 뒤 Private commit 실패는 보수적으로 pending을 유지하고 idempotent 재시도로 대사한다. 상태를 임의 복구하거나 만료를 연장하지 않는다.
-- 회사(work) 새 외부 게시와 새 자격 발급(v1 요청 포함)은 조직 승인 정책이 없는 현재 상태에서는 403 `work_sharing_policy_required`로 거절한다. 새 요청의 타입을 v1으로 바꿔 회사 자료 차단을 우회할 수 없다. 체크박스/scanner/에이전트 판단을 조직 승인으로 취급하지 않는다. 내부 초안 검토는 유지할 수 있다. 임의 allow 플래그나 조직 정책 우회 수단은 추가하지 않는다. 이미 발급된 v1 행을 재해석/자동 폐기하지 않으며 기존 1시간·단회 교환 의미도 보존한다.
+- 회사(work) 범위는 초안 생성·에이전트 게시 시 `confirm_work_scope=true`(소유자 화면의 외부 공유 의도 확인)를 요구한다. 그 뒤 게시·키·링크 발급은 개인 범위와 같다(2026-11-25 사용자 결정: 회사 업무에 쓰려고 만든 기능이라 조직 정책 증명 차단을 없앴다). 고위험 scanner와 문서 한도는 그대로다. 이미 발급된 v1 행을 재해석/자동 폐기하지 않으며 기존 1시간·단회 교환 의미도 보존한다.
 
 ## 파일 소유권과 검증
 

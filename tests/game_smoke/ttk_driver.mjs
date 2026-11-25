@@ -95,7 +95,8 @@ export class GameSession {
     const collected = { consoleErrors: [], pageErrors: [], failedRequests: [], badResponses: [] };
     // 게임은 sandbox iframe 이라 frame 의 콘솔도 page 이벤트로 올라온다.
     // 부모(front) 페이지가 스스로 내는 오류(service worker 등록 등)는 게임 검증 대상이 아니라 제외한다.
-    page.on('console', (m) => { if (m.type() === 'error' && !(hostOrigin && (m.location().url.startsWith(hostOrigin) || /unsupported MIME type|status of 401/.test(m.text())))) collected.consoleErrors.push(m.text()); });
+    // 크롬이 sandbox iframe 의 자동 focus 를 막으며 남기는 정책 알림도 게임 오류가 아니다(2026-11-24 부터 게이트를 막음).
+    page.on('console', (m) => { if (m.type() === 'error' && !(hostOrigin && (m.location().url.startsWith(hostOrigin) || /unsupported MIME type|status of 401/.test(m.text()))) && !/^Permissions policy violation: focus-without-user-activation/.test(m.text())) collected.consoleErrors.push(m.text()); });
     page.on('pageerror', (e) => { if (!(hostOrigin && String(e).includes(hostOrigin))) collected.pageErrors.push(String(e)); });
     page.on('requestfailed', (r) => collected.failedRequests.push(r.method() + ' ' + r.url() + ' ' + (r.failure() ? r.failure().errorText : '')));
     page.on('response', (r) => { if (r.status() >= 400 && !(hostOrigin && (r.url().startsWith(hostOrigin) || r.url().includes('/api/auth/')))) collected.badResponses.push(r.status() + ' ' + r.url()); });

@@ -551,19 +551,29 @@ async def _pause_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: A
     await cancel_queued_continuations(db, sess.id, reason)
 
 
-# 기획 세션이 자기에게 건 예약(schedule_action send_message)은 이 시간 안에 도래할 때만 후속의 소유자로 본다.
+# 기획 세션이 MCP schedule_action 으로 자기에게 건 예약은 이 시간 안에 도래할 때만 후속의 소유자로 본다.
 # 더 먼 예약 때문에 목표가 무기한 멈추지 않게 하는 상한이다.
 SELF_SCHEDULE_HORIZON = timedelta(hours=24)
+SELF_SCHEDULE_MARK = "created_by_session"  # 예약 생성 API 가 호출한 기획 세션 id 로 서버가 찍는다. 호출자가 정할 수 없다.
+
+
+def is_self_schedule(schedule: ScheduledAction, sid: uuid.UUID) -> bool:
+    """이 기획 세션이 직접 자기 세션에 건 send_message 예약인가. 사용자·다른 세션이 건 예약은 개인 예약이라 소유자가 아니다."""
+    payload = schedule.payload or {}
+    return (schedule.action_type == "send_message"
+            and payload.get("session_id") == str(sid) and payload.get(SELF_SCHEDULE_MARK) == str(sid))
 
 
 async def _owning_schedules(db: AsyncSession, sid: uuid.UUID) -> list[ScheduledAction]:
-    """이 세션에 메시지를 보낼 예정이라 다음 단계를 맡고 있는 예약. 계약 재개 예약은 기한과 무관하게, 그 밖의 예약은
-    pending 이면 상한 안에 도래할 때만, 실행 중(leased)이면 늘 소유자다. 실패·취소·만료된 예약은 소유자가 아니다."""
+    """이 세션에 메시지를 보낼 예정이라 다음 단계를 맡고 있는 예약. 계약 재개 예약은 기한과 무관하게, 기획이 자기에게 건
+    예약은 pending 이면 상한 안에 도래할 때만, 실행 중(leased)이면 늘 소유자다. 실패·취소·만료된 예약과 사용자·다른
+    세션이 건 개인 예약은 소유자가 아니다."""
     horizon = utcnow() + SELF_SCHEDULE_HORIZON
     rows = (await db.scalars(select(ScheduledAction).where(
         ScheduledAction.action_type == "send_message", ScheduledAction.status.in_(("pending", "leased")),
         ScheduledAction.payload["session_id"].as_string() == str(sid)))).all()
-    return [r for r in rows if is_contract_resume_schedule(r) or r.status == "leased" or r.due_at <= horizon]
+    return [r for r in rows if is_contract_resume_schedule(r)
+            or (is_self_schedule(r, sid) and (r.status == "leased" or r.due_at <= horizon))]
 
 
 async def _owner_exists(db: AsyncSession, sess: ChatSession, run: Run | None) -> bool:
@@ -587,6 +597,8 @@ async def resume_after_schedule_loss(db: AsyncSession, schedule: ScheduledAction
         sid = uuid.UUID(str((schedule.payload or {}).get("session_id")))
     except ValueError:
         return None
+    if not (is_contract_resume_schedule(schedule) or is_self_schedule(schedule, sid)):
+        return None  # 개인 예약은 소유자가 아니었으므로 사라져도 목표 후속을 되살리지 않는다.
     sess = await db.get(ChatSession, sid)
     if sess is None or sess.kind != SessionKind.orchestrator or sess.archived_at:
         return None

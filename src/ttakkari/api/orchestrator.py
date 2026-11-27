@@ -1061,6 +1061,11 @@ async def create_schedule_route(body: ScheduleCreateIn, sid: OrchestratorSession
     from ttakkari.schedules import create_schedule
     orch = await _orchestrator(db, sid)
     payload = dict(body.payload)
+    if body.action_type == "send_message":
+        # 호출 기획이 자기 세션에 건 예약만 목표 후속의 소유자가 된다(work.is_self_schedule). 표식은 서버가 찍고 입력은 버린다.
+        payload.pop(work.SELF_SCHEDULE_MARK, None)
+        if str(payload.get("session_id")) == str(sid):
+            payload[work.SELF_SCHEDULE_MARK] = str(sid)
     if body.action_type == "stop_all":
         # 지정 없는 예약 중지는 예약한 오케스트레이터의 풀·워크스페이스를 넘지 못한다. 페이로드로 범위를 넓힐 수 없다.
         # 명시 세션 지정은 표시 분류를 넘나들 수 있어 풀 필터를 떼고 세션 지정만 남긴다.

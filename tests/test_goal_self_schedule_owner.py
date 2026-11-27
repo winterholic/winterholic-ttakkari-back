@@ -33,10 +33,13 @@ def no_dispatch(monkeypatch):
     monkeypatch.setattr(manager, "dispatch", _noop)
 
 
-async def _schedule(sid, *, hours=1.0, status="pending", **extra) -> UUID:
-    """사용자·기획이 만든 일반 send_message 예약(work_continuation 표식 없음)."""
+async def _schedule(sid, *, hours=1.0, status="pending", by="self", **extra) -> UUID:
+    """send_message 예약. by="self" 는 기획이 자기 세션에 건 예약(생성 API 가 찍는 표식), None 은 사용자·다른 세션이 건 개인 예약."""
+    payload = {"session_id": str(sid), "message": "1시간 뒤 확인"}
+    if by is not None:
+        payload[work.SELF_SCHEDULE_MARK] = str(sid if by == "self" else by)
     async with sessionmaker()() as db:
-        item = ScheduledAction(action_type="send_message", payload={"session_id": str(sid), "message": "1시간 뒤 확인"},
+        item = ScheduledAction(action_type="send_message", payload=payload,
                                status=status, due_at=utcnow() + timedelta(hours=hours), **extra)
         db.add(item)
         await db.commit()
@@ -84,6 +87,34 @@ async def test_schedule_beyond_the_horizon_does_not_hold_the_goal_forever(client
     await _schedule(sid, hours=work.SELF_SCHEDULE_HORIZON.total_seconds() / 3600 + 6)
     await _end_turn(sid)
     assert len(continuations(await queued(sid))) == 1  # 24시간 넘게 먼 예약은 소유자로 보지 않는다.
+
+
+async def test_personal_schedules_are_not_owners_and_their_loss_revives_nothing(client, auth, make_dir):
+    sid, _ = await _active_goal(client, auth, make_dir)
+    other, _ = await lead(client, auth, make_dir)
+    personal = await _schedule(sid, hours=1, by=None)  # 사용자가 건 개인 예약
+    from_other = await _schedule(sid, hours=1, by=other["id"])  # 다른 세션이 이 세션에 건 예약
+    await _end_turn(sid)
+    assert len(continuations(await queued(sid))) == 1  # 개인 예약은 후속을 막지 못한다.
+    async with sessionmaker()() as db:
+        for run in continuations(await queued(sid)):
+            (await db.get(Run, run.id)).status = RunStatus.cancelled
+        await db.commit()
+    async with sessionmaker()() as db:
+        assert await service.cancel_schedule(db, personal) and await service.cancel_schedule(db, from_other)
+    assert continuations(await queued(sid)) == []  # 개인 예약이 사라져도 목표 후속을 세우지 않는다.
+
+
+async def test_schedule_api_stamps_only_self_schedules_and_ignores_client_marks(client, auth, make_dir):
+    sess, h = await lead(client, auth, make_dir)
+    other, _ = await lead(client, auth, make_dir)
+    sid = sess["id"]
+    mine = await client.post("/api/orchestrator/schedules", headers=h, json={
+        "action_type": "send_message", "due_at": "+1h", "payload": {"session_id": sid, "message": "m", work.SELF_SCHEDULE_MARK: other["id"]}})
+    assert mine.status_code == 201 and mine.json()["payload"][work.SELF_SCHEDULE_MARK] == sid
+    to_other = await client.post("/api/orchestrator/schedules", headers=h, json={
+        "action_type": "send_message", "due_at": "+1h", "payload": {"session_id": other["id"], "message": "m", work.SELF_SCHEDULE_MARK: other["id"]}})
+    assert to_other.status_code == 201 and work.SELF_SCHEDULE_MARK not in to_other.json()["payload"]
 
 
 async def test_schedule_for_another_session_and_finished_schedules_are_not_owners(client, auth, make_dir):

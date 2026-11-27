@@ -232,9 +232,6 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
     if generation.current:
         await generation.fence_pending(db)
         await generation.wake(db, run.id)
-    if s.kind == SessionKind.orchestrator:
-        from ttakkari.orchestrator import work
-        await work.ensure_auto_contract(db, s, prompt, origin.value if hasattr(origin, "value") else str(origin))
     await db.commit()
     await manager.dispatch(s.id)
     return run

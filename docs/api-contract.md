@@ -170,6 +170,47 @@ payload 는 `{title, body, url, tag}`:
 - `GET /api/sessions` 는 하위 세션(기획·작업)을 빼고, `?parent_id=<id>` 면 그 하위 세션만(접수 → 기획 세션, 기획·오케스트레이터 → 작업 세션).
 - `SessionOut` 에 `kind`, `parent_id`. `RunOut` 에 `origin`(`user` | `report` | `orchestrator` | `desk`), `profile`(실제로 쓴 엔진 프로필).
 
+## 기획 세션의 목표 상태 요약 `goal_summary`
+
+`GET /api/sessions/{id}`(사용자 인증)가 기획(`kind=orchestrator`) 세션에 한해 `SessionOut.goal_summary` 를 채운다. 읽기 전용이고 조회로 목표 계약이 바뀌지 않는다.
+계약이 없거나 기획이 아닌 세션이면 `null`. 목록(`GET /api/sessions`)과 PATCH·POST 응답에서는 항상 `null`이라 기존 클라이언트는 그대로 동작한다.
+목표 관리 전용 토큰(`/api/orchestrator/*`)과 별개이며 새 엔드포인트는 없다. 원본 요청·이력·추가 요청 본문·금지 조건·내부 기록은 응답에 없다.
+
+화면 분기는 `phase` 만 보면 된다. Run 이 끝났다는 사실만으로 `complete` 가 되지 않는다(계약의 모든 요구가 증거와 함께 끝나야 한다).
+
+| `phase` | 뜻 | `user_action` | `user_intervention_needed` | `auto_resumable` |
+|---|---|---|---|---|
+| `running` | 진행 중(후속 Run·작업자가 이어가는 중) | `none` | `false` | `true` |
+| `waiting` | 계정 한도·엔진 오류를 기다리는 중. `waiting_until` 에 자동 재개 | `none` | `false` | `true` |
+| `paused` | 사용자 중지. 자동으로 이어가지 않는다. 다시 지시하면 이어간다 | `resume` | `false` | `false` |
+| `blocked` | 막힘(영구 오류·진전 없음·대기 상한 초과). `stop_reason`·`blocker_kind` 를 풀어야 한다 | `intervene` | `true` | `false` |
+| `complete` | 모든 요구가 증거와 함께 완료 | `none` | `false` | `false` |
+
+`user_action=review` 는 완료로 적힌 요구의 증거가 완료 단어뿐일 때(`user_intervention_needed=true`). 대기(`waiting`)·사용자 중지(`paused`)·사용자 조치(`blocked`)를 같은 색·문구로 섞지 말 것.
+
+```jsonc
+// phase=running (작업자 실행 중)
+{"status": "active", "phase": "running", "goal": "백엔드 작업 완료", "revision": 1,
+ "completed": [{"id": "A", "text": "스키마 작성", "status": "done", "evidence": "pytest -q: 3 passed"}],
+ "pending":   [{"id": "B", "text": "API 구현", "status": "pending", "evidence": ""}],
+ "completed_count": 1, "pending_count": 1, "running_tasks": ["API 작업자"],
+ "next_action": "B 구현", "waiting_until": null, "stop_reason": "", "blocker_kind": null,
+ "auto_resumable": true, "user_action": "none", "user_intervention_needed": false,
+ "additional_request_count": 0, "updated_at": "2026-11-27T18:25:14.236326+00:00"}
+// phase=waiting
+{"status": "active", "phase": "waiting", "waiting_until": "2026-11-27T21:25:22.357241Z", "stop_reason": "", "blocker_kind": null,
+ "auto_resumable": true, "user_action": "none", "user_intervention_needed": false, "...": "나머지 필드는 위와 같음"}
+// phase=paused
+{"status": "paused", "phase": "paused", "waiting_until": null, "blocker_kind": null,
+ "stop_reason": "claude Run 36fdd54f-… cancelled: 사용자가 중단했습니다.",
+ "auto_resumable": false, "user_action": "resume", "user_intervention_needed": false, "...": "..."}
+```
+
+- `completed`·`pending`: `{id, text, status: pending|review|done, evidence}`(근거는 300자까지). `running_tasks`: 실행 중이거나 대기 중인 작업 세션 제목.
+- `blocker_kind`(`blocked` 일 때만): `no_progress` | `permanent_failure` | `transient_exhausted` | `usage_limit_exhausted`.
+- `additional_request_count`: 계약 뒤에 들어와 기획이 합쳐야 하는 사용자 요청 개수(본문은 노출하지 않는다).
+- 요약 계산이 실패해도 세션 조회는 성공하고 `goal_summary` 만 `null` 이다.
+
 ## 접수 → 기획 → 작업(ADR 0013)
 
 - 접수(`kind=desk`) 세션에 `POST /api/sessions/{id}/runs` 하면 대기열 없이 바로 돈다. 결과는 같은 Run 의 `result_text`·`message` 이벤트.

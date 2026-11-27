@@ -47,6 +47,16 @@ _SCOPE_CHANGE_RE = re.compile(
     r"대신|말고|빼고|빼줘|제외|취소하고|변경|바꿔|바꾸|추가로|그리고 또|또한|범위|instead|rather than|also add|additionally|scope|drop\b",
     re.IGNORECASE)
 _QUESTION_END_RE = re.compile(r"[?？]\s*$|(?:까|냐|니|죠|가요|어요|았어|었어|됐어|뭐야|뭐임|어때)\s*$")
+# 실제로 바꾸라는 명령형. 명사로만 나온 동사("수정, 테스트, 구현 방식을 설명해줘")는 계약 대상이 아니다.
+_CMD_RE = re.compile(
+    r"(?:(?:수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩터링|refactor|적용|설치|"
+    r"마이그레이션|fix|build|진행|수행|실행|처리)(?:하고|하며|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
+    r"고치(?:고|세요|며)|고쳐|만들(?:고|어|며)|바꿔|바꾸고|돌려|올려|붙여|넣어)", re.IGNORECASE)
+# 부정 지시가 든 문장("수정하지 말고", "…요청을 하지 않는다")은 시킨 일이 아니라 금지다. 문장째 센다.
+_NEG_RE = re.compile(r"지\s*(?:말|마|않|못)|금지|않는다|않습니다|않음|안\s*한다|마세요|\bdo not\b|\bdon't\b|\bnever\b|\bwithout\b",
+                     re.IGNORECASE)
+_READONLY_DECL_RE = re.compile(r"읽기\s*전용|read[- ]only", re.IGNORECASE)
+_SENTENCE_RE = re.compile(r"(?<=[.!?。])\s+|\n")
 _FENCE_RE = re.compile(r"```.*?(?:```|$)", re.DOTALL)
 _LOG_LINE_RE = re.compile(
     r"^\s*(?:Traceback\b|File \".*\", line \d+|at\s+\S+[(:]|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}|"
@@ -70,6 +80,11 @@ def prose(text: str) -> str:
     kept = [ln for ln in body.splitlines()
             if not ln.startswith(("    ", "\t")) and not _LOG_LINE_RE.match(ln)]
     return "\n".join(kept).strip()
+
+
+def drop_negated(text: str) -> str:
+    """부정·금지 표현이 든 문장을 뺀다."""
+    return "\n".join(sent for sent in _SENTENCE_RE.split(text or "") if sent.strip() and not _NEG_RE.search(sent))
 
 
 def extract_items(text: str) -> list[dict[str, str]]:
@@ -108,22 +123,25 @@ def extract_items(text: str) -> list[dict[str, str]]:
 
 
 def is_complex(text: str) -> bool:
-    """여러 단계를 책임져야 하는 요청인가. 짧은 질문·잡담·로그 붙여넣기에는 계약도 추가 추론도 강제하지 않는다.
+    """여러 단계를 책임져야 하는 요청인가. 짧은 질문·잡담·로그 붙여넣기·설명·읽기 전용 지시에는 계약도 추가 추론도 강제하지 않는다.
 
-    길이만으로는 판정하지 않는다(장문 로그+질문이 복합으로 잡히던 문제). 사람의 문장에서 번호 항목 3개 이상이거나,
-    서로 다른 작업 동사 3개 이상(그중 하나는 실제로 바꾸는 동사)이면 복합이다."""
-    body = prose(text)
+    길이만으로는 판정하지 않는다. 사람의 문장(로그·코드블록·부정 지시 문장 제외)에서 파일·배포를 바꾸라는 명령형이 있고,
+    번호 항목 3개 이상이거나 서로 다른 작업 동사 3개 이상일 때 복합이다."""
+    whole = prose(text)
+    if _READONLY_DECL_RE.search(whole):
+        return False
+    body = drop_negated(whole)
     if len(body) < MIN_COMPLEX_CHARS:
+        return False
+    mutating = {m.group(0).lower() for m in _MUTATING_RE.finditer(body)}
+    if not mutating or not _CMD_RE.search(body):
+        return False
+    if _QUESTION_END_RE.search(body) and not _COMMAND_END_RE.search(body):
         return False
     items = extract_items(body)
     if len(items) >= 3:
         return True
     actions = {m.group(0).lower() for m in _ACTION_RE.finditer(body)}
-    mutating = {m.group(0).lower() for m in _MUTATING_RE.finditer(body)}
-    if not mutating:
-        return False
-    if _QUESTION_END_RE.search(body) and not _COMMAND_END_RE.search(body):
-        return False
     bullets = sum(1 for line in body.splitlines() if _BULLET_RE.match(line))
     if len(actions) >= 3:
         return True
@@ -132,7 +150,7 @@ def is_complex(text: str) -> bool:
 
 def is_actionable(text: str) -> bool:
     """후속 메시지가 새 일을 시키는가(상태 질문과 구분)."""
-    body = prose(text)
+    body = drop_negated(prose(text))
     if not body:
         return False
     if is_complex(body):
@@ -146,7 +164,7 @@ def classify_followup(text: str) -> str:
     """진행 중 계약에 들어온 사용자 메시지: question | followup | scope_change."""
     if not is_actionable(text):
         return "question"
-    return "scope_change" if _SCOPE_CHANGE_RE.search(text) else "followup"
+    return "scope_change" if _SCOPE_CHANGE_RE.search(drop_negated(prose(text))) else "followup"
 
 
 # ---- 증거 문구 ---------------------------------------------------------------------------------------------

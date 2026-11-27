@@ -6,21 +6,24 @@
 ## 사용한 기록과 한계
 - `read_session`: 사례 4개 세션의 최근 4~14턴(프롬프트·결과·`status`·`last_event_type`·`origin`·`engine`·세대/epoch).
 - `ops_list_deploys`, `ops_deploy_log`, `ops_list_issues`, `ops_get_issue`, `ops_search_logs`(최근 72시간, source=worker/deploy).
-- 못 본 것: Run 의 `error` 와 개별 이벤트(`read_session` 이 내주지 않는다). 사례 Run id(`a89f5f4c`, `b4c391eb`)로 `ops_search_logs` 를 돌려 0건이었다. 작업 세션은 `get_worker` 가 404(하위 세션 아님)였다. 그래서 **취소를 누가 눌렀는지는 확인하지 못했다**.
+- 2차 보강(11-28): 운영 `GET /api/runs/{id}` 와 `GET /api/runs/{id}/events` 를 읽기 전용으로 직접 조회해 Run 이벤트를 확인했다(`~/bin/ttk get`). `read_session` 은 Run `error` 와 개별 이벤트를 내주지 않아 1차에는 못 봤다.
+- 여전히 못 본 것: **취소 요청을 누가 보냈는지**. 두 Run 의 이벤트 종류에는 취소 요청·중지 이벤트가 없고(`run.status`, `context.routing`, `worker.routing`, `agent.session`, `tool.call/result`, `message`, `usage`, `error`, `run.finished` 뿐), `Run.error` 는 둘 다 null 이며, `ops_search_logs` 는 두 Run id 로 0건이었다. 작업 세션은 `get_worker` 가 404(하위 세션 아님)였다.
 
 ## 사례별 확인표
 
 ### 사례 A: `ce4572d0` DS 조립기 미병합 정리·운영 배포 (작업 세션, 백그라운드 테스트 대기 중 취소)
 | 항목 | 내용 | 구분 |
 |---|---|---|
-| 실행 | Run `a89f5f4c` 11-27 15:38:51 시작, engine=antigravity, model=claude-sonnet-5-5-high, origin=orchestrator | 확인됨 |
-| 마지막 Run 종료 사유 | `status=cancelled`. 마지막 결과문은 영어 4줄: "Waiting for the test chain to finish." / "I'll end this turn and wait for it." / "The chain will notify me when it ends, so I'm stopping here until then." 상태 줄 없음 | 확인됨 |
-| 취소 주체·사유 | 보고 시각 16:14:56 이전에 취소. 기획 보고 `aa6efe8b` 는 "확실하지 않음, 두 번 다 백그라운드로 걸어 두고 기다리던 중 끊겼다"고만 적었다. 사용자 취소인지 기획의 중단인지 Run 오류·이벤트로는 확인하지 못했다 | **미확인** |
-| 2번째 Run | `b4c391eb` 16:15:01, origin=user("뭐야 왜 이럼? 버그아니냐?"), 결과 "먼저 현재 상태부터 확인하겠습니다." 후 `cancelled`. 16:15:29 기획 보고가 "첫 작업 세션이 결국 완전히 취소돼서 재시도 세션으로 다시 시작" | 확인됨 |
-| 후속 Run 생성 | 이 세션에서는 없음. 기획이 새 세션 `c4af6e16` 을 만들어 다시 시작(16:15:29 보고). 작업 세션에는 목표 계약이 없고 취소된 Run 은 자동으로 잇지 않는 것이 의도(시나리오 8) | 확인됨 |
-| 계정·엔진 관련 | 엔진이 antigravity 로 배정됨. 직전 15:30:50·15:30:57 에 codex(gpt-6.2-sol) 사용 한도 도달(LOG-419, "try again at Dec 2nd, 2026 8:50 AM")이 있어 auto 라우팅이 antigravity 로 넘어갔을 가능성이 있다. 이 Run 구간(15:38~16:14)에는 한도·엔진 오류 이벤트가 없다. antigravity 한도(LOG-420~423)는 16:48~16:54 로 이 세션이 끝난 뒤이며 Run id(`8b869c4e`)도 다르다 | 시각 일치는 확인됨, 라우팅 인과는 **추정** |
-| 배포·세대 전환 관련 | 없음. 배포 작업 목록에서 11-25 03:42(`3959c608`) 다음이 11-27 17:12(`663d56d5`)이라 15:38~16:15 에 전환이 없다 | 확인됨 |
-| 원인 | 백그라운드로 건 테스트 체인의 완료 알림을 기다리며 턴을 끝내는 패턴 | 결과문으로 **확인됨**. 이 패턴이 취소를 부른 것인지는 **추정** |
+| 실행 | Run `a89f5f4c` 11-27 15:38:51 생성, 15:38:59 시작, engine=antigravity, profile=한숙 antigravity, model=claude-sonnet-5-5-high, origin=orchestrator | 확인됨(`GET /api/runs/{id}`) |
+| 이벤트(105개) | tool.call 43 / tool.result 42 / message 12 / usage 1 / error 1 / run.finished 1 외. **seq102 `tool.call run_command`(`npm run test:browser > /tmp/dsk-b…`) 16:10:36 뒤 결과 없음 → seq103 `usage` 16:14:55.963059 → seq104 `error {"message":"interrupted"}` 16:14:55.963062 → seq105 `run.finished` 16:14:56.861607**(`status=cancelled`, `exit_code=1`, `error=null`) | 확인됨(`/events`) |
+| 마지막 Run 종료 사유 | 마지막 `tool.call` 이 약 4분 19초 결과 없이 진행되던 중 `interrupted` 로 끊겨 `cancelled` 로 마감. 마지막 결과문은 영어 4줄("Waiting for the test chain to finish." / "I'll end this turn and wait for it." / "…stopping here until then.") | 확인됨 |
+| **취소 요청 주체** | 두 Run 의 이벤트에 취소 요청·중지 이벤트가 없고 `Run.error` 는 null. 사용자 취소·기획의 중지·프로세스 중단 중 어느 것인지 이 기록으로는 구분되지 않는다. 기획 보고 `aa6efe8b` 도 "확실하지 않음" | **미확인** |
+| 2번째 Run | `b4c391eb` 16:15:01 생성(origin=user "뭐야 왜 이럼? 버그아니냐?"), profile=안티그래비티 디폴트. 21개 이벤트: **seq18 `tool.call run_command`(grep) 16:15:27.046 → seq19 usage → seq20 `error interrupted` 16:15:27.831080 → seq21 `run.finished cancelled` 16:15:29.287917**. 시작 26초 뒤 같은 모양으로 끊김 | 확인됨 |
+| 후속 Run 생성 | 이 세션에서는 없음. 기획이 16:15:29 보고에서 새 세션 `c4af6e16` 으로 다시 시작. 작업 세션에는 계약이 없고 취소된 Run 은 자동으로 잇지 않는 것이 의도(시나리오 8) | 확인됨 |
+| 라우팅 | 첫 Run `worker.routing`: `trigger=initial`, `selected`=Antigravity claude-sonnet-5-5-high(한숙 계정, 5h·주간 사용 0%, 여유 100%), `blocked` 배열에는 **GitHub Copilot 만**(premium 100% 사용) 있고 Codex·Claude 는 없다. `candidates` 에 Codex 계정 2개(`limited_until=None`)와 Claude 가 있었고, 기획이 모델을 지정해 Antigravity 가 선택된 것으로 보인다. 두 번째 Run 도 같은 구성(기본 계정) | 확인됨 |
+| 계정 한도와의 인과 | 선택 시점에 선택 계정의 한도가 없었고, 실행 중 한도·엔진 오류 이벤트(`error` 는 `interrupted` 하나뿐)도 없다. 직전 Codex 한도 LOG-419(15:30)는 이 Run 의 라우팅 `blocked` 에 나타나지 않아 Antigravity 선택의 원인으로 볼 근거가 없다(1차 문서의 추정을 철회). 한도 때문에 끊겼다는 기록은 없으나, 취소 주체를 모르므로 한도가 간접 원인이 아니라고 단정하지도 않는다 | 한도 이벤트 부재는 확인됨, 인과는 **미확인** |
+| 배포·세대 전환 관련 | 없음. 배포 작업 목록에서 11-25 03:42(`3959c608`) 다음이 11-27 17:12(`663d56d5`)라 15:38~16:15 에 전환이 없다 | 확인됨 |
+| 원인 | 백그라운드로 건 테스트 체인의 완료를 기다리며 긴 `run_command` 를 걸어 둔 채 진행하던 중 `interrupted` 로 취소됨 | 이벤트로 **확인됨**. 취소를 일으킨 주체와 이 대기 패턴이 취소를 유발했는지는 **미확인** |
 
 ### 사례 B: `c4af6e16` DS 조립기 병합·운영 배포 (재시도, 상태 완료 + 본문 부분 충족)
 | 항목 | 내용 | 구분 |
@@ -36,11 +39,11 @@
 | 항목 | 내용 | 구분 |
 |---|---|---|
 | 실행 | engine=codex, 11-27 17:25~18:07 의 14턴을 읽었다. 프롬프트가 `[미완료 목표 자동 이어가기]` 인 Run 이 8개(17:33:55, 17:36:39, 17:38:46, 17:39:39, 17:50:42, 17:53:48, 17:54:33, 17:54:58). 사이에 다른 세션이 보낸 메시지 Run 이 끼어 있다 | 확인됨 |
-| 마지막 Run 종료 사유 | 17:54:58 Run 의 마지막 이벤트가 `work.blocked`. 그 뒤 18:07:14 Run 은 외부 메시지로 시작해 `run.finished` | 확인됨 |
+| 마지막 Run 종료 사유 | Run `9d89d89a`(17:54:58 시작, status=succeeded, exit_code 0, 이벤트 17개). **seq16 `run.finished` 17:55:32.645629 → seq17 `work.blocked` 17:55:32.652328, reason="No recorded progress after two automatic continuations; inspect execution evidence before resuming"**. 그 뒤 18:07:14 Run 은 외부 메시지로 시작해 `run.finished` | 확인됨(`/events`) |
 | 후속 Run 생성 | 위 8개가 생성된 후속. 매번 "미완료" 목록 전체가 똑같고 "다음 동작"만 조금 달라졌다. 결과는 매번 "승인 대기, 팀 리드 배정 확인 중" 류 | 확인됨 |
-| 미생성 이유 | 17:54:58 이후 후속 없음: `work.blocked`(진전 기록 없는 후속 상한) | 확인됨 |
+| 미생성 이유 | 17:55:32 이후 후속 없음: `work.blocked`(진전 기록 없는 후속 상한) | 확인됨 |
 | 계정·엔진 관련 | 이 시간대 한도·엔진 오류 이벤트 없음. LOG-419(codex 한도)는 15:30 으로 시각이 다르고 Run id(`700f5839`, `dbd3b2a6`)도 이 세션 Run 이 아니다 | 확인됨 |
-| 배포·세대 전환 관련 | 관측 epoch 185(17:39:35) → 186(18:09:50), 배포 `72317149`(aad028e4)는 18:07:47 draining. `work.blocked` 는 17:54:58 로 전환보다 약 13분 앞이다 | 시각 순서는 확인됨, 무관은 **추정** |
+| 배포·세대 전환 관련 | 관측 epoch 185(17:39:35) → 186(18:09:50), 배포 `72317149`(aad028e4)는 18:07:47 draining. `work.blocked`(17:55:32)는 전환보다 약 12분 앞이다 | 시각 순서는 확인됨, 무관은 **추정** |
 | 원인 | 승인·러너 확보 같은 외부 대기를 계약이 표현하지 못해 턴마다 "대기" 보고를 하며 8회를 소모. 체크포인트가 갱신돼 진전으로 계산되다가 어느 시점에 멈춰 blocked | 확인됨(이벤트·프롬프트). 진전으로 계산된 정확한 필드는 **추정**(계약 필드 변경 이력은 못 봄) |
 | 남은 부작용 | blocked 계약은 외부 메시지가 와도 풀리지 않는다. 18:07 Run 은 계약이 blocked 인 채 실행됐을 가능성이 크다 | `work.blocked` 이후 `work.continued` 없음은 확인됨, 계약 상태는 **추정**(기획이 체크포인트로 풀었는지는 못 봄) |
 
@@ -70,6 +73,7 @@
 | 작업 세션 취소의 주체·원인 규명 | 못 막음 | Run `error`·이벤트를 도구로 볼 수 없어 미확인. 후속 조사는 서버 쪽 Run 이벤트 열람이 필요 |
 
 ## 요약
-- 확인됨: 사례 A 의 영어 대기 문구와 `cancelled`, 사례 B 의 `완료`+`부분 충족`, 사례 C 의 8회 자동 이어가기와 `work.blocked`, 사례 A 구간의 배포·한도 이벤트 부재.
-- 추정: 사례 A 취소와 대기 패턴의 인과, 사례 A 의 antigravity 라우팅 원인(codex 한도), 사례 C 에서 진전으로 계산된 필드, 사례 D 의 계약 부재.
-- 미확인: 사례 A 취소 주체.
+- 확인됨(Run 이벤트 직접 조회): 사례 A 두 Run 모두 마지막 `tool.call` 이 결과 없이 진행되던 중 `error {"message":"interrupted"}` 직후 `run.finished status=cancelled`(`Run.error` null, exit_code 1). 사례 A 라우팅은 Copilot 만 blocked 이고 Antigravity 가 여유 100% 로 선택됨. 사례 B 의 `완료`+`부분 충족`, 사례 C 의 8회 자동 이어가기와 seq17 `work.blocked`(17:55:32), 사례 A 구간의 배포 전환 부재.
+- 추정: 사례 C 에서 진전으로 계산된 필드, 사례 D 의 계약 부재, 사례 C 와 세대 전환의 무관.
+- **미확인**: (1) 사례 A 의 **취소 요청 주체** — 취소 요청 이벤트가 기록되지 않아 사용자·기획·프로세스 중단을 가르지 못한다. (2) **계정 한도와의 인과** — 라우팅 시점·실행 중에 한도 기록이 없다는 것만 확인됐고, 1차의 "codex 한도로 antigravity 배정" 추정은 라우팅 기록과 맞지 않아 철회했다. 취소 주체를 모르므로 한도가 간접 원인이 아니라고도 단정하지 않는다.
+- 후속 후보: 서버의 취소 경로(`/cancel`, `stop_worker`, 전역 중지)가 `run.cancel_requested` 같은 이벤트에 요청 주체를 남기도록 하는 것은 이번 범위 밖이다.

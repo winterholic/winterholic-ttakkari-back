@@ -2183,8 +2183,9 @@ class RunManager:
         from ttakkari import reverse_tasks
         reverse_next = await reverse_tasks.on_finished(db, run)
         from ttakkari.orchestrator import work
+        continued_id = None
         if sess is not None:
-            await work.after_run(db, sess, run)
+            continued_id = await work.after_run(db, sess, run)
         closure = None
         if sess is not None:
             from ttakkari.runs import completion
@@ -2202,7 +2203,7 @@ class RunManager:
             _spawn(self.dispatch(reverse_next))
         if parent_id is not None:
             _spawn(self.dispatch(parent_id))
-        if closure is not None and sess is not None:
+        if closure is not None and sess is not None or continued_id is not None and sess is not None:
             _spawn(self.dispatch(sess.id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))

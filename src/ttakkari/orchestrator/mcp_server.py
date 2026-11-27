@@ -1277,7 +1277,9 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     Done requires evidence; complete requires every requirement and linked PMS leaf done. Gate success
     is intermediate. active requires next_action; blocked/paused requires exact blocker (pause: user request).
     Existing workers and queued Runs own pending execution; otherwise unfinished active work automatically
-    continues. It may continue twice without recorded progress (files/commits/tests or checkpoint changes);
+    continues. Progress is a requirement status moving forward, new changed_files/validation entries, or Run
+    execution evidence (files/commits/tests); rewording completed_work or evidence is not progress. At most two
+    automatic continuations follow the last progress (the one issued right after a progress turn is the first);
     the next no-progress turn blocks. Account limits and model capacity wait for reset instead of retrying
     immediately; transient engine errors retry with backoff a bounded number of times. A complex user/desk
     request opens an auto contract (reshape it once with your own plan before any requirement is done);

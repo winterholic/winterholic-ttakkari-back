@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -175,6 +176,22 @@ def _original_gaps(current: dict, requirements: list[dict]) -> list[dict]:
     return gaps
 
 
+_STATUS_RANK = {"pending": 0, "review": 1, "done": 2}
+
+
+def _checkpoint_progress(previous: dict | None, value: dict) -> bool:
+    """체크포인트가 일을 실제로 진척시켰는가. 요구 상태 전이, 새 changed_files, 새 validation 만 진전이다.
+
+    completed_work·evidence·next_action 문구만 바꾼 체크포인트는 진전이 아니다(외부 대기 중 문구만 갱신하며 무한히
+    이어가는 것을 막는다). 새 요구 추가도 범위 증가이지 진전이 아니다."""
+    if not previous:
+        return True
+    old = {r["id"]: _STATUS_RANK[r["status"]] for r in previous["requirements"]}
+    if any(_STATUS_RANK[r["status"]] > old[r["id"]] for r in value["requirements"] if r["id"] in old):
+        return True
+    return any(set(value.get(f) or []) - set(previous.get(f) or []) for f in ("changed_files", "validation"))
+
+
 async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     # Same lock is taken by the finish hook; concurrent checkpoints cannot overwrite each other.
     await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
@@ -225,7 +242,8 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
         extra_ids = [uuid.UUID(r["run_id"]) for r in current.get("additional_requests") or [] if r.get("run_id")]
         if extra_ids:  # 계약 뒤에 들어와 추가 요청으로 보존된 요청은 원본이 아니다.
             cond.append(Run.id.not_in(extra_ids))
-        first = await db.scalar(select(Run).where(*cond).order_by(Run.created_at, Run.id).limit(1))
+        # 계약을 처음 만드는 체크포인트가 대응하는 요청은 그 시점의 가장 최근 사용자 요청이다(긴 세션의 첫 요청이 아니다).
+        first = await db.scalar(select(Run).where(*cond).order_by(Run.created_at.desc(), Run.id.desc()).limit(1))
         original = _request_record(first.id, first.prompt, str(getattr(first.origin, "value", first.origin))) if first else None
         current = {**current, "original_request": original}
     confirmed: list[str] = list(current.get("original_items_confirmed") or [])
@@ -239,8 +257,7 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
         if gaps:
             confirmed = [*confirmed, *(g["label"] for g in gaps)][-60:]
     # Updating prose/revision alone is not progress. Budget only resets when observed work changes.
-    progress_fields = ("requirements", "completed_work", "validation", "changed_files")
-    progressed = not previous or any(previous.get(f) != value.get(f) for f in progress_fields)
+    progressed = _checkpoint_progress(previous, value)
     resumed = bool(previous) and previous["status"] in ("blocked", "paused") and value["status"] == "active"
     fresh = progressed or resumed
     saved = {**current, "revision": body.revision + 1, "state": value, "original_request": original,
@@ -499,6 +516,8 @@ async def _usage_wait_until(db: AsyncSession, sess: ChatSession, run: Run, attem
     until = None
     try:
         until = profiles.reset_epoch_from(run.error)
+        if until is None and (m := _RETRY_IN_RE.search(run.error or "")):
+            until = now + int(m.group(1)) * (3600 if m.group(2).lower().startswith("h") else 60)
         if until is None:
             async with db.begin_nested():  # 조회 실패가 호출한 트랜잭션을 망치지 않게 한다.
                 free, blocked = await profiles.availability(db, sess.engine)
@@ -509,6 +528,9 @@ async def _usage_wait_until(db: AsyncSession, sess: ChatSession, run: Run, attem
     backoff = min(USAGE_WAIT_BASE_SECONDS * (2 ** attempt), USAGE_WAIT_MAX_SECONDS)
     wait = (until - now) if until else backoff
     return now + max(60.0, min(wait, USAGE_WAIT_MAX_SECONDS))
+
+
+_RETRY_IN_RE = re.compile(r"(?:try again|retry) in (\d+)\s*(hours?|hrs?|minutes?|mins?)", re.IGNORECASE)
 
 
 def _continuation_prompt(state: dict, current: dict, *, header: str, ev_line: str | None = None) -> str:

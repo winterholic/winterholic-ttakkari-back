@@ -62,7 +62,8 @@ INCONSISTENT_CLOSURE_PROMPT = (
 _WAITING_RE = re.compile(
     r"알림[을를]?\s*(?:대기|기다)|(?:결과|완료)[를을가이]?\s*(?:대기|기다리)|(?:진행|실행|수행)(?:하고|하는)\s*있(?:습니다|음|다)|"
     r"(?:진행|실행|수행)\s*중(?:입니다|임|이다)(?!\s*이던)|기다리(?:는|고)\s*(?:중|있)|대기\s*중(?:입니다|임|이다)|"
-    r"(?:백그라운드|background).{0,40}(?:걸어|돌려|띄워|시작해|실행해)|waiting for (?:the )?(?:notification|result|completion)",
+    r"(?:백그라운드|background).{0,40}(?:걸어|돌려|띄워|시작해|실행해)|waiting for (?:the )?(?:notification|result|completion|test|chain)|"
+    r"end this turn and wait|stopping here until|(?:will|chain will) notify me",
     re.IGNORECASE)
 # 완료라면서 일부만 했다/못 했다고 쓰는 문장.
 _PARTIAL_RE = re.compile(r"부분\s*충족|일부만|(?:하지|지)\s*못(?:했|함|한다|합니다)|미충족\s*[:(]?|일부\s*(?:항목|작업)[은이]?\s*(?:미|못|하지)")

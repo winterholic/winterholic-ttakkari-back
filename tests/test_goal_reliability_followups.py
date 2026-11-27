@@ -218,6 +218,14 @@ async def test_honest_reports_are_not_blocked_by_the_mismatch_rule(client, auth,
     assert not info["violation"] and "inconsistent" not in info and closures == []
 
 
+def test_english_background_wait_with_status_line_is_detected():
+    # 운영 사례(DS 조립기 첫 세션): 영어로 "테스트 체인이 끝나길 기다리며 턴을 끝낸다"고 쓴 보고.
+    text = ("Waiting for the test chain to finish.\nThe timer is already set, so I'll end this turn and wait for it.\n"
+            "The chain will notify me when it ends, so I'm stopping here until then.")
+    assert completion.inconsistent_reason("완료", text, None) == "waiting"
+    assert completion.inconsistent_reason("완료", "Ran the test chain: 794 passed. Nothing is pending.", None) is None
+
+
 def test_inconsistent_reason_rules():
     assert completion.inconsistent_reason("부분", "배포 알림을 기다립니다", None) == "waiting"
     assert completion.inconsistent_reason("부분", "배포 알림을 기다립니다", "대기") is None

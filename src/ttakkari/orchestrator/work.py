@@ -10,7 +10,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import HTTPException
@@ -551,17 +551,70 @@ async def _pause_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: A
     await cancel_queued_continuations(db, sess.id, reason)
 
 
-async def _owner_exists(db: AsyncSession, sess: ChatSession, run: Run) -> bool:
-    """대기·실행 중인 사용자 지시와 보고, 살아 있는 작업자 Run, 계약 재개 예약은 다음 단계의 소유자다."""
+# 기획 세션이 자기에게 건 예약(schedule_action send_message)은 이 시간 안에 도래할 때만 후속의 소유자로 본다.
+# 더 먼 예약 때문에 목표가 무기한 멈추지 않게 하는 상한이다.
+SELF_SCHEDULE_HORIZON = timedelta(hours=24)
+
+
+async def _owning_schedules(db: AsyncSession, sid: uuid.UUID) -> list[ScheduledAction]:
+    """이 세션에 메시지를 보낼 예정이라 다음 단계를 맡고 있는 예약. 계약 재개 예약은 기한과 무관하게, 그 밖의 예약은
+    pending 이면 상한 안에 도래할 때만, 실행 중(leased)이면 늘 소유자다. 실패·취소·만료된 예약은 소유자가 아니다."""
+    horizon = utcnow() + SELF_SCHEDULE_HORIZON
+    rows = (await db.scalars(select(ScheduledAction).where(
+        ScheduledAction.action_type == "send_message", ScheduledAction.status.in_(("pending", "leased")),
+        ScheduledAction.payload["session_id"].as_string() == str(sid)))).all()
+    return [r for r in rows if is_contract_resume_schedule(r) or r.status == "leased" or r.due_at <= horizon]
+
+
+async def _owner_exists(db: AsyncSession, sess: ChatSession, run: Run | None) -> bool:
+    """대기·실행 중인 사용자 지시와 보고, 살아 있는 작업자 Run, 이 세션을 향한 예약은 다음 단계의 소유자다."""
     children = select(ChatSession.id).where(ChatSession.parent_id == sess.id, ChatSession.archived_at.is_(None))
-    existing = await db.scalar(select(Run.id).where(Run.id != run.id, Run.status.in_(ACTIVE),
+    existing = await db.scalar(select(Run.id).where(Run.id != (run.id if run else None), Run.status.in_(ACTIVE),
                                (Run.session_id == sess.id) | Run.session_id.in_(children)).limit(1))
     if existing is not None:
         return True
-    schedules = (await db.scalars(select(ScheduledAction).where(
-        ScheduledAction.action_type == "send_message", ScheduledAction.status.in_(("pending", "leased")),
-        ScheduledAction.payload["session_id"].as_string() == str(sess.id)))).all()
-    return any(is_contract_resume_schedule(item) for item in schedules)
+    return bool(await _owning_schedules(db, sess.id))
+
+
+async def resume_after_schedule_loss(db: AsyncSession, schedule: ScheduledAction) -> uuid.UUID | None:
+    """세션을 향한 예약이 실패·취소·만료됐을 때 호출한다. 그 예약만 소유자였다면 자동 이어가기를 한 번 세운다.
+
+    예약이 있는 동안 후속을 만들지 않으므로, 예약이 사라진 뒤 아무도 이어받지 않는 유실을 막는다. 호출자는 예약
+    상태를 이미 바꿨고 같은 트랜잭션에서 커밋한다. 무진전 후속 예산(MAX_UNCHANGED_CONTINUATIONS)을 그대로 쓴다."""
+    if schedule.action_type != "send_message":
+        return None
+    try:
+        sid = uuid.UUID(str((schedule.payload or {}).get("session_id")))
+    except ValueError:
+        return None
+    sess = await db.get(ChatSession, sid)
+    if sess is None or sess.kind != SessionKind.orchestrator or sess.archived_at:
+        return None
+    await db.scalar(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+    current = await load(db, sid)
+    state = current.get("state")
+    if not state or state["status"] != "active" or await _owner_exists(db, sess, None):
+        return None
+    row = await db.get(AppSetting, key(sid))
+    rec = dict(current)
+    rec["updated_at"] = utcnow().isoformat()
+    rec.pop("waiting_until", None)
+    count = rec.get("unchanged_continuations", 0)
+    if count >= MAX_UNCHANGED_CONTINUATIONS:
+        _block(rec, state, "no_progress",
+               f"No recorded progress after {MAX_UNCHANGED_CONTINUATIONS} automatic continuations; "
+               "inspect execution evidence before resuming")
+        row.value = rec
+        return None
+    rec["unchanged_continuations"] = count + 1
+    reason = (schedule.last_error or schedule.status or "ended")[:200]
+    prompt = _continuation_prompt(state, rec, header=f"[미완료 목표 자동 이어가기] 이 세션에 걸어 둔 예약 {schedule.id} 이(가) 실행되지 못하고 "
+                                                      f"{schedule.status} 로 끝났다 ({reason}). 예약을 기다리지 말고 직접 이어가라.")
+    continuation = _new_continuation(sess, None, rec, prompt, extra={"schedule_id": str(schedule.id)})
+    db.add(continuation)
+    await db.flush()
+    row.value = rec
+    return continuation.id
 
 
 def _block(rec: dict, state: dict, kind: str, reason: str) -> None:
@@ -615,9 +668,9 @@ def _continuation_prompt(state: dict, current: dict, *, header: str, ev_line: st
     return "\n".join(lines)
 
 
-def _new_continuation(sess: ChatSession, run: Run, rec: dict, prompt: str, *, until: float | None = None,
+def _new_continuation(sess: ChatSession, run: Run | None, rec: dict, prompt: str, *, until: float | None = None,
                       extra: dict | None = None) -> Run:
-    marker = {"source_run_id": str(run.id), "revision": rec["revision"], **(extra or {})}
+    marker = {"source_run_id": str(run.id) if run else None, "revision": rec["revision"], **(extra or {})}
     return Run(session_id=sess.id, workspace_id=sess.workspace_id, engine=sess.engine, model=sess.model,
                effort=sess.effort, origin=RunOrigin.orchestrator, prompt=prompt, usage={"work_continuation": marker},
                resume_after=datetime.fromtimestamp(until, UTC) if until else None)
@@ -672,6 +725,9 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         events.append(db, run, "work.blocked", {"reason": reason[:2000], "failure_kind": kind})
         return None
     if await _owner_exists(db, sess, run):
+        # 예약이 소유자이면 다음 예약 시각을 대기로 보여 준다. 다른 소유자(실행 중 Run·작업자)만 있으면 그대로 둔다.
+        if due := min((r.due_at for r in await _owning_schedules(db, sess.id)), default=None):
+            rec["waiting_until"] = due.isoformat()
         row.value = rec
         return None
 

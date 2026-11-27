@@ -55,6 +55,20 @@ def parse_due_at(val: str | datetime | float, base: datetime | None = None) -> d
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+async def _recover_goal(db: AsyncSession, item: ScheduledAction) -> None:
+    """세션을 향한 예약이 실행되지 못하고 끝났을 때, 그 예약이 막고 있던 목표 자동 이어가기를 되살린다(유실 방지).
+
+    예약 상태 변경을 망치지 않도록 savepoint 안에서 하고 실패는 기록만 한다."""
+    if item.action_type != "send_message":
+        return
+    from ttakkari.orchestrator.work import resume_after_schedule_loss
+    try:
+        async with db.begin_nested():
+            await resume_after_schedule_loss(db, item)
+    except Exception:
+        log.exception("goal recovery after schedule %s ended failed", item.id)
+
+
 async def create_schedule(
     db: AsyncSession,
     action_type: str,
@@ -121,6 +135,8 @@ async def cancel_schedule(db: AsyncSession, schedule_id: uuid.UUID) -> bool:
         return False
     item.status = "cancelled"
     item.updated_at = utcnow()
+    await db.flush()
+    await _recover_goal(db, item)
     await db.commit()
     return True
 
@@ -140,7 +156,7 @@ async def acquire_due_schedules(
     now = now or utcnow()
     leased_until = now + timedelta(seconds=lease_duration_seconds)
     # 실행 중 프로세스가 죽어 리스가 만료됐고 시도 횟수도 바닥난 작업은 영원히 leased 로 남지 않게 닫는다.
-    await db.execute(
+    closed = (await db.execute(
         update(ScheduledAction)
         .where(
             ScheduledAction.status == "leased",
@@ -149,8 +165,12 @@ async def acquire_due_schedules(
             ScheduledAction.action_type.in_(SUPPORTED_ACTIONS),
         )
         .values(status="failed", last_error="lease expired after max attempts", updated_at=now)
+        .returning(ScheduledAction.id)
         .execution_options(synchronize_session=False)
-    )
+    )).scalars().all()
+    for schedule_id in closed:
+        if (dead := await db.get(ScheduledAction, schedule_id, populate_existing=True)) is not None:
+            await _recover_goal(db, dead)
     stmt = (
         select(ScheduledAction)
         .where(
@@ -295,6 +315,9 @@ async def complete_schedule(
     item.executed_at = utcnow()
     item.result = result
     item.updated_at = utcnow()
+    if is_expired:  # 실행되지 않고 만료됐다. 이 예약을 기다리던 목표를 다시 이어간다.
+        await db.flush()
+        await _recover_goal(db, item)
     return True
 
 
@@ -314,6 +337,8 @@ async def fail_schedule(
     item.updated_at = utcnow()
     if item.attempts >= item.max_attempts:
         item.status = "failed"
+        await db.flush()
+        await _recover_goal(db, item)
     else:
         item.status = "pending"
         item.leased_until = None

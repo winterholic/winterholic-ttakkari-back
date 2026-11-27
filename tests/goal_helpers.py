@@ -7,7 +7,14 @@ from sqlalchemy import select
 
 from ttakkari.api.sessions import queue_run
 from ttakkari.db import sessionmaker
-from ttakkari.models import AppSetting, ChatSession, Run, RunOrigin, RunStatus, SessionKind
+from ttakkari.models import (
+    AppSetting,
+    ChatSession,
+    Run,
+    RunOrigin,
+    RunStatus,
+    SessionKind,
+)
 from ttakkari.orchestrator import work
 from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.runs.manager import manager

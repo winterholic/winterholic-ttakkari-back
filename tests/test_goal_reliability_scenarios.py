@@ -34,7 +34,14 @@ from goal_helpers import (
 from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
-from ttakkari.models import ChatSession, Run, RunOrigin, RunStatus, ScheduledAction, utcnow
+from ttakkari.models import (
+    ChatSession,
+    Run,
+    RunOrigin,
+    RunStatus,
+    ScheduledAction,
+    utcnow,
+)
 from ttakkari.orchestrator import work
 from ttakkari.orchestrator.goal_signals import DESK_HEADER
 from ttakkari.runs.manager import _compose_prompt, manager

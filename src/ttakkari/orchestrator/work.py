@@ -560,6 +560,7 @@ def _block(rec: dict, state: dict, kind: str, reason: str) -> None:
 
 async def _usage_wait_until(db: AsyncSession, sess: ChatSession, run: Run, attempt: int) -> float:
     """한도·용량 대기의 재개 시각(unix 초). 오류 문구의 초기화 시각 → 모든 계정이 쉬는 경우 가장 빠른 해제 → 지수 백오프."""
+    from ttakkari.db import sessionmaker
     from ttakkari.runs import profiles
     now = time.time()
     until = None
@@ -568,8 +569,10 @@ async def _usage_wait_until(db: AsyncSession, sess: ChatSession, run: Run, attem
         if until is None and (m := _RETRY_IN_RE.search(run.error or "")):
             until = now + int(m.group(1)) * (3600 if m.group(2).lower().startswith("h") else 60)
         if until is None:
-            async with db.begin_nested():  # 조회 실패가 호출한 트랜잭션을 망치지 않게 한다.
-                free, blocked = await profiles.availability(db, sess.engine)
+            # 별도 세션: 빈 계정 목록이면 ensure_seeded 가 commit 하는데, 호출자 세션(after_run 의 행 잠금 트랜잭션)을
+            # 거기서 끝내거나 begin_nested 안에서 닫힌 트랜잭션 오류를 내면 안 된다. 계정·cooldown 은 커밋된 값만 본다.
+            async with sessionmaker()() as hint_db:
+                free, blocked = await profiles.availability(hint_db, sess.engine, sess.pool)
             if not free and blocked:
                 until = min(t for _, t in blocked)
     except Exception: # 힌트 조회 실패는 백오프로 대신한다.

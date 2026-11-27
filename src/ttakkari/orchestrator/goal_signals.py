@@ -51,19 +51,31 @@ _QUESTION_END_RE = re.compile(r"[?？]\s*$|(?:까|냐|니|죠|가요|어요|았�
 # 실제로 바꾸라는 명령형. 명사로만 나온 동사("수정, 테스트, 구현 방식을 설명해줘")는 계약 대상이 아니다.
 _CMD_RE = re.compile(
     r"(?:(?:수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩터링|refactor|적용|설치|"
-    r"마이그레이션|fix|build|개선|개편|변경|교체|최적화|보완|정비|조사|분석|진행|수행|실행|처리)(?:하고|하며|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
+    r"마이그레이션|fix|build|개선|개편|변경|교체|최적화|보완|정비|조사|분석|진행|수행|실행|처리)(?:하고|하며|하되|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
     r"고치(?:고|세요|며)|고쳐|만들(?:고|어|며)|바꿔|바꾸고|돌려|올려|붙여|넣어)", re.IGNORECASE)
-# 부정 지시가 든 문장("수정하지 말고", "…요청을 하지 않는다")은 시킨 일이 아니라 금지다. 문장째 센다.
-_NEG_RE = re.compile(r"지\s*(?:말|마|않|못)|금지|않는다|않습니다|않음|안\s*한다|마세요|\bdo not\b|\bdon't\b|\bnever\b|\bwithout\b",
-                     re.IGNORECASE)
+# 부정·금지 표지. 금지는 문장 전체가 아니라 그 절만 시킨 일에서 뺀다("수정하되 계정은 변경하지 말고 테스트하고 배포해" 에서
+# 수정·테스트·배포는 남는다).
+_NEG_MARK = (r"지\s*(?:말고|말아|마라|마세요|마\b|않(?:고|으며|는다|습니다|음)|못)|금지|안\s*한다|않는다|않습니다|않음|"
+             r"\bdo not\b|\bdon't\b|\bnever\b|\bwithout\b")
+_NEG_RE = re.compile(_NEG_MARK, re.IGNORECASE)
+_NEG_END_RE = re.compile(rf"(?:{_NEG_MARK})\S{{0,6}}[\s.!?。]*$", re.IGNORECASE)
+# 절 경계. 쉼표·"~하고"·"~한 뒤"·"~하되" 뒤에서 새 절이 시작한다.
+_CLAUSE_END_RE = re.compile(r"(?:고|한\s*뒤|한\s*다음|하되|다만)[\s,]|[,;，]")
+_VERB_END_RE = re.compile(r"(?:고|한\s*뒤|한\s*다음|하되|다만)[\s,]")
 # 설명·질문을 청하는 문장. 이 문장 속 동사는 시킨 일이 아니라 설명 대상이다("수정, 배포 방식을 설명해줘").
 _ASK_END_RE = re.compile(r"(?:설명|알려|말해|가르쳐|요약|비교|보여|궁금)\S{0,8}[\s.!?]*$")
 # 같은 일을 가리키는 동사는 한 번만 센다(수정·고치, 커밋·푸시·병합 은 한 묶음의 git 작업).
 _CANON = {"고쳐": "수정", "고치": "수정", "커밋": "git", "commit": "git", "푸시": "git", "push": "git", "병합": "git",
           "머지": "git", "merge": "git", "deploy": "배포", "refactor": "리팩", "fix": "수정"}
 _INLINE_MARK_RE = re.compile(r"(?:^|(?<=[\s:]))(\d{1,2})[.)]\s+(?=\S)")
-_READONLY_DECL_RE = re.compile(r"읽기\s*전용|read[- ]only", re.IGNORECASE)
-_SENTENCE_RE = re.compile(r"(?<=[.!?。])\s+|\n")
+# 읽기 전용: 요청 전체의 제한(독립 문장이거나 "이 작업은 읽기 전용")과 한 단계만 제한하는 표현("운영 기록은 읽기 전용으로 조사하고")을 가른다.
+_READONLY_RE = re.compile(r"읽기\s*전용|read[- ]only", re.IGNORECASE)
+_READONLY_WHOLE_RE = re.compile(
+    r"^\W*(?:(?:읽기\s*전용|read[- ]only)\s*(?:검증|작업|모드|조사|점검|리뷰|요청)?\s*(?:이다|입니다|임|이며|으로만|만)|"
+    r"(?:이번|이|본)?\s*(?:작업|검증|요청|조사|단계|카드)(?:\s*전체)?\s*(?:은|는|도)\s*(?:모두\s*)?(?:읽기\s*전용|read[- ]only)|"
+    r"(?:전체|모든\s*단계)\S*\s*(?:읽기\s*전용|read[- ]only))", re.IGNORECASE)
+# 번호 항목의 "1. " 마침표에서는 문장을 끊지 않는다.
+_SENTENCE_RE = re.compile(r"(?<=[^\d\s][.!?。])\s+|\n")
 _FENCE_RE = re.compile(r"```.*?(?:```|$)", re.DOTALL)
 _LOG_LINE_RE = re.compile(
     r"^\s*(?:Traceback\b|File \".*\", line \d+|at\s+\S+[(:]|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}|"
@@ -89,9 +101,64 @@ def prose(text: str) -> str:
     return "\n".join(kept).strip()
 
 
+def _cut(sent: str, start: int, end: int) -> str:
+    return (sent[:start] + " " + sent[end:]).strip()
+
+
+def _scope_clean(sent: str) -> tuple[str, bool]:
+    """한 문장에서 금지·읽기 전용 절을 뺀 나머지와, 문장 전체가 요청 전체의 읽기 전용 선언인지.
+
+    - 문장 끝 금지("…요청을 하지 않는다."): 쉼표로 나열한 금지 목록이므로 마지막 `고`/`하되` 경계 뒤부터 끝까지를 뺀다.
+    - 문장 중간 금지("계정은 변경하지 말고 …"): 직전 절 경계부터 금지 표지 끝까지만 뺀다.
+    - 읽기 전용 표현: 요청 전체 선언이면 whole, 아니면 그 절만 뺀다."""
+    plain = re.sub(r"^\s*(?:[-*•]|\d{1,2}[.)])\s+", "", sent)
+    if _READONLY_RE.search(plain) and _READONLY_WHOLE_RE.search(plain):
+        return "", True
+    for _ in range(6):  # 한 문장의 표지 개수를 넘지 않는 상한
+        ro = _READONLY_RE.search(sent)
+        neg = _NEG_RE.search(sent)
+        hit = min((m for m in (ro, neg) if m), key=lambda m: m.start(), default=None)
+        if hit is None:
+            break
+        verb_bounds = [m.end() for m in _VERB_END_RE.finditer(sent) if m.end() <= hit.start()]
+        if hit is neg and _NEG_END_RE.search(sent) and _NEG_END_RE.search(sent).start() <= hit.start():
+            start = verb_bounds[-1] if verb_bounds else 0
+            sent = sent[:start].strip()
+            break
+        bounds = [m.end() for m in _CLAUSE_END_RE.finditer(sent) if m.end() <= hit.start()]
+        start = bounds[-1] if bounds else 0
+        if hit is neg:
+            end = hit.end()
+        else:
+            after = [m.end() for m in _CLAUSE_END_RE.finditer(sent) if m.end() > hit.end()]
+            end = after[0] if after else len(sent)
+        sent = _cut(sent, start, end)
+    return sent, False
+
+
+def scoped_sentences(text: str) -> tuple[list[str], bool]:
+    """금지·읽기 전용 절을 뺀 문장들과, 요청 전체가 읽기 전용이라는 선언이 있었는지."""
+    out, whole_readonly = [], False
+    for sent in _SENTENCE_RE.split(text or ""):
+        if not sent.strip():
+            continue
+        cleaned, whole = _scope_clean(sent)
+        whole_readonly = whole_readonly or whole
+        if cleaned.strip():
+            out.append(cleaned)
+    return out, whole_readonly
+
+
 def drop_negated(text: str) -> str:
-    """부정·금지 표현이 든 문장을 뺀다."""
-    return "\n".join(sent for sent in _SENTENCE_RE.split(text or "") if sent.strip() and not _NEG_RE.search(sent))
+    """금지·읽기 전용으로 제한된 절을 뺀 문장(시킨 일만 남긴다)."""
+    return "\n".join(scoped_sentences(text)[0])
+
+
+def extract_constraints(text: str) -> list[str]:
+    """원본 요청의 금지·읽기 전용 문장. 계약을 만들거나 바꿔도 금지 조건이 사라지지 않게 보존한다."""
+    found = [sent.strip() for sent in _SENTENCE_RE.split(prose(text)) if sent.strip()
+             and (_NEG_RE.search(sent) or _READONLY_RE.search(sent))]
+    return [c[:300] for c in found][:20]
 
 
 def _line_items(line: str) -> list[tuple[str, str]]:
@@ -154,17 +221,16 @@ def is_complex(text: str) -> bool:
     - 번호 항목이 3개 이상(줄마다든 한 줄에 `1. … / 2. …` 로 이어 쓰든)이고, 명령형이 있거나 항목에 작업 명사가 2개 이상이며
     - 아니면 서로 다른 작업 동사·명사형 동작이 3개 이상(그중 하나는 실제로 바꾸는 것)일 때 복합이다.
     설명을 청하는 문장만 있고 바꾸라는 명령형이 없으면 동사가 몇 개든 복합이 아니다."""
-    whole = prose(text)
-    if _READONLY_DECL_RE.search(whole):
+    sentences, whole_readonly = scoped_sentences(prose(text))
+    if whole_readonly:
         return False
     asked = False
     kept = []
-    for sent in _SENTENCE_RE.split(drop_negated(whole)):
+    for sent in sentences:
         if _ASK_END_RE.search(sent) or _QUESTION_END_RE.search(sent):
             asked = True
             continue
-        if sent.strip():
-            kept.append(sent)
+        kept.append(sent)
     body = "\n".join(kept)
     if len(body) < MIN_COMPLEX_CHARS:
         return False

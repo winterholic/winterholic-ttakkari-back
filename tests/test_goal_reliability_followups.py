@@ -174,7 +174,7 @@ async def test_progress_then_stall_sequence(client, auth, make_dir):
 
 # ---- 작업자 보고의 상태·본문 불일치 --------------------------------------------------------------------
 async def _worker_report(client, auth, make_dir, text, status=RunStatus.succeeded):
-    sess, h = await lead(client, auth, make_dir)
+    sess, _ = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
     w = await make_worker(sid)
     run = await new_run(sid, session_id=w, status=RunStatus.running)
@@ -191,7 +191,7 @@ async def _worker_report(client, auth, make_dir, text, status=RunStatus.succeede
     "상태: 완료\n1) 배포는 vercel 업로드를 진행 중입니다. 결과를 기다리는 중입니다.",
 ])
 async def test_completion_declared_while_still_waiting_continues_through_closure(client, auth, make_dir, contract_on, text):
-    sid, w, run, info, closures = await _worker_report(client, auth, make_dir, text)
+    sid, w, _, info, closures = await _worker_report(client, auth, make_dir, text)
     assert info["violation"] and info["inconsistent"] == "waiting"
     assert len(closures) == 1 and "포그라운드로 끝까지 기다려" in closures[0].prompt
     reports = await queued(sid, RunOrigin.report)

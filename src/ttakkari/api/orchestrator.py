@@ -257,7 +257,7 @@ async def _spawner(db: Db, sid: uuid.UUID) -> ChatSession:
 async def manage_work(body: work.WorkIn, sid: OrchestratorSession, db: Db) -> dict:
     sess = await _orchestrator(db, sid)
     if body.operation == "get":
-        return await work.load(db, sid)
+        return await work.view(db, sid)
     saved = await work.checkpoint(db, sess, body)
     record(db, actor="agent", action="work.checkpoint", target_type="session", target_id=sid,
            detail={"revision": saved["revision"], "status": saved["state"]["status"]})

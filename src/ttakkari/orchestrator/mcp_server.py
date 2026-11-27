@@ -1268,7 +1268,7 @@ def orchestrator_tool(fn):
 
 @orchestrator_tool
 async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision: int = 0,
-                      state: dict[str, Any] | None = None) -> str:
+                      state: dict[str, Any] | None = None, confirm_original_items: bool = False) -> str:
     """Get/checkpoint this lead's durable goal contract before sustained work and after milestones.
     checkpoint uses the revision from get (stale writes rejected). state: goal, strategy, requirements
     [{id,text,status:pending|review|done,evidence}], status:active|blocked|paused|complete, next_action;
@@ -1276,10 +1276,18 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     replan_reason, blocker, pms_project_id. Preserve requirement ids/text and original goal when replanning.
     Done requires evidence; complete requires every requirement and linked PMS leaf done. Gate success
     is intermediate. active requires next_action; blocked/paused requires exact blocker (pause: user request).
-    Existing workers own pending execution; otherwise unfinished active work automatically continues,
-    stopping after two continuations without recorded progress. get restores across engine/context changes.
+    Existing workers and queued Runs own pending execution; otherwise unfinished active work automatically
+    continues. It may continue twice without recorded progress (files/commits/tests or checkpoint changes);
+    the next no-progress turn blocks. Account limits and model capacity wait for reset instead of retrying
+    immediately; transient engine errors retry with backoff a bounded number of times. A complex user/desk
+    request opens an auto contract (reshape it once with your own plan before any requirement is done);
+    later user requests are kept in additional_requests (merge them into requirements with replan_reason),
+    and a finished contract is archived in previous_contracts before a new one opens.
+    complete first warns (409) when original request items look unmapped to requirements; if each is done or
+    intentionally out of scope, resend with confirm_original_items=true. get restores across engine/context changes.
     Evidence strings are assertions to inspect, not independently verified execution receipts."""
-    return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state})
+    return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state,
+                                         "confirm_original_items": confirm_original_items})
 
 
 @orchestrator_tool

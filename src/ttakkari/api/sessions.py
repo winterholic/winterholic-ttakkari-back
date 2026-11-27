@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from collections.abc import Callable
@@ -30,6 +31,7 @@ from ttakkari.models import (
     Workspace,
     utcnow,
 )
+from ttakkari.orchestrator.work import INTAKE_ORIGINS
 from ttakkari.runs import events
 from ttakkari.runs.manager import manager
 from ttakkari.schemas import (
@@ -45,6 +47,7 @@ from ttakkari.schemas import (
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api", tags=["sessions"])
+log = logging.getLogger("ttakkari.sessions")
 ACTIVE = [RunStatus.queued, RunStatus.running]
 SSE_PING_SECONDS = 15
 EVENT_PAGE = 500
@@ -196,6 +199,18 @@ async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, reques
     return run
 
 
+async def _intake_goal(db: AsyncSession, s: ChatSession, run: Run, prompt: str, origin: RunOrigin) -> None:
+    from ttakkari.orchestrator import work
+    origin_name = origin.value if hasattr(origin, "value") else str(origin)
+    # 대기 중인 자동 후속이 사용자 지시를 뒤에 세우지 않도록 먼저 거둔다. 실패해도 요청 저장은 막지 않는다.
+    try:
+        async with db.begin_nested():
+            await work.release_waiting_continuations(db, s.id, "new user request supersedes waiting goal continuation")
+    except Exception:
+        log.exception("releasing waiting continuations failed: %s", s.id)
+    await work.safe_intake(db, s, run.id, prompt, origin_name)
+
+
 async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: RunOrigin = RunOrigin.user,
                     context_artifact_ids: list[uuid.UUID] | None = None, model: str | None = None,
                     effort: str | None = None, ip: str | None = None, request_key: str | None = None,
@@ -214,6 +229,14 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
                     or (model is not None and existing.model != model) or (effort is not None and existing.effort != effort)):
                 raise HTTPException(409, "같은 요청 키가 다른 지시에 사용됐습니다.")
             return existing
+    intake = s.kind == SessionKind.orchestrator and origin in INTAKE_ORIGINS
+    if intake and not request_key:
+        # Run 을 넣기 전에 잠가야 같은 세션의 동시 접수가 교착(FOR KEY SHARE ↔ FOR UPDATE)하지 않는다.
+        try:
+            async with db.begin_nested():
+                await db.scalar(select(ChatSession.id).where(ChatSession.id == s.id).with_for_update())
+        except Exception:
+            log.exception("session lock before goal intake failed: %s", s.id)
     ahead = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
     run = Run(session_id=s.id, workspace_id=s.workspace_id, prompt=prompt, origin=origin, request_key=request_key,
               context_artifact_ids=[str(a) for a in context_artifact_ids or []], engine=s.engine,
@@ -232,6 +255,8 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
     if generation.current:
         await generation.fence_pending(db)
         await generation.wake(db, run.id)
+    if intake:
+        await _intake_goal(db, s, run, prompt, origin)
     await db.commit()
     await manager.dispatch(s.id)
     return run

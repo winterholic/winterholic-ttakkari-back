@@ -2183,8 +2183,13 @@ class RunManager:
         from ttakkari import reverse_tasks
         reverse_next = await reverse_tasks.on_finished(db, run)
         from ttakkari.orchestrator import work
+        continued_id = None
+        continued_wait = None
         if sess is not None:
-            await work.after_run(db, sess, run)
+            continued_id = await work.after_run(db, sess, run)
+            if continued_id is not None:
+                continued = await db.get(Run, continued_id)
+                continued_wait = continued.resume_after if continued is not None else None
         closure = None
         if sess is not None:
             from ttakkari.runs import completion
@@ -2202,8 +2207,12 @@ class RunManager:
             _spawn(self.dispatch(reverse_next))
         if parent_id is not None:
             _spawn(self.dispatch(parent_id))
-        if closure is not None and sess is not None:
-            _spawn(self.dispatch(sess.id))
+        if sess is not None and (closure is not None or continued_id is not None):
+            if continued_wait is not None and continued_wait > utcnow() and closure is None:
+                # 한도·오류 대기 후속은 지금 돌리지 않고 해제 시각에 깨운다. 재시작 때는 resume_queued 가 다시 건다.
+                self._arm(continued_id, sess.id, continued_wait.timestamp())
+            else:
+                _spawn(self.dispatch(sess.id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))
         if (run.usage or {}).get("game"):  # 자동 빌드 여부와 무관하게 종료 시점의 잠금 상태를 요청 기록에 남긴다

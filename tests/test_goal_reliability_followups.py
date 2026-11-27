@@ -274,3 +274,58 @@ async def test_original_request_of_a_new_contract_is_the_latest_request_not_the_
 async def _run_ids(sid):
     async with sessionmaker()() as db:
         return await db.scalars(select(Run.id).where(Run.session_id == sid, Run.origin == RunOrigin.user).order_by(Run.created_at, Run.id))
+
+
+# ---- GPT 교차 검증 P1: 짧은 자연어 복합·한 줄 번호 항목 누락 ------------------------------------------------
+SHORT_COMPOUND = {
+    "counter_1": "조사하고 고쳐서 배포해",
+    "counter_2": "이 부분 개선해줘: 1. 오류 원인 조사 / 2. 코드 수정 / 3. 회귀 테스트 추가",
+    "investigate_then_fix": "원인 조사 후 수정하고 테스트 추가해서 배포해줘",
+    "find_fix_test_push": "버그 찾아서 고치고 테스트 돌리고 푸시해줘",
+    "analyze_fix_deploy": "분석하고 수정한 다음 배포까지 해",
+    "comma_nouns_with_verb": "오류 수정, 테스트 추가, 배포 진행해",
+    "letters": "A 조사하고 B 수정하고 C 배포해줘",
+    "nominal_list": "오류 원인 조사, 코드 수정, 회귀 테스트 추가, 배포",
+    "numbered_nominal_lines": "1. 원인 조사\n2. 코드 수정\n3. 테스트 추가",
+    "paren_inline": "성능 개선해줘 (1) 쿼리 분석 (2) 인덱스 추가 (3) 벤치마크 작성",
+    "improve_chain": "로그인 조사하고 개선하고 테스트 추가해줘",
+}
+SIMPLE_OR_ASK = {
+    "two_verbs": "README 오타 수정하고 커밋해줘",
+    "git_routine": "수정하고 커밋하고 푸시해줘",
+    "status": "지금 어떻게 됐어?",
+    "explain_how": "수정하고 테스트하고 배포하는 방법을 설명해줘",
+    "date_not_items": "2026. 11. 28. 배포 일정 알려줘",
+    "single_investigation": "이 에러 원인 조사해줘",
+    "single_fix": "로그인 버그 고쳐줘",
+    "inline_choices_explain": "배포 순서는 1. 빌드 2. 푸시 3. 확인 이야 설명해줘",
+}
+
+
+@pytest.mark.parametrize("name", sorted(SHORT_COMPOUND))
+def test_short_compound_requests_are_complex(name):
+    assert is_complex(SHORT_COMPOUND[name])
+
+
+@pytest.mark.parametrize("name", sorted({**NOT_COMPLEX, **SIMPLE_OR_ASK}))
+def test_explanations_and_simple_requests_stay_non_complex(name):
+    assert not is_complex({**NOT_COMPLEX, **SIMPLE_OR_ASK}[name])
+
+
+def test_inline_numbered_items_must_count_up_from_one():
+    from ttakkari.orchestrator.goal_signals import extract_items
+    assert [i["text"] for i in extract_items(SHORT_COMPOUND["counter_2"])] == ["오류 원인 조사", "코드 수정", "회귀 테스트 추가"]
+    assert extract_items("2026. 11. 28. 배포 일정") == []
+
+
+@pytest.mark.parametrize("name", ["counter_1", "counter_2", "investigate_then_fix", "comma_nouns_with_verb"])
+async def test_short_compound_requests_open_a_contract_and_continue(client, auth, make_dir, name):
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    run = await request(sid, SHORT_COMPOUND[name])
+    state = (await get(client, h))["state"]
+    assert state["status"] == "active"
+    if name == "counter_2":
+        assert [r["text"] for r in state["requirements"]] == ["오류 원인 조사", "코드 수정", "회귀 테스트 추가"]
+    await finish(run.id, RunStatus.succeeded, result_text="일부만")
+    assert len(continuations(await queued(sid))) == 1

@@ -35,6 +35,7 @@ from ttakkari.orchestrator.goal_signals import (
     classify_followup,
     error_signature,
     evidence_line,
+    extract_constraints,
     extract_items,
     failure_kind,
     is_complex,
@@ -160,7 +161,7 @@ async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
 def _request_record(run_id: uuid.UUID | str | None, prompt: str, origin: str) -> dict:
     clean = request_text(prompt, origin)
     return {"run_id": str(run_id) if run_id else None, "prompt": prompt, "origin": origin,
-            "items": extract_items(clean)}
+            "items": extract_items(clean), "constraints": extract_constraints(clean)}
 
 
 def _original_gaps(current: dict, requirements: list[dict]) -> list[dict]:
@@ -281,7 +282,7 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     return saved
 
 
-def _auto_state(clean: str, items: list[dict[str, str]]) -> WorkState:
+def _auto_state(clean: str, items: list[dict[str, str]], constraints: list[str] | None = None) -> WorkState:
     if items:
         reqs = [Requirement(id=it["label"], text=it["text"], status="pending") for it in items]
     else:
@@ -289,7 +290,8 @@ def _auto_state(clean: str, items: list[dict[str, str]]) -> WorkState:
         texts = lines[:10] if len(lines) >= 2 else [clean[:300]]
         reqs = [Requirement(id=str(i + 1), text=t[:1000], status="pending") for i, t in enumerate(texts)]
     return WorkState(goal=clean.splitlines()[0][:200] or "요청 수행", strategy="복합 요청 자동 접수 — 원본 요구 항목별 실행 및 검증",
-                     requirements=reqs, status="active", next_action=reqs[0].text[:2000])
+                     requirements=reqs, status="active", next_action=reqs[0].text[:2000],
+                     decisions=[f"원본 금지·제약(유지): {c}" for c in (constraints or [])[:10]])
 
 
 def _archive_entry(current: dict) -> dict:
@@ -331,7 +333,7 @@ async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID 
         return "appended"
     if not complex_request:
         return None
-    auto = _auto_state(clean, record_["items"])
+    auto = _auto_state(clean, record_["items"], record_["constraints"])
     history = list(current.get("history") or [])
     archived = False
     if state:  # complete: 이전 계약은 보관하고 새 계약을 연다.
@@ -357,6 +359,16 @@ async def safe_intake(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID | N
     except Exception: # 접수 보조 기능이라 요청 저장이 항상 우선이다.
         log.exception("goal contract intake failed for session %s; request kept without auto contract", sess.id)
         return None
+
+
+def _constraints(current: dict) -> list[str]:
+    """원본·추가 요청의 금지·읽기 전용 문장(중복 제거). 계약·후속 프롬프트가 바뀌어도 유지한다."""
+    found: list[str] = []
+    for src in [current.get("original_request"), *(current.get("additional_requests") or [])]:
+        for c in (src or {}).get("constraints") or []:
+            if c not in found:
+                found.append(c)
+    return found[:20]
 
 
 def _additional_note(current: dict) -> list[dict]:
@@ -388,6 +400,10 @@ async def prompt_note(db: AsyncSession, sess: ChatSession) -> str:
                if original else None)
     payload = {"revision": current["revision"], "original_request": pointer, "state": current["state"]}
     head = "[영속 목표 계약 — 보고/메모는 실행 증거와 대조하고, 원래 요구와 미완료부터 이어간다]\n"
+    if rules := _constraints(current):
+        payload["original_constraints"] = rules
+        head += ("[원본 금지·제약 — 요청 전체 또는 해당 단계에만 걸린 제한이다. 계약·재계획·후속에서도 그대로 지키고, "
+                 "금지된 변경을 실행하는 요구로 바꾸지 마라]\n")
     if extra := _additional_note(current):
         payload["additional_requests"] = extra
         head += ("[추가 요청 — 계약 이후 들어온 사용자 요청이다. 기존 요구와 범위를 합쳐 요구를 추가하고 "
@@ -541,6 +557,8 @@ def _continuation_prompt(state: dict, current: dict, *, header: str, ev_line: st
         lines.append(f"- 직전 실행 성과: {ev_line}")
     lines.append(f"- 이미 완료된 항목: {', '.join(done) if done else '없음'} (재실행 금지)")
     lines.append("- 남은 미완료 항목: " + (", ".join(r["text"] for r in pending) if pending else "없음 — 완료 근거를 확인해 complete 로 체크포인트하거나 빠진 요구를 추가하라"))
+    if rules := _constraints(current):
+        lines.append("- 원본 금지·제약(그대로 지켜라): " + " / ".join(r[:120] for r in rules[:6]))
     if current.get("additional_requests"):
         lines.append("- 계약 이후 추가 요청이 있다. 범위를 합쳐 요구에 추가하라(영속 목표 계약의 additional_requests).")
     lines.append("다음 동작: " + state["next_action"])

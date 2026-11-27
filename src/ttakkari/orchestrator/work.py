@@ -124,6 +124,18 @@ class WorkIn(BaseModel):
     # complete 체크포인트에서 원본 요청 항목이 계약과 대응되지 않아 보일 때 한 번 경고하고, 확인했다는 표시로 다시 보낸다.
     confirm_original_items: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def _hoist_confirm_from_state(cls, data):
+        """state 안에 넣어 보낸 confirm_original_items 도 받는다. 409 안내를 state 필드로 읽거나, 이 인자가 없는 옛 MCP 도구
+        스키마(오래 산 기획 세션)에서도 확인을 보낼 수 있어야 한다. state 모델은 모르는 필드를 거부하므로 먼저 꺼낸다."""
+        state = data.get("state") if isinstance(data, dict) else None
+        if isinstance(state, dict) and "confirm_original_items" in state:
+            state = dict(state)
+            flag = state.pop("confirm_original_items")
+            data = {**data, "state": state, "confirm_original_items": bool(data.get("confirm_original_items")) or flag is True}
+        return data
+
 
 def key(sid: uuid.UUID) -> str:
     return f"lead-work:{sid}"
@@ -287,7 +299,8 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
             listed = "; ".join(f"{g['label']}: {g['text'][:60]}" for g in gaps[:12])
             raise HTTPException(409, "original request items look unmapped to contract requirements "
                                 f"({len(gaps)}): {listed}. If each is done or intentionally out of scope, "
-                                "resend the complete checkpoint with confirm_original_items=true")
+                                "resend the same complete checkpoint with the top-level manage_work argument "
+                                "confirm_original_items=true (a sibling of state, not a state field)")
         if gaps:
             confirmed = [*confirmed, *(g["label"] for g in gaps)][-60:]
     # Updating prose/revision alone is not progress. Budget only resets when observed work changes.

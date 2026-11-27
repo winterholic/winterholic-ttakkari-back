@@ -1286,7 +1286,8 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     later user requests are kept in additional_requests (merge them into requirements with replan_reason),
     and a finished contract is archived in previous_contracts before a new one opens.
     complete first warns (409) when original request items look unmapped to requirements; if each is done or
-    intentionally out of scope, resend with confirm_original_items=true. get restores across engine/context changes.
+    intentionally out of scope, resend the same state with the top-level argument confirm_original_items=true
+    (next to state, not inside it). get restores across engine/context changes.
     Evidence strings are assertions to inspect, not independently verified execution receipts."""
     return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state,
                                          "confirm_original_items": confirm_original_items})

@@ -85,7 +85,7 @@ _LOG_LINE_RE = re.compile(
 def request_text(prompt: str, origin: str) -> str:
     """사용자의 말만 남긴다. 접수 머리글과 참고용 최근 대화는 요청이 아니다."""
     text = (prompt or "").strip()
-    if origin == "desk" and text.startswith(DESK_HEADER):
+    if text.startswith(DESK_HEADER):  # 접수 머리글은 구역 제목이 아니다. 출처 표기와 무관하게 뗀다.
         text = text[len(DESK_HEADER):].strip()
     cut = text.find(f"\n\n{_HISTORY_MARK}")
     if cut >= 0:
@@ -179,6 +179,17 @@ def _line_items(line: str) -> list[tuple[str, str]]:
     return [(label, found.group("body").strip())]
 
 
+def _is_numbered_heading(label: str, body: str, rest: list[str]) -> bool:
+    """`1. 작업 배경 및 목적` 처럼 동사 없는 짧은 번호 제목. 아래에 불릿·들여쓴 내용이 이어질 때만 제목으로 본다.
+
+    제목은 요구가 아니라 내용을 묶는 이름이라 대조 대상에서 뺀다. 아래 내용이 없는 동사 없는 항목("3. 로그인 화면")은
+    실제 요구일 수 있어 남긴다."""
+    if not label.isdigit() or len(body) > 40 or _ACTION_RE.search(body) or body.rstrip().endswith((".", "다", "요")):
+        return False
+    nxt = next((ln for ln in rest if ln.strip()), "")
+    return bool(_BULLET_RE.match(nxt)) or (nxt.startswith(("  ", "\t")) and not _ITEM_RE.match(nxt))
+
+
 def extract_items(text: str) -> list[dict[str, str]]:
     """번호·라벨이 붙은 줄만 요구 항목으로 본다. 불릿은 경로·보조 설명이 많아 제외한다.
 
@@ -187,12 +198,15 @@ def extract_items(text: str) -> list[dict[str, str]]:
     seen: set[str] = set()
     used: set[str] = set()
     section = ""
-    for line in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    for idx, line in enumerate(lines):
         head = _SECTION_RE.match(line)
         if head:
             section = (head.group("h") or head.group("b") or "").strip()
             continue
         for label, body in _line_items(line):
+            if _is_numbered_heading(label, body, lines[idx + 1:]):
+                continue
             key = f"{section}|{label}:{body[:40]}"
             if key in seen or len(body) < 3:
                 continue

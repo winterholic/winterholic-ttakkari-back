@@ -136,7 +136,7 @@ async def test_p0_3_live_worker_alone_owns_the_next_step_after_a_failure(client,
 async def test_p0_4_worker_report_run_never_creates_a_contract_or_continuation(client, auth, make_dir):
     sess, h = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
-    assert is_complex(REPORT)  # 보고문이 복합 요청처럼 보여도
+    assert is_complex(REPORT + "\n- 마이그레이션을 적용하고 푸시해서 배포해줘")  # 보고문이 복합 요청처럼 보여도
     report = await request(sid, REPORT, origin=RunOrigin.report)
     await finish(report.id, RunStatus.succeeded, result_text="확인")
     assert (await get(client, h))["state"] is None and await raw(sid) == {}

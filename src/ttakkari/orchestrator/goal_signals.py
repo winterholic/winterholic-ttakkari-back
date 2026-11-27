@@ -25,18 +25,19 @@ DESK_HEADER = "[접수에서 넘긴 사용자 요청]"
 _HISTORY_MARK = "[최근 대화"
 
 # ---- 복합 요청 판정 ---------------------------------------------------------------------------------------
-MIN_COMPLEX_CHARS = 30
+MIN_COMPLEX_CHARS = 10  # 짧은 복합 자연어("조사하고 고쳐서 배포해")도 동사 수로 판정하므로 길이 문턱은 낮게 둔다
 _ITEM_RE = re.compile(
     r"^\s*(?:(?P<num>\d{1,2})\s*[.)]|\((?P<pnum>\d{1,2})\)|(?P<circ>[①-⑳])|(?P<tag>[A-Za-z]{1,3}\d{1,2})\s*[.:)])\s*(?P<body>\S.*)$")
 _BULLET_RE = re.compile(r"^\s*[-*•]\s+\S")
 _SECTION_RE = re.compile(r"^\s*(?:#{1,4}\s*(?P<h>.{1,30})|[\[【(](?P<b>[^\]】)]{1,30})[\]】)])\s*:?\s*$")
 _ACTION_RE = re.compile(
     r"수정|구현|추가|제거|삭제|작성|테스트|검증|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩|refactor|조사|분석|"
-    r"정리|고쳐|고치|만들|적용|마이그레이션|migrat|implement|fix\b|build|설치|연결|통합|재현|보고서|문서화", re.IGNORECASE)
+    r"정리|고쳐|고치|만들|적용|마이그레이션|migrat|implement|fix\b|build|설치|연결|통합|재현|보고서|문서화|"
+    r"개선|개편|변경|교체|최적화|보완|정비", re.IGNORECASE)
 # 파일·배포·코드를 실제로 바꾸는 동사. 분석·정리·설명만 있는 요청은 계약 대상이 아니다.
 _MUTATING_RE = re.compile(
     r"수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩|refactor|고쳐|고치|만들|적용|"
-    r"마이그레이션|migrat|implement|fix\b|build|설치", re.IGNORECASE)
+    r"마이그레이션|migrat|implement|fix\b|build|설치|개선|개편|변경|교체|최적화|보완|정비", re.IGNORECASE)
 _IMPERATIVE_RE = re.compile(
     r"해줘|해 줘|해라|하세요|해주세요|해 주세요|하자|바꿔|고쳐|만들어|추가해|수정해|적용해|진행해|이어서|계속|"
     r"배포|push|푸시|구현|실행해|돌려|\bplease\b|\bdo\b|\bfix\b|\badd\b|\bimplement", re.IGNORECASE)
@@ -50,11 +51,17 @@ _QUESTION_END_RE = re.compile(r"[?？]\s*$|(?:까|냐|니|죠|가요|어요|았�
 # 실제로 바꾸라는 명령형. 명사로만 나온 동사("수정, 테스트, 구현 방식을 설명해줘")는 계약 대상이 아니다.
 _CMD_RE = re.compile(
     r"(?:(?:수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩터링|refactor|적용|설치|"
-    r"마이그레이션|fix|build|진행|수행|실행|처리)(?:하고|하며|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
+    r"마이그레이션|fix|build|개선|개편|변경|교체|최적화|보완|정비|조사|분석|진행|수행|실행|처리)(?:하고|하며|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
     r"고치(?:고|세요|며)|고쳐|만들(?:고|어|며)|바꿔|바꾸고|돌려|올려|붙여|넣어)", re.IGNORECASE)
 # 부정 지시가 든 문장("수정하지 말고", "…요청을 하지 않는다")은 시킨 일이 아니라 금지다. 문장째 센다.
 _NEG_RE = re.compile(r"지\s*(?:말|마|않|못)|금지|않는다|않습니다|않음|안\s*한다|마세요|\bdo not\b|\bdon't\b|\bnever\b|\bwithout\b",
                      re.IGNORECASE)
+# 설명·질문을 청하는 문장. 이 문장 속 동사는 시킨 일이 아니라 설명 대상이다("수정, 배포 방식을 설명해줘").
+_ASK_END_RE = re.compile(r"(?:설명|알려|말해|가르쳐|요약|비교|보여|궁금)\S{0,8}[\s.!?]*$")
+# 같은 일을 가리키는 동사는 한 번만 센다(수정·고치, 커밋·푸시·병합 은 한 묶음의 git 작업).
+_CANON = {"고쳐": "수정", "고치": "수정", "커밋": "git", "commit": "git", "푸시": "git", "push": "git", "병합": "git",
+          "머지": "git", "merge": "git", "deploy": "배포", "refactor": "리팩", "fix": "수정"}
+_INLINE_MARK_RE = re.compile(r"(?:^|(?<=[\s:]))(\d{1,2})[.)]\s+(?=\S)")
 _READONLY_DECL_RE = re.compile(r"읽기\s*전용|read[- ]only", re.IGNORECASE)
 _SENTENCE_RE = re.compile(r"(?<=[.!?。])\s+|\n")
 _FENCE_RE = re.compile(r"```.*?(?:```|$)", re.DOTALL)
@@ -87,6 +94,24 @@ def drop_negated(text: str) -> str:
     return "\n".join(sent for sent in _SENTENCE_RE.split(text or "") if sent.strip() and not _NEG_RE.search(sent))
 
 
+def _line_items(line: str) -> list[tuple[str, str]]:
+    """한 줄의 (라벨, 본문). `1. 원인 조사 / 2. 코드 수정 / 3. 테스트` 처럼 한 줄에 이어 쓴 번호 항목도 나눈다.
+
+    한 줄 안의 번호는 1부터 1씩 늘 때만 항목으로 본다(날짜·버전 숫자를 항목으로 오인하지 않는다)."""
+    marks = list(_INLINE_MARK_RE.finditer(line))
+    if len(marks) >= 2 and [int(m.group(1)) for m in marks] == list(range(1, len(marks) + 1)):
+        out = []
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(line)
+            out.append((m.group(1), line[m.end():end].strip(" /;,·|\t")))
+        return out
+    found = _ITEM_RE.match(line)
+    if not found:
+        return []
+    label = found.group("tag") or found.group("num") or found.group("pnum") or found.group("circ")
+    return [(label, found.group("body").strip())]
+
+
 def extract_items(text: str) -> list[dict[str, str]]:
     """번호·라벨이 붙은 줄만 요구 항목으로 본다. 불릿은 경로·보조 설명이 많아 제외한다.
 
@@ -100,48 +125,63 @@ def extract_items(text: str) -> list[dict[str, str]]:
         if head:
             section = (head.group("h") or head.group("b") or "").strip()
             continue
-        found = _ITEM_RE.match(line)
-        if not found:
-            continue
-        label = found.group("tag") or found.group("num") or found.group("pnum") or found.group("circ")
-        body = found.group("body").strip()
-        key = f"{section}|{label}:{body[:40]}"
-        if key in seen or len(body) < 3:
-            continue
-        seen.add(key)
-        ident = label
-        if ident in used:
-            ident = f"{section}-{label}" if section else f"{label}-2"
-            n = 2
-            while ident in used:
-                ident = f"{section or label}-{label}#{n}"
-                n += 1
-        ident = ident[:80]
-        used.add(ident)
-        items.append({"label": ident, "text": body[:300]})
+        for label, body in _line_items(line):
+            key = f"{section}|{label}:{body[:40]}"
+            if key in seen or len(body) < 3:
+                continue
+            seen.add(key)
+            ident = label
+            if ident in used:
+                ident = f"{section}-{label}" if section else f"{label}-2"
+                n = 2
+                while ident in used:
+                    ident = f"{section or label}-{label}#{n}"
+                    n += 1
+            ident = ident[:80]
+            used.add(ident)
+            items.append({"label": ident, "text": body[:300]})
     return items[:60]
+
+
+def _canon(words: set[str]) -> set[str]:
+    return {_CANON.get(w, w) for w in words}
 
 
 def is_complex(text: str) -> bool:
     """여러 단계를 책임져야 하는 요청인가. 짧은 질문·잡담·로그 붙여넣기·설명·읽기 전용 지시에는 계약도 추가 추론도 강제하지 않는다.
 
-    길이만으로는 판정하지 않는다. 사람의 문장(로그·코드블록·부정 지시 문장 제외)에서 파일·배포를 바꾸라는 명령형이 있고,
-    번호 항목 3개 이상이거나 서로 다른 작업 동사 3개 이상일 때 복합이다."""
+    길이나 특정 어미로 판정하지 않는다. 사람의 문장(로그·코드블록·부정 지시·설명 요청 문장 제외)에서
+    - 번호 항목이 3개 이상(줄마다든 한 줄에 `1. … / 2. …` 로 이어 쓰든)이고, 명령형이 있거나 항목에 작업 명사가 2개 이상이며
+    - 아니면 서로 다른 작업 동사·명사형 동작이 3개 이상(그중 하나는 실제로 바꾸는 것)일 때 복합이다.
+    설명을 청하는 문장만 있고 바꾸라는 명령형이 없으면 동사가 몇 개든 복합이 아니다."""
     whole = prose(text)
     if _READONLY_DECL_RE.search(whole):
         return False
-    body = drop_negated(whole)
+    asked = False
+    kept = []
+    for sent in _SENTENCE_RE.split(drop_negated(whole)):
+        if _ASK_END_RE.search(sent) or _QUESTION_END_RE.search(sent):
+            asked = True
+            continue
+        if sent.strip():
+            kept.append(sent)
+    body = "\n".join(kept)
     if len(body) < MIN_COMPLEX_CHARS:
         return False
     mutating = {m.group(0).lower() for m in _MUTATING_RE.finditer(body)}
-    if not mutating or not _CMD_RE.search(body):
+    if not mutating:
         return False
-    if _QUESTION_END_RE.search(body) and not _COMMAND_END_RE.search(body):
-        return False
+    cmd = bool(_CMD_RE.search(body))
     items = extract_items(body)
     if len(items) >= 3:
-        return True
-    actions = {m.group(0).lower() for m in _ACTION_RE.finditer(body)}
+        if cmd:
+            return True
+        joined = " ".join(it["text"] for it in items)
+        acted = sum(1 for it in items if _ACTION_RE.search(it["text"]))
+        return not asked and acted >= 2 and bool(_MUTATING_RE.search(joined))
+    if asked and not cmd:
+        return False
+    actions = _canon({m.group(0).lower() for m in _ACTION_RE.finditer(body)})
     bullets = sum(1 for line in body.splitlines() if _BULLET_RE.match(line))
     if len(actions) >= 3:
         return True

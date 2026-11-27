@@ -42,6 +42,14 @@ CLOSURE_PROMPT = (
     "- 막혔으면 시도한 것, 관찰한 오류, 다음 후보를 적는다."
 )
 
+WEAK_CLOSURE_PROMPT = (
+    "[완료 확인] 직전 Run 에서 `상태: 완료`를 선언했으나 실행 증거(명령·출력 1~3줄, 커밋, 검증 결과)가 없다.\n"
+    "- 실제로 수행하고 실행 증거가 있는 항목만 완료로 적는다. 증거가 없으면 지금 실행해서 만든다.\n"
+    "- 하지 않은 항목은 이번 턴에서 이어서 수행한다. 이미 끝낸 작업과 검증은 반복하지 않는다.\n"
+    "- 마지막 메시지 첫 줄에 `상태: 완료 | 부분 | 막힘` 중 하나를 쓰고, 지시 항목마다 결과 한 줄과 실행 증거를 적는다.\n"
+    "- 막혔으면 시도한 것, 관찰한 오류, 다음 후보를 적는다."
+)
+
 
 def enabled() -> bool:
     return bool(get_settings().worker_completion_contract)
@@ -79,8 +87,17 @@ def annotate(sess: ChatSession, run: Run) -> dict[str, Any] | None:
     """Run.usage 에 계약 이행 여부를 기록하고 돌려준다. 적용 대상이 아니면 None."""
     if not applies(sess, run):
         return None
+    from ttakkari.orchestrator.goal_signals import weak_evidence
     status = parse(run.result_text)
-    info: dict[str, Any] = {"status": status, "violation": status is None}
+    # 완료 확인 Run 자신은 다시 검사하지 않는다(closure 폭주 방지). 완료 선언에 본문이 없거나 완료 단어뿐이면 증거 없음.
+    weak = False
+    if status == "완료" and not (run.usage or {}).get("closure"):
+        body = "\n".join(ln.strip() for ln in (run.result_text or "").strip().splitlines()
+                         if not _STATUS_RE.match(ln.strip()) and not _REMAINING_RE.match(ln.strip())).strip()
+        weak = not body or weak_evidence(body)
+    info: dict[str, Any] = {"status": status, "violation": status is None or weak}
+    if weak:
+        info["weak_evidence"] = True
     if status in ("부분", "막힘") and (remaining := parse_remaining(run.result_text)):
         info["remaining"] = remaining
     run.usage = {**(run.usage or {}), "completion": info}
@@ -100,7 +117,8 @@ async def closure_run(db: AsyncSession, sess: ChatSession, run: Run) -> Run | No
     if any(r.id != run.id and r.status in (RunStatus.queued, RunStatus.running) for r in recent):
         return None
     closure = Run(session_id=sess.id, workspace_id=sess.workspace_id, engine=sess.engine, model=sess.model,
-                  effort=sess.effort, origin=RunOrigin.orchestrator, prompt=CLOSURE_PROMPT,
+                  effort=sess.effort, origin=RunOrigin.orchestrator,
+                  prompt=WEAK_CLOSURE_PROMPT if info.get("weak_evidence") else CLOSURE_PROMPT,
                   status=RunStatus.queued, usage={"closure": {"source_run_id": str(run.id)}})
     db.add(closure)
     await db.flush()
@@ -115,6 +133,11 @@ def report_line(info: dict[str, Any] | None) -> str | None:
     if not info:
         return None
     if info.get("violation"):
+        if info.get("weak_evidence"):
+            if info.get("closure_run_id"):
+                return ("완료 계약 위반: 상태=완료로 선언했으나 실행 증거가 없다. 자동 완료 확인 Run 이 이어서 실행 중이다. "
+                        "이 보고만으로 완료로 판단하지 말고 다음 보고를 기다려라.")
+            return "완료 계약 위반: 상태=완료로 선언했으나 실행 증거가 없다. 완료로 보지 말고 지시 항목별 증거를 확인한 뒤 후속 지시를 내려라."
         if info.get("closure_run_id"):
             return ("완료 계약 위반: 상태 줄이 없다. 자동 완료 확인 Run 이 이어서 실행 중이다. "
                     "이 보고만으로 완료로 판단하지 말고 다음 보고를 기다려라.")

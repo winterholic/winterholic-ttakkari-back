@@ -37,6 +37,7 @@ from ttakkari.runs.manager import manager
 from ttakkari.schemas import (
     FailedRunOut,
     FailedRunsPage,
+    GoalSummary,
     RunEventOut,
     RunIn,
     RunOut,
@@ -122,7 +123,17 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)
 async def get_sess(session_id: uuid.UUID, _: User, db: Db) -> SessionOut:
-    return await _session_out(db, await get_session(db, session_id))
+    s = await get_session(db, session_id)
+    out = await _session_out(db, s)
+    if s.kind == SessionKind.orchestrator:
+        from ttakkari.orchestrator import work
+        # 읽기 전용 요약이다. 계약이 없으면 null 이고, 요약 계산 실패가 세션 조회를 막지 않는다.
+        try:
+            summary = await work.summary(db, s.id)
+            out.goal_summary = GoalSummary.model_validate(summary) if summary else None
+        except Exception:
+            log.exception("goal summary failed for session %s", s.id)
+    return out
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionOut)

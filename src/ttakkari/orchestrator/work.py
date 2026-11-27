@@ -158,6 +158,39 @@ async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
     return data
 
 
+async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
+    """사용자 화면용 목표 상태 요약. 계약이 없으면 None. `view` 의 파생 로직을 재사용하고 읽기만 한다.
+
+    원본 요청·이력·추가 요청 본문·금지 조건 같은 계약 내부는 담지 않는다. 대기(waiting)·사용자 중지(paused)·
+    사용자 조치 필요(blocked)를 phase/user_action 으로 가른다. Run 종료는 상태를 바꾸지 않는다."""
+    data = await view(db, sid)
+    state = data.get("state")
+    if not state:
+        return None
+    status = state["status"]
+    until = None
+    if status == "active" and data.get("waiting_until"):
+        parsed = datetime.fromisoformat(data["waiting_until"])
+        until = parsed if parsed > datetime.now(UTC) else None  # 지난 대기 시각은 더 이상 대기가 아니다
+    weak = [r for r in data["completed_scope"] if weak_evidence(r.get("evidence", ""))]
+    phase = {"blocked": "blocked", "paused": "paused", "complete": "complete"}.get(status, "waiting" if until else "running")
+    user_action = {"blocked": "intervene", "paused": "resume"}.get(status, "review" if weak else "none")
+
+    def req(r: dict) -> dict:
+        return {"id": r["id"], "text": r["text"], "status": r["status"], "evidence": (r.get("evidence") or "")[:300]}
+
+    return {"status": status, "phase": phase, "goal": state["goal"], "revision": data["revision"],
+            "completed": [req(r) for r in data["completed_scope"]], "pending": [req(r) for r in data["pending_scope"]],
+            "completed_count": len(data["completed_scope"]), "pending_count": len(data["pending_scope"]),
+            "running_tasks": list(data["running_tasks"]), "next_action": state.get("next_action", ""),
+            "waiting_until": until, "stop_reason": data["stop_reason"],
+            "blocker_kind": data.get("blocker_kind") if status == "blocked" else None,
+            "auto_resumable": status == "active", "user_action": user_action,
+            "user_intervention_needed": user_action in ("intervene", "review"),
+            "additional_request_count": len(data.get("additional_requests") or []),
+            "updated_at": data.get("updated_at")}
+
+
 def _request_record(run_id: uuid.UUID | str | None, prompt: str, origin: str) -> dict:
     clean = request_text(prompt, origin)
     return {"run_id": str(run_id) if run_id else None, "prompt": prompt, "origin": origin,

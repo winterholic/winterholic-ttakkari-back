@@ -105,6 +105,39 @@ class SessionPatch(BaseModel):
     archived: bool | None = None
 
 
+class GoalRequirementOut(BaseModel):
+    id: str
+    text: str
+    status: Literal["pending", "review", "done"]
+    evidence: str = ""
+
+
+class GoalSummary(BaseModel):
+    """기획 세션의 목표 상태 요약(읽기 전용). 목표 계약 전체(원본 요청·이력·내부 기록)는 담지 않는다.
+
+    phase 가 화면 분기의 기준이다: running(진행 중) | waiting(한도·오류 대기, 자동 재개) | paused(사용자 중지)
+    | blocked(막힘, 사용자 조치 필요) | complete(완료). Run 이 끝났다는 사실만으로 complete 가 되지 않는다."""
+    status: Literal["active", "blocked", "paused", "complete"]
+    phase: Literal["running", "waiting", "paused", "blocked", "complete"]
+    goal: str
+    revision: int
+    completed: list[GoalRequirementOut]
+    pending: list[GoalRequirementOut]
+    completed_count: int
+    pending_count: int
+    running_tasks: list[str] = Field(default_factory=list)
+    next_action: str = ""
+    waiting_until: datetime | None = None
+    stop_reason: str = ""
+    blocker_kind: str | None = None
+    auto_resumable: bool
+    # none | resume(사용자가 다시 지시하면 이어간다) | intervene(막힘을 풀어야 한다) | review(완료 근거를 확인해야 한다)
+    user_action: Literal["none", "resume", "intervene", "review"]
+    user_intervention_needed: bool
+    additional_request_count: int = 0
+    updated_at: str | None = None
+
+
 class SessionOut(ORM):
     id: uuid.UUID
     workspace_id: uuid.UUID
@@ -131,6 +164,8 @@ class SessionOut(ORM):
     waiting_reason: str | None = None
     last_progress: str | None = None
     is_stuck: bool = False
+    # 상세 조회(GET /api/sessions/{id})에서만 채운다. 계약이 없거나 기획 세션이 아니면 null, 목록에서도 null.
+    goal_summary: GoalSummary | None = None
 
 
 # ---- runs

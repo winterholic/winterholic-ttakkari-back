@@ -50,6 +50,37 @@ WEAK_CLOSURE_PROMPT = (
     "- 막혔으면 시도한 것, 관찰한 오류, 다음 후보를 적는다."
 )
 
+INCONSISTENT_CLOSURE_PROMPT = (
+    "[완료 확인] 직전 Run 의 보고 본문이 아직 진행 중이거나 일부만 끝났다고 말하는데 상태 줄은 `완료`/증거 없는 종료다. "
+    "턴을 끝내는 것은 완료가 아니다. 백그라운드로 건 명령의 완료 알림을 기다리며 끝내지 말고, 포그라운드로 끝까지 기다려 결과를 확인하라.\n"
+    "- 진행 중이던 작업과 대기 중이던 검증을 이번 턴에서 끝까지 수행하고 실행 증거(명령·출력 1~3줄)를 남긴다. 이미 끝낸 작업은 반복하지 않는다.\n"
+    "- 끝내지 못한 항목이 있으면 `상태: 부분` 또는 `막힘` 으로 고쳐 쓰고, 남은 일이 바깥 결과 대기면 `남은 일: 대기` 와 이유를 적는다.\n"
+    "- 마지막 메시지 첫 줄에 `상태: 완료 | 부분 | 막힘` 중 하나를 쓰고, 지시 항목마다 결과 한 줄을 적는다."
+)
+
+# 본문이 "지금 진행 중이다/알림을 기다린다"고 말하는 문장. 정상 보고의 `미실행: 이유`, `대기 중인 Run 이 없음` 은 걸리지 않게 좁게 잡는다.
+_WAITING_RE = re.compile(
+    r"알림[을를]?\s*(?:대기|기다)|(?:결과|완료)[를을가이]?\s*(?:대기|기다리)|(?:진행|실행|수행)(?:하고|하는)\s*있(?:습니다|음|다)|"
+    r"(?:진행|실행|수행)\s*중(?:입니다|임|이다)(?!\s*이던)|기다리(?:는|고)\s*(?:중|있)|대기\s*중(?:입니다|임|이다)|"
+    r"(?:백그라운드|background).{0,40}(?:걸어|돌려|띄워|시작해|실행해)|waiting for (?:the )?(?:notification|result|completion)",
+    re.IGNORECASE)
+# 완료라면서 일부만 했다/못 했다고 쓰는 문장.
+_PARTIAL_RE = re.compile(r"부분\s*충족|일부만|(?:하지|지)\s*못(?:했|함|한다|합니다)|미충족\s*[:(]?|일부\s*(?:항목|작업)[은이]?\s*(?:미|못|하지)")
+
+
+def inconsistent_reason(status: str | None, body: str, remaining: str | None) -> str | None:
+    """상태 줄과 본문이 어긋나는가. waiting(진행·대기 중 종료) | partial(일부만 했다는 완료) | None.
+
+    `부분`+`남은 일: 대기` 는 바깥 결과를 기다린다고 밝힌 정상 보고라 제외한다. `막힘` 도 본문이 정직하므로 제외한다."""
+    if status == "완료":
+        if _WAITING_RE.search(body):
+            return "waiting"
+        if _PARTIAL_RE.search(body):
+            return "partial"
+    elif status == "부분" and remaining != "대기" and _WAITING_RE.search(body):
+        return "waiting"
+    return None
+
 
 def enabled() -> bool:
     return bool(get_settings().worker_completion_contract)
@@ -91,13 +122,18 @@ def annotate(sess: ChatSession, run: Run) -> dict[str, Any] | None:
     status = parse(run.result_text)
     # 완료 확인 Run 자신은 다시 검사하지 않는다(closure 폭주 방지). 완료 선언에 본문이 없거나 완료 단어뿐이면 증거 없음.
     weak = False
-    if status == "완료" and not (run.usage or {}).get("closure"):
+    mismatch = None
+    if status is not None and not (run.usage or {}).get("closure"):
         body = "\n".join(ln.strip() for ln in (run.result_text or "").strip().splitlines()
                          if not _STATUS_RE.match(ln.strip()) and not _REMAINING_RE.match(ln.strip())).strip()
-        weak = not body or weak_evidence(body)
-    info: dict[str, Any] = {"status": status, "violation": status is None or weak}
+        if status == "완료":
+            weak = not body or weak_evidence(body)
+        mismatch = inconsistent_reason(status, body, parse_remaining(run.result_text))
+    info: dict[str, Any] = {"status": status, "violation": status is None or weak or mismatch is not None}
     if weak:
         info["weak_evidence"] = True
+    if mismatch:
+        info["inconsistent"] = mismatch
     if status in ("부분", "막힘") and (remaining := parse_remaining(run.result_text)):
         info["remaining"] = remaining
     run.usage = {**(run.usage or {}), "completion": info}
@@ -118,7 +154,8 @@ async def closure_run(db: AsyncSession, sess: ChatSession, run: Run) -> Run | No
         return None
     closure = Run(session_id=sess.id, workspace_id=sess.workspace_id, engine=sess.engine, model=sess.model,
                   effort=sess.effort, origin=RunOrigin.orchestrator,
-                  prompt=WEAK_CLOSURE_PROMPT if info.get("weak_evidence") else CLOSURE_PROMPT,
+                  prompt=(INCONSISTENT_CLOSURE_PROMPT if info.get("inconsistent")
+                          else WEAK_CLOSURE_PROMPT if info.get("weak_evidence") else CLOSURE_PROMPT),
                   status=RunStatus.queued, usage={"closure": {"source_run_id": str(run.id)}})
     db.add(closure)
     await db.flush()
@@ -133,6 +170,11 @@ def report_line(info: dict[str, Any] | None) -> str | None:
     if not info:
         return None
     if info.get("violation"):
+        if info.get("inconsistent"):
+            what = "진행·대기 중이라고 쓰고 턴을 끝냈다" if info["inconsistent"] == "waiting" else "일부만 했다고 쓰면서 완료로 선언했다"
+            tail = ("자동 완료 확인 Run 이 이어서 실행 중이다. 이 보고만으로 완료로 판단하지 말고 다음 보고를 기다려라."
+                    if info.get("closure_run_id") else "완료로 보지 말고 남은 항목을 확인해 후속 지시를 내려라.")
+            return f"완료 계약 위반: 본문이 {what}. {tail}"
         if info.get("weak_evidence"):
             if info.get("closure_run_id"):
                 return ("완료 계약 위반: 상태=완료로 선언했으나 실행 증거가 없다. 자동 완료 확인 Run 이 이어서 실행 중이다. "

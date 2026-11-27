@@ -22,11 +22,11 @@ from goal_helpers import (
 from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
-from ttakkari.models import Run, RunOrigin, RunStatus, utcnow
+from ttakkari.models import ChatSession, Run, RunOrigin, RunStatus, utcnow
 from ttakkari.orchestrator import work
 from ttakkari.orchestrator.goal_signals import classify_followup, is_complex
 from ttakkari.runs import completion
-from ttakkari.runs.manager import manager
+from ttakkari.runs.manager import _compose_prompt, manager
 
 TASK_CARD = ("목표: 백엔드 재작업 결과를 읽기 전용으로 독립 재검증한다.\n범위와 금지:\n"
              "- 읽기 전용 검증이다. 코드 수정, 커밋, push, 배포 요청을 하지 않는다. 임시 테스트는 새 worktree 안에만 둔다.\n"
@@ -337,3 +337,94 @@ async def test_short_compound_requests_open_a_contract_and_continue(client, auth
         assert [r["text"] for r in state["requirements"]] == ["오류 원인 조사", "코드 수정", "회귀 테스트 추가"]
     await finish(run.id, RunStatus.succeeded, result_text="일부만")
     assert len(continuations(await queued(sid))) == 1
+
+
+# ---- 읽기 전용 단계·금지 조건이 섞인 복합 요청(기획 원본 요청 유형) ------------------------------------------
+MIXED_COMPLEX = {
+    "step_readonly": "운영 기록은 읽기 전용으로 조사하고, 원인을 고쳐서 테스트하고 배포해",
+    "step_ban": "목표 계약을 수정하되 하람앱 계정은 변경하지 말고 회귀 테스트하고 배포해",
+    "work_card": ("목표: 운영 기록을 읽기 전용으로 확인한 뒤 원인을 고치고 배포한다.\n완료 기준:\n1. 운영 기록은 읽기 전용으로 조사한다.\n"
+                  "2. 원인을 수정한다.\n3. 회귀 테스트를 추가한다.\n4. main에 push하고 배포를 예약한다.\n범위와 금지:\n"
+                  "- 하람앱 작업자의 세션·계정은 변경하지 않는다.\n- 서브 작업자를 만들지 않는다."),
+    "numbered_stage": "1단계는 읽기 전용으로 조사해줘. 2단계에서 원인 수정하고 회귀 테스트 추가해서 배포해줘.",
+    "ban_first": "계정은 건드리지 말고 원인 조사하고 수정해서 테스트하고 배포해",
+    "ban_after": "수정하고 배포하되 프론트는 건드리지 마. 회귀 테스트도 추가해줘",
+    "ban_trailing": "원인 조사하고 수정해서 테스트하고 배포해. 하람앱 세션은 건드리지 말고.",
+}
+MIXED_NOT_COMPLEX = {
+    "whole_readonly_sentence": "이 작업은 읽기 전용이다. 원인을 분석하고 수정 방안을 작성해서 보고해줘",
+    "readonly_items_with_ban": "읽기 전용 검증이다.\n1. 원인 조사\n2. 코드 수정 여부 판단\n3. 회귀 테스트 필요성 검토\n수정과 배포는 하지 않는다.",
+    "ban_then_explain": "하람앱 계정은 변경하지 말고 설명만 해줘",
+    "everything_banned": "수정하지 말고 배포하지 말고 테스트하지 마",
+    "single_readonly_step": "운영 기록은 읽기 전용으로 조사해줘",
+    "readonly_then_explain": "운영 기록을 읽기 전용으로 조사하고 원인을 설명해줘",
+}
+
+
+@pytest.mark.parametrize("name", sorted(MIXED_COMPLEX))
+def test_read_only_step_or_single_ban_does_not_hide_a_compound_request(name):
+    assert is_complex(MIXED_COMPLEX[name])
+
+
+@pytest.mark.parametrize("name", sorted({**MIXED_NOT_COMPLEX, "readonly_task_card": TASK_CARD}))
+def test_whole_request_read_only_and_total_bans_stay_non_complex(name):
+    assert not is_complex({**MIXED_NOT_COMPLEX, "readonly_task_card": TASK_CARD}[name])
+
+
+def test_scope_cleaning_keeps_the_commands_and_drops_only_the_limited_clause():
+    from ttakkari.orchestrator.goal_signals import drop_negated, extract_constraints
+    cleaned = drop_negated(MIXED_COMPLEX["step_ban"])
+    assert "하람앱 계정" not in cleaned and "수정하되" in cleaned and "배포해" in cleaned
+    cleaned = drop_negated(MIXED_COMPLEX["step_readonly"])
+    assert "읽기 전용" not in cleaned and "고쳐서 테스트하고 배포해" in cleaned
+    # 쉼표로 나열한 금지 목록은 문장째 뺀다.
+    assert drop_negated("읽기 전용 검증이다. 코드 수정, 커밋, push, 배포 요청을 하지 않는다.") == ""
+    assert extract_constraints(MIXED_COMPLEX["step_ban"]) == [MIXED_COMPLEX["step_ban"]]
+
+
+@pytest.mark.parametrize("origin", [RunOrigin.user, RunOrigin.desk])
+@pytest.mark.parametrize("name", ["step_readonly", "step_ban", "work_card"])
+async def test_mixed_requests_open_a_contract_and_keep_the_prohibitions(client, auth, make_dir, origin, name):
+    from ttakkari.orchestrator.goal_signals import DESK_HEADER
+    prompt = MIXED_COMPLEX[name]
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    run = await request(sid, DESK_HEADER + "\n" + prompt if origin == RunOrigin.desk else prompt, origin=origin)
+    c = await get(client, h)
+    assert c["state"]["status"] == "active" and c["original_request"]["run_id"] == str(run.id)
+    assert prompt in c["original_request"]["prompt"]  # 원본 전문 보존
+    texts = " ".join(r["text"] for r in c["state"]["requirements"])
+    if name == "step_ban":
+        # 금지된 계정 변경이 "해야 할 일"로 바뀌지 않는다: 요구 문장이 금지 표현과 함께만 나온다.
+        assert "하람앱 계정은 변경하지 말고" in texts
+        assert any("원본 금지·제약" in d and "변경하지 말고" in d for d in c["state"]["decisions"])
+    if name == "work_card":
+        assert "읽기 전용으로 조사한다" in texts
+        assert any("변경하지 않는다" in d for d in c["state"]["decisions"])
+    # 이어가기와 프롬프트에도 금지 조건이 남는다.
+    await finish(run.id, RunStatus.succeeded, result_text="일부만 함")
+    follow = continuations(await queued(sid))
+    assert len(follow) == 1
+    if name != "step_readonly":
+        assert "원본 금지·제약" in follow[0].prompt
+    async with sessionmaker()() as db:
+        composed = await _compose_prompt(db, await db.get(Run, follow[0].id))
+    assert "원본 금지·제약" in composed if name != "step_readonly" else "읽기 전용으로 조사하고" in composed
+
+
+async def test_whole_read_only_card_and_total_bans_open_no_contract_and_followups_keep_constraints(client, auth, make_dir):
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    for prompt in (TASK_CARD, MIXED_NOT_COMPLEX["whole_readonly_sentence"], MIXED_NOT_COMPLEX["ban_then_explain"],
+                   MIXED_NOT_COMPLEX["everything_banned"]):
+        run = await request(sid, prompt)
+        await finish(run.id, RunStatus.succeeded, result_text="답변")
+        assert (await get(client, h))["state"] is None and continuations(await queued(sid)) == []
+    # 진행 중인 계약에 금지가 섞인 복합 요청이 오면 원문과 금지 조건이 추가 요청으로 보존된다.
+    assert (await put(client, h, contract())).status_code == 200
+    await request(sid, MIXED_COMPLEX["step_ban"])
+    c = await get(client, h)
+    assert c["additional_requests"][0]["constraints"] == [MIXED_COMPLEX["step_ban"]]
+    async with sessionmaker()() as db:
+        note = await work.prompt_note(db, await db.get(ChatSession, sid))
+    assert "원본 금지·제약" in note and "하람앱 계정은 변경하지 말고" in note

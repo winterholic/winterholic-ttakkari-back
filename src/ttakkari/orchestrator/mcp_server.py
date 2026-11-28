@@ -1268,7 +1268,8 @@ def orchestrator_tool(fn):
 
 @orchestrator_tool
 async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision: int = 0,
-                      state: dict[str, Any] | None = None, confirm_original_items: bool = False) -> str:
+                      state: dict[str, Any] | None = None, confirm_original_items: bool = False,
+                      original_item_dispositions: list[dict[str, Any]] | None = None) -> str:
     """Get/checkpoint this lead's durable goal contract before sustained work and after milestones.
     checkpoint uses the revision from get (stale writes rejected). state: goal, strategy, requirements
     [{id,text,status:pending|review|done,evidence}], status:active|blocked|paused|complete, next_action;
@@ -1285,12 +1286,17 @@ async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision:
     request opens an auto contract (reshape it once with your own plan before any requirement is done);
     later user requests are kept in additional_requests (merge them into requirements with replan_reason),
     and a finished contract is archived in previous_contracts before a new one opens.
-    complete first warns (409) when original request items look unmapped to requirements; if each is done or
-    intentionally out of scope, resend the same state with the top-level argument confirm_original_items=true
-    (next to state, not inside it). get restores across engine/context changes.
-    Evidence strings are assertions to inspect, not independently verified execution receipts."""
+    complete first warns (409) when original request items look unmapped to requirements. Resend the same state
+    with the top-level argument original_item_dispositions (next to state, not inside it), one entry per listed
+    item: {label, requirement_id} naming the done requirement that covers it, or {label, excluded: true, reason,
+    user_approved: true|false} when it is intentionally out of scope (unapproved exclusions stay flagged for the
+    user). confirm_original_items=true alone no longer passes. get restores across engine/context changes.
+    complete also checks done evidence against the Run events the server observed (commit SHAs, test runs and
+    counts, named files, deploy results; earlier Runs and your workers count): a contradicting claim is rejected
+    with 422, a claim the server cannot check is kept as unverified. Evidence strings are assertions, not receipts."""
     return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state,
-                                         "confirm_original_items": confirm_original_items})
+                                         "confirm_original_items": confirm_original_items,
+                                         "original_item_dispositions": original_item_dispositions or []})
 
 
 @orchestrator_tool

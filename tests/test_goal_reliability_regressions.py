@@ -166,9 +166,14 @@ async def test_p1_2_paraphrased_complete_warns_once_then_passes_with_confirmatio
     done = [{**r, "status": "done", "evidence": "pytest -q: 58 passed; commit abc123"} for r in cur["state"]["requirements"]]
     complete = {**cur["state"], "requirements": done, "status": "complete", "next_action": ""}
     r = await put(client, h, complete)
-    assert r.status_code == 409 and "confirm_original_items" in r.text
-    ok = await put(client, h, complete, confirm_original_items=True)
-    assert ok.status_code == 200 and (await raw(sid))["original_items_confirmed"]
+    assert r.status_code == 409 and "original_item_dispositions" in r.text
+    # confirm_original_items=True 만으로는 거부된다 (Track A-5)
+    alone = await put(client, h, complete, confirm_original_items=True)
+    assert alone.status_code == 409 and "confirm_original_items=true alone is not accepted" in alone.text
+    disps = [{"label": "1", "requirement_id": "A"}, {"label": "2", "requirement_id": "B"},
+             {"label": "3", "requirement_id": "C"}, {"label": "4", "requirement_id": "D"}]
+    ok = await put(client, h, complete, original_item_dispositions=disps)
+    assert ok.status_code == 200 and (await raw(sid))["original_item_dispositions"]
 
 
 async def test_p1_2_faithful_contract_completes_without_confirmation(client, auth, make_dir):

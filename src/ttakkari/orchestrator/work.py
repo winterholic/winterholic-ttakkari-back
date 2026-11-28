@@ -31,6 +31,7 @@ from ttakkari.models import (
     SessionKind,
     utcnow,
 )
+from ttakkari.orchestrator import observed
 from ttakkari.orchestrator.goal_signals import (
     classify_followup,
     error_signature,
@@ -60,6 +61,7 @@ MAX_USAGE_WAITS = 10
 USAGE_WAIT_BASE_SECONDS = 900
 USAGE_WAIT_MAX_SECONDS = 6 * 3600
 MAX_ADDITIONAL_REQUESTS = 10
+LEDGER_CAP = observed.LEDGER_CAP
 MAX_HISTORY = 5
 INTAKE_ORIGINS = (RunOrigin.user, RunOrigin.desk)
 
@@ -116,13 +118,40 @@ class WorkState(BaseModel):
         return self
 
 
+class ItemDisposition(BaseModel):
+    """계약 요구와 대응되지 않아 보이는 원본 요청 항목 하나의 처리 기록. boolean 확인으로는 항목이 통과하지 않는다.
+
+    - 대응: 그 항목을 덮는 done 요구의 id(요구를 합치거나 다시 짠 경우 포함). 정성 검토(review)로 기록된다.
+    - 범위 제외: 근거와 사용자 승인 여부(true/false)를 반드시 적는다. 승인 없는 제외는 기록되고 사용자 확인 대상으로 남는다."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    label: str = Field(min_length=1, max_length=80)
+    run_id: str | None = Field(default=None, max_length=64)
+    requirement_id: str | None = Field(default=None, max_length=80)
+    excluded: bool = False
+    reason: str = Field(default="", max_length=1000)
+    user_approved: bool | None = None
+
+    @model_validator(mode="after")
+    def valid(self):
+        if self.excluded:
+            if len(self.reason) < 8:
+                raise ValueError(f"{self.label}: excluded item requires a reason (8+ characters)")
+            if self.user_approved is None:
+                raise ValueError(f"{self.label}: excluded item requires user_approved true or false")
+        elif not self.requirement_id:
+            raise ValueError(f"{self.label}: give requirement_id (the done requirement covering it) or excluded=true with reason")
+        return self
+
+
 class WorkIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation: Literal["get", "checkpoint"] = "get"
     revision: int = Field(default=0, ge=0)
     state: WorkState | None = None
-    # complete 체크포인트에서 원본 요청 항목이 계약과 대응되지 않아 보일 때 한 번 경고하고, 확인했다는 표시로 다시 보낸다.
+    # 옛 클라이언트 호환 표시. 이것만으로는 누락 항목이 통과하지 않는다(항목별 original_item_dispositions 필요).
     confirm_original_items: bool = False
+    # complete 체크포인트에서 계약과 대응되지 않아 보이는 원본 항목마다의 대응 또는 범위 제외 기록.
+    original_item_dispositions: list[ItemDisposition] = Field(default_factory=list, max_length=60)
 
     @model_validator(mode="before")
     @classmethod
@@ -134,6 +163,10 @@ class WorkIn(BaseModel):
             state = dict(state)
             flag = state.pop("confirm_original_items")
             data = {**data, "state": state, "confirm_original_items": bool(data.get("confirm_original_items")) or flag is True}
+        if isinstance(state, dict) and "original_item_dispositions" in state:
+            state = dict(state)
+            moved = state.pop("original_item_dispositions")
+            data = {**data, "state": state, "original_item_dispositions": data.get("original_item_dispositions") or moved}
         return data
 
 
@@ -185,8 +218,10 @@ async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
         parsed = datetime.fromisoformat(data["waiting_until"])
         until = parsed if parsed > datetime.now(UTC) else None  # 지난 대기 시각은 더 이상 대기가 아니다
     weak = [r for r in data["completed_scope"] if weak_evidence(r.get("evidence", ""))]
+    unapproved = [d for d in data.get("original_item_dispositions") or []
+                  if d.get("kind") == "excluded" and not d.get("user_approved")]
     phase = {"blocked": "blocked", "paused": "paused", "complete": "complete"}.get(status, "waiting" if until else "running")
-    user_action = {"blocked": "intervene", "paused": "resume"}.get(status, "review" if weak else "none")
+    user_action = {"blocked": "intervene", "paused": "resume"}.get(status, "review" if weak or unapproved else "none")
 
     def req(r: dict) -> dict:
         return {"id": r["id"], "text": r["text"], "status": r["status"], "evidence": (r.get("evidence") or "")[:300]}
@@ -200,6 +235,7 @@ async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
             "auto_resumable": status == "active", "user_action": user_action,
             "user_intervention_needed": user_action in ("intervene", "review"),
             "additional_request_count": len(data.get("additional_requests") or []),
+            "unapproved_scope_exclusions": len(unapproved),
             "updated_at": data.get("updated_at")}
 
 
@@ -222,20 +258,91 @@ def _original_gaps(current: dict, requirements: list[dict]) -> list[dict]:
     return gaps
 
 
+def _resolve_gaps(gaps: list[dict], dispositions: list[ItemDisposition], requirements: list[dict]) -> tuple[list[dict], list[dict]]:
+    """누락으로 보이는 원본 항목마다 대응 또는 범위 제외 기록이 있는지. (처리되지 않은 항목, 저장할 기록)."""
+    done_ids = {r["id"] for r in requirements if r["status"] == "done"}
+    unresolved: list[dict] = []
+    records: list[dict] = []
+    for gap in gaps:
+        disp = next((d for d in dispositions if d.label == gap["label"] and d.run_id in (None, gap.get("run_id"))), None)
+        base = {"label": gap["label"], "text": gap["text"][:200], "run_id": gap.get("run_id"), "at": utcnow().isoformat()}
+        if disp is None:
+            unresolved.append(gap)
+        elif disp.excluded:
+            records.append({**base, "kind": "excluded", "reason": disp.reason, "user_approved": bool(disp.user_approved),
+                            "evidence_kind": "review"})
+        elif disp.requirement_id in done_ids:
+            records.append({**base, "kind": "mapped", "requirement_id": disp.requirement_id, "evidence_kind": "review"})
+        else:
+            unresolved.append({**gap, "why": f"requirement_id {disp.requirement_id} is not a done requirement"})
+    return unresolved, records
+
+
 _STATUS_RANK = {"pending": 0, "review": 1, "done": 2}
 
 
-def _checkpoint_progress(previous: dict | None, value: dict) -> bool:
-    """체크포인트가 일을 실제로 진척시켰는가. 요구 상태 전이, 새 changed_files, 새 validation 만 진전이다.
+def _checkpoint_progress(previous: dict | None, value: dict, ledger: dict) -> tuple[bool, dict]:
+    """체크포인트가 일을 실제로 진척시켰는가. (진전 여부, 갱신한 ledger).
 
-    completed_work·evidence·next_action 문구만 바꾼 체크포인트는 진전이 아니다(외부 대기 중 문구만 갱신하며 무한히
-    이어가는 것을 막는다). 새 요구 추가도 범위 증가이지 진전이 아니다."""
+    - 요구 상태는 그 요구가 지금까지 도달한 최고 단계를 넘을 때만 진전이다. pending→review→pending→review 를 되풀이해도
+      예산이 초기화되지 않는다.
+    - 새 changed_files·validation 항목은 목표 전체에서 처음 신고하는 것일 때만 진전이다(지웠다 다시 적은 항목은 아니다).
+      서버가 관측한 변경·테스트는 after_run 이 따로 복원하고 판정한다.
+    - completed_work·evidence·next_action 문구만 바꾼 체크포인트와 새 요구 추가는 진전이 아니다."""
+    ledger = dict(ledger or {})
+    rank = dict(ledger.get("req_rank") or {})
+    declared = list(ledger.get("declared") or [])
     if not previous:
-        return True
+        for r in value["requirements"]:
+            rank[r["id"]] = max(rank.get(r["id"], 0), _STATUS_RANK[r["status"]])
+        return True, {**ledger, "req_rank": rank}
     old = {r["id"]: _STATUS_RANK[r["status"]] for r in previous["requirements"]}
-    if any(_STATUS_RANK[r["status"]] > old[r["id"]] for r in value["requirements"] if r["id"] in old):
-        return True
-    return any(set(value.get(f) or []) - set(previous.get(f) or []) for f in ("changed_files", "validation"))
+    for ident, level in old.items():
+        rank[ident] = max(rank.get(ident, 0), level)
+    progressed = False
+    for r in value["requirements"]:
+        level = _STATUS_RANK[r["status"]]
+        if r["id"] in old and level > rank.get(r["id"], 0):
+            progressed = True
+        rank[r["id"]] = max(rank.get(r["id"], 0), level)
+    known = set(declared)
+    for field in ("changed_files", "validation"):
+        for entry in set(value.get(field) or []) - set(previous.get(field) or []):
+            if f"{field}:{entry}" not in known:
+                progressed = True
+                known.add(f"{field}:{entry}")
+                declared.append(f"{field}:{entry}")
+    return progressed, {**ledger, "req_rank": rank, "declared": declared[-LEDGER_CAP:]}
+
+
+async def _audit_evidence(db: AsyncSession, sess: ChatSession, requirements: list[dict], current: dict) -> tuple[dict, list[str]]:
+    """done 요구의 증거 문장을 서버가 관측한 Run 이벤트(이 세션·하위 작업자·이전 Run)와 대조한다.
+
+    (요구별 감사 결과, 모순 설명). 감사 결과는 서버만 쓰며 에이전트가 계약 상태로 보낸 값이 아니다. 이미 같은 증거로
+    감사해 모순이 없던 요구는 다시 대조하지 않는다."""
+    previous = current.get("evidence_audit") or {}
+    todo = []
+    for r in requirements:
+        if r["status"] != "done":
+            continue
+        eh = observed._h(r["evidence"], 10)
+        if previous.get(r["id"], {}).get("eh") == eh and previous[r["id"]].get("level") != "contradicted":
+            continue
+        todo.append((r, eh))
+    audit = {k: v for k, v in previous.items() if k in {r["id"] for r in requirements}}
+    problems: list[str] = []
+    if not todo:
+        return audit, problems
+    pool_obs, roots = await observed.pool_observations(db, sess)
+    pool = observed.merge_pool(pool_obs)
+    for r, eh in todo:
+        res = await observed.check_claims(r["evidence"], pool, roots)
+        level = observed.evidence_level(res)
+        refs = res["verified"][:5] or [{"kind": "unverified" if res["unverified"] else "self_claim"}]
+        audit[r["id"]] = {"level": level, "eh": eh, "refs": refs, "unverified": res["unverified"][:3],
+                          "contradictions": res["contradictions"][:3], "at": utcnow().isoformat()}
+        problems += [f"{r['id']}: [{c['code']}] {c['detail']}" for c in res["contradictions"]]
+    return audit, problems
 
 
 async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
@@ -265,10 +372,20 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
             raise HTTPException(422, "preserve original goal; record new facts in strategy/decisions")
         if previous["strategy"] != value["strategy"] and not value["replan_reason"]:
             raise HTTPException(422, "strategy changes require replan_reason")
+    audit: dict | None = None
     if value["status"] == "complete":
         children = select(ChatSession.id).where(ChatSession.parent_id == sess.id)
         if await db.scalar(select(Run.id).where(Run.session_id.in_(children), Run.status.in_(ACTIVE)).limit(1)):
             raise HTTPException(422, "unfinished worker execution; reconcile worker results before completion")
+        audit, problems = await _audit_evidence(db, sess, value["requirements"], current)
+        if problems:
+            # 거부도 센다(§12 증거 불일치 완료 거부 수). 예외가 트랜잭션을 되돌리므로 감사 기록만 먼저 확정한다.
+            record(db, actor="agent", action="work.evidence_rejected", outcome="error", target_type="session",
+                   target_id=sess.id, detail={"problems": problems[:8], "count": len(problems)})
+            await db.commit()
+            log.warning("work.evidence_rejected session=%s problems=%d", sess.id, len(problems))
+            raise HTTPException(422, "completion evidence contradicts observed run events: " + "; ".join(problems[:6])
+                                + ". Fix the evidence (run the missing check or report what actually happened) and checkpoint again")
     if value.get("pms_project_id"):
         from ttakkari.api.pms import _project
         from ttakkari.pms import service as pms
@@ -293,25 +410,37 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
         original = _request_record(first.id, first.prompt, str(getattr(first.origin, "value", first.origin))) if first else None
         current = {**current, "original_request": original}
     confirmed: list[str] = list(current.get("original_items_confirmed") or [])
+    dispositions: list[dict] = list(current.get("original_item_dispositions") or [])
     if value["status"] == "complete":
         gaps = _original_gaps(current, value["requirements"])
-        if gaps and not body.confirm_original_items:
-            listed = "; ".join(f"{g['label']}: {g['text'][:60]}" for g in gaps[:12])
-            raise HTTPException(409, "original request items look unmapped to contract requirements "
-                                f"({len(gaps)}): {listed}. If each is done or intentionally out of scope, "
-                                "resend the same complete checkpoint with the top-level manage_work argument "
-                                "confirm_original_items=true (a sibling of state, not a state field)")
         if gaps:
+            unresolved, records = _resolve_gaps(gaps, body.original_item_dispositions, value["requirements"])
+            if unresolved:
+                listed = "; ".join(f"{g['label']}: {g['text'][:60]}" + (f" ({g['why']})" if g.get("why") else "")
+                                   for g in unresolved[:12])
+                raise HTTPException(409, "original request items look unmapped to contract requirements "
+                                    f"({len(unresolved)}): {listed}. Resend the same complete checkpoint with the top-level "
+                                    "manage_work argument original_item_dispositions=[...] (a sibling of state): for each item "
+                                    '{"label": ..., "requirement_id": <done requirement covering it>} or, if intentionally out of '
+                                    'scope, {"label": ..., "excluded": true, "reason": ..., "user_approved": true|false}. '
+                                    "confirm_original_items=true alone is not accepted")
+            keys = {(r["label"], r.get("run_id")) for r in records}
+            dispositions = [d for d in dispositions if (d["label"], d.get("run_id")) not in keys] + records
             confirmed = [*confirmed, *(g["label"] for g in gaps)][-60:]
     # Updating prose/revision alone is not progress. Budget only resets when observed work changes.
-    progressed = _checkpoint_progress(previous, value)
+    ledger = dict(current.get("progress_ledger") or {})
+    progressed, ledger = _checkpoint_progress(previous, value, ledger)
     resumed = bool(previous) and previous["status"] in ("blocked", "paused") and value["status"] == "active"
     fresh = progressed or resumed
     saved = {**current, "revision": body.revision + 1, "state": value, "original_request": original,
              "unchanged_continuations": 0 if fresh else current.get("unchanged_continuations", 0),
              "state_checkpoint_progressed": bool(current.get("state_checkpoint_progressed")) or progressed,
-             "auto_generated": False, "original_items_confirmed": confirmed,
+             "auto_generated": False, "original_items_confirmed": confirmed, "progress_ledger": ledger,
              "updated_at": utcnow().isoformat()}
+    if dispositions:
+        saved["original_item_dispositions"] = dispositions[-60:]
+    if audit is not None:
+        saved["evidence_audit"] = audit
     if fresh:
         for counter in ("transient_retries", "transient_total", "usage_waits", "waiting_until"):
             saved.pop(counter, None)
@@ -344,7 +473,8 @@ def _archive_entry(current: dict) -> dict:
     return {"archived_at": utcnow().isoformat(), "revision": current.get("revision", 0),
             "state": current.get("state"), "original_request": current.get("original_request"),
             "additional_requests": current.get("additional_requests") or [],
-            "original_items_confirmed": current.get("original_items_confirmed") or []}
+            "original_items_confirmed": current.get("original_items_confirmed") or [],
+            "original_item_dispositions": current.get("original_item_dispositions") or []}
 
 
 async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID | None, prompt: str,
@@ -707,13 +837,21 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     if run.status not in (RunStatus.succeeded, RunStatus.failed):
         return None  # interrupted Runs use existing restart recovery, not a new duplicate Run.
 
-    # 진전 판정: 계약 체크포인트가 바뀌었거나 Run 이 실제로 파일·커밋·테스트를 바꿨다. 체크포인트를 건너뛴 성과도 복원한다.
+    # 진전 판정: 서버가 관측한 성공한 변경·커밋·테스트가 이 목표 전체 이력(progress_ledger)에서 처음이거나 체크포인트가
+    # 실제로 앞으로 갔다. 직전 Run 과만 비교하지 않으므로 A→B→A 교대·수정 원복·실패 반복은 예산을 초기화하지 못한다.
+    # 체크포인트를 건너뛴 성과도 복원한다.
     ev = await run_evidence(db, run)
-    prev_fp = current.get("last_evidence_fingerprint")
-    progressed = bool(ev["effective"] and ev["fingerprint"] != prev_fp) or bool(current.get("state_checkpoint_progressed"))
+    assessment = observed.assess_progress(ev["observed"], current.get("progress_ledger"))
+    checkpoint_progress = bool(current.get("state_checkpoint_progressed"))
+    progressed = assessment["progressed"] or checkpoint_progress
     rec = dict(current)
+    rec["progress_ledger"] = {**assessment["ledger"], **({"weak_streak": 0} if checkpoint_progress else {})}
+    events.append(db, run, "run.observed", ev["observed"])  # 같은 Run 을 다시 훑지 않도록 관측을 남긴다
+    if not progressed:  # §12 무진전 반복 수: 이 이벤트 개수가 곧 무진전으로 끝난 Run 수다
+        events.append(db, run, "work.no_progress", {
+            "repeated": assessment["repeated"], "failed": ev["failed"], "tool_calls": ev["tool_calls"],
+            "unchanged_continuations": current.get("unchanged_continuations", 0)})
     if ev["effective"]:
-        rec["last_evidence_fingerprint"] = ev["fingerprint"]
         files = [f for f in ev["files"] if f not in state.get("changed_files", [])]
         tests = [t for t in ev["tests"] if t not in state.get("validation", [])]
         if files or tests:
@@ -797,7 +935,12 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     row.value = rec
     events.append(db, continuation, "run.status", {"status": RunStatus.queued, "work_continuation": True,
                                                    **({"resume_after": rec.get("waiting_until")} if until else {})})
+    rec["auto_continuations"] = rec.get("auto_continuations", 0) + 1
+    row.value = rec
     events.append(db, run, "work.continued", {"run_id": str(continuation.id), "revision": rec["revision"],
+                                              "progressed": progressed,
+                                              "unchanged_continuations": rec.get("unchanged_continuations", 0),
+                                              "auto_continuations": rec["auto_continuations"],
                                               **({"transient": True, "failure_kind": kind} if failed else {})})
     if kind in ("usage_limit", "model_capacity"):
         events.append(db, run, "work.waiting", {"until": rec["waiting_until"], "failure_kind": kind})

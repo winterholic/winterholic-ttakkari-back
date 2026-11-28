@@ -66,31 +66,35 @@ async def test_mcp_manage_work_confirms_original_items_after_409(client, auth, m
     first = await _tool({"operation": "checkpoint", "revision": rev, "state": complete})
     assert first["error"] == 409 and "original request items look unmapped" in first["message"]
     # 안내가 실제 호출 방법과 맞는다: state 안이 아니라 최상위 인자다.
-    assert "top-level manage_work argument confirm_original_items=true" in first["message"]
-    # false 를 명시해도 계속 409 이고 계약은 바뀌지 않는다.
-    again = await _tool({"operation": "checkpoint", "revision": rev, "state": complete, "confirm_original_items": False})
-    assert again["error"] == 409
-    assert (await raw(sid))["state"]["status"] == "active" and not (await raw(sid)).get("original_items_confirmed")
+    assert "top-level manage_work argument original_item_dispositions" in first["message"]
+    # confirm_original_items=true 만으로는 거부되고 계약은 바뀌지 않는다 (Track A-5).
+    again = await _tool({"operation": "checkpoint", "revision": rev, "state": complete, "confirm_original_items": True})
+    assert again["error"] == 409 and "confirm_original_items=true alone is not accepted" in again["message"]
+    assert (await raw(sid))["state"]["status"] == "active" and not (await raw(sid)).get("original_item_dispositions")
 
-    ok = await _tool({"operation": "checkpoint", "revision": rev, "state": complete, "confirm_original_items": True})
+    disps = [{"label": "1", "requirement_id": "A"}, {"label": "2", "requirement_id": "B"},
+             {"label": "3", "requirement_id": "C"}, {"label": "4", "requirement_id": "D"}]
+    ok = await _tool({"operation": "checkpoint", "revision": rev, "state": complete, "original_item_dispositions": disps})
     assert "error" not in ok and ok["state"]["status"] == "complete"
     saved = await raw(sid)
-    assert saved["state"]["status"] == "complete" and saved["original_items_confirmed"]
+    assert saved["state"]["status"] == "complete" and saved["original_item_dispositions"]
 
 
 async def test_confirm_flag_inside_state_is_accepted_instead_of_422(client, auth, make_dir):
-    """옛 MCP 스키마(인자 없음)나 안내를 state 필드로 읽은 호출도 확인으로 받는다. 거짓 값은 확인이 아니다."""
+    """state 안에 넣은 original_item_dispositions 도 최상위로 올려 받는다."""
     sid, h, rev, complete = await _complete_state(client, auth, make_dir)
     body = {"operation": "checkpoint", "revision": rev}
     no = await client.post("/api/orchestrator/work", headers=h,
-                           json={**body, "state": {**complete, "confirm_original_items": False}})
-    assert no.status_code == 409, no.text
-    ok = await client.post("/api/orchestrator/work", headers=h,
                            json={**body, "state": {**complete, "confirm_original_items": True}})
+    assert no.status_code == 409, no.text
+    disps = [{"label": "1", "requirement_id": "A"}, {"label": "2", "requirement_id": "B"},
+             {"label": "3", "requirement_id": "C"}, {"label": "4", "requirement_id": "D"}]
+    ok = await client.post("/api/orchestrator/work", headers=h,
+                           json={**body, "state": {**complete, "original_item_dispositions": disps}})
     assert ok.status_code == 200, ok.text
     saved = await raw(sid)
-    assert saved["state"]["status"] == "complete" and "confirm_original_items" not in saved["state"]
-    assert saved["original_items_confirmed"]
+    assert saved["state"]["status"] == "complete" and "original_item_dispositions" not in saved["state"]
+    assert saved["original_item_dispositions"]
 
 
 # ---- 오탐: 번호 제목·접수 머리글 --------------------------------------------------------------------------

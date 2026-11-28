@@ -362,8 +362,12 @@ async def test_scenario_10_followup_scope_change_links_prior_completion_evidence
     complete = {**cur["state"], "requirements": all_done, "status": "complete", "next_action": ""}
     warned = await put(client, h, complete)
     assert warned.status_code == 409 and "관련 회귀 테스트 추가" in warned.text
-    assert (await put(client, h, complete, confirm_original_items=True)).status_code == 200
-    assert (await raw(sid))["original_items_confirmed"]
+    # confirm_original_items=True 만으로는 거부된다 (Track A-5)
+    assert (await put(client, h, complete, confirm_original_items=True)).status_code == 409
+    disps = [{"label": "2", "requirement_id": "R3"},
+             {"label": "3", "excluded": True, "reason": "배포는 별도 단계로 진행하기로 사용자와 합의", "user_approved": True}]
+    assert (await put(client, h, complete, original_item_dispositions=disps)).status_code == 200
+    assert (await raw(sid))["original_item_dispositions"]
 
     # (b) 완료된 계약 뒤 새 요청: 이전 완료 기록은 지우지 않고 보관하고 새 계약을 연다.
     sess, h = await lead(client, auth, make_dir)

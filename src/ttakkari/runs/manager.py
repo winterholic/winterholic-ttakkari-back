@@ -2193,7 +2193,8 @@ class RunManager:
         closure = None
         if sess is not None:
             from ttakkari.runs import completion
-            if completion.annotate(sess, run) is not None:
+            if (info := completion.annotate(sess, run)) is not None:
+                await completion.cross_check(db, sess, run, info)
                 closure = await completion.closure_run(db, sess, run)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
         if sess is not None:
@@ -3032,13 +3033,21 @@ async def _git_diff_stat(root: Path, ref: str, untracked_before: set[str]) -> di
     rc, out = await _git(root, "diff", "--numstat", ref)
     if rc != 0:
         return None
+    # 파일마다 패치 내용 지문(sig)과 되돌리는 패치의 지문(isig)을 남긴다. 같은 파일을 고쳤다 되돌리는 반복을 진전으로 세지 않기 위한
+    # 값이다(orchestrator.observed). 이미 구한 diff 에서 파일별 해시만 더하고 저장소 전체를 해시하지 않는다.
+    from ttakkari.orchestrator.observed import patch_signatures
+    prc, patch = await _git(root, "diff", "--no-color", "--no-ext-diff", "--unified=0", ref)
+    sigs = patch_signatures(patch[:4_000_000]) if prc == 0 else {}
     files = []
     for line in out.splitlines()[:500]:
         parts = line.split("\t")
         if len(parts) == 3:
             add, rem, path = parts
-            files.append({"path": path, "added": int(add) if add.isdigit() else None,
-                          "removed": int(rem) if rem.isdigit() else None})
+            entry = {"path": path, "added": int(add) if add.isdigit() else None,
+                     "removed": int(rem) if rem.isdigit() else None}
+            if path in sigs:
+                entry["sig"], entry["isig"] = sigs[path]
+            files.append(entry)
     new_files = sorted(await _git_untracked(root) - untracked_before)[:200]
     if not files and not new_files:
         return None

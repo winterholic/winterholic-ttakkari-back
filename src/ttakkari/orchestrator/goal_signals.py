@@ -16,10 +16,13 @@ import hashlib
 import re
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.models import Run, RunEvent
+from ttakkari.models import Run
+from ttakkari.orchestrator import observed
+from ttakkari.orchestrator.observed import (
+    MAX_EVENTS_SCANNED,  # noqa: F401  (옛 이름 호환)
+)
 
 DESK_HEADER = "[접수에서 넘긴 사용자 요청]"
 _HISTORY_MARK = "[최근 대화"
@@ -293,9 +296,73 @@ _WEAK_EVIDENCE_RE = re.compile(
     re.IGNORECASE)
 
 
+_LOCATOR_RE = re.compile(
+    r"[\w.-]+/[\w./-]+|[\w-]+\.(?:py|tsx?|jsx?|md|json|ya?ml|toml|swift|sql|sh|css|html|go|rs|java|kt|txt)\b|"
+    r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b|\d+\s*(?:passed|failed|tests?|건|개|줄|lines?)|https?://|`[^`]+`|:\d+\b|\$\s|→|"
+    r"exit code", re.IGNORECASE)
+_DONE_MARK_RE = re.compile(
+    r"완료|했습니다|했음|하였|됨\b|되었|성공|정상|문제\s*없|이상\s*없|\bdone\b|\bcomplete|\bsuccess|\bfinished\b|\bfixed\b|"
+    r"\bworks?\b|\bverified\b|\bpassed\b", re.IGNORECASE)
+# 완료를 말할 뿐 내용이 없는 단어(한국어는 어간 접두, 영어는 낱말 일치). 이 단어를 뺀 내용어가 적으면 일반 완료 문장이다.
+_GENERIC_KO = ("모든", "모두", "전체", "작업", "요구", "요청", "항목", "정상", "수행", "완료", "문제", "없", "성공", "처리", "확인",
+               "이상", "완벽", "끝", "진행", "마무리", "충족", "달성", "추가", "이슈", "잘", "마쳤", "했", "됨", "되었", "되어",
+               "및", "그리고", "해당", "관련", "통과", "사항")
+_GENERIC_EN = frozenset({
+    "all", "task", "tasks", "complete", "completed", "completely", "successfully", "success", "done", "finished", "works",
+    "working", "fine", "verified", "verify", "everything", "requirement", "requirements", "item", "items", "no", "issue",
+    "issues", "problem", "problems", "without", "and", "the", "was", "were", "has", "have", "been", "are", "is", "it", "this",
+    "that", "ok", "okay", "good", "properly", "correctly", "normally", "as", "expected", "of", "to", "in", "with"})
+MIN_CONTENT_TOKENS = 3
+
+
+def generic_claim(text: str) -> bool:
+    """위치·명령·결과 값이 없고 완료 문구뿐인 긴 문장. 길이를 늘려도 내용어가 없으면 일반 주장이다.
+
+    파일 경로·SHA·`N passed`·URL·백틱 코드·줄 번호 같은 위치가 하나라도 있거나, 완료 문구를 뺀 내용어가 충분하면(조사 결과·원인
+    설명 같은 정성 증거) 일반 주장이 아니다."""
+    body = (text or "").strip()
+    if not body or _LOCATOR_RE.search(body) or not _DONE_MARK_RE.search(body):
+        return False
+    content = [t for t in (w.lower() for w in re.findall(r"[0-9A-Za-z가-힣_]+", body))
+               if len(t) >= 2 and t not in _GENERIC_EN and not t.startswith(_GENERIC_KO)]
+    return len(content) < MIN_CONTENT_TOKENS
+
+
 def weak_evidence(text: str) -> bool:
-    """완료 문구만 있고 대상·명령·결과 위치가 없는 증거."""
-    return bool(_WEAK_EVIDENCE_RE.match((text or "").strip()))
+    """완료 문구만 있고 대상·명령·결과 위치가 없는 증거. 한 단어 완료 문구와 긴 일반 완료 문장을 모두 본다."""
+    body = (text or "").strip()
+    return bool(_WEAK_EVIDENCE_RE.match(body)) or generic_claim(body)
+
+
+_REPORT_LABEL_RE = re.compile(r"^\W*(?:항목\s*)?(?P<label>\d{1,2}|[A-Za-z]{1,3}\d{1,2})\s*[).:\]]\s*(?P<rest>.*)$")
+
+
+def unreported_items(items: list[dict[str, str]], body: str) -> list[dict[str, str]]:
+    """작업자 지시의 번호 항목 중 완료 보고가 항목별로 다루지 않은 것. 항목이 둘 미만이면 대조하지 않는다.
+
+    보고의 한 줄이 그 항목의 라벨로 시작하고 라벨 뒤에 내용이 있거나(`3) 완료` 처럼 일반 완료 문구뿐이면 제외),
+    한 줄이 항목 단어를 절반 이상 담으면 덮은 것으로 본다. 라벨만 맞거나 비슷한 단어만 있는 줄은 대응으로 보지 않는다."""
+    if len(items) < 2:
+        return []
+    lines = [ln.strip() for ln in (body or "").splitlines() if ln.strip()]
+    missing = []
+    for item in items:
+        mine = _tokens(item["text"])
+        label = item["label"].lower().rsplit("-", 1)[-1]
+        covered = False
+        for ln in lines:
+            m = _REPORT_LABEL_RE.match(ln)
+            rest = m.group("rest") if m else ln
+            if len(rest) < 3 or weak_evidence(rest):
+                continue
+            by_label = bool(m) and m.group("label").lower() == label
+            by_words = bool(mine) and sum(1 for t in mine if _token_match(t, _tokens(ln))) / len(mine) >= 0.5
+            if by_label or by_words:
+                covered = True
+                break
+        if not covered:
+            missing.append(item)
+    return missing
 
 
 # ---- 원본 요청 항목 대조 -----------------------------------------------------------------------------------
@@ -318,21 +385,25 @@ def _token_match(token: str, pool: set[str]) -> bool:
 
 
 def unmapped_items(items: list[dict[str, str]], requirements: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """계약 요구가 덮지 못한 원본 요청 항목. 항목이 둘 미만이면 대조하지 않는다."""
+    """계약 요구 하나가 덮지 못한 원본 요청 항목. 항목이 둘 미만이면 대조하지 않는다.
+
+    요구 전체를 한 덩어리로 합쳐 겹침을 보지 않고 요구 하나씩 비교한다(서로 무관한 요구들의 단어를 모아 항목을 채운 것으로
+    치지 않는다). 번호 라벨은 요구 id·본문에 그 라벨이 있을 때만 대응으로 본다(증거 문자열의 우연한 일치는 제외).
+    여기서 못 찾은 항목은 항목별 대응 또는 범위 제외 기록(work._resolve_gaps)이 있어야 통과한다."""
     if len(items) < 2:
         return []
-    corpus = " ".join(f"{r.get('id', '')} {r.get('text', '')} {r.get('evidence', '')}" for r in requirements)
-    pool = _tokens(corpus)
+    reqs = [(str(r.get("id", "")).lower(), _tokens(r.get("text", "")),
+             _tokens(f"{r.get('id', '')} {r.get('text', '')} {r.get('evidence', '')}")) for r in requirements]
     missing = []
     for item in items:
-        label = item["label"]
-        if _TAG_RE.match(label) and label.lower() in pool:
+        label = item["label"].lower()
+        if _TAG_RE.match(item["label"]) and any(rid == label or label in text_tokens for rid, text_tokens, _ in reqs):
             continue
         mine = _tokens(item["text"])
         if not mine:
             continue
-        hit = sum(1 for tok in mine if _token_match(tok, pool))
-        if hit / len(mine) < 0.5:
+        best = max((sum(1 for tok in mine if _token_match(tok, pool)) / len(mine) for _, _, pool in reqs), default=0.0)
+        if best < 0.5:
             missing.append(item)
     return missing
 
@@ -379,65 +450,24 @@ def error_signature(error: str | None) -> str:
 
 
 # ---- Run 실행 증거 -----------------------------------------------------------------------------------------
-_WRITE_TOOLS = frozenset({"write", "edit", "multiedit", "notebookedit", "apply_patch", "str_replace_editor",
-                          "write_file", "edit_file", "create_file", "replace_file_content"})
-_SHELL_TOOLS = frozenset({"bash", "shell", "exec", "run_command", "command_execution"})
-_COMMIT_RE = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:commit|push|merge|cherry-pick)\b")
-_TEST_CMD_RE = re.compile(r"pytest|npm (?:run )?test|swift test|cargo test|go test|vitest|jest|unittest|\bmake test|ruff check", re.IGNORECASE)
-_TEST_LINE_RE = re.compile(r"(\d+)\s+passed|(\d+)\s+failed|\bOK\b|tests? passed|exit code 0|Executed \d+ tests", re.IGNORECASE)
-_SHELL_WRITE_RE = re.compile(r"(?:^|[\s;&|])(?:sed -i|tee |mv |cp |rm |mkdir |touch |git add|npm install|uv add|pip install)|>>?\s*\S")
-MAX_EVENTS_SCANNED = 4000
-
-
 async def run_evidence(db: AsyncSession, run: Run) -> dict[str, Any]:
-    """Run 이벤트에서 실제로 일어난 일을 센다. 계약 필드를 고쳤는지가 아니라 도구·파일·커밋·테스트를 본다."""
-    rows = list(await db.scalars(
-        select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type.in_(("tool.call", "tool.result", "run.diff")))
-        .order_by(RunEvent.seq).limit(MAX_EVENTS_SCANNED)))
-    files: set[str] = set()
-    commits = writes = calls = 0
-    tests: list[str] = []
-    test_pending = False
-    for ev in rows:
-        payload = ev.payload or {}
-        if ev.type == "run.diff":
-            files.update(str(f.get("path")) for f in payload.get("files", []) if f.get("path"))
-            files.update(str(p) for p in payload.get("new_files", []))
-        elif ev.type == "tool.call":
-            calls += 1
-            name = str(payload.get("name") or "").lower().rsplit("__", 1)[-1]
-            raw = payload.get("input")
-            cmd = str((raw.get("command") or raw.get("cmd") or "") if isinstance(raw, dict) else raw or "")
-            if name in _WRITE_TOOLS:
-                writes += 1
-            elif name in _SHELL_TOOLS or "command" in (raw if isinstance(raw, dict) else {}):
-                if _COMMIT_RE.search(cmd):
-                    commits += 1
-                if _SHELL_WRITE_RE.search(cmd):
-                    writes += 1
-            test_pending = bool(_TEST_CMD_RE.search(cmd))
-        elif ev.type == "tool.result" and test_pending:
-            test_pending = False
-            for line in str(payload.get("output") or "").splitlines()[-12:]:
-                if _TEST_LINE_RE.search(line):
-                    tests.append(line.strip()[:160])
-                    break
-    tests = tests[-3:]
-    effective = bool(files or commits or writes or tests)
-    fingerprint = hashlib.sha1("|".join([",".join(sorted(files)), str(commits), str(writes), "|".join(tests)])
-                               .encode()).hexdigest()[:12]
-    return {"tool_calls": calls, "write_calls": writes, "commits": commits, "files": sorted(files)[:30],
-            "file_count": len(files), "tests": tests, "effective": effective, "fingerprint": fingerprint}
+    """Run 이벤트에서 실제로 일어난 일을 센다. 계약 필드를 고쳤는지가 아니라 성공한 도구·파일·커밋·테스트를 본다.
+
+    호출과 결과는 엔진 call_id 로 잇고, 실패·취소·결과 없는 호출은 성과로 세지 않는다. 진전 여부는 이 관측의 사실 지문을
+    목표 전체 이력과 비교해 observed.assess_progress 가 판정한다(직전 Run 과의 지문 비교가 아니다)."""
+    return observed.legacy_summary(await observed.observe_run(db, run))
 
 
 def evidence_line(ev: dict[str, Any] | None) -> str:
     """사람이 읽는 한 줄 요약."""
     if not ev:
         return "실행 증거 없음"
+    failed = ev.get("failed") or {}
+    tail = f"; 실패한 시도 {', '.join(f'{k} {n}회' for k, n in sorted(failed.items()))}" if failed else ""
     if not ev.get("effective"):
-        return f"실행 증거 없음(도구 호출 {ev.get('tool_calls', 0)}회, 파일·커밋·테스트 변화 없음)"
+        return f"실행 증거 없음(도구 호출 {ev.get('tool_calls', 0)}회, 파일·커밋·테스트 변화 없음{tail})"
     parts = [f"파일 {ev['file_count']}개 변경" if ev.get("file_count") else None,
-             f"커밋/푸시 명령 {ev['commits']}회" if ev.get("commits") else None,
+             f"커밋/푸시 {ev['commits']}회 성공" if ev.get("commits") else None,
              f"쓰기 도구 {ev['write_calls']}회" if ev.get("write_calls") else None,
              "테스트: " + "; ".join(ev["tests"]) if ev.get("tests") else None]
-    return ", ".join(p for p in parts if p)
+    return ", ".join(p for p in parts if p) + tail

@@ -221,6 +221,18 @@ async def load(db: AsyncSession, sid: uuid.UUID) -> dict:
     return dict(row.value) if row else {"revision": 0, "state": None}
 
 
+def _wait_in_future(until: str | None) -> bool:
+    if not until:
+        return False
+    try:
+        parsed = datetime.fromisoformat(until)
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed > datetime.now(UTC)
+
+
 async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
     """API 응답용. 저장값에 파생 필드를 붙여 돌려주되 영속하지는 않는다(요구가 이중 저장되지 않게)."""
     data = await load(db, sid)
@@ -248,7 +260,9 @@ async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
             waiting_deps.append(r["wait"])
     active_waits = [w for w in waiting_deps if not w.get("satisfied")]
     data["waiting_dependencies"] = active_waits
-    usage_wait = bool(data.get("waiting_until") and (data.get("usage_waits") or data.get("blocker_kind") in ("usage_limit", "model_capacity")))
+    # 지난 대기 시각은 한도 대기가 아니다(summary 가 until 을 비우는 기준과 같다).
+    usage_wait = bool(_wait_in_future(data.get("waiting_until")) and (
+        data.get("usage_waits") or data.get("blocker_kind") in ("usage_limit", "model_capacity")))
     # 멈춘(paused/blocked) 목표는 기다리는 중이 아니다. 대기 종류는 active 일 때만 낸다.
     data["wait_type"] = None if status != "active" else ("usage_limit" if usage_wait else ("external_dependency" if active_waits else None))
     data["has_partial_failure"] = any(r.get("status") == "blocked" for r in reqs) and status == "active"

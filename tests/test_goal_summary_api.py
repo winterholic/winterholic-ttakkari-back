@@ -121,6 +121,23 @@ async def test_waiting_usage_limit_is_distinguished_from_stop_and_block(client, 
     assert got["phase"] == "running" and got["waiting_until"] is None
 
 
+async def test_expired_usage_wait_is_not_counted_as_usage_limit_wait(client, auth, make_dir):
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    assert (await put(client, h, contract())).status_code == 200
+    await finish(await new_run(sid), RunStatus.failed, error="You've hit your usage limit. Try again in 3 hours.")
+    assert (await summary_of(client, auth, sid))["wait_type"] == "usage_limit"
+    async with sessionmaker()() as db:
+        from ttakkari.models import AppSetting
+        from ttakkari.orchestrator import work
+        row = await db.get(AppSetting, work.key(sid))
+        row.value = {**row.value, "waiting_until": (utcnow() - timedelta(minutes=1)).isoformat()}
+        await db.commit()
+        assert (await work.view(db, sid))["wait_type"] is None
+    got = await summary_of(client, auth, sid)
+    assert got["wait_type"] is None and got["phase"] == "running"
+
+
 async def test_blocked_paused_and_complete_summaries(client, auth, make_dir):
     # blocked: 영구 실패 → 사용자 조치 필요
     sess, h = await lead(client, auth, make_dir)

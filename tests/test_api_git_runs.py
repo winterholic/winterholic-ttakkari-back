@@ -41,7 +41,10 @@ async def test_agent_edits_show_in_run_diff_event_and_endpoint(client, auth, new
     evs = await run_events(client, auth, run["id"])
     diffs = [e["payload"] for e in evs if e["type"] == "run.diff"]
     assert len(diffs) == 1
-    assert diffs[0]["files"] == [{"path": "README.md", "added": 1, "removed": 0}]
+    # 진전 판정용 패치 지문(sig/isig)은 이벤트에만 붙는 추가 필드다. 기존 필드 값은 그대로 확인한다.
+    assert all(f.get("sig") and f.get("isig") for f in diffs[0]["files"])
+    assert [{k: v for k, v in f.items() if k not in ("sig", "isig")} for f in diffs[0]["files"]] == [
+        {"path": "README.md", "added": 1, "removed": 0}]
     assert diffs[0]["new_files"] == ["new_file.txt"]
     types = [e["type"] for e in evs]
     assert types.index("run.diff") < types.index("run.finished")
@@ -93,7 +96,9 @@ async def test_diff_is_relative_to_dirty_checkpoint(client, auth, new_session, m
     assert run["checkpoint_ref"] != git(root, "rev-parse", "HEAD")  # stash create 가 만든 커밋
     assert _ref_sha(root, run["id"]) == run["checkpoint_ref"]
     d = next(e["payload"] for e in await run_events(client, auth, run["id"]) if e["type"] == "run.diff")
-    assert d["files"] == [{"path": "README.md", "added": 1, "removed": 0}]
+    assert all(f.get("sig") and f.get("isig") for f in d["files"])
+    assert [{k: v for k, v in f.items() if k not in ("sig", "isig")} for f in d["files"]] == [
+        {"path": "README.md", "added": 1, "removed": 0}]
     assert d["new_files"] == ["new_file.txt"]  # 실행 전부터 있던 미추적 파일은 제외
     text = (await client.get(f"/api/runs/{run['id']}/diff", headers=auth)).text
     assert "+modified by fake agent" in text

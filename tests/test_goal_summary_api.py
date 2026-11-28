@@ -15,6 +15,7 @@ from goal_helpers import (
     queued,
     raw,
     request,
+    user_stopped,
 )
 from sqlalchemy import func, select
 
@@ -134,12 +135,7 @@ async def test_blocked_paused_and_complete_summaries(client, auth, make_dir):
     sess, h = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
     assert (await put(client, h, contract())).status_code == 200
-    r_id = await new_run(sid)
-    from ttakkari.runs.termination import CancelRequest, record_request
-    async with sessionmaker()() as db:
-        await record_request(db, await db.get(Run, r_id), CancelRequest(actor="user", source="api.run_cancel", reason="사용자 중단", user_intent=True, scope="run"))
-        await db.commit()
-    await finish(r_id, RunStatus.cancelled, error="사용자가 중단했습니다.")
+    await finish(await user_stopped(await new_run(sid)), RunStatus.cancelled, error="사용자가 중단했습니다.")
     got = await summary_of(client, auth, sid)
     assert (got["status"], got["phase"], got["user_action"]) == ("paused", "paused", "resume")
     assert got["user_intervention_needed"] is False and got["auto_resumable"] is False

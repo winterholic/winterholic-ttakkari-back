@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from goal_helpers import record_user_stop
 from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
@@ -444,6 +445,7 @@ async def test_personal_resume_text_survives_cancellation_and_executes(client, a
         run = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="cancel", status="cancelled")
         db.add(run)
         await db.flush()
+        await record_user_stop(db, run)
         await work.after_run(db, s, run)
         await db.commit()
         assert all(item.status == "pending" for item in personal)
@@ -468,11 +470,12 @@ async def test_schedule_waits_for_cancellation_commit_before_reading_contract(cl
     monkeypatch.setattr(manager, "dispatch", AsyncMock())
     async with sessionmaker()() as db:
         s = await db.get(ChatSession, sid)
-        run = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled",
-                  usage={"termination": {"cause": "user_stop", "user_intent": True}})
+        run = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled")
         schedule = ScheduledAction(action_type="send_message", payload={"session_id": str(sid), "prompt": "resume",
                                    "work_continuation": True}, due_at=utcnow(), status="leased")
         db.add_all([run, schedule])
+        await db.flush()
+        await record_user_stop(db, run)
         await db.commit()
         run_id = run.id
 
@@ -547,7 +550,7 @@ async def test_scheduler_first_continuation_is_cancelled_before_dispatch(client,
     async with sessionmaker()() as db:
         stop = await db.get(Run, stop_id)
         stop.status = RunStatus.cancelled
-        stop.usage = {**(stop.usage or {}), "termination": {"cause": "user_stop", "user_intent": True}}
+        await record_user_stop(db, stop)
         await work.after_run(db, await db.get(ChatSession, sid), stop)
         await db.commit()
     async with sessionmaker()() as db:
@@ -572,10 +575,10 @@ async def test_cancel_sweeps_direct_and_legacy_continuations_but_preserves_perso
     assert (await checkpoint(client, h, state())).status_code == 200
     async with sessionmaker()() as db:
         s = await db.get(ChatSession, sid)
-        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled",
-                   usage={"termination": {"cause": "user_stop", "user_intent": True}})
+        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled")
         db.add(stop)
         await db.flush()
+        await record_user_stop(db, stop)
         direct = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="resume", origin="orchestrator",
                      usage={"work_continuation": {"source_run_id": str(stop.id), "revision": 1}})
         legacy_schedule = ScheduledAction(action_type="send_message", due_at=utcnow(), status="completed",
@@ -655,11 +658,12 @@ async def test_owned_queued_continuation_is_cancelled_through_its_generation(cli
     assert (await checkpoint(client, h, state())).status_code == 200
     async with sessionmaker()() as db:
         s = await db.get(ChatSession, sid)
-        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled",
-                   usage={"termination": {"cause": "user_stop", "user_intent": True}})
+        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled")
         auto = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="resume", origin="orchestrator",
                    usage={"work_continuation": {"source_run_id": str(sid)}})
         db.add_all([stop, auto])
+        await db.flush()
+        await record_user_stop(db, stop)
         await db.commit()
         stop_id, auto_id = stop.id, auto.id
     async with generations(tmp_path) as (owner, _):
@@ -724,10 +728,10 @@ async def test_cancelled_schedule_snapshot_stays_cancelled_after_explicit_goal_r
         await db.commit()
     async with sessionmaker()() as db:
         s = await db.get(ChatSession, sid)
-        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled",
-                   usage={"termination": {"cause": "user_stop", "user_intent": True}})
+        stop = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled")
         db.add(stop)
         await db.flush()
+        await record_user_stop(db, stop)
         await work.after_run(db, s, stop)
         await db.commit()
         revision = (await work.load(db, sid))["revision"]

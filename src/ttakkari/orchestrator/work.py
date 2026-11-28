@@ -297,8 +297,13 @@ def _original_gaps(current: dict, requirements: list[dict]) -> list[dict]:
     return gaps
 
 
-def _resolve_gaps(gaps: list[dict], dispositions: list[ItemDisposition], requirements: list[dict]) -> tuple[list[dict], list[dict]]:
-    """누락으로 보이는 원본 항목마다 대응 또는 범위 제외 기록이 있는지. (처리되지 않은 항목, 저장할 기록)."""
+def _resolve_gaps(gaps: list[dict], dispositions: list[ItemDisposition], requirements: list[dict],
+                  user_runs: list[tuple[Any, datetime]] | None = None) -> tuple[list[dict], list[dict]]:
+    """누락으로 보이는 원본 항목마다 대응 또는 범위 제외 기록이 있는지. (처리되지 않은 항목, 저장할 기록).
+
+    범위 제외의 user_approved 는 에이전트가 쓴 값이라 그대로 믿지 않는다. 그 항목을 요청한 Run 뒤에 사용자·접수 origin 의
+    Run(사용자 발화)이 하나라도 관측될 때만 승인으로 기록하고, 아니면 주장만 남겨 사용자 확인 대상(review)으로 둔다.
+    발화 내용이 승인인지는 코드로 못 정하므로 완료를 막지는 않는다."""
     done_ids = {r["id"] for r in requirements if r["status"] == "done"}
     unresolved: list[dict] = []
     records: list[dict] = []
@@ -308,8 +313,12 @@ def _resolve_gaps(gaps: list[dict], dispositions: list[ItemDisposition], require
         if disp is None:
             unresolved.append(gap)
         elif disp.excluded:
-            records.append({**base, "kind": "excluded", "reason": disp.reason, "user_approved": bool(disp.user_approved),
-                            "evidence_kind": "review"})
+            claimed = bool(disp.user_approved)
+            asked = next((at for rid, at in user_runs or [] if str(rid) == str(gap.get("run_id"))), None)
+            observed_after = any(asked is None or at > asked for rid, at in user_runs or []
+                                 if str(rid) != str(gap.get("run_id")))
+            records.append({**base, "kind": "excluded", "reason": disp.reason, "user_approved": claimed and observed_after,
+                            "approval_claimed": claimed, "approval_observed": observed_after, "evidence_kind": "review"})
         elif disp.requirement_id in done_ids:
             records.append({**base, "kind": "mapped", "requirement_id": disp.requirement_id, "evidence_kind": "review"})
         else:
@@ -505,7 +514,10 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     if value["status"] == "complete":
         gaps = _original_gaps(current, value["requirements"])
         if gaps:
-            unresolved, records = _resolve_gaps(gaps, body.original_item_dispositions, value["requirements"])
+            user_runs = [(rid, at) for rid, at in (await db.execute(
+                select(Run.id, Run.created_at).where(Run.session_id == sess.id, Run.origin.in_(INTAKE_ORIGINS))
+                .order_by(Run.created_at).limit(200))).all()]
+            unresolved, records = _resolve_gaps(gaps, body.original_item_dispositions, value["requirements"], user_runs)
             if unresolved:
                 listed = "; ".join(f"{g['label']}: {g['text'][:60]}" + (f" ({g['why']})" if g.get("why") else "")
                                    for g in unresolved[:12])
@@ -750,6 +762,11 @@ async def cancel_queued_continuations(db: AsyncSession, sid: uuid.UUID, reason: 
         lease = await db.get(RuntimeLease, queued.id)
         if lease is not None:
             from ttakkari.generation import wake
+            # 소유 세대가 이 cancel 명령으로 마감할 때 주체를 알 수 있게 요청 시점에 시스템 요청을 남긴다. 없으면 '주체 미기록'
+            # 취소로 판정돼 아직 active 인 목표가 검토 대상으로 멈춘다.
+            await termination.record_request(db, queued, termination.CancelRequest(
+                actor="system", source="work.cancel_queued_continuations", reason=reason, user_intent=False,
+                scope="continuation"))
             db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=queued.id,
                                   generation_id=lease.generation_id))
             await wake(db, queued.id)

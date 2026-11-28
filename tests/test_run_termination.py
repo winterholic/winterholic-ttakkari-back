@@ -396,3 +396,42 @@ def test_cancel_request_audit_rows_never_carry_secrets_or_free_text_beyond_the_r
         run_id=str(uuid.uuid4()), session_id=str(uuid.uuid4()))
     assert len(detail["reason"]) <= 1000 and set(detail) >= {
         "run_id", "session", "actor", "actor_id", "source", "scope", "reason", "user_intent", "requested_at"}
+
+
+# ---- 반례: 시스템이 자기 후속을 거두는 취소 ------------------------------------------------------------------
+async def test_system_superseding_a_leased_waiting_continuation_does_not_block_the_active_goal(client, auth, make_dir):
+    """사용자 새 지시가 한도 대기 후속을 거두는데 그 후속이 이미 세대 lease 를 잡았다. 소유 세대가 cancel 명령으로 마감한다.
+    이 취소는 시스템이 낸 것이므로 요청 시점에 주체가 남아야 하고, 그렇지 않으면 '주체 미기록'으로 활성 목표가 blocked 가 된다."""
+    from ttakkari.models import RuntimeCommand, RuntimeGeneration, RuntimeLease
+    from ttakkari.orchestrator import work
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    await put(client, h, contract())
+    owner_id = uuid.uuid4()
+    async with sessionmaker()() as db:
+        db.add(RuntimeGeneration(id=owner_id, revision="a" * 40, api_url="http://127.0.0.1:18793",
+                                 pid=987654321, process_started_at=1.0, state="active"))
+        await db.flush()
+        wait = Run(session_id=sid, workspace_id=(await db.get(Run, await new_run(sid))).workspace_id, engine="claude",
+                   prompt="wait", origin=RunOrigin.orchestrator, status=RunStatus.queued,
+                   usage={"work_continuation": {"source_run_id": None, "revision": 1, "transient": True}},
+                   resume_after=utcnow() + timedelta(hours=1))
+        db.add(wait)
+        await db.flush()
+        db.add(RuntimeLease(run_id=wait.id, session_id=sid, generation_id=owner_id, token=uuid.uuid4(), lane="leads"))
+        await db.commit()
+        wait_id = wait.id
+
+    async with sessionmaker()() as db:
+        await work.release_waiting_continuations(db, sid, "new user request supersedes waiting goal continuation")
+        await db.commit()
+    async with sessionmaker()() as db:
+        assert await db.scalar(select(RuntimeCommand.id).where(RuntimeCommand.run_id == wait_id, RuntimeCommand.kind == "cancel"))
+
+    await finish(wait_id, RunStatus.cancelled)  # 소유 세대가 cancel 명령을 집행해 마감한다
+
+    term = (await _row(wait_id)).usage["termination"]
+    assert term["cause"] == "system_stop" and term["user_intent"] is False, term
+    assert term["initiator"]["actor"] == "system"
+    st = await _state(client, h)
+    assert st["status"] == "active", st  # 수정 전에는 cancel_unattributed → blocked(검토 대상)

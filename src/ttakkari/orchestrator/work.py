@@ -631,6 +631,11 @@ async def cancel_queued_continuations(db: AsyncSession, sid: uuid.UUID, reason: 
         lease = await db.get(RuntimeLease, queued.id)
         if lease is not None:
             from ttakkari.generation import wake
+            # 소유 세대가 이 cancel 명령으로 마감할 때 주체를 알 수 있게 요청 시점에 시스템 요청을 남긴다. 없으면 '주체 미기록'
+            # 취소로 판정돼 아직 active 인 목표가 검토 대상으로 멈춘다.
+            await termination.record_request(db, queued, termination.CancelRequest(
+                actor="system", source="work.cancel_queued_continuations", reason=reason, user_intent=False,
+                scope="continuation"))
             db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=queued.id,
                                   generation_id=lease.generation_id))
             await wake(db, queued.id)

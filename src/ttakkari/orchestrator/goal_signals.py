@@ -30,17 +30,24 @@ _HISTORY_MARK = "[최근 대화"
 # ---- 복합 요청 판정 ---------------------------------------------------------------------------------------
 MIN_COMPLEX_CHARS = 10  # 짧은 복합 자연어("조사하고 고쳐서 배포해")도 동사 수로 판정하므로 길이 문턱은 낮게 둔다
 _ITEM_RE = re.compile(
-    r"^\s*(?:(?P<num>\d{1,2})\s*[.)]|\((?P<pnum>\d{1,2})\)|(?P<circ>[①-⑳])|(?P<tag>[A-Za-z]{1,3}\d{1,2})\s*[.:)])\s*(?P<body>\S.*)$")
-_BULLET_RE = re.compile(r"^\s*[-*•]\s+\S")
-_SECTION_RE = re.compile(r"^\s*(?:#{1,4}\s*(?P<h>.{1,30})|[\[【(](?P<b>[^\]】)]{1,30})[\]】)])\s*:?\s*$")
+    r"^\s*(?:[-*•]\s+)?(?:(?P<num>\d{1,2})\s*[.)]|\[(?P<bnum>\d{1,2})\]|\((?P<pnum>\d{1,2})\)|(?P<circ>[①-⑳])|(?P<tag>[A-Za-z]{1,3}\d{1,2})\s*[.:)])\s*(?P<body>\S.*)$")
+_BULLET_RE = re.compile(r"^\s*[-*•]\s+(?!\d{1,2}[.)])\S")
+_SECTION_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*(?P<h>.{1,120})|[\[【(](?P<b>[^\]】)]{1,120})[\]】)]|(?P<c>(?:최종\s*)?완료\s*(?:조건|기준)|수행\s*(?:요구\s*사항|항목|조건)))\s*:?\s*$",
+    re.IGNORECASE)
+_COMPLETION_SECTION_RE = re.compile(
+    r"(?:최종\s*)?완료\s*(?:조건|기준)|수행\s*(?:요구\s*사항|항목|조건)|요구\s*사항|acceptance\s*criteria|completion\s*criteria|requirements|tasks|작업\s*카드",
+    re.IGNORECASE)
 _ACTION_RE = re.compile(
     r"수정|구현|추가|제거|삭제|작성|테스트|검증|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩|refactor|조사|분석|"
     r"정리|고쳐|고치|만들|적용|마이그레이션|migrat|implement|fix\b|build|설치|연결|통합|재현|보고서|문서화|"
-    r"개선|개편|변경|교체|최적화|보완|정비", re.IGNORECASE)
+    r"개선|개편|변경|교체|최적화|보완|정비|전환", re.IGNORECASE)
 # 파일·배포·코드를 실제로 바꾸는 동사. 분석·정리·설명만 있는 요청은 계약 대상이 아니다.
 _MUTATING_RE = re.compile(
     r"수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩|refactor|고쳐|고치|만들|적용|"
-    r"마이그레이션|migrat|implement|fix\b|build|설치|개선|개편|변경|교체|최적화|보완|정비", re.IGNORECASE)
+    r"마이그레이션|migrat|implement|fix\b|build|설치|개선|개편|변경|교체|최적화|보완|정비|전환", re.IGNORECASE)
+_ANALYSIS_RE = re.compile(
+    r"조사|분석|진단|검토|확인|보고서|측정|평가|감사|audit|benchmark|탐색|비교", re.IGNORECASE)
 _IMPERATIVE_RE = re.compile(
     r"해줘|해 줘|해라|하세요|해주세요|해 주세요|하자|바꿔|고쳐|만들어|추가해|수정해|적용해|진행해|이어서|계속|"
     r"배포|push|푸시|구현|실행해|돌려|\bplease\b|\bdo\b|\bfix\b|\badd\b|\bimplement", re.IGNORECASE)
@@ -54,7 +61,7 @@ _QUESTION_END_RE = re.compile(r"[?？]\s*$|(?:까|냐|니|죠|가요|어요|았�
 # 실제로 바꾸라는 명령형. 명사로만 나온 동사("수정, 테스트, 구현 방식을 설명해줘")는 계약 대상이 아니다.
 _CMD_RE = re.compile(
     r"(?:(?:수정|구현|추가|제거|삭제|작성|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩터링|refactor|적용|설치|"
-    r"마이그레이션|fix|build|개선|개편|변경|교체|최적화|보완|정비|조사|분석|진행|수행|실행|처리)(?:하고|하며|하되|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
+    r"마이그레이션|fix|build|개선|개편|변경|교체|최적화|보완|정비|전환|조사|분석|진행|수행|실행|처리)(?:하고|하며|하되|해서|하여|한 뒤|한 다음|해줘|해 줘|해주세요|해 주세요|하세요|해라|하자|해)|"
     r"고치(?:고|세요|며)|고쳐|만들(?:고|어|며)|바꿔|바꾸고|돌려|올려|붙여|넣어)", re.IGNORECASE)
 # 부정·금지 표지. 금지는 문장 전체가 아니라 그 절만 시킨 일에서 뺀다("수정하되 계정은 변경하지 말고 테스트하고 배포해" 에서
 # 수정·테스트·배포는 남는다).
@@ -178,7 +185,8 @@ def _line_items(line: str) -> list[tuple[str, str]]:
     found = _ITEM_RE.match(line)
     if not found:
         return []
-    label = found.group("tag") or found.group("num") or found.group("pnum") or found.group("circ")
+    label = (found.group("tag") or found.group("num") or found.group("bnum")
+             or found.group("pnum") or found.group("circ"))
     return [(label, found.group("body").strip())]
 
 
@@ -196,18 +204,29 @@ def _is_numbered_heading(label: str, body: str, rest: list[str]) -> bool:
 def extract_items(text: str) -> list[dict[str, str]]:
     """번호·라벨이 붙은 줄만 요구 항목으로 본다. 불릿은 경로·보조 설명이 많아 제외한다.
 
-    `[백엔드] 1..3 / [프런트] 1..3` 처럼 라벨이 겹치면 구역 이름을 붙여 id 를 유일하게 만든다(요구 id 는 유일해야 한다)."""
+    '## 15. 최종 완료 조건' 같은 명시적 완료 조건 구역이 있는 경우 그 구역의 항목을 우선한다."""
     items: list[dict[str, str]] = []
+    completion_items: list[dict[str, str]] = []
     seen: set[str] = set()
     used: set[str] = set()
+    comp_used: set[str] = set()
     section = ""
+    in_completion_section = False
     lines = (text or "").splitlines()
     for idx, line in enumerate(lines):
         head = _SECTION_RE.match(line)
         if head:
-            section = (head.group("h") or head.group("b") or "").strip()
+            section = (head.group("h") or head.group("b") or head.group("c") or "").strip()
+            in_completion_section = bool(_COMPLETION_SECTION_RE.search(section))
             continue
-        for label, body in _line_items(line):
+        items_in_line = _line_items(line)
+        if not items_in_line:
+            trimmed = line.strip().rstrip(":")
+            if not line.startswith(("#", "-", "*")) and _COMPLETION_SECTION_RE.search(trimmed):
+                section = trimmed
+                in_completion_section = True
+                continue
+        for label, body in items_in_line:
             if _is_numbered_heading(label, body, lines[idx + 1:]):
                 continue
             key = f"{section}|{label}:{body[:40]}"
@@ -223,7 +242,22 @@ def extract_items(text: str) -> list[dict[str, str]]:
                     n += 1
             ident = ident[:80]
             used.add(ident)
-            items.append({"label": ident, "text": body[:300]})
+            item_dict = {"label": ident, "text": body[:300]}
+            items.append(item_dict)
+            if in_completion_section:
+                c_ident = label
+                if c_ident in comp_used:
+                    c_ident = f"{section}-{label}" if section else f"{label}-2"
+                    n = 2
+                    while c_ident in comp_used:
+                        c_ident = f"{section or label}-{label}#{n}"
+                        n += 1
+                c_ident = c_ident[:80]
+                comp_used.add(c_ident)
+                completion_items.append({"label": c_ident, "text": body[:300]})
+
+    if completion_items:
+        return completion_items[:60]
     return items[:60]
 
 
@@ -236,8 +270,9 @@ def is_complex(text: str) -> bool:
 
     길이나 특정 어미로 판정하지 않는다. 사람의 문장(로그·코드블록·부정 지시·설명 요청 문장 제외)에서
     - 번호 항목이 3개 이상(줄마다든 한 줄에 `1. … / 2. …` 로 이어 쓰든)이고, 명령형이 있거나 항목에 작업 명사가 2개 이상이며
-    - 아니면 서로 다른 작업 동사·명사형 동작이 3개 이상(그중 하나는 실제로 바꾸는 것)일 때 복합이다.
-    설명을 청하는 문장만 있고 바꾸라는 명령형이 없으면 동사가 몇 개든 복합이 아니다."""
+    - 아니면 서로 다른 작업 동사·명사형 동작이 3개 이상일 때 복합이다.
+    설명을 청하는 문장만 있고 바꾸거나 분석하라는 명령형이 없으면 동사가 몇 개든 복합이 아니다.
+    복합 분석 요청의 완료 요구도 보존한다(E-1)."""
     sentences, whole_readonly = scoped_sentences(prose(text))
     if whole_readonly:
         return False
@@ -252,23 +287,28 @@ def is_complex(text: str) -> bool:
     if len(body) < MIN_COMPLEX_CHARS:
         return False
     mutating = {m.group(0).lower() for m in _MUTATING_RE.finditer(body)}
-    if not mutating:
+    analysis = {m.group(0).lower() for m in _ANALYSIS_RE.finditer(body)}
+    if not mutating and not analysis:
         return False
     cmd = bool(_CMD_RE.search(body))
     items = extract_items(body)
     if len(items) >= 3:
-        if cmd:
+        if cmd or (analysis and _IMPERATIVE_RE.search(body)):
             return True
         joined = " ".join(it["text"] for it in items)
         acted = sum(1 for it in items if _ACTION_RE.search(it["text"]))
-        return not asked and acted >= 2 and bool(_MUTATING_RE.search(joined))
+        return not asked and acted >= 2 and bool(_MUTATING_RE.search(joined) or _ANALYSIS_RE.search(joined))
     if asked and not cmd:
         return False
     actions = _canon({m.group(0).lower() for m in _ACTION_RE.finditer(body)})
     bullets = sum(1 for line in body.splitlines() if _BULLET_RE.match(line))
     if len(actions) >= 3:
+        if mutating:
+            return True
+        return bool(cmd or _IMPERATIVE_RE.search(body))
+    if mutating and len(actions) >= 2 and (len(items) >= 2 or bullets >= 3) and len(body) >= 80:
         return True
-    return len(actions) >= 2 and (len(items) >= 2 or bullets >= 3) and len(body) >= 80
+    return False
 
 
 def is_actionable(text: str) -> bool:

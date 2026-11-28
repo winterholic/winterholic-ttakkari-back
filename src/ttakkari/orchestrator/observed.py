@@ -699,7 +699,7 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
         elif _TEST_CLAIM_RE.search(sent):
             counts = [int(x) for x in _PASS_COUNT_RE.findall(sent)]  # 앞에 pytest·테스트가 오면 정규식이 건수 그룹을 놓친다
             family = _test_family(sent)
-            scope = [t for t in decided if family and t["target"].startswith(family)] or decided
+            family_tests = [t for t in decided if family and t["target"].startswith(family)]
             if not tests:
                 if have_obs and not partial:
                     contradictions.append({"code": "test_not_run", "detail": f"테스트 성공을 주장하지만 관측된 테스트 실행이 없다: {raw[:80]}"})
@@ -707,15 +707,18 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
                     unverified.append({"code": "test_unobservable", "detail": "관측된 도구 기록이 없어 테스트 주장을 대조하지 못함"})
             elif not decided:
                 unverified.append({"code": "test_outcome_unknown", "detail": "테스트를 실행했으나 결과 요약을 읽지 못함"})
+            elif family and not family_tests:
+                unverified.append({"code": "test_unobservable", "detail": f"관측된 {family} 테스트 기록이 없어 테스트 주장을 대조하지 못함"})
             else:
+                scope = family_tests or decided
                 last = scope[-1]
-                allowed = {t["passed"] for t in decided if t["outcome"] == "passed" and t.get("passed") is not None}
-                same_run = [t for t in decided if t["run_id"] == last["run_id"] and t["outcome"] == "passed"
+                allowed = {t["passed"] for t in scope if t["outcome"] == "passed" and t.get("passed") is not None}
+                same_run = [t for t in scope if t["run_id"] == last["run_id"] and t["outcome"] == "passed"
                             and t.get("passed") is not None]
                 if same_run:
                     allowed.add(sum(t["passed"] for t in same_run))
                 latest: dict[str, int] = {}  # 대상별 가장 최근 통과 건수의 합: 파일을 나눠 돌린 결과를 합쳐 보고한 경우
-                for t in decided:
+                for t in scope:
                     if t["outcome"] == "passed" and t.get("passed") is not None:
                         latest[t["target"]] = t["passed"]
                     elif t["outcome"] == "failed":
@@ -726,8 +729,14 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
                     contradictions.append({"code": "test_failed", "detail":
                                            f"테스트 성공을 주장하지만 가장 최근 관측 테스트가 실패했다: {last['target']} {last.get('line') or ''}".strip()})
                 elif (bad := next((n for n in counts if allowed and n not in allowed), None)) is not None:
-                    contradictions.append({"code": "test_count_mismatch", "detail":
-                                           f"통과 {bad}건을 주장하지만 관측된 통과 건수는 {sorted(allowed)}"})
+                    # 다른 Run의 실행 결과는 유효한 재사용 증거일 수 있지만, 범위가 다른 건수만으로
+                    # 현재 주장을 반증할 수는 없다. 단일 Run 안에서 관측한 건수 불일치만 모순이다.
+                    if len({t["run_id"] for t in scope}) == 1:
+                        contradictions.append({"code": "test_count_mismatch", "detail":
+                                               f"통과 {bad}건을 주장하지만 관측된 통과 건수는 {sorted(allowed)}"})
+                    else:
+                        unverified.append({"code": "test_unobservable", "detail":
+                                           f"통과 {bad}건 주장을 다른 Run의 테스트 건수만으로 대조할 수 없음"})
                 else:
                     verified.append(_ref("observed_test", target=last["target"], source_run_id=last["run_id"], seq=last.get("seq"),
                                          call_id=last.get("call_id"), result=last.get("line") or "passed", at=last.get("at")))

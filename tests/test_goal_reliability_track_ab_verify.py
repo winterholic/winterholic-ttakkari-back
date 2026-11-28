@@ -102,6 +102,36 @@ async def test_summed_count_over_separate_targets_is_not_a_mismatch():
     assert await _codes("pytest 95 passed", _pool(tests)) == ([], [])
 
 
+@pytest.mark.parametrize("claim_text", [
+    "... main 27854b83, 기획 재실행 287 passed",
+    "재검증: 전체 pytest 7081 passed exit=0 @ f67b5d0d, 프론트 전체 vitest 1937 passed",
+    "ops_deploy_log 5685 passed, 3 skipped, 5016 subtests passed",
+])
+async def test_operational_case_outside_runs_evidence_count_with_other_observed_targets(claim_text):
+    """운영 사례 재현: 다른 Run 에서 pytest 파일 단위로 통과한 44·55·99만 관측됐고,
+    주장 건수(287, 7081, 5685)는 관측 범위 밖(이전 Run, 백그라운드 tail, 배포 게이트)의 실행인 경우.
+    수정 전에는 test_count_mismatch 로 거부되었으나, 수정 후에는 unverified 로 분류된다."""
+    tests = [
+        _test("passed", 44, "pytest:tests/test_goal_summary_api.py", "r1"),
+        _test("passed", 55, "pytest:tests/delivery", "r2"),
+        _test("passed", 99, "pytest:tests/test_goal_reliability_track_ab_verify.py", "r3"),
+    ]
+    pool = _pool(tests)
+    res = await observed.check_claims(claim_text, pool, [])
+    assert res["contradictions"] == []
+    assert any(u["code"] == "test_unobservable" for u in res["unverified"])
+    assert observed.evidence_level(res) == "unverified"
+
+
+async def test_same_target_test_count_mismatch_is_still_rejected():
+    """같은 Run 에서 pytest 44 passed 를 관측한 뒤 다른 건수를 주장하면 여전히 거부."""
+    tests = [_test("passed", 44, "pytest:tests/test_goal_summary_api.py", "r1")]
+    pool = _pool(tests)
+    res = await observed.check_claims("pytest 287 passed", pool, [])
+    assert any(c["code"] == "test_count_mismatch" for c in res["contradictions"])
+    assert observed.evidence_level(res) == "contradicted"
+
+
 async def test_honest_failure_report_and_other_tool_failure_are_not_contradictions():
     assert await _codes("pytest 94 passed, 1 failed (기존 실패)", _pool([_test("failed")])) == ([], ["declared_failure"])
     # 마지막 관측이 ruff 실패여도 pytest 성공 주장은 pytest 결과와 맞춘다.

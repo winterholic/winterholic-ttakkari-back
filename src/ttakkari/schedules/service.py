@@ -233,13 +233,19 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
                 workspace_id=ws_id,
                 session_id=target_sid,
                 reason=reason,
+                actor="schedule",
+                actor_request_id=str(schedule.id),
+                source="schedule.stop_all",
             )
         log.info("scheduled stop_all executed: %d runs stopped", len(res.get("stopped", [])))
         return {**res, "count": len(res.get("stopped", []))}
 
     if action == "cancel_run":
         run_id = uuid.UUID(str(payload["run_id"]))
-        cancelled = await manager.cancel(run_id)
+        from ttakkari.runs.termination import CancelRequest
+        cancelled = await manager.cancel(run_id, CancelRequest(
+            actor="schedule", actor_id=str(schedule.id), source="schedule.cancel_run", user_intent=False, scope="run",
+            reason=schedule.description or "예약된 Run 취소"))
         log.info("scheduled cancel_run executed for run %s: %s", run_id, cancelled)
         return {"cancelled": cancelled, "run_id": str(run_id)}
 

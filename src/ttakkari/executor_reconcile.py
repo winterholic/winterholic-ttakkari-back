@@ -272,7 +272,7 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
             return False
     if any(_group_state(group)[0] != "absent" for group in current_groups):
         return False
-    from ttakkari.runs import events
+    from ttakkari.runs import events, termination
     from ttakkari.runs.manager import _interrupted_handoff
     if run.status == RunStatus.running:
         run.status = RunStatus.cancelled if cancel_commands else RunStatus.interrupted
@@ -291,8 +291,14 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
                 command.acknowledged_at = utcnow()
         else:
             run.resume_handoff = await _interrupted_handoff(db, run)
+        # 소유 세대·핸들을 잃은 Run 의 종료다. 취소 요청 기록이 있으면 그 주체를, 없으면 lease 유실로 남긴다. 위 검증으로
+        # 기록된 프로세스 그룹이 모두 종료됐음을 확인한 뒤라 종료 결과는 terminated 로 적는다.
+        term = await termination.finalize(db, run, run.status, run.error, {
+            "cancel_command": bool(cancel_commands), "lease_lost": True, "process_started": True,
+            "process_terminated": True, "group_alive": False})
         events.append(db, run, "run.finished", {"status": run.status, "error": run.error,
-                                                  "result_text": None, "cost_usd": None, "exit_code": None})
+                                                  "result_text": None, "cost_usd": None, "exit_code": None,
+                                                  "termination": term})
     else:
         # The owner may die after saving a wait/cancel/final result but before
         # releasing its lease. Preserve that state; only discard proven dead ownership.

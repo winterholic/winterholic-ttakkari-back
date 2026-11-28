@@ -45,7 +45,7 @@ from ttakkari.orchestrator.goal_signals import (
     unmapped_items,
     weak_evidence,
 )
-from ttakkari.runs import events
+from ttakkari.runs import events, termination
 
 log = logging.getLogger("ttakkari.work")
 
@@ -55,6 +55,8 @@ MAX_UNCHANGED_CONTINUATIONS = 2
 # 일시 엔진 오류: 같은 오류 지문 2회, 지문과 무관하게 진전 없이 연속 4회까지만 다시 본다. 진전이 있으면 모두 0으로 돌린다.
 MAX_TRANSIENT_RETRIES = 2
 MAX_TRANSIENT_TOTAL = 4
+# 취소 요청 기록이 없는 원인 미확인 종료는 소유자·중복 실행을 확인한 뒤 이 횟수만 복구한다. 넘기면 검토 대상으로 멈춘다.
+MAX_UNKNOWN_CANCEL_RETRIES = 1
 TRANSIENT_BACKOFF_SECONDS = 60
 # 계정 한도·모델 용량은 기다리는 상태다. 대기 횟수에만 상한을 둔다(회당 최대 USAGE_WAIT_MAX_SECONDS).
 MAX_USAGE_WAITS = 10
@@ -639,8 +641,12 @@ async def cancel_queued_continuations(db: AsyncSession, sid: uuid.UUID, reason: 
         queued.finished_at = utcnow()
         queued.resume_after = None
         queued.error = reason[:2000]
+        term = termination.simple_record("system_stop", actor="system", source="work.cancel_queued_continuations",
+                                         reason=reason, run=queued)
+        queued.usage = {**(queued.usage or {}), "termination": term}
         events.append(db, queued, "run.finished", {"status": RunStatus.cancelled, "error": queued.error,
-                                                  "result_text": queued.result_text, "work_continuation": True})
+                                                  "result_text": queued.result_text, "work_continuation": True,
+                                                  "termination": term})
         record(db, actor="system", action="run.finished", outcome="error", target_type="run",
                target_id=queued.id, detail={"status": RunStatus.cancelled, "reason": queued.error})
 
@@ -660,16 +666,24 @@ async def release_waiting_continuations(db: AsyncSession, sid: uuid.UUID, reason
         await cancel_queued_continuations(db, sid, reason, only=frozenset(r.id for r in owned))
 
 
-def _pause_reason(run: Run) -> str:
+def _pause_reason(run: Run, term: dict | None = None) -> str:
+    """사용자·전역 중지는 누가 어디서 요청했는지, 그 밖에는 왜 검토 대상인지 적는다. 'cancelled' 문구는 기존 표시를 지킨다."""
+    term = term or {}
+    who = (term.get("initiator") or {}).get("actor")
+    if term.get("cause") in ("user_stop", "global_stop"):
+        via = f" via {term['source']}" if term.get("source") else ""
+        return f"{run.engine} Run {run.id} cancelled by {who or 'user'}{via}: {term.get('reason') or run.error or 'stop requested'}"
+    if term.get("cause") == "cancel_unattributed":
+        return (f"{run.engine} Run {run.id} cancelled: 취소 요청은 있었으나 주체 미기록. 사용자 중단으로 단정하지 않고 "
+                "자동으로 이어가지 않는다. 취소 경로와 이벤트를 확인한 뒤 재개하라")
+    if term.get("cause") == "scheduled_stop":
+        return (f"{run.engine} Run {run.id} cancelled by schedule {(term.get('initiator') or {}).get('actor_id') or ''} "
+                f"via {term.get('source')}: 예약 취소라 사용자 중단 여부 미확인. 검토 후 재개하라")
     return f"{run.engine} Run {run.id} cancelled: {run.error or 'cancelled; inspect user stop request'}"
 
 
-async def _pause_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: AppSetting, current: dict, state: dict) -> None:
-    reason = _pause_reason(run)
-    row.value = {**current, "state": {**state, "status": "paused", "blocker": reason[:2000]},
-                 "revision": current["revision"] + 1, "waiting_until": None}
-    events.append(db, run, "work.paused", {"reason": reason[:2000]})
-    # 이 계약이 만든 자동 후속·재개 예약은 취소해 이후에 자동으로 되살아나지 않게 한다. 사용자가 만든 무관한 예약은 보존한다.
+async def _cancel_auto_followups(db: AsyncSession, sess: ChatSession, reason: str) -> None:
+    """이 계약이 만든 자동 후속·재개 예약을 취소해 이후에 자동으로 되살아나지 않게 한다. 사용자가 만든 무관한 예약은 보존한다."""
     pending = (await db.scalars(select(ScheduledAction).where(
         ScheduledAction.action_type == "send_message", ScheduledAction.status.in_(("pending", "leased")),
         ScheduledAction.payload["session_id"].as_string() == str(sess.id)))).all()
@@ -679,6 +693,28 @@ async def _pause_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: A
             item.last_error = f"cancelled due to session {sess.id} work pause on run cancel"
             item.updated_at = utcnow()
     await cancel_queued_continuations(db, sess.id, reason)
+
+
+async def _pause_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: AppSetting, current: dict, state: dict,
+                           term: dict | None = None) -> None:
+    reason = _pause_reason(run, term)
+    row.value = {**current, "state": {**state, "status": "paused", "blocker": reason[:2000]},
+                 "revision": current["revision"] + 1, "waiting_until": None}
+    events.append(db, run, "work.paused", {"reason": reason[:2000], **({"cause": term["cause"]} if term else {})})
+    await _cancel_auto_followups(db, sess, reason)
+
+
+async def _review_on_cancel(db: AsyncSession, sess: ChatSession, run: Run, row: AppSetting, current: dict, state: dict,
+                            term: dict) -> None:
+    """사용자 중단이라고 단정할 수 없는 취소. 목표를 paused(사용자 중단)로 표시하지 않고 검토 대상(blocked)으로 멈춘다.
+
+    취소 요청이 실제로 있었을 수 있으니 자동 후속은 거둔다. 사용자가 새 지시를 하거나 재개해야 이어진다."""
+    reason = _pause_reason(run, term)
+    rec = dict(current)
+    _block(rec, state, term["cause"], reason)
+    row.value = rec
+    events.append(db, run, "work.blocked", {"reason": reason[:2000], "cause": term["cause"], "review": True})
+    await _cancel_auto_followups(db, sess, reason)
 
 
 # 기획 세션이 MCP schedule_action 으로 자기에게 건 예약은 이 시간 안에 도래할 때만 후속의 소유자로 본다.
@@ -831,10 +867,29 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     if not state or state["status"] != "active":
         return None
     row = await db.get(AppSetting, key(sess.id))
+    # 종료 원인은 요청 시점 기록으로만 판정한다(runs/termination.py). cancelled 라는 상태나 Run.error 문구로 사용자 의도를 추정하지 않는다.
+    term: dict | None = None
     if run.status == RunStatus.cancelled:
-        await _pause_on_cancel(db, sess, run, row, current, state)
-        return None
-    if run.status not in (RunStatus.succeeded, RunStatus.failed):
+        term = await termination.resolve(db, run)
+    elif run.status in (RunStatus.succeeded, RunStatus.failed) and (
+            stops := termination.explicit_stops(await termination.load_requests(db, run))):
+        # 사용자가 중지를 눌렀는데 Run 이 그 직전에 끝났다. 자동 이어가기가 사용자 취소를 뒤집지 못하게 한다.
+        term = termination.classify(RunStatus.cancelled, error=None, requests=stops, facts={})
+    recover = False
+    if term is not None:
+        action = termination.goal_action(term)
+        if action == "pause":
+            await _pause_on_cancel(db, sess, run, row, current, state, term)
+            return None
+        if action == "review":
+            await _review_on_cancel(db, sess, run, row, current, state, term)
+            return None
+        if action == "isolate":
+            # 기획이 작업자 하나를 멈춘 것은 목표 중단이 아니다. 목표 상태는 그대로 두고 기록만 남긴다.
+            events.append(db, run, "work.cancel_isolated", {"cause": term["cause"], "source": term.get("source")})
+            return None
+        recover = True  # 일시 장애(엔진 interrupted)이거나 원인 미확인. 아래에서 진행을 보존하고 제한적으로 복구한다.
+    if run.status not in (RunStatus.succeeded, RunStatus.failed) and not recover:
         return None  # interrupted Runs use existing restart recovery, not a new duplicate Run.
 
     # 진전 판정: 서버가 관측한 성공한 변경·커밋·테스트가 이 목표 전체 이력(progress_ledger)에서 처음이거나 체크포인트가
@@ -865,8 +920,11 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         for counter in ("transient_retries", "transient_total", "usage_waits", "waiting_until"):
             rec.pop(counter, None)
     rec["updated_at"] = utcnow().isoformat()
-    failed = run.status == RunStatus.failed
-    kind = failure_kind(run.error) if failed else None
+    failed = run.status == RunStatus.failed or recover
+    unknown_cancel = recover and term["cause"] == "unknown"
+    error_text = run.error if not recover else (run.error or ("engine interrupted" if term["cause"] == "engine_interrupted"
+                                                              else "cancelled without a recorded requester"))
+    kind = (failure_kind(run.error) if run.status == RunStatus.failed else "engine_transient") if failed else None
 
     if failed and kind == "permanent":
         reason = f"{run.engine} Run {run.id} failed: {run.error or 'unknown failure'}"
@@ -884,7 +942,7 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     until: float | None = None
     extra: dict = {}
     if failed:
-        sig = error_signature(run.error)
+        sig = error_signature(error_text)
         if kind in ("usage_limit", "model_capacity"):
             waits = rec.get("usage_waits", 0)
             if waits >= MAX_USAGE_WAITS:
@@ -902,9 +960,17 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         else:
             retries = dict(rec.get("transient_retries") or {})
             total = rec.get("transient_total", 0)
+            if unknown_cancel and retries.get(sig, 0) >= MAX_UNKNOWN_CANCEL_RETRIES:
+                # 제한적 복구를 한 번 썼는데 또 원인 미확인으로 끝났다. 더 자동으로 이어가지 않고 검토 대상으로 멈춘다.
+                _block(rec, state, "cancel_cause_unknown",
+                       f"{run.engine} Run {run.id} 가 취소 요청 기록 없이 반복 종료됐다(원인 미확인). 자동 복구 {MAX_UNKNOWN_CANCEL_RETRIES}회 뒤에도 "
+                       "원인을 가리지 못해 멈춘다. 취소 경로와 이벤트를 확인한 뒤 재개하라")
+                row.value = rec
+                events.append(db, run, "work.blocked", {"reason": rec["state"]["blocker"], "cause": "unknown", "review": True})
+                return None
             if retries.get(sig, 0) >= MAX_TRANSIENT_RETRIES or total >= MAX_TRANSIENT_TOTAL:
                 _block(rec, state, "transient_exhausted",
-                       f"{run.engine} Run {run.id} failed repeatedly without progress: {run.error or 'unknown failure'}")
+                       f"{run.engine} Run {run.id} failed repeatedly without progress: {error_text or 'unknown failure'}")
                 row.value = rec
                 events.append(db, run, "work.blocked", {"reason": rec["state"]["blocker"], "failure_kind": kind})
                 return None
@@ -913,7 +979,7 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
             rec["transient_total"] = total + 1
             until = time.time() + TRANSIENT_BACKOFF_SECONDS * (2 ** total)
             extra = {"transient": True, "failure_kind": kind}
-            header = (f"[미완료 목표 자동 이어가기] 직전 시도에서 일시적 {kind} 오류 발생 ({(run.error or 'transient failure')[:200]}). "
+            header = (f"[미완료 목표 자동 이어가기] 직전 시도에서 일시적 {kind} 오류 발생 ({(error_text or 'transient failure')[:200]}). "
                       f"오류 지문 {sig} (시도 {retries[sig]}/{MAX_TRANSIENT_RETRIES}). 동일 실패 반복을 피하고 대체 방법으로 계속하라.")
         prompt = _continuation_prompt(state, rec, header=header)
     else:

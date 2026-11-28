@@ -61,6 +61,7 @@ from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
 from ttakkari.runs.task_card import TaskCard
+from ttakkari.runs.termination import CancelRequest
 
 router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator"])
 RESULT_CHARS = 4000
@@ -838,12 +839,15 @@ async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) ->
     runs = list(await db.scalars(select(Run).where(Run.session_id == w.id, Run.status.in_(ACTIVE))))
     # 대기 중인 것부터 지워야 실행 중인 것이 끝나는 순간 다음 것이 시작되지 않는다.
     running = [r for r in runs if await manager.is_owned(r.id)]
+    # 기획이 작업자 하나를 멈추는 요청이다. 사용자 중단이 아니라서 기획 목표는 멈추지 않는다(work.after_run 의 isolate).
+    stop = CancelRequest(actor="orchestrator", actor_id=str(sid), source="api.orchestrator_stop_worker",
+                         reason=f"기획 세션 {sid} 가 작업자 {w.id} 중지를 요청했습니다.", user_intent=False, scope="worker")
     for run in runs:
         if run not in running:
-            await manager.cancel_queued(db, run)
+            await manager.cancel_queued(db, run, stop)
     await db.commit()
     for run in running:
-        await manager.cancel(run.id)
+        await manager.cancel(run.id, stop)
     # 종료 기록은 실행 태스크가 한다. 잠깐 기다려 최신 상태를 돌려준다.
     for _ in range(40):
         if not await db.scalar(select(Run.id).where(Run.session_id == w.id, Run.status.in_(ACTIVE)).limit(1)):
@@ -876,6 +880,7 @@ async def orchestrator_stop_all(
         workspace_id=orch.workspace_id,
         reason=reason,
         actor_id=str(sid),
+        source="api.orchestrator_stop_all",
     )
 
 
@@ -903,6 +908,7 @@ async def orchestrator_stop_session(
         session_id=session_id,
         reason=reason,
         actor_id=str(sid),
+        source="api.orchestrator_stop_agent",
     )
 
 

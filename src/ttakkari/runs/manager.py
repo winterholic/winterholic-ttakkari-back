@@ -74,6 +74,7 @@ from ttakkari.runs import (
     desk,
     events,
     impact_check,
+    termination,
     tool_output_limit,
     worker_routing,
 )
@@ -84,6 +85,7 @@ from ttakkari.runs.compensation import (
     MAX_EXECUTION_RECOVERY_ATTEMPTS,
     retryable_execution_error,
 )
+from ttakkari.runs.termination import CancelRequest
 from ttakkari.schemas import ArtifactOut
 from ttakkari.security import seatbelt
 
@@ -186,6 +188,8 @@ class _Handle:
     start_slot: asyncio.Semaphore | None = None
     # 이 시도가 별도 커밋·dispatch 로 외부에 확정된 부수효과(예: 접수가 넘긴 기획 Run)를 이미 냈다. 있으면 다시 줄 세우지 않는다.
     side_effect_committed: bool = False
+    # 종료 원인 판정에 쓰는 서버 관측 사실(runs/termination.py classify). 엔진 문자열이 아니라 프로세스·플래그 값만 담는다.
+    facts: dict[str, Any] = field(default_factory=dict)
 
     def mark_side_effect(self) -> None:
         self.side_effect_committed = True
@@ -300,7 +304,17 @@ class RunManager:
                 await resume_queued()
                 return
 
-    async def cancel(self, run_id: uuid.UUID) -> bool:
+    async def _record_cancel_request(self, run_id: uuid.UUID, request: CancelRequest) -> None:
+        """취소 동작보다 먼저, 호출자 트랜잭션과 별개로 요청 기록을 커밋한다. 마감 쪽이 읽을 수 있어야 한다."""
+        async with sessionmaker()() as db:
+            await termination.record_request(db, await db.get(Run, run_id), request)
+            await db.commit()
+
+    async def cancel(self, run_id: uuid.UUID, request: CancelRequest | None = None) -> bool:
+        """`request` 는 취소를 요청한 쪽이 주체·출처·의도를 알릴 때 넘긴다. 없으면(세대 명령 집행 등 내부 호출) 기록하지 않고,
+        마감 때 요청 기록이 없는 취소로 판정한다."""
+        if request is not None:
+            await self._record_cancel_request(run_id, request)
         if self.remote:
             await self._cancel_leased(run_id)
             return True
@@ -459,8 +473,10 @@ class RunManager:
             started = nxt is not None and self.start(nxt.id)
             return nxt.id if started else None
 
-    async def cancel_queued(self, db: AsyncSession, run: Run) -> None:
-        """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다."""
+    async def cancel_queued(self, db: AsyncSession, run: Run, request: CancelRequest | None = None) -> None:
+        """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다. 요청 기록은 호출자 트랜잭션에 함께 남는다."""
+        if request is not None:
+            await termination.record_request(db, run, request)
         if self.runtime:
             from ttakkari.generation import _control
             from ttakkari.models import RuntimeCommand, RuntimeLease
@@ -1813,10 +1829,12 @@ class RunManager:
                 checkpoint_ref=run.checkpoint_ref, root=root,
                 new_files=diff["new_files"] if diff else [])}
 
+        facts = {"exit_code": rc, "timed_out": bool(timed_out), "process_started": True,
+                 "engine_error": state.error if state.error and state.error.strip().lower() == termination.ENGINE_INTERRUPTED else None}
         if self._shutting_down and not (h and h.cancel_requested):
-            await self._finish(db, run, RunStatus.interrupted, error="서버 종료로 중단")
+            await self._finish(db, run, RunStatus.interrupted, error="서버 종료로 중단", facts=facts)
         elif h and h.cancel_requested:
-            await self._finish(db, run, RunStatus.cancelled)
+            await self._finish(db, run, RunStatus.cancelled, facts=facts)
         elif timed_out:
             error = f"시간 초과({s.run_timeout_seconds}초)"
             if await self._retry_execution_failure(db, run, error):
@@ -1824,7 +1842,7 @@ class RunManager:
             if run.resume_attempts:
                 await self._retry_restart_resume(db, run, error)
             else:
-                await self._finish(db, run, RunStatus.failed, error=error)
+                await self._finish(db, run, RunStatus.failed, error=error, facts=facts)
         elif rc == 0 and not state.is_error:
             await self._finish(db, run, RunStatus.succeeded)
         else:
@@ -1835,7 +1853,7 @@ class RunManager:
             if run.resume_attempts and not (h and h.cancel_requested):
                 await self._retry_restart_resume(db, run, error)
             else:
-                await self._finish(db, run, RunStatus.failed, error=error)
+                await self._finish(db, run, RunStatus.failed, error=error, facts=facts)
 
     async def _retry_execution_failure(self, db: AsyncSession, run: Run, error: str, *,
                                        source: str = "execution", interrupted: bool = False,
@@ -2022,6 +2040,8 @@ class RunManager:
                 if proc.returncode is None:
                     await self._terminate(proc)
                 await proc.wait()
+                if h:
+                    h.facts["group_alive"] = _group_alive(proc.pid)
             finally:
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(stderr_task, 5)
@@ -2153,7 +2173,8 @@ class RunManager:
         for art_id in to_preview:
             preview.enqueue(art_id)
 
-    async def _finish(self, db: AsyncSession, run: Run, status: RunStatus, error: str | None = None) -> None:
+    async def _finish(self, db: AsyncSession, run: Run, status: RunStatus, error: str | None = None, *,
+                      facts: dict[str, Any] | None = None) -> None:
         h = self._handles.get(run.id)
         if h and h.owner and h.token:
             db.info["runtime_lease"] = (h.owner, run.id, h.token)
@@ -2164,6 +2185,14 @@ class RunManager:
         run.finished_at = utcnow()
         if error:
             run.error = error[:8000]
+        # 종료 원인은 핸들이 본 사실과 요청 시점 기록으로만 판정한다. after_run 이 이 판정으로 목표를 어떻게 할지 정한다.
+        observed = {**(h.facts if h else {}), **(facts or {})}
+        if h and h.cancel_requested:
+            observed["cancel_flag"] = True
+        if self._shutting_down:
+            observed["shutting_down"] = True
+            observed["draining"] = bool(self.runtime and getattr(self.runtime, "draining", False))
+        term = await termination.finalize(db, run, status, run.error, observed)
         usage_info = run.usage or {}
         events.append(db, run, "run.finished", {
             "status": status, "error": run.error, "result_text": run.result_text,
@@ -2173,6 +2202,7 @@ class RunManager:
             "verification_required": usage_info.get("verification_required", False),
             "verification_status": usage_info.get("verification_status"),
             "fallback": usage_info.get("fallback"),
+            **({"termination": term} if term else {}),
         })
         record(db, actor="agent", action="run.finished", outcome="ok" if status == RunStatus.succeeded else "error",
                target_type="run", target_id=run.id, detail={"status": status})
@@ -2295,6 +2325,17 @@ async def _heartbeat(run_id: uuid.UUID, *, owner=None, token=None) -> None:
 
 
 manager = RunManager()
+
+
+def _group_alive(pgid: int) -> bool | None:
+    """프로세스 그룹이 아직 있는가. 권한 오류처럼 판정할 수 없으면 None."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return None
+    return True
 
 
 def _inspect_run_process(pid: int) -> str:

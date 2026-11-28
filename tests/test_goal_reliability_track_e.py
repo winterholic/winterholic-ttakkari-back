@@ -8,16 +8,12 @@ from goal_helpers import (
     contract,
     get,
     lead,
-    new_run,
     put,
-    queued,
-    raw,
 )
 from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
-    AppSetting,
     Run,
     RunOrigin,
     RunStatus,
@@ -103,7 +99,7 @@ pytest 실행하여 모든 테스트를 통과시킨다.
 """
     items = goal_signals.extract_items(prompt)
     assert len(items) == 5, f"Expected 5 items from completion section, got {len(items)}: {items}"
-    labels = [it["label"] for it in items]
+    [it["label"] for it in items]
     texts = [it["text"] for it in items]
 
     # 중간 사례(사례 A~D)가 아니라 최종 완료 조건의 1~5 항목이 잡혀야 함
@@ -150,7 +146,7 @@ async def test_e2_safe_intake_error_captured_on_run_and_alerted_in_prompt_note(c
     """E-2: safe_intake 중 오류 발생 시 Run 저장은 성공하고, run.usage['contract_intake_error']에 원인이 보존되며,
     다음 턴 prompt_note 에서 경고 문구로 기획에 알린다.
     """
-    sess, h = await lead(client, auth, make_dir)
+    sess, _h = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
 
     # intake_request 에 인위적인 예외 주입
@@ -181,7 +177,7 @@ async def test_e2_safe_intake_error_captured_on_run_and_alerted_in_prompt_note(c
 @pytest.mark.asyncio
 async def test_e2_simple_request_does_not_generate_intake_error_noise(client, auth, make_dir):
     """E-2: 단순 대화는 복합 요청이 아니므로 자동 계약 등록을 시도하지 않고 오류도 남기지 않는다."""
-    sess, h = await lead(client, auth, make_dir)
+    sess, _h = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
 
     r = await client.post(f"/api/sessions/{sess['id']}/runs", headers=auth, json={"prompt": "안녕하세요 반갑습니다"})
@@ -226,7 +222,7 @@ async def test_e3_non_user_desk_origins_never_create_contracts(client, auth, mak
 async def test_e3_explicit_resume_activates_paused_and_blocked_contracts(client, auth, make_dir):
     """E-3: user/desk 가 '재개해줘' 같은 명시적 재개 지시를 보내면 paused/blocked 계약이 active 로 복귀한다."""
     sess, h = await lead(client, auth, make_dir)
-    sid = UUID(sess["id"])
+    UUID(sess["id"])
 
     # 계약 등록 후 일시중지
     c = contract(status="paused", blocker="사용자 일시중지 요청")

@@ -18,17 +18,12 @@ from goal_helpers import (
     queued,
     raw,
 )
-from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     AppSetting,
-    ChatSession,
-    Run,
-    RunOrigin,
     RunStatus,
     ScheduledAction,
-    SessionKind,
     utcnow,
 )
 from ttakkari.orchestrator import work
@@ -246,7 +241,7 @@ async def test_deduplication_subsequent_duplicate_events(client, auth, make_dir)
             "wait": {"target": f"worker:{worker_id}"},
         }
     ]
-    sid, h = await _active_goal(client, auth, make_dir, reqs=reqs)
+    sid, _h = await _active_goal(client, auth, make_dir, reqs=reqs)
     await _end_turn(sid)
 
     async with sessionmaker()() as db:
@@ -302,7 +297,7 @@ async def test_restart_and_generation_transition_persistence(client, auth, make_
             "wait": {"target": target, "timeout_at": (utcnow() + timedelta(hours=2)).isoformat()},
         }
     ]
-    sid, h = await _active_goal(client, auth, make_dir, reqs=reqs)
+    sid, _h = await _active_goal(client, auth, make_dir, reqs=reqs)
     await _end_turn(sid)
 
     # 새로운 DB 세션에서 로드

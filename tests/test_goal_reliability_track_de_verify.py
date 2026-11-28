@@ -68,7 +68,7 @@ async def _watchdogs(sid: UUID) -> list[ScheduledAction]:
 @pytest.mark.asyncio
 async def test_waiting_requirement_must_name_what_it_waits_for(client, auth, make_dir):
     """대상 없이 status=waiting 만 선언하면 영원히 깨어날 수 없는 대기가 된다. 등록 자체를 거절한다."""
-    sess, h = await lead(client, auth, make_dir)
+    _sess, h = await lead(client, auth, make_dir)
     res = await put(client, h, contract(reqs=[{"id": "R1", "text": "기다림", "status": "waiting"}]))
     assert res.status_code == 422, res.text
 
@@ -76,7 +76,7 @@ async def test_waiting_requirement_must_name_what_it_waits_for(client, auth, mak
 @pytest.mark.asyncio
 async def test_wait_time_must_be_iso(client, auth, make_dir):
     """timeout_at 이 아무 문자열이면 summary 의 대기 시각 파싱이 깨진다(500). 형식을 등록 때 거른다."""
-    sess, h = await lead(client, auth, make_dir)
+    _sess, h = await lead(client, auth, make_dir)
     res = await put(client, h, contract(reqs=[
         {"id": "R1", "text": "기다림", "status": "waiting", "wait": _wait("worker:x", timeout_at="내일 오전")}]))
     assert res.status_code == 422, res.text
@@ -86,7 +86,7 @@ async def test_wait_time_must_be_iso(client, auth, make_dir):
 
 @pytest.mark.asyncio
 async def test_wait_without_timeout_gets_default_expiry_and_redeclare_cannot_extend(client, auth, make_dir):
-    sid, h = await _goal(client, auth, make_dir, [{"id": "R1", "text": "대기", "status": "waiting", "wait": _wait("worker:abc")}])
+    _sid, h = await _goal(client, auth, make_dir, [{"id": "R1", "text": "대기", "status": "waiting", "wait": _wait("worker:abc")}])
     cur = await get(client, h)
     stamped = cur["state"]["requirements"][0]["wait"]["timeout_at"]
     assert stamped, "만료 시각 없는 대기는 서버가 상한을 붙여야 한다"
@@ -100,7 +100,7 @@ async def test_wait_without_timeout_gets_default_expiry_and_redeclare_cannot_ext
 @pytest.mark.asyncio
 async def test_overdue_wait_blocks_goal_and_tells_user_instead_of_waiting_forever(client, auth, make_dir):
     past = (utcnow() - timedelta(minutes=5)).isoformat()
-    sid, h = await _goal(client, auth, make_dir, [
+    sid, _h = await _goal(client, auth, make_dir, [
         {"id": "R1", "text": "승인 대기", "status": "waiting", "wait": _wait("approval:lead", timeout_at=past)}])
     await _end_turn(sid)
     stored = await raw(sid)
@@ -116,7 +116,7 @@ async def test_overdue_wait_blocks_goal_and_tells_user_instead_of_waiting_foreve
 @pytest.mark.asyncio
 async def test_overdue_wait_does_not_stop_independent_requirement(client, auth, make_dir):
     past = (utcnow() - timedelta(minutes=5)).isoformat()
-    sid, h = await _goal(client, auth, make_dir, [
+    sid, _h = await _goal(client, auth, make_dir, [
         {"id": "R1", "text": "승인 대기", "status": "waiting", "wait": _wait("approval:lead", timeout_at=past)},
         {"id": "R2", "text": "독립 작업", "status": "pending"}])
     await _end_turn(sid)
@@ -130,7 +130,7 @@ async def test_overdue_wait_does_not_stop_independent_requirement(client, auth, 
 async def test_expiry_watchdog_blocks_goal_without_any_agent_run(client, auth, make_dir):
     """턴이 끝난 뒤 아무도 깨우지 않아도 만료 시각에 서버가 대기를 정리한다(예약 연결, Run 생성 없음)."""
     soon = (utcnow() + timedelta(hours=1)).isoformat()
-    sid, h = await _goal(client, auth, make_dir, [
+    sid, _h = await _goal(client, auth, make_dir, [
         {"id": "R1", "text": "배포 대기", "status": "waiting", "wait": _wait("deploy:x1", timeout_at=soon)}])
     await _end_turn(sid)
     dogs = await _watchdogs(sid)
@@ -155,7 +155,7 @@ async def test_expiry_watchdog_blocks_goal_without_any_agent_run(client, auth, m
 @pytest.mark.asyncio
 async def test_expiry_watchdog_is_noop_when_dependency_arrived_and_rearms_when_extended(client, auth, make_dir):
     soon = (utcnow() + timedelta(hours=1)).isoformat()
-    sid, h = await _goal(client, auth, make_dir, [
+    sid, _h = await _goal(client, auth, make_dir, [
         {"id": "R1", "text": "배포 대기", "status": "waiting", "wait": _wait("deploy:x2", timeout_at=soon)},
         {"id": "R2", "text": "다른 배포 대기", "status": "waiting", "wait": _wait("deploy:x3", timeout_at=soon)}])
     await _end_turn(sid)
@@ -251,7 +251,7 @@ async def test_satisfied_state_level_wait_does_not_stall_goal_silently(client, a
 
 @pytest.mark.asyncio
 async def test_summary_wait_fields_for_waiting_goal(client, auth, make_dir):
-    sid, h = await _goal(client, auth, make_dir, [{"id": "R1", "text": "대기", "status": "waiting", "wait": _wait("worker:q")}])
+    sid, _h = await _goal(client, auth, make_dir, [{"id": "R1", "text": "대기", "status": "waiting", "wait": _wait("worker:q")}])
     async with sessionmaker()() as db:
         summary = await work.summary(db, sid)
     assert summary["phase"] == "waiting" and summary["wait_type"] == "external_dependency"

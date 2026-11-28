@@ -38,7 +38,8 @@ from ttakkari.models import (
     SessionKind,
     utcnow,
 )
-from ttakkari.runs import events
+from ttakkari.runs import events, termination
+from ttakkari.runs.termination import CancelRequest
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +121,10 @@ def _cancel_in_place(db: AsyncSession, run: Run, reason: str) -> None:
     run.finished_at = utcnow()
     run.resume_after = None
     run.error = reason
-    events.append(db, run, "run.finished", {"status": RunStatus.cancelled, "error": reason})
+    term = termination.simple_record("global_stop", actor="system", source="agent_control.cancel_report", reason=reason,
+                                     run=run, scope="global")
+    run.usage = {**(run.usage or {}), "termination": term}
+    events.append(db, run, "run.finished", {"status": RunStatus.cancelled, "error": reason, "termination": term})
 
 
 async def _targets(db: AsyncSession, pool: str, workspace_id: uuid.UUID | None,
@@ -148,6 +152,10 @@ async def stop_all_agents(
     reason: str = "사용자 전역 중지 지시",
     actor_id: str | None = None,
     wait_timeout: float = 3.0,
+    actor: str | None = None,
+    actor_request_id: str | None = None,
+    user_intent: bool = False,
+    source: str = "agent_control.stop_all",
 ) -> dict[str, Any]:
     """범위 안의 활성·대기 Run 을 소유 세션·세대와 무관하게 멈추고, 멈춘 것과 못 멈춘 것을 이유와 함께 돌려준다.
 
@@ -159,6 +167,11 @@ async def stop_all_agents(
     from ttakkari.runs.manager import manager
 
     reason = reason[:1000]
+    # 요청자가 누구인지 요청 시점에 Run 마다 남긴다. user_intent 는 인증된 사용자 API(소유자 비상 정지)만 True 다.
+    # 전역 중지는 요청자와 무관하게 목표까지 멈추는 명시 중단(scope=global)이다.
+    request = CancelRequest(actor=actor or ("orchestrator" if actor_id else "system"),
+                            actor_id=actor_request_id or actor_id, source=source, reason=reason,
+                            user_intent=user_intent, scope="global")
     started = time.monotonic()
     rows = await _targets(db, pool, workspace_id, session_id)
     result: dict[str, Any] = {"stopped": [], "remaining": [], "unstopped": [], "total": len(rows)}
@@ -167,6 +180,7 @@ async def stop_all_agents(
         return result
 
     for run, sess in rows:
+        await termination.record_request(db, run, request)
         # 취소 전에 표식을 남긴다. 구세대가 취소를 마감해도 새 보고가 새 작업을 만들지 못하게 한다.
         if sess.kind == SessionKind.worker and sess.parent_id is not None:
             await mark_report_suppressed(db, run)

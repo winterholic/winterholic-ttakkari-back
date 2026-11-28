@@ -298,6 +298,13 @@ async def test_scenario_08_explicit_user_stop_never_auto_resumes(client, auth, m
         await db.commit()
 
     stopped = await new_run(sid)  # 사용자가 실행 중인 기획 Run 을 중단
+    # 사용자 중단은 취소 요청 시점 기록(운영의 /api/runs/{id}/cancel 이 남기는 것)으로만 안다. 기록 없는 cancelled 는 중단이 아니다.
+    from ttakkari.models import Run as _Run
+    from ttakkari.runs.termination import CancelRequest, record_request
+    async with sessionmaker()() as db:
+        await record_request(db, await db.get(_Run, stopped), CancelRequest(
+            actor="user", source="api.run_cancel", reason="사용자 중지", user_intent=True))
+        await db.commit()
     await finish(stopped, RunStatus.cancelled, error="사용자가 중단했습니다.")
     st = (await get(client, h))["state"]
     assert st["status"] == "paused" and "cancelled" in st["blocker"]

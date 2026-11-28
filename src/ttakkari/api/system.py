@@ -198,7 +198,8 @@ async def stop_all(_: User, db: Db, request: Request) -> dict:
     """비상 정지. 실행 중인 모든 에이전트 프로세스를 끝낸다."""
     from ttakkari.runs.agent_control import stop_all_agents
 
-    res = await stop_all_agents(db, pool="all", reason="시스템 비상 정지")
+    res = await stop_all_agents(db, pool="all", reason="시스템 비상 정지", actor="user", user_intent=True,
+                                source="api.system_stop_all")
     record(db, action="system.stop_all", detail=res, ip=client_ip(request))
     return res
 

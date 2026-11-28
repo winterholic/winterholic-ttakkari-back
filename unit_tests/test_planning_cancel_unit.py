@@ -42,6 +42,7 @@ async def test_after_run_on_cancelled_pauses_goal_and_cancels_contract_resumes()
     run.engine = "codex"
     run.status = RunStatus.cancelled
     run.error = "cancelled by user"
+    run.usage = {"termination": {"cause": "user_stop", "user_intent": True, "initiator": {"actor": "user"}, "source": "api.run_cancel"}}
 
     contract_row = MagicMock(spec=AppSetting)
     contract_row.value = {
@@ -71,6 +72,7 @@ async def test_after_run_on_cancelled_pauses_goal_and_cancels_contract_resumes()
     db.scalars.side_effect = [scalars_mock, MagicMock(all=MagicMock(return_value=[]))]
 
     with patch("ttakkari.orchestrator.work.load", new=AsyncMock(return_value=contract_row.value)), \
+         patch("ttakkari.runs.termination.load_requests", new=AsyncMock(return_value=[{"actor": "user", "user_intent": True, "scope": "run", "source": "api.run_cancel"}])), \
          patch("ttakkari.orchestrator.work.events") as mock_events:
         res = await after_run(db, sess, run)
 

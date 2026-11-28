@@ -34,6 +34,7 @@ from ttakkari.models import (
 from ttakkari.orchestrator.work import INTAKE_ORIGINS
 from ttakkari.runs import events
 from ttakkari.runs.manager import manager
+from ttakkari.runs.termination import CancelRequest
 from ttakkari.schemas import (
     FailedRunOut,
     FailedRunsPage,
@@ -288,12 +289,15 @@ async def cancel_run(run_id: uuid.UUID, _: User, db: Db, request: Request) -> Ru
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run 이 없습니다.")
     if run.status in TERMINAL_RUN_STATUSES:
         return run
+    # 인증된 사용자가 직접 누른 중지다. 요청 시점에 주체·출처·의도를 남겨야 마감 쪽이 사용자 중단으로 처리한다.
+    stop = CancelRequest(actor="user", source="api.run_cancel", reason="사용자가 Run 중지를 요청했습니다.",
+                         user_intent=True, scope="run")
     if run.status == RunStatus.queued and not await manager.is_owned(run_id):
-        await manager.cancel_queued(db, run)
+        await manager.cancel_queued(db, run, stop)
         record(db, action="run.cancel", target_type="run", target_id=run_id, ip=client_ip(request))
         await db.commit()
         return run
-    ok = await manager.cancel(run_id)
+    ok = await manager.cancel(run_id, stop)
     record(db, action="run.cancel", target_type="run", target_id=run_id, outcome="ok" if ok else "error",
            ip=client_ip(request))
     await db.commit()

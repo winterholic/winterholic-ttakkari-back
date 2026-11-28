@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,7 @@ from ttakkari.orchestrator.goal_signals import (
     extract_items,
     failure_kind,
     is_complex,
+    is_resume_request,
     request_text,
     run_evidence,
     unmapped_items,
@@ -68,6 +69,19 @@ MAX_HISTORY = 5
 INTAKE_ORIGINS = (RunOrigin.user, RunOrigin.desk)
 
 
+def _aware_iso(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"'{value}' is not an ISO 8601 datetime") from exc
+    return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).isoformat()
+
+
+# 만료 시각 없이 선언한 대기에 서버가 붙이는 기본 상한. 선언만으로 무진전 예산을 무기한 보호하지 못하게 한다.
+DEFAULT_WAIT_TIMEOUT = timedelta(hours=24)
+WAIT_EXPIRY_MARK = "dependency_wait_expiry"  # 만료 시각에 서버가 대기를 정리하게 하는 예약 표식(소유자가 아니다)
+
+
 class DependencyWait(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     target: str = Field(min_length=1, max_length=200)
@@ -80,6 +94,12 @@ class DependencyWait(BaseModel):
     requires_approval: bool = False
     satisfied: bool = False
     result: dict[str, Any] | None = None
+
+    @field_validator("check_at", "timeout_at")
+    @classmethod
+    def _iso_time(cls, value: str | None) -> str | None:
+        """시각은 ISO 8601 만 받는다. 아무 문자열이나 저장하면 대기 시각 비교(summary)가 깨지고 만료를 판정할 수 없다."""
+        return None if value is None else _aware_iso(value)
 
 
 class Requirement(BaseModel):
@@ -97,6 +117,8 @@ class Requirement(BaseModel):
                 raise ValueError(f"{self.id}: done requires evidence")
             if weak_evidence(self.evidence):
                 raise ValueError(f"{self.id}: done evidence '{self.evidence}' is weak; give a command output, commit, or file locator")
+        if self.status == "waiting" and self.wait is None:
+            raise ValueError(f"{self.id}: waiting requires wait (target, reason, resume condition)")
         return self
 
 
@@ -224,7 +246,9 @@ async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
             waiting_deps.append(r["wait"])
     active_waits = [w for w in waiting_deps if not w.get("satisfied")]
     data["waiting_dependencies"] = active_waits
-    data["wait_type"] = "usage_limit" if data.get("waiting_until") and (data.get("usage_waits") or data.get("blocker_kind") in ("usage_limit", "model_capacity")) else ("external_dependency" if active_waits else None)
+    usage_wait = bool(data.get("waiting_until") and (data.get("usage_waits") or data.get("blocker_kind") in ("usage_limit", "model_capacity")))
+    # 멈춘(paused/blocked) 목표는 기다리는 중이 아니다. 대기 종류는 active 일 때만 낸다.
+    data["wait_type"] = None if status != "active" else ("usage_limit" if usage_wait else ("external_dependency" if active_waits else None))
     data["has_partial_failure"] = any(r.get("status") == "blocked" for r in reqs) and status == "active"
     return data
 
@@ -253,7 +277,9 @@ async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
     user_action = {"blocked": "intervene", "paused": "resume"}.get(status, "review" if weak or unapproved else "none")
 
     sess = await db.get(ChatSession, sid)
-    has_owner = bool(data["running_tasks"]) or (bool(sess) and bool(await _owner_exists(db, sess, None)))
+    # 기다리는 의존성은 만료 시각이 있는 책임자다(등록 때 상한을 붙이고 만료 예약이 정리한다).
+    has_owner = bool(data["running_tasks"]) or (status == "active" and bool(active_waits)) or (
+        bool(sess) and bool(await _owner_exists(db, sess, None)))
 
     def req(r: dict) -> dict:
         out = {"id": r["id"], "text": r["text"], "status": r["status"], "evidence": (r.get("evidence") or "")[:300]}
@@ -393,9 +419,6 @@ async def _audit_evidence(db: AsyncSession, sess: ChatSession, requirements: lis
     return audit, problems
 
 
-_RESUME_RE = re.compile(r"재개|다시\s*(?:시작|진행|해줘|해|돌려)|계속\s*(?:진행|해줘|해)|풀어|resume|unpause", re.IGNORECASE)
-
-
 async def _reconcile_immediate_dependencies(db: AsyncSession, value: dict) -> None:
     """대기 등록 시점에 이미 충족된 의존성이면 즉시 satisfied 로 전환하고 요구 상태를 pending 으로 돌린다."""
     for r in value.get("requirements", []):
@@ -417,7 +440,7 @@ async def _reconcile_immediate_dependencies(db: AsyncSession, value: dict) -> No
                                 if r.get("status") == "waiting":
                                     r["status"] = "pending"
                 except Exception:
-                    pass
+                    log.exception("immediate dependency check failed for %s", target)
             elif target.startswith("schedule:"):
                 sch_str = target.removeprefix("schedule:")
                 try:
@@ -429,7 +452,7 @@ async def _reconcile_immediate_dependencies(db: AsyncSession, value: dict) -> No
                         if r.get("status") == "waiting":
                             r["status"] = "pending"
                 except Exception:
-                    pass
+                    log.exception("immediate dependency check failed for %s", target)
             elif target.startswith("session:"):
                 s_str = target.removeprefix("session:")
                 try:
@@ -441,7 +464,104 @@ async def _reconcile_immediate_dependencies(db: AsyncSession, value: dict) -> No
                         if r.get("status") == "waiting":
                             r["status"] = "pending"
                 except Exception:
-                    pass
+                    log.exception("immediate dependency check failed for %s", target)
+
+
+def _stamp_wait_timeouts(value: dict, previous: dict | None) -> None:
+    """만료 시각 없이 선언한 대기에 상한을 붙인다. 같은 대상을 다시 선언해도 이전 만료 시각을 지켜 대기를 조용히 연장하지 못하게 한다."""
+    prior: dict[str, str] = {}
+    prev = previous or {}
+    for w in [*(r.get("wait") for r in prev.get("requirements") or []), *(prev.get("waiting_dependencies") or [])]:
+        if w and not w.get("satisfied") and w.get("timeout_at"):
+            prior.setdefault(w["target"], w["timeout_at"])
+    default = (utcnow() + DEFAULT_WAIT_TIMEOUT).isoformat()
+    waits = [r["wait"] for r in value.get("requirements") or [] if r.get("status") == "waiting" and r.get("wait")]
+    waits += value.get("waiting_dependencies") or []
+    for w in waits:
+        if not w.get("satisfied") and not w.get("timeout_at"):
+            w["timeout_at"] = prior.get(w["target"], default)
+
+
+def _wait_overdue(wait: dict, now: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(wait["timeout_at"]) <= now
+    except (KeyError, TypeError, ValueError):
+        return wait.get("timeout_at") is not None  # 읽을 수 없는 시각은 지킬 수 없으므로 만료로 본다
+
+
+def _expire_overdue_waits(state: dict, now: datetime) -> tuple[dict, list[str]]:
+    """만료 시각이 지난 대기를 정리한다. 요구는 blocked(wait.result=expired), 상태 단위 대기는 expired 결과로 닫는다."""
+    expired: list[str] = []
+    reqs = []
+    for r in state.get("requirements") or []:
+        w = r.get("wait")
+        if r.get("status") == "waiting" and w and not w.get("satisfied") and _wait_overdue(w, now):
+            r = {**r, "status": "blocked", "wait": {**w, "result": {"status": "expired", "timeout_at": w.get("timeout_at")}}}
+            expired.append(f"{r['id']}({w['target']})")
+        reqs.append(r)
+    waits = []
+    for w in state.get("waiting_dependencies") or []:
+        if not w.get("satisfied") and _wait_overdue(w, now):
+            w = {**w, "satisfied": True, "result": {"status": "expired", "timeout_at": w.get("timeout_at")}}
+            expired.append(w["target"])
+        waits.append(w)
+    return {**state, "requirements": reqs, "waiting_dependencies": waits}, expired
+
+
+async def _ensure_wait_watchdog(db: AsyncSession, sid: uuid.UUID, due: datetime) -> None:
+    """만료 시각에 서버가 대기를 정리하도록 예약을 건다(LLM 호출 없음). 이 예약은 후속의 소유자가 아니다."""
+    rows = (await db.scalars(select(ScheduledAction).where(
+        ScheduledAction.action_type == "send_message", ScheduledAction.status == "pending",
+        ScheduledAction.payload["session_id"].as_string() == str(sid)))).all()
+    if any((r.payload or {}).get(WAIT_EXPIRY_MARK) and r.due_at <= due + timedelta(minutes=1) for r in rows):
+        return  # 더 이른 예약은 깨어나 아직 대기 중이면 다시 건다
+    db.add(ScheduledAction(action_type="send_message", due_at=due, status="pending",
+                           payload={"session_id": str(sid), WAIT_EXPIRY_MARK: True, "message": "외부 의존성 대기 만료 확인"},
+                           description="외부 의존성 대기 만료 확인(서버 처리, 에이전트 실행 없음)"))
+
+
+def _next_wait_due(state: dict) -> datetime | None:
+    times = [w["timeout_at"] for w in [*(r.get("wait") for r in state.get("requirements") or [] if r.get("status") == "waiting"),
+                                       *(w for w in state.get("waiting_dependencies") or [] if not w.get("satisfied"))]
+             if w and not w.get("satisfied") and w.get("timeout_at")]
+    parsed = []
+    for t in times:
+        try:
+            parsed.append(datetime.fromisoformat(t))
+        except ValueError:
+            continue
+    return min(parsed, default=None)
+
+
+async def expire_overdue_waits(db: AsyncSession, sid: uuid.UUID) -> list[str]:
+    """만료 예약이 깨어났을 때 호출한다. 기한이 지난 대기를 정리하고, 진행할 요구도 기다릴 요구도 없으면 목표를 blocked 로
+    멈춰 사용자에게 알린다(summary 의 phase=blocked, user_action=intervene). 아직 대기가 남았으면 다음 만료 시각에 예약을 다시 건다."""
+    sess = await db.get(ChatSession, sid)
+    if sess is None or sess.kind != SessionKind.orchestrator or sess.archived_at:
+        return []
+    await db.scalar(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+    current = await load(db, sid)
+    state = current.get("state")
+    if not state or state["status"] != "active":
+        return []
+    state, expired = _expire_overdue_waits(state, utcnow())
+    row = await db.get(AppSetting, key(sid))
+    rec = dict(current)
+    if expired:
+        rec["state"] = state
+        rec["revision"] = current["revision"] + 1
+        rec["updated_at"] = utcnow().isoformat()
+        rec.pop("waiting_until", None)
+        record(db, actor="system", action="work.dependency_expired", target_type="session", target_id=sid,
+               detail={"waits": expired})
+        unfinished = [r for r in state["requirements"] if r["status"] != "done"]
+        if unfinished and not any(r["status"] in ("pending", "review", "waiting") for r in unfinished):
+            _block(rec, state, "dependency_expired", f"외부 의존성 대기가 만료됐다: {', '.join(expired)[:1500]}. 대기 대상을 확인하고 재지시하라")
+        row.value = rec
+    if (rec.get("state") or state)["status"] == "active" and (due := _next_wait_due(rec.get("state") or state)) is not None:
+        await _ensure_wait_watchdog(db, sid, due)
+    await db.flush()
+    return expired
 
 
 async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
@@ -455,6 +575,7 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     value = body.state.model_dump(mode="json")
     await _reconcile_immediate_dependencies(db, value)
     previous = current.get("state")
+    _stamp_wait_timeouts(value, previous)
     # 자동 접수 계약은 아직 아무 요구도 완료되지 않았다면 기획이 자기 계획으로 한 번 재구성할 수 있다.
     reshape = bool(previous) and bool(current.get("auto_generated")) and not any(
         r["status"] == "done" for r in previous["requirements"])
@@ -605,7 +726,7 @@ async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID 
     record_ = _request_record(run_id, prompt, origin)
     if state and state["status"] != "complete":
         # 진행 중인 계약에서는 복합 요청, 범위 변경 요청, 명시적 재개 요청을 추가 요청으로 남긴다. 잡담·질문은 그대로 둔다.
-        is_resume = bool(_RESUME_RE.search(clean))
+        is_resume = is_resume_request(clean)
         if not (complex_request or followup == "scope_change" or is_resume):
             return None
         extra = list(current.get("additional_requests") or [])
@@ -616,6 +737,10 @@ async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID 
             state = dict(state)
             state["status"] = "active"
             state["blocker"] = ""
+            # checkpoint 로 재개할 때와 같이 무진전·대기 예산을 새로 시작한다(안 그러면 재개한 첫 턴에 바로 다시 blocked 된다).
+            current = {**current, "unchanged_continuations": 0}
+            for counter in ("transient_retries", "transient_total", "usage_waits", "waiting_until"):
+                current.pop(counter, None)
             if run_id:
                 run_obj = await db.get(Run, run_id)
                 if run_obj:
@@ -937,13 +1062,16 @@ async def resolve_dependency(
     result: dict[str, Any] | None = None,
     *,
     source: str = "",
+    resume: bool = True,
 ) -> list[uuid.UUID]:
     """외부 의존성 완료/충족 이벤트가 도착했을 때 대기 중인 목표 계약을 찾아 1회 안전하게 재개한다.
 
     규칙:
     - 중복 이벤트에도 후속 1회 (이미 큐에 후속이 있거나 중복 호출 시 1회만)
-    - 사용자 중지(paused) 목표는 자동 재개 금지 (Track C 사용자 중지 우선)
+    - 사용자 중지(paused)·차단(blocked) 목표는 자동 재개 금지 (Track C 사용자 중지 우선). 다만 충족 사실은 기록해 둔다.
+      기록하지 않으면 사용자가 나중에 재개해도 이미 지나간 이벤트를 영원히 기다린다.
     - 완료(complete) 목표는 과거 이벤트로 부활 금지
+    - resume=False 는 충족만 기록한다(기획·사용자가 직접 멈춘 작업자처럼 이미 알고 있는 결과)
     - 대기 중인 요구의 status 를 pending 으로 전환하고 satisfied 기록
     - 다른 실행 가능한 요구가 없었던 경우에 한해 새 continuation Run 생성
     """
@@ -973,10 +1101,8 @@ async def resolve_dependency(
         # 완료 목표 부활 금지
         if status == "complete":
             continue
-        # 사용자 중지(paused) 후 충족 시 재개 금지 (Track C)
-        if status == "paused":
-            continue
-        if status != "active":
+        # 사용자 중지(paused)·차단(blocked) 후 충족은 기록만 하고 재개하지 않는다 (Track C)
+        if status not in ("active", "paused", "blocked"):
             continue
 
         try:
@@ -994,7 +1120,8 @@ async def resolve_dependency(
         waiting_reqs = []
         for r in reqs:
             w = r.get("wait")
-            if w and not w.get("satisfied"):
+            # 만료로 blocked 가 된 요구는 늦게 온 이벤트로 되살리지 않는다.
+            if w and not w.get("satisfied") and r.get("status") == "waiting":
                 t = str(w.get("target", "")).strip()
                 if (t == target_clean or (target_uuid and target_uuid in t)
                         or (t.removeprefix("worker:") == target_clean)
@@ -1032,6 +1159,12 @@ async def resolve_dependency(
         data.pop("waiting_until", None)
         row.value = data
         await db.flush()
+
+        if status != "active" or not resume:
+            record(db, actor="system", action="work.dependency_resumed", target_type="session", target_id=sess.id,
+                   detail={"target": target_clean, "source": source, "resumed": False,
+                           "reason": f"goal_{status}" if status != "active" else "resume_disabled"})
+            continue
 
         # Deduplication: 이미 이 세션에 queued 상태인 orchestrator 후속 Run 이 있으면 추가 생성하지 않는다.
         existing = await db.scalar(select(Run.id).where(
@@ -1215,24 +1348,35 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         events.append(db, run, "work.blocked", {"reason": reason[:2000], "failure_kind": kind})
         return None
 
+    # 기한이 지난 외부 의존성 대기는 여기서 정리한다. 대기를 선언만 해서 무진전 예산을 무기한 보호하지 못한다.
+    state, expired = _expire_overdue_waits(state, utcnow())
+    if expired:
+        rec["state"] = state
+        rec["revision"] = rec["revision"] + 1
+        rec.pop("waiting_until", None)
+        events.append(db, run, "work.dependency_expired", {"waits": expired})
     reqs = state.get("requirements") or []
     unfinished = [r for r in reqs if r["status"] != "done"]
     waiting_reqs = [r for r in unfinished if r["status"] == "waiting"]
     blocked_reqs = [r for r in unfinished if r["status"] == "blocked"]
     pending_reqs = [r for r in unfinished if r["status"] in ("pending", "review")]
+    open_state_waits = [w for w in state.get("waiting_dependencies") or [] if not w.get("satisfied")]
 
     if unfinished and not pending_reqs and not waiting_reqs:
         reason = f"모든 미완료 요구사항({len(blocked_reqs)}건)이 차단(blocked)되었습니다."
-        _block(rec, state, "all_requirements_blocked", reason)
+        if expired:
+            reason = f"외부 의존성 대기가 만료됐다: {', '.join(expired)[:1500]}. 대기 대상을 확인하고 재지시하라. " + reason
+        _block(rec, state, "dependency_expired" if expired else "all_requirements_blocked", reason)
         row.value = rec
-        events.append(db, run, "work.blocked", {"reason": reason, "cause": "all_requirements_blocked"})
+        events.append(db, run, "work.blocked", {"reason": reason, "cause": "dependency_expired" if expired else "all_requirements_blocked"})
         return None
 
-    if (unfinished and not pending_reqs and waiting_reqs) or (state.get("waiting_dependencies") and not pending_reqs):
-        # 외부 의존성 대기 (D-3): 무진전 예산 소모 없이 대기 상태 전환
-        timeouts = [w["timeout_at"] for r in waiting_reqs if (w := r.get("wait")) and w.get("timeout_at")]
-        if timeouts:
-            rec["waiting_until"] = min(timeouts)
+    if (unfinished and not pending_reqs and waiting_reqs) or (open_state_waits and not pending_reqs):
+        # 외부 의존성 대기 (D-3): 무진전 예산 소모 없이 대기 상태 전환. 충족된 대기는 계속 기다릴 이유가 아니다.
+        rec["state"] = state
+        if due := _next_wait_due(state):
+            rec["waiting_until"] = due.isoformat()
+            await _ensure_wait_watchdog(db, sess.id, due)
         elif due := min((r.due_at for r in await _owning_schedules(db, sess.id)), default=None):
             rec["waiting_until"] = due.isoformat()
         else:

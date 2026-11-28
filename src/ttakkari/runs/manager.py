@@ -2230,18 +2230,13 @@ class RunManager:
         if sess is not None and sess.kind == SessionKind.worker:
             try:
                 from ttakkari.orchestrator import work
-                await work.resolve_dependency(
-                    db,
-                    f"worker:{sess.id}",
-                    result={"status": run.status, "result_text": (run.result_text or "")[:1000], "error": (run.error or "")[:500]},
-                    source="worker_finished",
-                )
-                await work.resolve_dependency(
-                    db,
-                    str(sess.id),
-                    result={"status": run.status, "result_text": (run.result_text or "")[:1000], "error": (run.error or "")[:500]},
-                    source="worker_finished",
-                )
+                from ttakkari.runs.agent_control import should_suppress_report
+                outcome = {"status": run.status, "result_text": (run.result_text or "")[:1000], "error": (run.error or "")[:500]}
+                # 사용자·기획이 직접 멈춘 작업자(보고 억제 표식)는 충족만 기록하고 기획을 다시 깨우지 않는다.
+                resume = not await should_suppress_report(db, run)
+                async with db.begin_nested():
+                    for target in (f"worker:{sess.id}", str(sess.id)):
+                        await work.resolve_dependency(db, target, result=outcome, source="worker_finished", resume=resume)
             except Exception:
                 log.exception("resolve_dependency for worker %s failed", sess.id)
         if sess is not None:

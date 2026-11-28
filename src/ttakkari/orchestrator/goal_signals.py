@@ -38,6 +38,14 @@ _SECTION_RE = re.compile(
 _COMPLETION_SECTION_RE = re.compile(
     r"(?:최종\s*)?완료\s*(?:조건|기준)|수행\s*(?:요구\s*사항|항목|조건)|요구\s*사항|acceptance\s*criteria|completion\s*criteria|requirements|tasks|작업\s*카드",
     re.IGNORECASE)
+# 번호·굵은 글씨가 붙은 완료 조건 제목("15. 최종 완료 조건", "**15. 최종 완료 조건**"). `#` 제목이 아니면 _SECTION_RE 가 못 잡아
+# 제목이 요구 항목 하나로 들어가고 그 아래 목록이 일반 항목과 섞인다. 뜻이 분명한 말만 쓴다(일반 "요구사항" 은 제외).
+_COMPLETION_HEAD_RE = re.compile(
+    r"^\s*(?:\*\*|__)?\s*(?:§\s*)?(?:(?P<n>\d{1,2})\s*[.)]?\s*)?"
+    r"(?P<t>(?:최종\s*)?완료\s*(?:조건|기준)|수행\s*(?:요구\s*사항|항목|조건)|acceptance\s*criteria|completion\s*criteria)"
+    r"[^\n.:]{0,30}?\s*:?\s*(?:\*\*|__)?\s*$", re.IGNORECASE)
+_NUMBERED_HEAD_RE = re.compile(r"^\s*(?:\*\*|__)?\s*(?:§\s*)?(?P<n>\d{1,2})\s*[.)]?\s+(?P<t>[^\n]{1,80}?)\s*(?:\*\*|__)?\s*$")
+_RESUME_RE = re.compile(r"재개|다시\s*(?:시작|진행|해줘|해|돌려)|계속\s*(?:진행|해줘|해)|풀어|resume|unpause", re.IGNORECASE)
 _ACTION_RE = re.compile(
     r"수정|구현|추가|제거|삭제|작성|테스트|검증|푸시|push|배포|deploy|커밋|commit|병합|머지|merge|리팩|refactor|조사|분석|"
     r"정리|고쳐|고치|만들|적용|마이그레이션|migrat|implement|fix\b|build|설치|연결|통합|재현|보고서|문서화|"
@@ -212,14 +220,28 @@ def extract_items(text: str) -> list[dict[str, str]]:
     comp_used: set[str] = set()
     section = ""
     in_completion_section = False
+    plain_label: int | None = None  # `#` 없이 번호만 붙은 완료 조건 제목의 번호. 다음 번호 제목이 오면 구역이 끝난다
     lines = (text or "").splitlines()
     for idx, line in enumerate(lines):
         head = _SECTION_RE.match(line)
         if head:
             section = (head.group("h") or head.group("b") or head.group("c") or "").strip()
             in_completion_section = bool(_COMPLETION_SECTION_RE.search(section))
+            plain_label = None
+            continue
+        if plain := _COMPLETION_HEAD_RE.match(line):
+            section = plain.group("t").strip()
+            in_completion_section = True
+            plain_label = int(plain.group("n")) if plain.group("n") else None
             continue
         items_in_line = _line_items(line)
+        if plain_label is not None and in_completion_section and (nxt_head := _NUMBERED_HEAD_RE.match(line)):
+            nxt = next((ln for ln in lines[idx + 1:] if ln.strip()), "")
+            if int(nxt_head.group("n")) == plain_label + 1 and (nxt_items := _line_items(nxt)) and nxt_items[0][0] == "1":
+                section = nxt_head.group("t")[:60]
+                in_completion_section = False
+                plain_label = None
+                continue
         if not items_in_line:
             trimmed = line.strip().rstrip(":")
             if not line.startswith(("#", "-", "*")) and _COMPLETION_SECTION_RE.search(trimmed):
@@ -306,9 +328,7 @@ def is_complex(text: str) -> bool:
         if mutating:
             return True
         return bool(cmd or _IMPERATIVE_RE.search(body))
-    if mutating and len(actions) >= 2 and (len(items) >= 2 or bullets >= 3) and len(body) >= 80:
-        return True
-    return False
+    return bool(mutating and len(actions) >= 2 and (len(items) >= 2 or bullets >= 3) and len(body) >= 80)
 
 
 def is_actionable(text: str) -> bool:
@@ -321,6 +341,12 @@ def is_actionable(text: str) -> bool:
     if _QUESTION_END_RE.search(body) and not _IMPERATIVE_RE.search(body):
         return False
     return bool(_IMPERATIVE_RE.search(body)) and len(body) >= 12
+
+
+def is_resume_request(text: str) -> bool:
+    """멈춘 목표를 다시 이어가라는 명시 지시인가. 상태를 묻거나 설명을 청하는 문장("왜 멈췄어? 계속 진행 상황 알려줘")은 재개가 아니다."""
+    sentences, _ = scoped_sentences(prose(text))
+    return any(_RESUME_RE.search(s) and not (_ASK_END_RE.search(s) or _QUESTION_END_RE.search(s)) for s in sentences)
 
 
 def classify_followup(text: str) -> str:

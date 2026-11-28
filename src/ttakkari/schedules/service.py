@@ -257,9 +257,20 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
 
     if action == "send_message":
         from ttakkari.api.sessions import queue_run
-        from ttakkari.orchestrator.work import is_contract_resume_schedule, load
+        from ttakkari.orchestrator.work import (
+            WAIT_EXPIRY_MARK,
+            expire_overdue_waits,
+            is_contract_resume_schedule,
+            load,
+        )
         session_id = uuid.UUID(str(payload["session_id"]))
         prompt = payload.get("message") or payload.get("prompt") or ""
+        if payload.get(WAIT_EXPIRY_MARK):
+            # 외부 의존성 대기의 만료 확인. 서버가 대기를 정리할 뿐 Run 을 만들지 않는다(에이전트 상주·반복 질의 금지).
+            async with sessionmaker()() as db:
+                expired = await expire_overdue_waits(db, session_id)
+                await db.commit()
+            return {"expired_waits": expired, "session_id": str(session_id)}
         async with sessionmaker()() as db:
             sess = await db.get(ChatSession, session_id)
             if sess is None:

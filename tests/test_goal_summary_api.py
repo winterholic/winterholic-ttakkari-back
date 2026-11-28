@@ -26,6 +26,7 @@ SUMMARY_KEYS = {
     "status", "phase", "goal", "revision", "completed", "pending", "completed_count", "pending_count", "running_tasks",
     "next_action", "waiting_until", "stop_reason", "blocker_kind", "auto_resumable", "user_action",
     "user_intervention_needed", "additional_request_count", "updated_at",
+    "wait_type", "waiting_dependencies", "has_partial_failure", "has_owner",
 }
 NUMBERED4 = ("다음 4단계 백엔드 작업을 진행해 주세요.\n1. 데이터베이스 마이그레이션 스키마 작성 및 적용\n"
              "2. 신규 API 엔드포인트 구현 및 입력 유효성 검사\n3. 단위 테스트 및 통합 테스트 작성 후 통과 확인\n"
@@ -133,7 +134,12 @@ async def test_blocked_paused_and_complete_summaries(client, auth, make_dir):
     sess, h = await lead(client, auth, make_dir)
     sid = UUID(sess["id"])
     assert (await put(client, h, contract())).status_code == 200
-    await finish(await new_run(sid), RunStatus.cancelled, error="사용자가 중단했습니다.")
+    r_id = await new_run(sid)
+    from ttakkari.runs.termination import CancelRequest, record_request
+    async with sessionmaker()() as db:
+        await record_request(db, await db.get(Run, r_id), CancelRequest(actor="user", source="api.run_cancel", reason="사용자 중단", user_intent=True, scope="run"))
+        await db.commit()
+    await finish(r_id, RunStatus.cancelled, error="사용자가 중단했습니다.")
     got = await summary_of(client, auth, sid)
     assert (got["status"], got["phase"], got["user_action"]) == ("paused", "paused", "resume")
     assert got["user_intervention_needed"] is False and got["auto_resumable"] is False

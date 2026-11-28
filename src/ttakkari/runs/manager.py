@@ -2227,6 +2227,23 @@ class RunManager:
                 await completion.cross_check(db, sess, run, info)
                 closure = await completion.closure_run(db, sess, run)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
+        if sess is not None and sess.kind == SessionKind.worker:
+            try:
+                from ttakkari.orchestrator import work
+                await work.resolve_dependency(
+                    db,
+                    f"worker:{sess.id}",
+                    result={"status": run.status, "result_text": (run.result_text or "")[:1000], "error": (run.error or "")[:500]},
+                    source="worker_finished",
+                )
+                await work.resolve_dependency(
+                    db,
+                    str(sess.id),
+                    result={"status": run.status, "result_text": (run.result_text or "")[:1000], "error": (run.error or "")[:500]},
+                    source="worker_finished",
+                )
+            except Exception:
+                log.exception("resolve_dependency for worker %s failed", sess.id)
         if sess is not None:
             await _post_lead_report(db, sess, run)
         await self._commit(db, run)

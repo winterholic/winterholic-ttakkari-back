@@ -137,6 +137,12 @@ async def cancel_schedule(db: AsyncSession, schedule_id: uuid.UUID) -> bool:
     item.updated_at = utcnow()
     await db.flush()
     await _recover_goal(db, item)
+    from ttakkari.orchestrator.work import resolve_dependency
+    try:
+        await resolve_dependency(db, f"schedule:{schedule_id}", result={"status": "cancelled"}, source="schedule_cancelled")
+        await resolve_dependency(db, str(schedule_id), result={"status": "cancelled"}, source="schedule_cancelled")
+    except Exception:
+        log.exception("resolve_dependency for cancelled schedule %s failed", schedule_id)
     await db.commit()
     return True
 
@@ -324,6 +330,12 @@ async def complete_schedule(
     if is_expired:  # 실행되지 않고 만료됐다. 이 예약을 기다리던 목표를 다시 이어간다.
         await db.flush()
         await _recover_goal(db, item)
+    from ttakkari.orchestrator.work import resolve_dependency
+    try:
+        await resolve_dependency(db, f"schedule:{schedule_id}", result=result or {"status": item.status}, source="schedule_complete")
+        await resolve_dependency(db, str(schedule_id), result=result or {"status": item.status}, source="schedule_complete")
+    except Exception:
+        log.exception("resolve_dependency for schedule %s failed", schedule_id)
     return True
 
 
@@ -345,6 +357,12 @@ async def fail_schedule(
         item.status = "failed"
         await db.flush()
         await _recover_goal(db, item)
+        from ttakkari.orchestrator.work import resolve_dependency
+        try:
+            await resolve_dependency(db, f"schedule:{schedule_id}", result={"status": "failed", "error": error}, source="schedule_failed")
+            await resolve_dependency(db, str(schedule_id), result={"status": "failed", "error": error}, source="schedule_failed")
+        except Exception:
+            log.exception("resolve_dependency for failed schedule %s failed", schedule_id)
     else:
         item.status = "pending"
         item.leased_until = None

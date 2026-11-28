@@ -108,8 +108,9 @@ class SessionPatch(BaseModel):
 class GoalRequirementOut(BaseModel):
     id: str
     text: str
-    status: Literal["pending", "review", "done"]
+    status: Literal["pending", "review", "done", "waiting", "blocked"]
     evidence: str = ""
+    wait: dict[str, Any] | None = None
 
 
 class GoalSummary(BaseModel):
@@ -136,6 +137,11 @@ class GoalSummary(BaseModel):
     user_intervention_needed: bool
     additional_request_count: int = 0
     updated_at: str | None = None
+    # 프론트엔드 GoalSummaryBar 연동 및 외부 의존성/대기 세부 분기
+    wait_type: Literal["external_dependency", "usage_limit"] | None = None
+    waiting_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    has_partial_failure: bool = False
+    has_owner: bool = False
 
 
 class SessionOut(ORM):

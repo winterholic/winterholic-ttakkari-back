@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -68,12 +68,27 @@ MAX_HISTORY = 5
 INTAKE_ORIGINS = (RunOrigin.user, RunOrigin.desk)
 
 
+class DependencyWait(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    target: str = Field(min_length=1, max_length=200)
+    reason: str = Field(default="", max_length=500)
+    resume_condition: str = Field(default="", max_length=200)
+    source: str = Field(default="event", max_length=100)
+    check_at: str | None = Field(default=None, max_length=50)
+    timeout_at: str | None = Field(default=None, max_length=50)
+    owner: str | None = Field(default=None, max_length=100)
+    requires_approval: bool = False
+    satisfied: bool = False
+    result: dict[str, Any] | None = None
+
+
 class Requirement(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     id: str = Field(min_length=1, max_length=80)
     text: str = Field(min_length=1, max_length=1000)
-    status: Literal["pending", "review", "done"] = "pending"
+    status: Literal["pending", "review", "done", "waiting", "blocked"] = "pending"
     evidence: str = Field(default="", max_length=2000)
+    wait: DependencyWait | None = None
 
     @model_validator(mode="after")
     def evidence_for_done(self):
@@ -99,6 +114,7 @@ class WorkState(BaseModel):
     changed_files: list[str] = Field(default_factory=list, max_length=100)
     decisions: list[str] = Field(default_factory=list, max_length=100)
     pms_project_id: uuid.UUID | None = None
+    waiting_dependencies: list[DependencyWait] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def completion(self):
@@ -202,6 +218,14 @@ async def view(db: AsyncSession, sid: uuid.UUID) -> dict:
     data["auto_resumable"] = status == "active"
     data["waiting_until"] = data.get("waiting_until") if status == "active" else None
     data["user_intervention_needed"] = status in ("blocked", "paused") or bool(weak)
+    waiting_deps = list(state.get("waiting_dependencies") or [])
+    for r in reqs:
+        if r.get("status") == "waiting" and r.get("wait"):
+            waiting_deps.append(r["wait"])
+    active_waits = [w for w in waiting_deps if not w.get("satisfied")]
+    data["waiting_dependencies"] = active_waits
+    data["wait_type"] = "usage_limit" if data.get("waiting_until") and (data.get("usage_waits") or data.get("blocker_kind") in ("usage_limit", "model_capacity")) else ("external_dependency" if active_waits else None)
+    data["has_partial_failure"] = any(r.get("status") == "blocked" for r in reqs) and status == "active"
     return data
 
 
@@ -222,11 +246,20 @@ async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
     weak = [r for r in data["completed_scope"] if weak_evidence(r.get("evidence", ""))]
     unapproved = [d for d in data.get("original_item_dispositions") or []
                   if d.get("kind") == "excluded" and not d.get("user_approved")]
-    phase = {"blocked": "blocked", "paused": "paused", "complete": "complete"}.get(status, "waiting" if until else "running")
+    active_waits = data.get("waiting_dependencies", [])
+    wait_type = data.get("wait_type")
+    phase = {"blocked": "blocked", "paused": "paused", "complete": "complete"}.get(
+        status, "waiting" if (until or active_waits) else "running")
     user_action = {"blocked": "intervene", "paused": "resume"}.get(status, "review" if weak or unapproved else "none")
 
+    sess = await db.get(ChatSession, sid)
+    has_owner = bool(data["running_tasks"]) or (bool(sess) and bool(await _owner_exists(db, sess, None)))
+
     def req(r: dict) -> dict:
-        return {"id": r["id"], "text": r["text"], "status": r["status"], "evidence": (r.get("evidence") or "")[:300]}
+        out = {"id": r["id"], "text": r["text"], "status": r["status"], "evidence": (r.get("evidence") or "")[:300]}
+        if r.get("wait"):
+            out["wait"] = r["wait"]
+        return out
 
     return {"status": status, "phase": phase, "goal": state["goal"], "revision": data["revision"],
             "completed": [req(r) for r in data["completed_scope"]], "pending": [req(r) for r in data["pending_scope"]],
@@ -238,7 +271,11 @@ async def summary(db: AsyncSession, sid: uuid.UUID) -> dict | None:
             "user_intervention_needed": user_action in ("intervene", "review"),
             "additional_request_count": len(data.get("additional_requests") or []),
             "unapproved_scope_exclusions": len(unapproved),
-            "updated_at": data.get("updated_at")}
+            "updated_at": data.get("updated_at"),
+            "wait_type": wait_type,
+            "waiting_dependencies": active_waits,
+            "has_partial_failure": bool(data.get("has_partial_failure")),
+            "has_owner": has_owner}
 
 
 def _request_record(run_id: uuid.UUID | str | None, prompt: str, origin: str) -> dict:
@@ -280,7 +317,7 @@ def _resolve_gaps(gaps: list[dict], dispositions: list[ItemDisposition], require
     return unresolved, records
 
 
-_STATUS_RANK = {"pending": 0, "review": 1, "done": 2}
+_STATUS_RANK = {"waiting": 0, "blocked": 0, "pending": 0, "review": 1, "done": 2}
 
 
 def _checkpoint_progress(previous: dict | None, value: dict, ledger: dict) -> tuple[bool, dict]:
@@ -347,6 +384,57 @@ async def _audit_evidence(db: AsyncSession, sess: ChatSession, requirements: lis
     return audit, problems
 
 
+_RESUME_RE = re.compile(r"재개|다시\s*(?:시작|진행|해줘|해|돌려)|계속\s*(?:진행|해줘|해)|풀어|resume|unpause", re.IGNORECASE)
+
+
+async def _reconcile_immediate_dependencies(db: AsyncSession, value: dict) -> None:
+    """대기 등록 시점에 이미 충족된 의존성이면 즉시 satisfied 로 전환하고 요구 상태를 pending 으로 돌린다."""
+    for r in value.get("requirements", []):
+        w = r.get("wait")
+        if w and not w.get("satisfied"):
+            target = str(w.get("target", "")).strip()
+            if target.startswith("worker:"):
+                wid_str = target.removeprefix("worker:")
+                try:
+                    wid = uuid.UUID(wid_str)
+                    w_sess = await db.get(ChatSession, wid)
+                    if w_sess:
+                        has_active = await db.scalar(select(Run.id).where(Run.session_id == wid, Run.status.in_(ACTIVE)).limit(1))
+                        if not has_active:
+                            latest_run = await db.scalar(select(Run).where(Run.session_id == wid).order_by(Run.created_at.desc(), Run.id.desc()).limit(1))
+                            if latest_run and latest_run.status in (RunStatus.succeeded, RunStatus.failed, RunStatus.cancelled):
+                                w["satisfied"] = True
+                                w["result"] = {"status": latest_run.status, "result_text": latest_run.result_text}
+                                if r.get("status") == "waiting":
+                                    r["status"] = "pending"
+                except Exception:
+                    pass
+            elif target.startswith("schedule:"):
+                sch_str = target.removeprefix("schedule:")
+                try:
+                    sch_id = uuid.UUID(sch_str)
+                    sch = await db.get(ScheduledAction, sch_id)
+                    if sch and sch.status in ("completed", "expired", "failed", "cancelled"):
+                        w["satisfied"] = True
+                        w["result"] = sch.result or {"status": sch.status}
+                        if r.get("status") == "waiting":
+                            r["status"] = "pending"
+                except Exception:
+                    pass
+            elif target.startswith("session:"):
+                s_str = target.removeprefix("session:")
+                try:
+                    target_sid = uuid.UUID(s_str)
+                    target_row = await db.get(AppSetting, key(target_sid))
+                    if target_row and (target_row.value or {}).get("state", {}).get("status") == "complete":
+                        w["satisfied"] = True
+                        w["result"] = {"status": "complete"}
+                        if r.get("status") == "waiting":
+                            r["status"] = "pending"
+                except Exception:
+                    pass
+
+
 async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     # Same lock is taken by the finish hook; concurrent checkpoints cannot overwrite each other.
     await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
@@ -356,6 +444,7 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     if body.state is None:
         raise HTTPException(422, "checkpoint requires state")
     value = body.state.model_dump(mode="json")
+    await _reconcile_immediate_dependencies(db, value)
     previous = current.get("state")
     # 자동 접수 계약은 아직 아무 요구도 완료되지 않았다면 기획이 자기 계획으로 한 번 재구성할 수 있다.
     reshape = bool(previous) and bool(current.get("auto_generated")) and not any(
@@ -454,6 +543,12 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     else:
         row.value = saved
     await db.flush()
+    if value["status"] == "complete":
+        try:
+            await resolve_dependency(db, f"session:{sess.id}", result={"goal": value["goal"], "status": "complete"}, source="session_complete")
+            await resolve_dependency(db, str(sess.id), result={"goal": value["goal"], "status": "complete"}, source="session_complete")
+        except Exception:
+            log.exception("resolve_dependency for completed session %s failed", sess.id)
     if value["status"] != "active":
         await cancel_queued_continuations(db, sess.id, f"goal contract is {value['status']}: {value.get('blocker', '')}")
     return saved
@@ -497,18 +592,29 @@ async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID 
     state = current.get("state")
     record_ = _request_record(run_id, prompt, origin)
     if state and state["status"] != "complete":
-        # 진행 중인 계약에서는 복합 요청과 범위 변경 요청만 추가 요청으로 남긴다. 잡담·질문은 그대로 둔다.
-        if not (complex_request or followup == "scope_change"):
+        # 진행 중인 계약에서는 복합 요청, 범위 변경 요청, 명시적 재개 요청을 추가 요청으로 남긴다. 잡담·질문은 그대로 둔다.
+        is_resume = bool(_RESUME_RE.search(clean))
+        if not (complex_request or followup == "scope_change" or is_resume):
             return None
         extra = list(current.get("additional_requests") or [])
         if run_id and any(item.get("run_id") == str(run_id) for item in extra):
             return None
-        extra.append({**record_, "state_status": state["status"], "at": utcnow().isoformat()})
+        prev_status = state["status"]
+        if is_resume and state["status"] in ("paused", "blocked"):
+            state = dict(state)
+            state["status"] = "active"
+            state["blocker"] = ""
+            if run_id:
+                run_obj = await db.get(Run, run_id)
+                if run_obj:
+                    events.append(db, run_obj, "work.resumed", {"by": origin, "run_id": str(run_id)})
+            record(db, actor="system", action="work.resumed", target_type="session", target_id=sess.id, detail={"by": origin, "run_id": str(run_id)})
+        extra.append({**record_, "state_status": prev_status, "at": utcnow().isoformat()})
         row = await db.get(AppSetting, key(sess.id))
-        row.value = {**current, "additional_requests": extra[-MAX_ADDITIONAL_REQUESTS:],
+        row.value = {**current, "state": state, "additional_requests": extra[-MAX_ADDITIONAL_REQUESTS:],
                      "revision": current["revision"] + 1, "updated_at": utcnow().isoformat()}
         await db.flush()
-        return "appended"
+        return "resumed" if (is_resume and prev_status in ("paused", "blocked")) else "appended"
     if not complex_request:
         return None
     auto = _auto_state(clean, record_["items"], record_["constraints"])
@@ -530,12 +636,21 @@ async def intake_request(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID 
 
 
 async def safe_intake(db: AsyncSession, sess: ChatSession, run_id: uuid.UUID | None, prompt: str, origin: str) -> str | None:
-    """계약 자동 접수의 어떤 실패도 요청(Run) 저장을 막지 않는다. savepoint 안에서 실행하고 실패는 로그로만 남긴다."""
+    """계약 자동 접수의 어떤 실패도 요청(Run) 저장을 막지 않는다. savepoint 안에서 실행하고 실패는 원인을 보존한다."""
     try:
         async with db.begin_nested():
             return await intake_request(db, sess, run_id, prompt, origin)
-    except Exception: # 접수 보조 기능이라 요청 저장이 항상 우선이다.
+    except Exception as exc: # 접수 보조 기능이라 요청 저장이 항상 우선이다.
         log.exception("goal contract intake failed for session %s; request kept without auto contract", sess.id)
+        try:
+            if run_id:
+                run = await db.get(Run, run_id)
+                if run is not None:
+                    err_info = {"error": str(exc)[:500], "origin": origin, "at": utcnow().isoformat()}
+                    run.usage = {**(run.usage or {}), "contract_intake_error": err_info}
+                    events.append(db, run, "work.intake_failed", err_info)
+        except Exception:
+            log.exception("failed to record contract intake error on run %s", run_id)
         return None
 
 
@@ -570,6 +685,10 @@ async def prompt_note(db: AsyncSession, sess: ChatSession) -> str:
         return ""
     current = await load(db, sess.id)
     if not current.get("state"):
+        last_run = await db.scalar(select(Run).where(Run.session_id == sess.id).order_by(Run.created_at.desc(), Run.id.desc()).limit(1))
+        if last_run and (last_run.usage or {}).get("contract_intake_error"):
+            err_data = last_run.usage["contract_intake_error"]
+            return f"[주의: 직전 복합 요청의 목표 계약 자동 등록이 실패했습니다 ({err_data.get('error')}). manage_work checkpoint로 계약을 수동 등록하십시오]\n"
         return ""
     # Entire state fits its explicit limit; do not silently truncate goal or pending requirements.
     original = current.get("original_request")
@@ -795,6 +914,145 @@ async def resume_after_schedule_loss(db: AsyncSession, schedule: ScheduledAction
     return continuation.id
 
 
+async def resolve_dependency(
+    db: AsyncSession,
+    target: str,
+    result: dict[str, Any] | None = None,
+    *,
+    source: str = "",
+) -> list[uuid.UUID]:
+    """외부 의존성 완료/충족 이벤트가 도착했을 때 대기 중인 목표 계약을 찾아 1회 안전하게 재개한다.
+
+    규칙:
+    - 중복 이벤트에도 후속 1회 (이미 큐에 후속이 있거나 중복 호출 시 1회만)
+    - 사용자 중지(paused) 목표는 자동 재개 금지 (Track C 사용자 중지 우선)
+    - 완료(complete) 목표는 과거 이벤트로 부활 금지
+    - 대기 중인 요구의 status 를 pending 으로 전환하고 satisfied 기록
+    - 다른 실행 가능한 요구가 없었던 경우에 한해 새 continuation Run 생성
+    """
+    resumed_runs: list[uuid.UUID] = []
+    target_clean = str(target).strip()
+    target_uuid = None
+    for prefix in ("worker:", "schedule:", "session:", "deploy:"):
+        if target_clean.startswith(prefix):
+            try:
+                target_uuid = str(uuid.UUID(target_clean.removeprefix(prefix)))
+            except ValueError:
+                pass
+            break
+    else:
+        try:
+            target_uuid = str(uuid.UUID(target_clean))
+        except ValueError:
+            pass
+
+    rows = (await db.scalars(select(AppSetting).where(AppSetting.key.like("lead-work:%")))).all()
+    for row in rows:
+        data = dict(row.value or {})
+        state = data.get("state")
+        if not state:
+            continue
+        status = state.get("status")
+        # 완료 목표 부활 금지
+        if status == "complete":
+            continue
+        # 사용자 중지(paused) 후 충족 시 재개 금지 (Track C)
+        if status == "paused":
+            continue
+        if status != "active":
+            continue
+
+        try:
+            sid = uuid.UUID(row.key.removeprefix("lead-work:"))
+        except ValueError:
+            continue
+
+        sess = await db.get(ChatSession, sid)
+        if sess is None or sess.kind != SessionKind.orchestrator or sess.archived_at:
+            continue
+
+        matched = False
+        state = dict(state)
+        reqs = list(state.get("requirements") or [])
+        waiting_reqs = []
+        for r in reqs:
+            w = r.get("wait")
+            if w and not w.get("satisfied"):
+                t = str(w.get("target", "")).strip()
+                if (t == target_clean or (target_uuid and target_uuid in t)
+                        or (t.removeprefix("worker:") == target_clean)
+                        or (t.removeprefix("schedule:") == target_clean)
+                        or (t.removeprefix("session:") == target_clean)
+                        or (t.removeprefix("deploy:") == target_clean)):
+                    w["satisfied"] = True
+                    w["result"] = result or {}
+                    matched = True
+                    if r.get("status") == "waiting":
+                        r["status"] = "pending"
+                        waiting_reqs.append(r["id"])
+
+        waiting_deps = list(state.get("waiting_dependencies") or [])
+        for w in waiting_deps:
+            if not w.get("satisfied"):
+                t = str(w.get("target", "")).strip()
+                if (t == target_clean or (target_uuid and target_uuid in t)
+                        or (t.removeprefix("worker:") == target_clean)
+                        or (t.removeprefix("schedule:") == target_clean)
+                        or (t.removeprefix("session:") == target_clean)
+                        or (t.removeprefix("deploy:") == target_clean)):
+                    w["satisfied"] = True
+                    w["result"] = result or {}
+                    matched = True
+
+        if not matched:
+            continue
+
+        state["requirements"] = reqs
+        state["waiting_dependencies"] = waiting_deps
+        data["state"] = state
+        data["revision"] = data.get("revision", 0) + 1
+        data["updated_at"] = utcnow().isoformat()
+        data.pop("waiting_until", None)
+        row.value = data
+        await db.flush()
+
+        # Deduplication: 이미 이 세션에 queued 상태인 orchestrator 후속 Run 이 있으면 추가 생성하지 않는다.
+        existing = await db.scalar(select(Run.id).where(
+            Run.session_id == sid, Run.origin == RunOrigin.orchestrator, Run.status == RunStatus.queued).limit(1))
+        if existing is not None:
+            record(db, actor="system", action="work.dependency_resumed", target_type="session",
+                   target_id=sess.id, detail={"target": target_clean, "source": source, "run_id": str(existing), "resumed": False, "reason": "already_queued"})
+            continue
+
+        # Check if an owner already exists
+        if await _owner_exists(db, sess, None):
+            record(db, actor="system", action="work.dependency_resumed", target_type="session",
+                   target_id=sess.id, detail={"target": target_clean, "source": source, "resumed": False, "reason": "owner_exists"})
+            continue
+
+        # Queue a single continuation Run
+        res_str = ""
+        if result:
+            st = result.get("status") or ""
+            err = result.get("error") or ""
+            res_str = f"status={st}" + (f", error={err}" if err else "")
+        prompt = _continuation_prompt(
+            state, data,
+            header=f"[미완료 목표 자동 이어가기] 외부 의존성 '{target_clean}'이(가) 충족되었습니다 ({source} {res_str}). 남은 미완료 작업을 계속 진행하라."
+        )
+        continuation = _new_continuation(sess, None, data, prompt, extra={"dependency_resolved": target_clean})
+        db.add(continuation)
+        await db.flush()
+        events.append(db, continuation, "run.status", {"status": RunStatus.queued, "work_continuation": True})
+        events.append(db, continuation, "work.dependency_resumed", {
+            "target": target_clean, "source": source, "resumed": True})
+        record(db, actor="system", action="work.dependency_resumed", target_type="session",
+               target_id=sess.id, detail={"target": target_clean, "source": source, "run_id": str(continuation.id), "resumed": True})
+        resumed_runs.append(continuation.id)
+
+    return resumed_runs
+
+
 def _block(rec: dict, state: dict, kind: str, reason: str) -> None:
     rec["state"] = {**state, "status": "blocked", "blocker": reason[:2000]}
     rec["revision"] = rec["revision"] + 1
@@ -830,12 +1088,19 @@ _RETRY_IN_RE = re.compile(r"(?:try again|retry) in (\d+)\s*(hours?|hrs?|minutes?
 
 
 def _continuation_prompt(state: dict, current: dict, *, header: str, ev_line: str | None = None) -> str:
-    pending = [r for r in state["requirements"] if r["status"] != "done"]
+    pending = [r for r in state["requirements"] if r["status"] in ("pending", "review")]
+    waiting = [r for r in state["requirements"] if r["status"] == "waiting"]
+    blocked = [r for r in state["requirements"] if r["status"] == "blocked"]
     done = [r["text"] for r in state["requirements"] if r["status"] == "done"]
     lines = [header]
     if ev_line:
         lines.append(f"- 직전 실행 성과: {ev_line}")
     lines.append(f"- 이미 완료된 항목: {', '.join(done) if done else '없음'} (재실행 금지)")
+    if waiting:
+        dep_desc = [f"{r['id']}(대기: {(r.get('wait') or {}).get('target') or '외부 의존성'})" for r in waiting]
+        lines.append(f"- 외부 의존성 대기 중인 항목: {', '.join(dep_desc)} (해당 의존성 완료 시 자동 재개)")
+    if blocked:
+        lines.append(f"- 차단된 항목: {', '.join(r['id'] for r in blocked)}")
     lines.append("- 남은 미완료 항목: " + (", ".join(r["text"] for r in pending) if pending else "없음 — 완료 근거를 확인해 complete 로 체크포인트하거나 빠진 요구를 추가하라"))
     if rules := _constraints(current):
         lines.append("- 원본 금지·제약(그대로 지켜라): " + " / ".join(r[:120] for r in rules[:6]))
@@ -932,6 +1197,36 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         row.value = rec
         events.append(db, run, "work.blocked", {"reason": reason[:2000], "failure_kind": kind})
         return None
+
+    reqs = state.get("requirements") or []
+    unfinished = [r for r in reqs if r["status"] != "done"]
+    waiting_reqs = [r for r in unfinished if r["status"] == "waiting"]
+    blocked_reqs = [r for r in unfinished if r["status"] == "blocked"]
+    pending_reqs = [r for r in unfinished if r["status"] in ("pending", "review")]
+
+    if unfinished and not pending_reqs and not waiting_reqs:
+        reason = f"모든 미완료 요구사항({len(blocked_reqs)}건)이 차단(blocked)되었습니다."
+        _block(rec, state, "all_requirements_blocked", reason)
+        row.value = rec
+        events.append(db, run, "work.blocked", {"reason": reason, "cause": "all_requirements_blocked"})
+        return None
+
+    if (unfinished and not pending_reqs and waiting_reqs) or (state.get("waiting_dependencies") and not pending_reqs):
+        # 외부 의존성 대기 (D-3): 무진전 예산 소모 없이 대기 상태 전환
+        timeouts = [w["timeout_at"] for r in waiting_reqs if (w := r.get("wait")) and w.get("timeout_at")]
+        if timeouts:
+            rec["waiting_until"] = min(timeouts)
+        elif due := min((r.due_at for r in await _owning_schedules(db, sess.id)), default=None):
+            rec["waiting_until"] = due.isoformat()
+        else:
+            rec.pop("waiting_until", None)
+        row.value = rec
+        events.append(db, run, "work.dependency_waiting", {
+            "targets": [str((r.get("wait") or {}).get("target")) for r in waiting_reqs],
+            "waiting_requirements": [r["id"] for r in waiting_reqs],
+        })
+        return None
+
     if await _owner_exists(db, sess, run):
         # 예약이 소유자이면 다음 예약 시각을 대기로 보여 준다. 다른 소유자(실행 중 Run·작업자)만 있으면 그대로 둔다.
         if due := min((r.due_at for r in await _owning_schedules(db, sess.id)), default=None):

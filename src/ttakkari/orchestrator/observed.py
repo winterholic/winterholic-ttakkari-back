@@ -39,6 +39,7 @@ SCAN_TYPES = ("tool.call", "tool.result", "run.diff")
 SCAN_PAGE = 500  # 이벤트를 이 단위로 keyset 페이지 조회한다. 한 번에 메모리에 올리는 양의 상한.
 # 안전 상한일 뿐이다. 예전 4000 건 상한은 긴 Run 의 후반(특히 Run 끝에 한 번 남는 run.diff)을 잘라 냈다.
 MAX_EVENTS_SCANNED = 200_000
+MAX_GIT_CHECKS = 20  # 한 보고문을 대조할 때 git 프로세스를 띄우는 상한. 넘는 주장은 모순이 아니라 미확인으로 둔다.
 POOL_RUNS = 60  # 완료 증거를 대조할 때 보는 최근 Run 수(같은 세션·하위 작업자·같은 부모의 형제)
 MAX_POOL_SCANS = 10  # 관측 캐시(run.observed)가 없는 Run 을 이벤트에서 다시 만드는 최대 수
 MAX_WEAK_STREAK = 2  # 조사·새 실패 원인만으로 진전을 인정하는 연속 Run 상한
@@ -660,6 +661,7 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
     tests = pool["tests"]
     decided = [t for t in tests if t["outcome"] in ("passed", "failed")]
 
+    git_budget = MAX_GIT_CHECKS
     partial = bool(pool.get("partial"))  # 풀이 잘려 일부 Run 을 못 봤다: 기록이 없다는 사실만으로 모순이라 할 수 없다
     for raw in sentences(text):
         sent, declared = split_declared(_URL_RE.sub(" ", raw))
@@ -674,7 +676,11 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
                                      call_id=hit.get("call_id"), result="observed_in_git_output", at=hit.get("at")))
                 continue
             found = False
+            if git_roots and git_budget <= 0:
+                unverified.append({"code": "commit_unverifiable", "detail": f"커밋 {sha}: 한 보고에서 확인할 수 있는 상한({MAX_GIT_CHECKS}건) 초과"})
+                continue
             for root in git_roots:
+                git_budget -= 1
                 if await _commit_exists(root, sha):
                     found = True
                     verified.append(_ref("observed_git", target=sha, result="exists_in_repository", scope=str(root)))

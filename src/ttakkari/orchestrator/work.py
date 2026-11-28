@@ -79,6 +79,8 @@ def _aware_iso(value: str) -> str:
 
 # 만료 시각 없이 선언한 대기에 서버가 붙이는 기본 상한. 선언만으로 무진전 예산을 무기한 보호하지 못하게 한다.
 DEFAULT_WAIT_TIMEOUT = timedelta(hours=24)
+# 에이전트가 직접 적은 만료 시각의 상한. 아주 먼 시각으로 대기 보호를 사실상 무기한 만들지 못하게 한다.
+MAX_WAIT_TIMEOUT = timedelta(days=7)
 WAIT_EXPIRY_MARK = "dependency_wait_expiry"  # 만료 시각에 서버가 대기를 정리하게 하는 예약 표식(소유자가 아니다)
 
 
@@ -474,12 +476,18 @@ def _stamp_wait_timeouts(value: dict, previous: dict | None) -> None:
     for w in [*(r.get("wait") for r in prev.get("requirements") or []), *(prev.get("waiting_dependencies") or [])]:
         if w and not w.get("satisfied") and w.get("timeout_at"):
             prior.setdefault(w["target"], w["timeout_at"])
-    default = (utcnow() + DEFAULT_WAIT_TIMEOUT).isoformat()
+    now = utcnow()
+    default = (now + DEFAULT_WAIT_TIMEOUT).isoformat()
+    cap = now + MAX_WAIT_TIMEOUT
     waits = [r["wait"] for r in value.get("requirements") or [] if r.get("status") == "waiting" and r.get("wait")]
     waits += value.get("waiting_dependencies") or []
     for w in waits:
-        if not w.get("satisfied") and not w.get("timeout_at"):
+        if w.get("satisfied"):
+            continue
+        if not w.get("timeout_at"):
             w["timeout_at"] = prior.get(w["target"], default)
+        elif datetime.fromisoformat(w["timeout_at"]) > cap:
+            w["timeout_at"] = cap.isoformat()
 
 
 def _wait_overdue(wait: dict, now: datetime) -> bool:
@@ -1056,6 +1064,12 @@ async def resume_after_schedule_loss(db: AsyncSession, schedule: ScheduledAction
     return continuation.id
 
 
+def _wait_matches(w: dict, target_clean: str, target_uuid: str | None) -> bool:
+    t = str(w.get("target", "")).strip()
+    return bool(t == target_clean or (target_uuid and target_uuid in t)
+                or any(t.removeprefix(p) == target_clean for p in ("worker:", "schedule:", "session:", "deploy:")))
+
+
 async def resolve_dependency(
     db: AsyncSession,
     target: str,
@@ -1113,6 +1127,22 @@ async def resolve_dependency(
         sess = await db.get(ChatSession, sid)
         if sess is None or sess.kind != SessionKind.orchestrator or sess.archived_at:
             continue
+        has_open_wait = any(
+            (r.get("wait") and not r["wait"].get("satisfied") and r.get("status") == "waiting"
+             and _wait_matches(r["wait"], target_clean, target_uuid)) for r in state.get("requirements") or []
+        ) or any(not w.get("satisfied") and _wait_matches(w, target_clean, target_uuid)
+                 for w in state.get("waiting_dependencies") or [])
+        if not has_open_wait:
+            continue  # 이 이벤트를 기다리지 않는 목표의 잠금·행을 건드리지 않는다
+        # after_run·checkpoint 와 같은 세션 잠금으로 직렬화한다. 잠금 없이 읽은 상태로 계약을 다시 쓰면, 같은 순간 커밋되는
+        # 사용자 중지(paused)를 낡은 active 로 덮고 후속을 만든다. 잠금을 얻은 뒤 최신 상태를 다시 읽는다.
+        await db.scalar(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+        await db.refresh(row)
+        data = dict(row.value or {})
+        state = data.get("state")
+        if not state or state.get("status") not in ("active", "paused", "blocked"):
+            continue
+        status = state["status"]
 
         matched = False
         state = dict(state)
@@ -1121,32 +1151,19 @@ async def resolve_dependency(
         for r in reqs:
             w = r.get("wait")
             # 만료로 blocked 가 된 요구는 늦게 온 이벤트로 되살리지 않는다.
-            if w and not w.get("satisfied") and r.get("status") == "waiting":
-                t = str(w.get("target", "")).strip()
-                if (t == target_clean or (target_uuid and target_uuid in t)
-                        or (t.removeprefix("worker:") == target_clean)
-                        or (t.removeprefix("schedule:") == target_clean)
-                        or (t.removeprefix("session:") == target_clean)
-                        or (t.removeprefix("deploy:") == target_clean)):
-                    w["satisfied"] = True
-                    w["result"] = result or {}
-                    matched = True
-                    if r.get("status") == "waiting":
-                        r["status"] = "pending"
-                        waiting_reqs.append(r["id"])
+            if w and not w.get("satisfied") and r.get("status") == "waiting" and _wait_matches(w, target_clean, target_uuid):
+                w["satisfied"] = True
+                w["result"] = result or {}
+                matched = True
+                r["status"] = "pending"
+                waiting_reqs.append(r["id"])
 
         waiting_deps = list(state.get("waiting_dependencies") or [])
         for w in waiting_deps:
-            if not w.get("satisfied"):
-                t = str(w.get("target", "")).strip()
-                if (t == target_clean or (target_uuid and target_uuid in t)
-                        or (t.removeprefix("worker:") == target_clean)
-                        or (t.removeprefix("schedule:") == target_clean)
-                        or (t.removeprefix("session:") == target_clean)
-                        or (t.removeprefix("deploy:") == target_clean)):
-                    w["satisfied"] = True
-                    w["result"] = result or {}
-                    matched = True
+            if not w.get("satisfied") and _wait_matches(w, target_clean, target_uuid):
+                w["satisfied"] = True
+                w["result"] = result or {}
+                matched = True
 
         if not matched:
             continue

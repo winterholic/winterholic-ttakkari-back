@@ -16,6 +16,7 @@ from ttakkari import generation
 from ttakkari.db import sessionmaker
 from ttakkari.generation import _control
 from ttakkari.models import (
+    TERMINAL_RUN_STATUSES,
     Run,
     RunStatus,
     RuntimeCommand,
@@ -235,13 +236,14 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
     if run is None:
         return False
     if entry.get("owner_self") is True:
-        # 핸들 없는 running Run 만 대상이다. 락을 잡은 뒤에 핸들·하트비트를 다시 확인해
-        # 방금 시작했거나 막 핸들을 되찾은 Run 을 건드리지 않는다.
-        if run.status != RunStatus.running or run_id in entry["handles"]:
+        # 핸들 없는 Run 만 대상이다. 락을 잡은 뒤에 핸들·하트비트를 다시 확인해
+        # 방금 시작했거나 막 핸들을 되찾은 Run 을 건드리지 않는다. 종료된 Run 은 하트비트가 없어 lease 해제만 한다.
+        if run_id in entry["handles"] or (run.status != RunStatus.running and run.status not in TERMINAL_RUN_STATUSES):
             return False
-        heartbeat = run.heartbeat_at or run.started_at or run.created_at
-        if (utcnow() - heartbeat).total_seconds() < entry["stale_after"]:
-            return False
+        if run.status == RunStatus.running:
+            heartbeat = run.heartbeat_at or run.started_at or run.created_at
+            if (utcnow() - heartbeat).total_seconds() < entry["stale_after"]:
+                return False
     cancel_commands = []
     if entry.get("owner_self") is True:
         # 사용자가 이미 누른 중지 요청이 있으면 취소로 마감하고, 없으면 interrupted 로 남겨 기존 재개 규칙을 따른다.
@@ -315,7 +317,11 @@ async def _apply_locked(db, entry: dict, run_id: uuid.UUID, token: uuid.UUID,
 
 
 async def reap_handleless_runs(*, generation_id: uuid.UUID, handles, stale_after: float = 120.0) -> int:
-    """이 세대가 소유한 lease 중 실행 핸들이 없는 running Run 을 정리하고 정리한 수를 돌려준다.
+    """이 세대가 소유한 lease 중 실행 핸들이 없는 Run 을 정리하고 정리한 수를 돌려준다.
+
+    종료된 Run 의 lease 는 상태를 바꾸지 않고 해제만 한다. 끝난 Run 의 엔진 그룹에 백그라운드 자손이 남아 lease 가 유지됐다가
+    그 그룹이 사라져도 소유 세대가 살아 있으면 다른 정리 경로가 모두 막혀, 같은 작업자 세션의 후속 Run 이 claim 되지 못하고
+    queued 로 남는다.
 
     fd 고갈 등으로 핸들만 사라지면 소유 세대가 살아 있어 기존 정리(소유자 사망 전제)가 막고, 취소 명령도
     핸들이 있어야 처리돼 Run 이 영원히 running 으로 남는다(2026-10-29). 기록된 프로세스 그룹이 모두 사라졌고
@@ -325,7 +331,8 @@ async def reap_handleless_runs(*, generation_id: uuid.UUID, handles, stale_after
     done = 0
     for entry in await _read_orphans():
         if (entry["owner_id"] != str(generation_id) or entry["owner_pid"] != os.getpid()
-                or entry["run_status"] != RunStatus.running or uuid.UUID(entry["run_id"]) in handled
+                or (entry["run_status"] != RunStatus.running and entry["run_status"] not in TERMINAL_RUN_STATUSES)
+                or uuid.UUID(entry["run_id"]) in handled
                 or not entry["groups"]
                 or any(g["state"] != "absent" or not g["identity_verified"] for g in entry["groups"])):
             continue

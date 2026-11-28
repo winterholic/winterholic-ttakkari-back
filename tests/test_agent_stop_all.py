@@ -558,3 +558,34 @@ async def test_reaper_is_idempotent(client, auth, make_dir, monkeypatch):
     monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
     assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
     assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 0
+
+
+async def test_terminal_run_lease_with_exited_group_is_released_so_followup_can_start(client, auth, make_dir, monkeypatch):
+    """운영 사례: 끝난 Run 의 엔진 그룹에 백그라운드 자손이 남아 lease 가 유지된 뒤 그룹이 사라져도 lease 가 풀리지 않아
+    같은 작업자 세션의 후속 Run 이 claim 되지 못하고 queued 로 남았다. 소유 세대가 살아 있어 기존 정리 경로는 모두 막혔다."""
+    from ttakkari import executor_reconcile
+    from ttakkari.models import RuntimeLease
+
+    sess, _ = await create_session(client, auth, make_dir)
+    run, owner_id = await seed_self_owned(sess, heartbeat_age=0)
+    async with sessionmaker()() as db:
+        row = await db.get(Run, run.id)
+        row.status, row.finished_at = RunStatus.succeeded, utcnow()
+        await db.commit()
+    followup = await create_run(sess, status=RunStatus.queued)
+
+    # 자손이 아직 살아 있으면 lease 를 건드리지 않는다.
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("present", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 0
+    assert not await _lease_gone(run.id)
+    # 핸들이 아직 있으면(_execute 가 정리 중) 건드리지 않는다.
+    monkeypatch.setattr(executor_reconcile, "_group_state", lambda _: ("absent", True))
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=(run.id,)) == 0
+    assert not await _lease_gone(run.id)
+
+    assert await executor_reconcile.reap_handleless_runs(generation_id=owner_id, handles=()) == 1
+    assert await _lease_gone(run.id)
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.succeeded  # 종료 결과는 바꾸지 않는다
+        assert (await db.get(Run, followup.id)).status == RunStatus.queued
+        assert await db.scalar(select(RuntimeLease.run_id).where(RuntimeLease.session_id == run.session_id)) is None

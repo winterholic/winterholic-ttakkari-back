@@ -88,6 +88,21 @@ async def finish(run_id: UUID, status=RunStatus.succeeded, error: str | None = N
         await manager._finish(db, run, status, error=error)
 
 
+async def record_user_stop(db, run: Run) -> None:
+    """사용자가 중지 API 를 누른 요청 시점 기록(운영의 /api/runs/{id}/cancel 과 같은 기록). cancelled Run 은 이 기록이 있어야
+    사용자 중단이다. 상태나 error 문구만으로는 원인 미확인이다."""
+    from ttakkari.runs.termination import CancelRequest, record_request
+    await record_request(db, run, CancelRequest(actor="user", source="api.run_cancel", reason="사용자 중지",
+                                                user_intent=True, scope="run"))
+
+
+async def user_stopped(run_id: UUID) -> UUID:
+    async with sessionmaker()() as db:
+        await record_user_stop(db, await db.get(Run, run_id))
+        await db.commit()
+    return run_id
+
+
 async def queued(sid: UUID, origin: RunOrigin | None = None) -> list[Run]:
     async with sessionmaker()() as db:
         q = select(Run).where(Run.session_id == sid, Run.status == RunStatus.queued).order_by(Run.created_at, Run.id)

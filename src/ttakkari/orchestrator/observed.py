@@ -75,7 +75,17 @@ _FAILED_ID_RE = re.compile(r"^FAILED\s+(\S+)", re.MULTILINE)
 _COMMIT_OUT_RE = re.compile(r"\[[^\]\n]*?\s([0-9a-f]{7,40})\]")
 _PUSH_OUT_RE = re.compile(r"\b([0-9a-f]{7,40})\.{2,3}([0-9a-f]{7,40})\b")
 _HEX_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
-_NOTHING_RE = re.compile(r"nothing (?:added )?to commit|no changes added", re.IGNORECASE)
+# 아무것도 바꾸지 않은 커밋·푸시·병합. 성공으로 끝나도 새 성과가 아니다(명령 표현만 바꿔 되풀이해도 진전이 아니다).
+_NOTHING_RE = re.compile(
+    r"nothing (?:added )?to commit|no changes added|Everything up-to-date|Already up[- ]to[- ]date", re.IGNORECASE)
+
+
+_NO_ID = frozenset({"", "unknown", "none", "null"})  # 엔진이 식별자를 못 줄 때 넣는 자리표시자(copilot 은 "unknown")
+
+
+def _call_id(payload: dict[str, Any]) -> str | None:
+    cid = payload.get("call_id")
+    return None if cid is None or str(cid).strip().lower() in _NO_ID else str(cid)
 
 
 def _h(text: Any, n: int = 8) -> str:
@@ -109,12 +119,34 @@ def norm_cmd(cmd: str) -> str:
     return " ".join(toks)[:200]
 
 
+# 이름에 pytest 가 들어갈 뿐 테스트를 실행하지 않는 명령(검색·출력·설치·git). 종료 코드 0 만으로 통과로 읽으면
+# `grep pytest x` 한 줄이 테스트 성공 증거가 된다.
+_NON_EXEC_RE = re.compile(
+    r"^\s*(?:sudo\s+)?(?:grep|egrep|fgrep|rg|ag|cat|bat|echo|printf|ls|find|head|tail|less|more|wc|which|whereis|type|man|"
+    r"stat|file|diff|sed|awk|nl|open|code|vim|nano|git|gh|pip3?|brew|uv\s+(?:add|remove|pip|sync|lock)|"
+    r"npm\s+(?:i|install|ci|uninstall|view|info|ls|list)|pnpm\s+(?:add|install|remove)|yarn\s+(?:add|install|remove))\b",
+    re.IGNORECASE)
+
+
+def _test_segment(cmd: str) -> re.Match[str] | None:
+    """명령(`&&`·`;` 로 이은 조각 포함)에서 테스트를 실제로 실행하는 첫 조각의 TEST_CMD_RE 일치와 그 조각."""
+    text = re.sub(r"^\s*(?:cd\s+\S+\s*(?:&&|;)\s*)+", "", cmd or "")
+    for seg in re.split(r"\s*(?:&&|\|\||;|\n)\s*", text):
+        if not _NON_EXEC_RE.match(seg) and (m := TEST_CMD_RE.search(seg)):
+            return m
+    return None
+
+
+def is_test_cmd(cmd: str) -> bool:
+    return _test_segment(cmd) is not None
+
+
 def test_target(cmd: str) -> str:
     """테스트 명령이 겨냥한 대상. `uv run pytest tests/a.py -q` 와 `pytest tests/a.py` 는 같은 대상이다."""
-    m = TEST_CMD_RE.search(cmd or "")
+    m = _test_segment(cmd)
     if not m:
         return ""
-    seg = re.split(r"\s*(?:\|\||\||&&|;|>|2>&1)\s*", cmd[m.start():], maxsplit=1)[0]
+    seg = re.split(r"\s*(?:\|\||\||&&|;|>|2>&1)\s*", m.string[m.start():], maxsplit=1)[0]
     rest = seg[m.end() - m.start():].split()
     keep: list[str] = []
     skip = False
@@ -252,24 +284,24 @@ class Observer:
         name = str(payload.get("name") or "").lower().rsplit("__", 1)[-1]
         raw = payload.get("input")
         cmd = str((raw.get("command") or raw.get("cmd") or "") if isinstance(raw, dict) else raw or "")
-        cid = payload.get("call_id")
-        key = str(cid) if cid else f"seq:{seq}"
+        cid = _call_id(payload)
+        key = cid or f"seq:{seq}"
         if name in WRITE_TOOLS:
             kind = "write"
         elif name in SHELL_TOOLS or (isinstance(raw, dict) and "command" in raw):
             kind = "shell"
         else:
             kind = "other"
-        self.calls[key] = {"key": key, "id": str(cid) if cid else None, "seq": seq, "at": _iso(at), "name": name,
+        self.calls[key] = {"key": key, "id": cid, "seq": seq, "at": _iso(at), "name": name,
                            "kind": kind, "cmd": cmd, "paths": _paths_of(name, raw), "raw": raw if isinstance(raw, dict) else {},
                            "done": False}
         if name not in _META_TOOLS:
             self.meaningful_calls += 1
 
     def _link(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        cid = payload.get("call_id")
+        cid = _call_id(payload)
         if cid:
-            call = self.calls.get(str(cid))
+            call = self.calls.get(cid)
             if call is None or call["done"]:
                 return None
             return call
@@ -328,7 +360,7 @@ class Observer:
                 elif m := _COMMIT_OUT_RE.search(output):
                     sha = m.group(1)
                 self.commits.append({**base, "kind": kind, "sha": sha, "sha2": sha2, "cmd_key": _h(norm_cmd(cmd), 8)})
-        if TEST_CMD_RE.search(cmd):
+        if is_test_cmd(cmd):
             special = True
             parsed = parse_test_output(output, ok, code)
             if parsed["outcome"] == "failed":
@@ -367,7 +399,8 @@ class Observer:
                 p = norm_path(w["path"])
                 is_outbox = "/outbox/" in p or p.startswith("outbox/")
                 cat = "inspect" if is_outbox else "write"
-                facts.append({"k": f"w:{_h(p)}:{w.get('bytes') or ''}", "inv": None, "cat": cat})
+                # Edit 류는 입력에 본문 크기가 없다. 경로만 키로 쓰면 같은 파일의 이후 수정이 영영 반복으로 읽히므로 Run 단위로 센다.
+                facts.append({"k": f"w:{_h(p)}:{w.get('bytes') or 'r' + str(run_id or '')[:8]}", "inv": None, "cat": cat})
             for s in self.shell_writes:
                 facts.append({"k": f"s:{s}", "inv": None, "cat": "write"})
         for k in self.inspect:
@@ -441,6 +474,7 @@ async def pool_observations(db: AsyncSession, sess: ChatSession, current: Run | 
             cached[rid] = payload
     out: list[dict[str, Any]] = []
     scans = 0
+    partial = len(runs) >= POOL_RUNS
     for r in runs:  # 새 것부터
         if current is not None and r.id == current.id:
             obs = current_obs or await observe_run(db, r)
@@ -450,10 +484,13 @@ async def pool_observations(db: AsyncSession, sess: ChatSession, current: Run | 
             scans += 1
             obs = await observe_run(db, r)
         else:
+            partial = True
             continue
         obs = {**obs, "run_id": str(r.id), "created_at": _iso(r.created_at), "session_id": str(r.session_id)}
         out.append(obs)
     out.reverse()  # 오래된 Run 부터. 테스트 "가장 최근" 판정이 이 순서를 쓴다.
+    if partial:  # 60개를 넘는 오래된 Run 이나 관측 캐시 없는 Run 을 못 봤다는 표시(merge_pool 이 pool["partial"] 로 옮긴다)
+        out.insert(0, {"partial": True})
     roots: list[Path] = []
     ws_ids = {r.workspace_id for r in runs if r.workspace_id}
     if sess.workspace_id:
@@ -468,8 +505,13 @@ async def pool_observations(db: AsyncSession, sess: ChatSession, current: Run | 
 def merge_pool(observations: list[dict[str, Any]]) -> dict[str, Any]:
     """오래된 순 관측들을 한 묶음으로 합친다."""
     pool: dict[str, Any] = {"runs": len(observations), "calls": 0, "files": {}, "shas": set(), "commits": [], "tests": [],
-                            "deploys": [], "writes": {}, "has_change": False}
+                            "deploys": [], "writes": {}, "has_change": False,
+                            "partial": False}
+    pool["runs"] = sum(1 for o in observations if not o.get("partial"))
     for obs in observations:
+        if obs.get("partial"):
+            pool["partial"] = True
+            continue
         rid = obs.get("run_id")
         pool["calls"] += int(obs.get("calls") or 0)
         for f in obs.get("files") or []:
@@ -497,6 +539,19 @@ def merge_pool(observations: list[dict[str, Any]]) -> dict[str, Any]:
 _NO_CLAIM_RE = re.compile(
     r"미실행|미수행|미확인|못\s*(?:했|함|하)|불가|하지\s*못|확인\s*필요|환경.{0,12}(?:없|부족|제한)|"
     r"\bnot (?:run|executed)\b|\bunable\b|\bcould not\b|\bcouldn't\b|\bcannot\b|\bskipped\b", re.IGNORECASE)
+# "미확인 항목 없음", "환경 문제 없이" 는 못 했다는 말이 아니라 문제가 없다는 말이다. 이 표현이 문장 전체를 면제하면 안 된다.
+_NEGATED_RE = re.compile(
+    r"(?:미실행|미수행|미확인|불가|확인\s*필요)\s*(?:항목|사항|건|내용)?\s*[은는이가]?\s*(?:없|0\s*건|전무|아님|아니)|"
+    r"환경\s*(?:에서\s*)?(?:문제|이슈|제약|제한|오류|이상)\s*[가는]?\s*없|"
+    r"\b(?:no|zero|nothing)\s+(?:\w+\s+){0,2}(?:skipped|unverified|unable)\b|\bnot\s+(?:skipped|unverified)\b",
+    re.IGNORECASE)
+_FAIL_REPORT_RE = re.compile(
+    r"(?<![\d.])[1-9]\d*\s*(?:failed|failures?|errors?)\b|(?:실패|오류|에러)\s*[1-9]\d*|[1-9]\d*\s*(?:건|개)\s*(?:실패|오류)",
+    re.IGNORECASE)
+_PASS_COUNT_RE = re.compile(r"(\d+)\s*(?:passed|건\s*통과|개\s*통과|통과)", re.IGNORECASE)
+_TEST_FAMILIES = (("ruff_check", re.compile(r"ruff|린트|\blint\b", re.IGNORECASE)),
+                  ("pytest", re.compile(r"pytest", re.IGNORECASE)),
+                  ("vitest", re.compile(r"vitest", re.IGNORECASE)), ("jest", re.compile(r"\bjest\b", re.IGNORECASE)))
 _TEST_CLAIM_RE = re.compile(
     r"(?P<n>\d+)\s*(?:passed|통과)|"
     r"(?:pytest|테스트|\btests?\b|ruff|vitest|jest|swift test|cargo test|go test|npm (?:run )?test|린트|\blint\b)"
@@ -522,6 +577,24 @@ _SENT_SPLIT_RE = re.compile(r"(?<=[.!?。])\s+|\n")
 
 def sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENT_SPLIT_RE.split(text or "") if s.strip()]
+
+
+def split_declared(sent: str) -> tuple[str, list[str]]:
+    """문장을 쉼표·세미콜론 절로 나눠 못 했다고 쓴 절을 떼어 낸다. (주장으로 남은 부분, 떼어 낸 절).
+
+    한 문장에 `테스트는 미실행, 커밋 abc1234 푸시 완료` 처럼 섞어 쓰면 뒤 주장까지 면제되던 우회를 막는다."""
+    kept: list[str] = []
+    declared: list[str] = []
+    for part in re.split(r"(?<=[,;，；])\s*", sent):
+        (declared if _NO_CLAIM_RE.search(_NEGATED_RE.sub(" ", part)) else kept).append(part)
+    return " ".join(kept), declared
+
+
+def _test_family(sent: str) -> str | None:
+    for prefix, rx in _TEST_FAMILIES:
+        if rx.search(sent):
+            return prefix
+    return None
 
 
 async def _git(root: Path, *args: str) -> tuple[int, str]:
@@ -560,7 +633,8 @@ def claimed_shas(sentence: str) -> list[str]:
     found: list[str] = []
     for m in _SHA_CLAIM_RE.finditer(sentence):
         for tok in _HEX_RE.findall(m.group(1).lower()):
-            if _is_sha(tok) and tok not in found:
+            # 커밋·SHA 낱말 바로 뒤의 토큰이라 글자만 있는 `deadbeef` 도 주장으로 본다(숫자만인 것은 날짜·건수와 겹쳐 제외).
+            if re.search(r"[a-f]", tok) and tok not in found:
                 found.append(tok)
     return found
 
@@ -586,11 +660,12 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
     tests = pool["tests"]
     decided = [t for t in tests if t["outcome"] in ("passed", "failed")]
 
+    partial = bool(pool.get("partial"))  # 풀이 잘려 일부 Run 을 못 봤다: 기록이 없다는 사실만으로 모순이라 할 수 없다
     for raw in sentences(text):
-        sent = _URL_RE.sub(" ", raw)
-        if _NO_CLAIM_RE.search(sent):
-            if _TEST_CLAIM_RE.search(sent) or claimed_shas(sent) or _DEPLOY_CLAIM_RE.search(sent):
-                unverified.append({"code": "declared_unverified", "detail": raw[:120]})
+        sent, declared = split_declared(_URL_RE.sub(" ", raw))
+        if declared and any(_TEST_CLAIM_RE.search(d) or claimed_shas(d) or _DEPLOY_CLAIM_RE.search(d) for d in declared):
+            unverified.append({"code": "declared_unverified", "detail": raw[:120]})
+        if not sent.strip():
             continue
         for sha in claimed_shas(sent):
             if _sha_observed(sha, pool["shas"]):
@@ -606,32 +681,47 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
                     break
             if found:
                 continue
-            if git_roots:
+            if git_roots and not partial:
                 contradictions.append({"code": "commit_not_found", "detail": f"커밋 {sha} 이(가) 저장소에도 Run 의 git 출력에도 없다"})
+            elif git_roots:
+                unverified.append({"code": "commit_unverifiable", "detail": f"커밋 {sha}: 오래된 Run 기록을 다 보지 못해 대조 불가"})
             else:
                 unverified.append({"code": "commit_unverifiable", "detail": f"커밋 {sha}: 확인할 git 저장소 없음"})
-        if m := _TEST_CLAIM_RE.search(sent):
-            n = int(m.group("n")) if m.group("n") else None
+        if _TEST_CLAIM_RE.search(sent) and _FAIL_REPORT_RE.search(sent):
+            # 실패를 함께 보고한 문장은 성공 주장이 아니다. 정직한 `94 passed, 1 failed` 를 모순으로 거부하지 않는다.
+            unverified.append({"code": "declared_failure", "detail": f"실패를 함께 보고한 문장: {raw[:80]}"})
+        elif _TEST_CLAIM_RE.search(sent):
+            counts = [int(x) for x in _PASS_COUNT_RE.findall(sent)]  # 앞에 pytest·테스트가 오면 정규식이 건수 그룹을 놓친다
+            family = _test_family(sent)
+            scope = [t for t in decided if family and t["target"].startswith(family)] or decided
             if not tests:
-                if have_obs:
+                if have_obs and not partial:
                     contradictions.append({"code": "test_not_run", "detail": f"테스트 성공을 주장하지만 관측된 테스트 실행이 없다: {raw[:80]}"})
                 else:
                     unverified.append({"code": "test_unobservable", "detail": "관측된 도구 기록이 없어 테스트 주장을 대조하지 못함"})
             elif not decided:
                 unverified.append({"code": "test_outcome_unknown", "detail": "테스트를 실행했으나 결과 요약을 읽지 못함"})
             else:
-                last = decided[-1]
+                last = scope[-1]
                 allowed = {t["passed"] for t in decided if t["outcome"] == "passed" and t.get("passed") is not None}
                 same_run = [t for t in decided if t["run_id"] == last["run_id"] and t["outcome"] == "passed"
                             and t.get("passed") is not None]
                 if same_run:
                     allowed.add(sum(t["passed"] for t in same_run))
+                latest: dict[str, int] = {}  # 대상별 가장 최근 통과 건수의 합: 파일을 나눠 돌린 결과를 합쳐 보고한 경우
+                for t in decided:
+                    if t["outcome"] == "passed" and t.get("passed") is not None:
+                        latest[t["target"]] = t["passed"]
+                    elif t["outcome"] == "failed":
+                        latest.pop(t["target"], None)
+                if latest:
+                    allowed.add(sum(latest.values()))
                 if last["outcome"] == "failed":
                     contradictions.append({"code": "test_failed", "detail":
                                            f"테스트 성공을 주장하지만 가장 최근 관측 테스트가 실패했다: {last['target']} {last.get('line') or ''}".strip()})
-                elif n is not None and allowed and n not in allowed:
+                elif (bad := next((n for n in counts if allowed and n not in allowed), None)) is not None:
                     contradictions.append({"code": "test_count_mismatch", "detail":
-                                           f"통과 {n}건을 주장하지만 관측된 통과 건수는 {sorted(allowed)}"})
+                                           f"통과 {bad}건을 주장하지만 관측된 통과 건수는 {sorted(allowed)}"})
                 else:
                     verified.append(_ref("observed_test", target=last["target"], source_run_id=last["run_id"], seq=last.get("seq"),
                                          call_id=last.get("call_id"), result=last.get("line") or "passed", at=last.get("at")))
@@ -651,7 +741,7 @@ async def check_claims(text: str, pool: dict[str, Any], roots: list[Path]) -> di
                         break
                 if exists:
                     unverified.append({"code": "file_change_unobserved", "detail": f"{path}: 존재하지만 이번 관측에서 변경은 보지 못함"})
-                elif have_obs and any(r.is_dir() for r in roots):
+                elif have_obs and not partial and any(r.is_dir() for r in roots):
                     contradictions.append({"code": "file_not_found", "detail": f"{path} 수정을 주장하지만 파일이 존재하지 않고 변경 관측도 없다"})
                 else:
                     unverified.append({"code": "file_unverifiable", "detail": f"{path}: 확인할 작업 공간 기록 없음"})

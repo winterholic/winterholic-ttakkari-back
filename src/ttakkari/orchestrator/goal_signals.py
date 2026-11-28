@@ -334,7 +334,9 @@ def weak_evidence(text: str) -> bool:
     return bool(_WEAK_EVIDENCE_RE.match(body)) or generic_claim(body)
 
 
-_REPORT_LABEL_RE = re.compile(r"^\W*(?:항목\s*)?(?P<label>\d{1,2}|[A-Za-z]{1,3}\d{1,2})\s*[).:\]]\s*(?P<rest>.*)$")
+# 보고의 항목 표기: `1.` `1)` `항목 1:` `1번:` 표의 `| 1 |`.
+_REPORT_LABEL_RE = re.compile(
+    r"^\W*(?:항목\s*)?(?P<label>\d{1,2}|[A-Za-z]{1,3}\d{1,2})\s*(?:번\s*)?[).:\]|](?P<rest>.*)$")
 
 
 def unreported_items(items: list[dict[str, str]], body: str) -> list[dict[str, str]]:
@@ -344,10 +346,16 @@ def unreported_items(items: list[dict[str, str]], body: str) -> list[dict[str, s
     한 줄이 항목 단어를 절반 이상 담으면 덮은 것으로 본다. 라벨만 맞거나 비슷한 단어만 있는 줄은 대응으로 보지 않는다."""
     if len(items) < 2:
         return []
-    lines = [ln.strip() for ln in (body or "").splitlines() if ln.strip()]
+    lines = [ln.strip() for ln in (body or "").splitlines() if ln.strip() and not set(ln.strip()) <= set("|-: ")]
+    # 번호 없이 항목마다 한 줄씩 쓴 보고(지시가 요구하는 형식)는 문구를 바꿔 쓰면 단어 대조로 대응을 못 찾는다. 항목 표기가 하나도
+    # 없고 줄 수가 항목 수 이상이면 코드로 대응을 판정할 수 없으므로 누락으로 몰지 않는다(미확인).
+    unlabeled = not any(_REPORT_LABEL_RE.match(ln) for ln in lines)
+    if unlabeled and len(lines) >= len(items):
+        return []
     missing = []
     for item in items:
         mine = _tokens(item["text"])
+        title = _tokens(re.split(r"[:：(（—]|\s-\s", item["text"], maxsplit=1)[0])
         label = item["label"].lower().rsplit("-", 1)[-1]
         covered = False
         for ln in lines:
@@ -357,7 +365,9 @@ def unreported_items(items: list[dict[str, str]], body: str) -> list[dict[str, s
                 continue
             by_label = bool(m) and m.group("label").lower() == label
             by_words = bool(mine) and sum(1 for t in mine if _token_match(t, _tokens(ln))) / len(mine) >= 0.5
-            if by_label or by_words:
+            # 항목 앞머리(제목)를 그대로 쓴 줄 `- 거짓 완료 차단 반례 탐색: 결과…` 도 그 항목을 다룬 것이다.
+            by_title = len(title) >= 2 and sum(1 for t in title if _token_match(t, _tokens(ln))) / len(title) >= 0.8
+            if by_label or by_words or by_title:
                 covered = True
                 break
         if not covered:
